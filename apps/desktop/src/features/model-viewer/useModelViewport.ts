@@ -24,7 +24,7 @@ export function modelError(cause: unknown): string {
   return 'KM-MODEL-UNSUPPORTED';
 }
 export type ModelBackground = { color: string; grid: boolean };
-export type ModelViewOptions = { display: number; wireframe: boolean; hidden: number[]; selected: number | null; statistics?: boolean };
+export type ModelViewOptions = { display: number; wireframe: boolean; hidden: number[]; selected: number | null; statistics?: boolean; inGame?: boolean };
 export function useModelViewport(paths: ProjectPaths, id: string, animation: string | null, revision: number, covered: boolean, background: ModelBackground, textures: TextureChange[] = [], assets: AssetChange[] = [], light: ModelLight = defaultModelLight, options: ModelViewOptions = { display: 0, wireframe: false, hidden: [], selected: null }, onSelect?: (part: number | null) => void, onHistory?: (redo: boolean) => void) {
   const viewport = useRef<HTMLDivElement>(null);
   const session = useRef<string | null>(null);

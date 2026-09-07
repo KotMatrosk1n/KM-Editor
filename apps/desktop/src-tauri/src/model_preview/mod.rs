@@ -52,6 +52,8 @@ pub struct Viewport {
     pub selected: Option<usize>,
     #[serde(default)]
     pub statistics: bool,
+    #[serde(default, rename = "inGame")]
+    pub in_game: bool,
 }
 fn default_light() -> [f32; 4] {
     [-34.0, 48.0, 4.0, 1.0]

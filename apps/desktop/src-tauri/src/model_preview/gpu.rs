@@ -44,6 +44,7 @@ pub struct Renderer {
     background_color: [u8; 3],
     grid: bool,
     light: [f32; 4],
+    in_game: bool,
     depth: wgpu::TextureView,
     camera: wgpu::Buffer,
     camera_group: wgpu::BindGroup,
@@ -146,7 +147,7 @@ impl Renderer {
         let depth = Self::depth(&device, &config);
         let camera = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Camera"),
-            size: 96,
+            size: 112,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -159,7 +160,7 @@ impl Renderer {
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(96),
+                        min_binding_size: wgpu::BufferSize::new(112),
                     },
                     count: None,
                 },
@@ -283,6 +284,7 @@ impl Renderer {
             background_color: super::default_background(),
             grid: false,
             light: super::default_light(),
+            in_game: false,
             depth,
             camera,
             camera_group,
@@ -381,6 +383,7 @@ impl Renderer {
         self.background_color = viewport.background;
         self.grid = viewport.grid;
         self.light = viewport.light;
+        self.in_game = viewport.in_game;
         self.display = viewport.display;
         self.wireframe = viewport.wireframe;
         self.hidden = viewport.hidden;
@@ -594,6 +597,7 @@ impl Renderer {
                 .extend(self.light[3] * self.radius * self.radius * 16.0)
                 .to_array(),
         );
+        camera_values.extend_from_slice(&[if self.in_game { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0]);
         self.queue
             .write_buffer(&self.camera, 0, bytemuck::cast_slice(&camera_values));
         self.background.update(
@@ -669,7 +673,9 @@ impl Renderer {
                         continue;
                     };
                     pass.set_index_buffer(edges.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.draw_indexed(0..mesh.count * 2, 0, 0..1);
+                    // Encode selection in the instance index, keeping one edge draw per mesh.
+                    let selected = u32::from(self.selected == Some(i));
+                    pass.draw_indexed(0..mesh.count * 2, 0, selected..selected + 1);
                 }
             }
         }

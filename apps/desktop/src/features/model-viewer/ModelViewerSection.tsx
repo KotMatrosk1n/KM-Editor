@@ -9,6 +9,7 @@ import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditor
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useModalDialog } from '../../components/useModalDialog';
 import { useLocalization } from '../../localization';
+import { HeaderMemoryUsage } from '../settings/ProcessMemoryPanel';
 import { modelError, useModelViewport, type ModelBackground, type ModelViewOptions } from './useModelViewport';
 import { ModelEditHistory, ModelHistoryContext } from './ModelEditHistory';
 import { ModelWorkspaceTools, ModelParts, ModelFrameInput, ModelHistoryPanel } from './ModelWorkspaceTools';
@@ -65,6 +66,7 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
   const [properties, setProperties] = useState<ModelProperties | null>(null);
   const [options, setOptions] = useState<ModelViewOptions>({ display: 0, wireframe: false, hidden: [], selected: null });
   const [statistics, setStatistics] = useState(false);
+  const [inGame, setInGame] = useState(true);
   const [image, setImage] = useState<{ texture: ModelTexture; changes: TextureRule[] } | null>(null);
   const [uv, setUv] = useState<ModelUv[]>([]);
   const uvRequest = useRef(0);
@@ -85,7 +87,8 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
   const supported = ['sword', 'shield', 'scarlet', 'violet', 'za'].some(game => game === paths.selectedGame);
   const vanillaAssets = useMemo(() => properties?.assets.map(a => ({ asset: a.id, sourceHash: a.sourceHash, changes: [], restore: true })) ?? [], [properties]);
   const viewer = useModelViewport(paths, selected, animation, revision, !!image, background, original ? [] : textureChanges,
-    original ? vanillaAssets : assetChanges ?? stagedAssetChanges(session, selected), light, { ...options, statistics },
+    original ? vanillaAssets : assetChanges ?? stagedAssetChanges(session, selected), light,
+    editing ? { ...options, statistics, inGame } : { display: 0, wireframe: false, hidden: [], selected: null, statistics: false, inGame: true },
     part => { setOptions(old => ({ ...old, selected: part })); }, redo => { if (!original && !disabled && !restoring) { if (redo) history.redo(); else history.undo(); } });
   useEffect(() => {
     history.clear(); setOriginal(false); setProperties(null); setImage(null); setUv([]); uvRequest.current++;
@@ -164,10 +167,10 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
   };
   return <ModelHistoryContext.Provider value={history}><section ref={dialog} className={`panel wide-panel model-viewer${editing ? ' model-viewer--editing' : ''}`} role={editing ? 'dialog' : undefined} aria-modal={editing || undefined} aria-labelledby="model-viewer-title" tabIndex={editing ? -1 : undefined}>
     <div data-editor-portal-host className="editor-portal-host" />
-    <header className="model-viewer__header"><Box aria-hidden="true" size={22} />
-      <div><h2 id="model-viewer-title">{t(editing ? 'modelEditor.title' : 'modelViewer.title')}</h2><p>{editing ? entry?.name : t('modelViewer.description')}</p></div>
-      {editing ? <button type="button" disabled={dirty || restoring} onClick={() => setEditing(false)}>{t('modelEditor.close')}</button>
-        : <button type="button" disabled={!selected || disabled} onClick={() => setEditing(true)}>{t('modelEditor.edit')}</button>}
+    <header className="model-viewer__header">
+      <div className="model-viewer__header-status"><Box aria-hidden="true" size={22} />{editing ? <HeaderMemoryUsage /> : null}</div>
+      <div className="model-viewer__heading"><h2 id="model-viewer-title">{t(editing ? 'modelEditor.title' : 'modelViewer.title')}</h2><p>{editing ? entry?.name : t('modelViewer.description')}</p></div>
+      {editing ? <button type="button" disabled={dirty || restoring} onClick={() => setEditing(false)}>{t('modelEditor.close')}</button> : null}
     </header>
     <p className="model-viewer__note">{t('modelViewer.scope')}</p>
     {!supported ? <p role="status">{t('modelViewer.unsupportedGame')}</p> : !isTauri() ? <p role="status">{t('modelViewer.desktopRequired')}</p> :
@@ -197,14 +200,14 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
         <div className="model-viewer__stage">
           {editing ? <div className="model-workspace__top"><ModelWorkspaceTools ready={!!viewer.info && !!properties} disabled={disabled || restoring}
             original={original} onCompare={() => { void viewer.playback('pause'); setOriginal(!original); }} options={options} onOptions={setOptions}
-            camera={viewer.camera} stats={statistics} onStats={setStatistics} orientation={viewer.stats} historyOpen={tab === 'history'} onHistory={() => setTab(tab === 'history' ? 'materials' : 'history')} />
+            camera={viewer.camera} stats={statistics} onStats={setStatistics} inGame={inGame} onLighting={setInGame} orientation={viewer.stats} historyOpen={tab === 'history'} onHistory={() => setTab(tab === 'history' ? 'materials' : 'history')} />
             {original ? <p className="model-workspace__comparison" role="status">{t('modelWorkspace.comparing')}</p> : null}
           </div> : null}
           <div className="model-viewer__properties model-viewer__properties--primary">
           <div className="model-viewer__toolbar">
             <strong data-localization-ignore="true">{entry?.name ?? t('modelViewer.selectModel')}</strong>
+            {!editing ? <button type="button" className="primary-button model-viewer__edit" disabled={!selected || disabled} onClick={() => setEditing(true)}>{t('modelEditor.edit')}</button> : null}
             <button type="button" disabled={!viewer.info} onClick={() => void viewer.camera('reset')}>{t('modelViewer.resetCamera')}</button>
-            <button type="button" disabled={!viewer.info} onClick={() => void viewer.camera('frame')}>{t('modelViewer.frame')}</button>
             {viewer.loading && !editing ? <button type="button" disabled={dirty} onClick={() => select('')}>{t('modelViewer.cancel')}</button> : null}
           </div>
           <div className="model-viewer__background">
@@ -262,14 +265,14 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
             </div> : null}
             {viewer.info.warnings.map(warning => <p key={warning} role="status">{t(`modelViewer.warning.${warning}`)}</p>)}
           </div></details> : null}
-          <div className="model-viewer__properties model-viewer__properties--secondary">
+          <div className="model-viewer__properties model-viewer__properties--secondary" hidden={!editing}>
           {editing ? <nav className="model-workspace__tabs" aria-label={t('modelWorkspace.inspector')}>
             {['parts','materials','textures','scene'].map(value => <button type="button" key={value} aria-pressed={tab === value} onClick={() => setTab(value)}>{t(`modelWorkspace.${value}`)}</button>)}
           </nav> : null}
           {editing && tab === 'history' ? <ModelHistoryPanel /> : null}
           <div hidden={editing && tab !== 'parts'}>{editing ? <ModelParts parts={viewer.info?.parts ?? []} options={options} onOptions={setOptions} onMaterial={() => setTab('materials')} /> : null}</div>
           <div hidden={editing && tab !== 'scene'}>
-            <ModelLightControls light={light} onChange={setLight} />
+            {editing && !inGame ? <ModelLightControls light={light} onChange={setLight} /> : editing ? <p className="model-workspace__lighting-help">{t('modelWorkspace.inGameHelp')}</p> : null}
             {editing ? <div className="model-workspace__scene-background">
               <h3>{t('modelViewer.backgroundStyle')}</h3>
               <label><input type="checkbox" checked={background.grid} onChange={event => setBackground(old => ({ ...old, grid: event.target.checked }))} />{t('modelViewer.backgroundGrid')}</label>

@@ -13157,6 +13157,10 @@ h2 {
 .sv-cache-mode-option,
 .analysis-loading-option {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(28px, auto) auto;
+  justify-content: stretch;
+  align-content: start;
   gap: 8px;
   min-width: 0;
   min-height: 104px;
@@ -13178,7 +13182,7 @@ h2 {
   border-color: rgb(var(--color-accent-bright-rgb) / 62%);
 }
 
-.sv-cache-mode-option span,
+.sv-cache-mode-option > span,
 .analysis-loading-option > span {
   display: flex;
   flex-wrap: wrap;
@@ -13211,6 +13215,7 @@ h2 {
 .sv-cache-mode-option p,
 .analysis-loading-option p {
   margin: 0;
+  padding-inline-start: 28px;
   overflow-wrap: anywhere;
   color: var(--color-text-muted);
   font-size: 0.75rem;

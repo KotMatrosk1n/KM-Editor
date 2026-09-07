@@ -15,18 +15,19 @@ export function ModelFrameInput({ label, value, min, max, onCommit }: { label: s
     onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); commit(); } if (event.key === 'Escape') setText(null); }} /></label>;
 }
 
-export function ModelWorkspaceTools({ ready, disabled, original, onCompare, options, onOptions, camera, stats, onStats, orientation, historyOpen, onHistory }: {
+export function ModelWorkspaceTools({ ready, disabled, original, onCompare, options, onOptions, camera, stats, onStats, inGame, onLighting, orientation, historyOpen, onHistory }: {
   ready: boolean; disabled: boolean; original: boolean; onCompare: () => void; options: ModelViewOptions;
   onOptions: (options: ModelViewOptions) => void; camera: (action: string) => Promise<void>; stats: boolean; onStats: (value: boolean) => void;
   orientation: { yaw: number; pitch: number };
   historyOpen: boolean; onHistory: () => void;
+  inGame: boolean; onLighting: (inGame: boolean) => void;
 }) {
   const { t } = useLocalization(), history = useModelHistory();
   const [projection, setProjection] = useState(false), [modesOpen, setModesOpen] = useState(false);
   const modeButton = useRef<HTMLButtonElement>(null);
   const modeList = useRef<HTMLDivElement>(null);
   useEffect(() => { if (modesOpen) modeList.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus(); }, [modesOpen]);
-  const modes = ['studio', 'baseColor', 'normals', 'roughness', 'metallic', 'occlusion', 'masks'];
+  const modes = ['lit', 'baseColor', 'normals', 'roughness', 'metallic', 'occlusion', 'masks'];
   return <><div className="model-workspace__bar" aria-label={t('modelWorkspace.toolbar')}>
     <div className="model-workspace__tool-group">
       <div className="model-workspace__orientation" aria-label={t('modelWorkspace.cameraView')}>
@@ -43,7 +44,9 @@ export function ModelWorkspaceTools({ ready, disabled, original, onCompare, opti
       <button type="button" disabled={!ready || disabled} aria-pressed={original} onClick={onCompare}>{t(original ? 'modelWorkspace.showEdited' : 'modelWorkspace.showOriginal')}</button>
     </div>
     <div className="model-workspace__tool-group">
-      <button ref={modeButton} type="button" disabled={!ready} aria-haspopup="listbox" aria-expanded={modesOpen} aria-controls="model-display-modes" onClick={() => setModesOpen(!modesOpen)} title={t('modelWorkspace.displayMode')}>{t(`modelWorkspace.${modes[options.display]}`)}</button>
+      <button type="button" disabled={!ready} aria-pressed={!inGame && options.display === 0} onClick={() => { onLighting(false); onOptions({ ...options, display: 0 }); }}>{t('modelWorkspace.studio')}</button>
+      <button type="button" disabled={!ready} aria-pressed={inGame && options.display === 0} title={t('modelWorkspace.inGameHelp')} onClick={() => { onLighting(true); onOptions({ ...options, display: 0 }); }}>{t('modelWorkspace.inGame')}</button>
+      <button ref={modeButton} type="button" disabled={!ready} aria-haspopup="listbox" aria-expanded={modesOpen} aria-controls="model-display-modes" onClick={() => setModesOpen(!modesOpen)} title={t('modelWorkspace.displayMode')}>{t(options.display === 0 ? 'modelWorkspace.displayMode' : `modelWorkspace.${modes[options.display]}`)}</button>
       <label><input type="checkbox" checked={options.wireframe} disabled={!ready} onChange={event => onOptions({ ...options, wireframe: event.target.checked })} />{t('modelWorkspace.wireframe')}</label>
     </div>
     <div className="model-workspace__tool-group">
