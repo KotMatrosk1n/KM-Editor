@@ -8,6 +8,8 @@ mod gpu;
 #[cfg(windows)]
 mod gpu_assets;
 #[cfg(windows)]
+mod inspection;
+#[cfg(windows)]
 mod scene;
 #[cfg(windows)]
 mod window;
@@ -26,7 +28,7 @@ pub struct PreviewState {
     #[cfg(windows)]
     proxy: std::sync::OnceLock<Result<winit::event_loop::EventLoopProxy<window::Event>, String>>,
 }
-#[derive(Clone, Copy, Default, serde::Deserialize)]
+#[derive(Clone, Default, serde::Deserialize)]
 pub struct Viewport {
     pub x: i32,
     pub y: i32,
@@ -40,6 +42,16 @@ pub struct Viewport {
     pub grid: bool,
     #[serde(default = "default_light")]
     pub light: [f32; 4],
+    #[serde(default)]
+    pub display: u32,
+    #[serde(default)]
+    pub wireframe: bool,
+    #[serde(default)]
+    pub hidden: Vec<usize>,
+    #[serde(default)]
+    pub selected: Option<usize>,
+    #[serde(default)]
+    pub statistics: bool,
 }
 fn default_light() -> [f32; 4] {
     [-34.0, 48.0, 4.0, 1.0]
@@ -68,13 +80,17 @@ pub fn model_preview_viewport(
         || viewport.width > 8192
         || viewport.height > 8192
         || !valid_light(viewport.light)
+        || viewport.display > 6
+        || viewport.hidden.len() > 4096
+        || viewport.hidden.iter().any(|i| *i >= 4096)
+        || viewport.selected.is_some_and(|i| i >= 4096)
         || viewport.clip.is_some_and(|clip| {
             clip.x > 8192 || clip.y > 8192 || clip.width > 8192 || clip.height > 8192
         })
     {
         return Err("KM-MODEL-UNSUPPORTED".into());
     }
-    *state.viewport.lock().map_err(|_| "KM-MODEL-CANCELLED")? = viewport;
+    *state.viewport.lock().map_err(|_| "KM-MODEL-CANCELLED")? = viewport.clone();
     #[cfg(windows)]
     if let Some(Ok(proxy)) = state.proxy.get() {
         let _ = proxy.send_event(window::Event::Viewport { session, viewport });
@@ -99,7 +115,23 @@ pub fn model_preview_camera(
     }
     if !matches!(
         action.as_str(),
-        "reset" | "frame" | "left" | "right" | "up" | "down" | "in" | "out" | "focus"
+        "reset"
+            | "frame"
+            | "left"
+            | "right"
+            | "up"
+            | "down"
+            | "in"
+            | "out"
+            | "focus"
+            | "front"
+            | "back"
+            | "sideLeft"
+            | "sideRight"
+            | "top"
+            | "bottom"
+            | "orthographic"
+            | "perspective"
     ) {
         return Err("KM-MODEL-UNSUPPORTED".into());
     }
@@ -122,7 +154,16 @@ pub fn model_preview_playback(
     if !value.is_finite()
         || !matches!(
             action.as_str(),
-            "play" | "pause" | "restart" | "seek" | "speed" | "loop"
+            "play"
+                | "pause"
+                | "restart"
+                | "seek"
+                | "speed"
+                | "loop"
+                | "previousFrame"
+                | "nextFrame"
+                | "rangeStart"
+                | "rangeEnd"
         )
     {
         return Err("KM-MODEL-UNSUPPORTED".into());
@@ -188,6 +229,37 @@ pub struct PreviewInfo {
     duration: f32,
     looped: bool,
     warnings: Vec<String>,
+    frame_rate: u32,
+    frames: u32,
+    parts: Vec<serde_json::Value>,
+    textures: Vec<[u32; 2]>,
+    texture_bytes: u64,
+}
+
+#[tauri::command]
+pub async fn model_preview_inspect(
+    state: tauri::State<'_, PreviewState>,
+    session: String,
+    part: usize,
+) -> Result<serde_json::Value, String> {
+    if !state.current(&session) || part >= 4096 {
+        return Err("KM-MODEL-CANCELLED".into());
+    }
+    #[cfg(windows)]
+    if let Some(Ok(proxy)) = state.proxy.get() {
+        let (result, response) = tokio::sync::oneshot::channel();
+        proxy
+            .send_event(window::Event::Inspect {
+                session,
+                part,
+                result,
+            })
+            .map_err(|_| "KM-MODEL-CANCELLED")?;
+        return response
+            .await
+            .map_err(|_| "KM-MODEL-CANCELLED".to_string())?;
+    }
+    Err("KM-MODEL-CANCELLED".into())
 }
 
 #[tauri::command]
@@ -317,7 +389,11 @@ pub async fn model_preview_open(
                 scene,
                 title,
                 owner,
-                viewport: *state.viewport.lock().map_err(|_| "KM-MODEL-CANCELLED")?,
+                viewport: state
+                    .viewport
+                    .lock()
+                    .map_err(|_| "KM-MODEL-CANCELLED")?
+                    .clone(),
                 session,
                 generation,
                 result: send,

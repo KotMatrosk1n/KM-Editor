@@ -6,7 +6,7 @@ public sealed record ModelCatalogRequest(ProjectPathsDto Paths);
 public sealed record ModelPrepareRequest(ProjectPathsDto Paths, string Id, string TransferId, string? Animation = null, ModelTextureChangeDto[]? TextureChanges = null, ModelAssetChangeDto[]? AssetChanges = null, int Resolution = 1);
 public sealed record ModelTextureColorDto(string From, string To, int Tolerance);
 public sealed record ModelTextureChangeDto(string Texture, string SourceHash, ModelTextureColorDto[] Changes);
-public sealed record ModelTexturesRequest(ProjectPathsDto Paths, string Id);
+public sealed record ModelTexturesRequest(ProjectPathsDto Paths, string Id, string? Texture = null, string? SourceHash = null, ModelTextureColorDto[]? Changes = null);
 public sealed record ModelTextureStageRequest(ProjectPathsDto Paths, string Id, ModelTextureChangeDto Change, EditSessionDto? Session);
 public sealed record ModelMaterialChangeDto(string Key, double[] Values, string? Text = null);
 public sealed record ModelAssetChangeDto(string Asset, string SourceHash, ModelMaterialChangeDto[] Changes, bool Restore = false);

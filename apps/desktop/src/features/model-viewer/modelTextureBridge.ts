@@ -32,6 +32,11 @@ const transport = (requestJson: string) => invoke<string>('project_bridge', { re
 export function loadModelTextures(paths: ProjectPaths, id: string) {
   return sendProjectBridgeRequest(transport, kmCommandNames.modelTextures, { paths, id }, modelTexturesSchema);
 }
+export function loadTextureImage(paths: ProjectPaths, id: string, texture: ModelTexture, changes: TextureRule[]) {
+  return sendProjectBridgeRequest(transport, kmCommandNames.modelTextures,
+    { paths, id, texture: texture.id, sourceHash: texture.sourceHash, changes },
+    z.object({ width: z.number().int().min(1).max(4096), height: z.number().int().min(1).max(4096), sourceHash: z.string(), pixels: z.string().max(90_000_000) }));
+}
 export function loadModelProperties(paths: ProjectPaths, id: string) {
   return sendProjectBridgeRequest(transport, kmCommandNames.modelProperties, { paths, id }, modelPropertiesSchema);
 }

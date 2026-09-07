@@ -143,6 +143,17 @@ impl Assets {
         }
         view
     }
+    pub fn edges(&mut self, device: &wgpu::Device, indices: &[u32]) -> wgpu::Buffer {
+        let edges: Vec<u32> = indices
+            .chunks_exact(3)
+            .flat_map(|t| [t[0], t[1], t[1], t[2], t[2], t[0]])
+            .collect();
+        self.buffer(
+            device,
+            bytemuck::cast_slice(&edges),
+            wgpu::BufferUsages::INDEX,
+        )
+    }
     pub fn meshes(
         &mut self,
         device: &wgpu::Device,
@@ -295,6 +306,7 @@ impl Assets {
                 entries: &entries,
             });
             meshes.push(Mesh {
+                edges: None,
                 vertices: self.buffer(
                     device,
                     bytemuck::cast_slice(&primitive.vertices),

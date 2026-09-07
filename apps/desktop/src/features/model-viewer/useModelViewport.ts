@@ -13,6 +13,9 @@ const infoSchema = z.object({
   adapter: z.string(), backend: z.literal('DX12'), selection: z.literal('Auto'),
   clips: z.array(z.string()).max(2048), clip: z.string().nullable(), duration: z.number().nonnegative(),
   looped: z.boolean(), warnings: z.array(z.string())
+  ,frameRate: z.number().int().positive().default(30), frames: z.number().int().positive().default(1),
+  parts: z.array(z.object({ id: z.number().int(), name: z.string(), material: z.string(), triangles: z.number().int() })).default([]),
+  textures: z.array(z.tuple([z.number(), z.number()])).default([]), textureBytes: z.number().default(0)
 });
 export function modelError(cause: unknown): string {
   if (cause instanceof ProjectBridgeError && cause.semanticCode) return cause.semanticCode;
@@ -21,7 +24,8 @@ export function modelError(cause: unknown): string {
   return 'KM-MODEL-UNSUPPORTED';
 }
 export type ModelBackground = { color: string; grid: boolean };
-export function useModelViewport(paths: ProjectPaths, id: string, animation: string | null, revision: number, covered: boolean, background: ModelBackground, textures: TextureChange[] = [], assets: AssetChange[] = [], light: ModelLight = defaultModelLight) {
+export type ModelViewOptions = { display: number; wireframe: boolean; hidden: number[]; selected: number | null; statistics?: boolean };
+export function useModelViewport(paths: ProjectPaths, id: string, animation: string | null, revision: number, covered: boolean, background: ModelBackground, textures: TextureChange[] = [], assets: AssetChange[] = [], light: ModelLight = defaultModelLight, options: ModelViewOptions = { display: 0, wireframe: false, hidden: [], selected: null }, onSelect?: (part: number | null) => void, onHistory?: (redo: boolean) => void) {
   const viewport = useRef<HTMLDivElement>(null);
   const session = useRef<string | null>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -30,6 +34,11 @@ export function useModelViewport(paths: ProjectPaths, id: string, animation: str
   const [error, setError] = useState<string | null>(null);
   const [position, setPosition] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [frameMs, setFrameMs] = useState(0);
+  const [stats, setStats] = useState({ fps: 0, yaw: .35, pitch: .15 });
+  const optionsRef = useRef(options); optionsRef.current = options;
+  const selectRef = useRef(onSelect); selectRef.current = onSelect;
+  const historyRef = useRef(onHistory); historyRef.current = onHistory;
   const coveredRef = useRef(covered); coveredRef.current = covered;
   const backgroundRef = useRef(background); backgroundRef.current = background;
   const lightRef = useRef(light); lightRef.current = light;
@@ -79,7 +88,7 @@ export function useModelViewport(paths: ProjectPaths, id: string, animation: str
         visible: !!rect && !document.hidden && !scrolling && unobstructed && right > left && bottom > top,
         background: [1, 3, 5].map(offset => parseInt(backgroundRef.current.color.slice(offset, offset + 2), 16)),
         grid: backgroundRef.current.grid,
-        light: lightRef.current
+        light: lightRef.current, ...optionsRef.current
       };
     };
     // Coalesce bounds while IPC is in flight so an older position cannot arrive last.
@@ -122,8 +131,14 @@ export function useModelViewport(paths: ProjectPaths, id: string, animation: str
     const mutations = new MutationObserver(update); mutations.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'hidden', 'open'] });
     window.addEventListener('resize', update); window.addEventListener('scroll', onScroll, true);
     document.addEventListener('visibilitychange', update);
-    const playback = listen<{ session: string; position: number; playing: boolean }>('model-preview-playback', event => {
-      if (live && event.payload.session === active) { setPosition(event.payload.position); setPlaying(event.payload.playing); }
+    const playback = listen<{ session: string; position: number; playing: boolean; frameMs?: number; stats?: { fps: number; yaw: number; pitch: number } }>('model-preview-playback', event => {
+      if (live && event.payload.session === active) { setPosition(event.payload.position); setPlaying(event.payload.playing); setFrameMs(event.payload.frameMs ?? 0); if (event.payload.stats) setStats(event.payload.stats); }
+    });
+    const selection = listen<{ session: string; part: number | null }>('model-preview-selection', event => {
+      if (live && event.payload.session === active) selectRef.current?.(event.payload.part);
+    });
+    const history = listen<{ session: string; redo: boolean }>('model-preview-history', event => {
+      if (live && event.payload.session === active) historyRef.current?.(event.payload.redo);
     });
     const status = listen<{ session: string; error: string | null; closed?: boolean }>('model-preview-status', event => {
       if (live && event.payload.session === active) {
@@ -159,6 +174,7 @@ export function useModelViewport(paths: ProjectPaths, id: string, animation: str
       document.removeEventListener('visibilitychange', update);
       void playback.then(unlisten => unlisten()).catch(() => {}); void status.then(unlisten => unlisten()).catch(() => {});
       void focus.then(unlisten => unlisten()).catch(() => {});
+      void selection.then(unlisten => unlisten()).catch(() => {}); void history.then(unlisten => unlisten()).catch(() => {});
       if (session.current === active) session.current = null;
       void invoke('model_preview_close', { session: active }).catch(() => {});
     };
@@ -179,7 +195,12 @@ export function useModelViewport(paths: ProjectPaths, id: string, animation: str
     })();
     return () => { live = false; };
   }, [textureKey, info, pathKey, id, animation, resolution]);
-  useEffect(() => { sync.current(); }, [covered, background.color, background.grid, light]);
+  const optionsKey = JSON.stringify(options);
+  useEffect(() => { sync.current(); }, [covered, background.color, background.grid, light, optionsKey]);
+  async function inspect(part: number) {
+    return z.object({ vertices: z.array(z.tuple([z.number(), z.number()])), indices: z.array(z.number().int()) })
+      .parse(await invoke('model_preview_inspect', { session: session.current, part }));
+  }
   async function camera(action: string) { if (session.current) await invoke('model_preview_camera', { session: session.current, action }); }
   async function playback(action: string, value = 0) {
     if (!session.current) return;
@@ -188,5 +209,5 @@ export function useModelViewport(paths: ProjectPaths, id: string, animation: str
     if (action === 'play' || action === 'restart') setPlaying(true);
     if (action === 'pause') setPlaying(false);
   }
-  return { viewport, info, loading, error, position, playing, camera, playback };
+  return { viewport, info, loading, error, position, playing, frameMs, stats, camera, playback, inspect };
 }
