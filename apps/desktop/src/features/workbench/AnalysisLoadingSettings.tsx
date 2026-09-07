@@ -36,9 +36,8 @@ export function AnalysisLoadingSettings({
             <button
               aria-checked={isSelected}
               className={`analysis-loading-option${isSelected ? ' is-selected' : ''}`}
-              disabled={isSelected}
               key={option}
-              onClick={() => onChange(option)}
+              onClick={() => { if (!isSelected) onChange(option); }}
               role="radio"
               type="button"
             >

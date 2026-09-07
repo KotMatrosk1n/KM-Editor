@@ -58869,9 +58869,9 @@ function SettingsSection({
                 <button
                   aria-checked={isSelected}
                   className={`sv-cache-mode-option${isSelected ? ' sv-cache-mode-option-selected' : ''}`}
-                  disabled={isCacheControlBusy || svCacheStatus === null || isSelected}
+                  disabled={isCacheControlBusy || svCacheStatus === null}
                   key={option.id}
-                  onClick={() => onChangeSvCacheMode(option.id)}
+                  onClick={() => { if (!isSelected) onChangeSvCacheMode(option.id); }}
                   role="radio"
                   type="button"
                 >

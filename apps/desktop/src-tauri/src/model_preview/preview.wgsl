@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-struct Camera { view_projection: mat4x4<f32>, eye: vec4<f32>, light: vec4<f32> };
+struct Camera { view_projection: mat4x4<f32>, eye: vec4<f32>, light: vec4<f32>, environment: vec4<f32> };
 struct Material { color: vec4<f32>, layers: array<vec4<f32>, 4>, uv: vec4<f32>, wrap: vec4<f32>, texture_scale: vec4<f32>, mask_uv: vec4<f32>, highlight_color: vec4<f32>, highlight_uv: vec4<f32>, highlight_scale: vec4<f32>, underlay_uv: vec4<f32>, underlay_wrap: vec4<f32>, underlay_scale: vec4<f32>, mask_channels: vec4<f32>, surface: array<vec4<f32>, 41>, map_wrap: array<vec4<f32>, 12>, map_scale: array<vec4<f32>, 12>, flags: vec4<f32> };
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(0) @binding(1) var<storage, read> joints: array<mat4x4<f32>>;
@@ -29,9 +29,11 @@ struct VertexOutput {
     @location(3) skin_x: vec3<f32>,
     @location(4) skin_y: vec3<f32>,
     @location(5) skin_z: vec3<f32>,
+    @location(6) @interpolate(flat) selected: u32,
 };
 fn vertex_data(position: vec3<f32>, normal: vec3<f32>, uv: vec2<f32>, indices: vec4<f32>, weights: vec4<f32>) -> VertexOutput {
     var output: VertexOutput;
+    output.selected = 0u;
     var point = vec4<f32>(position, 1.0);
     var n = normal;
     output.skin_x = vec3<f32>(1.0, 0.0, 0.0);
@@ -54,8 +56,9 @@ fn vertex_data(position: vec3<f32>, normal: vec3<f32>, uv: vec2<f32>, indices: v
 @vertex fn vs_main(@location(0) position: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) uv: vec2<f32>, @location(3) indices: vec4<f32>, @location(4) weights: vec4<f32>) -> VertexOutput {
     return vertex_data(position, normal, uv, indices, weights);
 }
-@vertex fn vs_wire(@location(0) position: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) uv: vec2<f32>, @location(3) indices: vec4<f32>, @location(4) weights: vec4<f32>) -> VertexOutput {
+@vertex fn vs_wire(@location(0) position: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) uv: vec2<f32>, @location(3) indices: vec4<f32>, @location(4) weights: vec4<f32>, @builtin(instance_index) selected: u32) -> VertexOutput {
     var output = vertex_data(position, normal, uv, indices, weights);
+    output.selected = selected;
     output.position.z -= output.position.w * .00005;
     return output;
 }
@@ -93,6 +96,19 @@ fn mapped_normal(sample: vec3<f32>, two_channel: f32, strength: f32) -> vec3<f32
 fn hue_rotate(rgb: vec3<f32>, degrees: f32) -> vec3<f32> {
     let axis = normalize(vec3<f32>(1.0)); let a = radians(degrees);
     return max(vec3<f32>(0.0), rgb * cos(a) + cross(axis, rgb) * sin(a) + axis * dot(axis, rgb) * (1.0 - cos(a)));
+}
+// Neutral outdoor approximation: a broad key, sky/ground fill and a soft edge highlight.
+// Material colors and maps remain authored inputs; this does not bake lighting into textures.
+fn game_fill(n: vec3<f32>) -> vec3<f32> {
+    return mix(vec3<f32>(.30, .28, .25), vec3<f32>(.48, .53, .59), n.y * .5 + .5);
+}
+fn game_key(nl: f32) -> f32 { return .64 * smoothstep(-.18, .28, nl); }
+fn game_rim(nv: f32, nl: f32) -> vec3<f32> {
+    return vec3<f32>(.15, .18, .20) * pow(1.0 - nv, 3.5) * smoothstep(-.25, .6, nl);
+}
+fn game_highlight(value: vec3<f32>) -> vec3<f32> {
+    let peak = max(max(value.r, value.g), value.b);
+    return value / (1.0 + peak / .22);
 }
 @fragment fn fs_main(input: VertexOutput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     // Source tiles share a material texture; animated offsets apply within that tile.
@@ -137,8 +153,9 @@ fn hue_rotate(rgb: vec3<f32>, degrees: f32) -> vec3<f32> {
     let cutout = textureSample(discard_mask, base_sampler, map_uv(uv, 11u, textureDimensions(discard_mask)));
     let to_light = camera.light.xyz - input.world;
     let light_distance_squared = max(dot(to_light, to_light), 0.000001);
-    let l = to_light * inverseSqrt(light_distance_squared);
-    let light_energy = camera.light.w / light_distance_squared;
+    let in_game = camera.environment.x > 0.0;
+    let l = select(to_light * inverseSqrt(light_distance_squared), normalize(vec3<f32>(-.5, .75, .45)), in_game);
+    let light_energy = select(camera.light.w / light_distance_squared, 1.0, in_game);
     if material.flags.x > 0.0 {
         if material.map_scale[0].z > 0.0 {
             var mapped = mapped_normal(normal_texel.rgb, material.map_scale[0].w, material.surface[0].z);
@@ -179,8 +196,10 @@ fn hue_rotate(rgb: vec3<f32>, degrees: f32) -> vec3<f32> {
         rgb = mix(rgb, hue_rotate(rgb, material.surface[27].z), dark * hue_weight);
         let shade = clamp((nl + material.surface[3].z + material.surface[25].x) * material.surface[3].y * material.surface[27].w * (1.0 + material.surface[25].y), 0.0, 1.0);
         let occlusion = clamp(1.0 - (1.0 - ao) * material.surface[1].y, 0.0, 1.0);
-        let direct = max(nl, 0.0) * light_energy;
-        let light = mix(vec3<f32>(1.0), mix(shadow_color, vec3<f32>(1.0), shade), clamp(material.surface[3].x, 0.0, 1.0)) * direct * occlusion * max(material.surface[31].z, 0.0);
+        let direct = select(max(nl, 0.0) * light_energy, game_key(nl), in_game);
+        let fill = select(vec3<f32>(0.0), game_fill(n), in_game);
+        let illumination = fill + vec3<f32>(direct);
+        let light = mix(vec3<f32>(1.0), mix(shadow_color, vec3<f32>(1.0), shade), clamp(material.surface[3].x, 0.0, 1.0)) * illumination * occlusion * max(material.surface[31].z, 0.0);
         let exponent = clamp((2.0 / max(roughness * roughness, 0.0001) - 2.0) * max(material.surface[2].w / 32.0, .01), 1.0, 2048.0);
         let shine = pow(clamp(dot(n, h) + specular.y, 0.0, 1.0), exponent * max(1.0 + specular.z, 0.01));
         let f0 = mix(material.surface[7].rgb * max(material.surface[10].w, 0.0), rgb, clamp(metallic, 0.0, 1.0));
@@ -191,8 +210,9 @@ fn hue_rotate(rgb: vec3<f32>, degrees: f32) -> vec3<f32> {
         let highlight_reflection = highlight.r * mix(vec3<f32>(.04), rgb, clamp(material.surface[29].z, 0.0, 1.0)) * pow(max(dot(n, h), 0.0), clamp(2.0 / max(material.surface[29].w * material.surface[29].w, .0001), 1.0, 2048.0));
         let subsurface = material.surface[30].rgb * max(-nl, 0.0) * light_energy * clamp(subsurface_weight * material.surface[31].x + material.surface[31].y, 0.0, 1.0);
         let eyelid_color = mix(vec3<f32>(1.0), material.surface[39].rgb, clamp(eyelid * material.map_scale[10].z, 0.0, 1.0));
-        let shaded = rgb * light * eyelid_color + (reflection + rim_color + coat + highlight_reflection) * direct + subsurface;
-        let lit = mix(rgb * direct, shaded, clamp(material.surface[31].w, 0.0, 1.0));
+        let accents = (reflection + rim_color + coat + highlight_reflection) * direct;
+        let shaded = rgb * light * eyelid_color + select(accents, game_highlight(accents), in_game) + subsurface;
+        let lit = mix(rgb * illumination, shaded, clamp(material.surface[31].w, 0.0, 1.0)) + select(vec3<f32>(0.0), game_rim(nv, nl) * occlusion, in_game);
         let albedo = rgb;
         rgb = lit + emission_color + highlight.r * material.highlight_color.rgb;
         if material.surface[39].w > 0.0 {
@@ -213,8 +233,11 @@ fn hue_rotate(rgb: vec3<f32>, degrees: f32) -> vec3<f32> {
         return vec4<f32>(inspected, base.a);
     }
     if base.a < 0.01 { discard; }
-    let light = light_energy * max(dot(select(-n, n, front), l), 0.0);
-    var inspected = rgb * light + highlight.r * material.highlight_color.rgb;
+    n = select(-n, n, front);
+    let nl = dot(n, l);
+    let nv = clamp(dot(n, normalize(camera.eye.xyz - input.world)), 0.0, 1.0);
+    let light = select(vec3<f32>(light_energy * max(nl, 0.0)), game_fill(n) + vec3<f32>(game_key(nl)), in_game);
+    var inspected = rgb * light + highlight.r * material.highlight_color.rgb + select(vec3<f32>(0.0), game_rim(nv, nl), in_game);
     switch u32(camera.eye.w) {
         case 1u: { inspected = rgb; }
         case 2u: { inspected = n*.5 + .5; }
@@ -226,4 +249,7 @@ fn hue_rotate(rgb: vec3<f32>, degrees: f32) -> vec3<f32> {
     }
     return vec4<f32>(inspected, base.a);
 }
-@fragment fn fs_wire() -> @location(0) vec4<f32> { return vec4<f32>(1.0, .68, .12, 1.0); }
+@fragment fn fs_wire(input: VertexOutput) -> @location(0) vec4<f32> {
+    // Linear values for soft blue #78A9D4 and selected amber #E2AD68.
+    return vec4<f32>(select(vec3<f32>(.188, .397, .658), vec3<f32>(.761, .418, .138), input.selected != 0u), 1.0);
+}
