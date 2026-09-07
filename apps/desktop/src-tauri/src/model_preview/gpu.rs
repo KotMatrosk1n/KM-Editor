@@ -16,6 +16,7 @@ pub(super) struct Mesh {
     pub(super) blend: bool,
     pub(super) colors: wgpu::Buffer,
     pub(super) values: Vec<f32>,
+    pub(super) edges: Option<wgpu::Buffer>,
 }
 pub struct Renderer {
     // The surface owns a window reference; it must be dropped before the window.
@@ -26,6 +27,19 @@ pub struct Renderer {
     config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
     blend_pipeline: wgpu::RenderPipeline,
+    wire_pipeline: wgpu::RenderPipeline,
+    pub inspection: super::inspection::Inspection,
+    display: u32,
+    wireframe: bool,
+    hidden: Vec<usize>,
+    selected: Option<usize>,
+    orthographic: bool,
+    range_start: f32,
+    range_end: f32,
+    pub frame_ms: f32,
+    pub statistics: bool,
+    samples: u32,
+    measured: std::time::Instant,
     background: super::background::Background,
     background_color: [u8; 3],
     grid: bool,
@@ -67,7 +81,7 @@ impl Renderer {
         self.light = previous.light;
     }
 
-    pub async fn new(window: Arc<Window>, scene: Scene) -> Result<Self, String> {
+    pub async fn new(window: Arc<Window>, mut scene: Scene) -> Result<Self, String> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::DX12,
             ..Default::default()
@@ -225,22 +239,24 @@ impl Renderer {
             bind_group_layouts: &[&camera_layout, &material_layout],
             push_constant_ranges: &[],
         });
-        let create_pipeline = |blend: bool| {
+        let create_pipeline = |blend: bool, wire: bool| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Static model"), layout: Some(&layout),
-            vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_main"), compilation_options: Default::default(),
+            vertex: wgpu::VertexState { module: &shader, entry_point: Some(if wire { "vs_wire" } else { "vs_main" }), compilation_options: Default::default(),
                 buffers: &[wgpu::VertexBufferLayout { array_stride: 64, step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32x4, 4 => Float32x4] }] },
-            fragment: Some(wgpu::FragmentState { module: &shader, entry_point: Some("fs_main"), compilation_options: Default::default(),
+            fragment: Some(wgpu::FragmentState { module: &shader, entry_point: Some(if wire { "fs_wire" } else { "fs_main" }), compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState { format: config.format, blend: if blend { Some(wgpu::BlendState::ALPHA_BLENDING) } else { None }, write_mask: wgpu::ColorWrites::ALL })] }),
-            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
-            depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth32Float, depth_write_enabled: !blend,
-                depth_compare: wgpu::CompareFunction::LessEqual, stencil: Default::default(), bias: Default::default() }),
+            primitive: wgpu::PrimitiveState { topology: if wire { wgpu::PrimitiveTopology::LineList } else { wgpu::PrimitiveTopology::TriangleList }, cull_mode: None, ..Default::default() },
+            depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth32Float, depth_write_enabled: !blend && !wire,
+                depth_compare: wgpu::CompareFunction::LessEqual, stencil: Default::default(), bias: wgpu::DepthBiasState { constant: if wire { -2 } else { 0 }, ..Default::default() } }),
             multisample: Default::default(), multiview: None, cache: None
         })
         };
-        let pipeline = create_pipeline(false);
-        let blend_pipeline = create_pipeline(true);
+        let pipeline = create_pipeline(false, false);
+        let blend_pipeline = create_pipeline(true, false);
+        let wire_pipeline = create_pipeline(false, true);
+        let inspection = super::inspection::Inspection::take(&mut scene);
         let background = super::background::Background::new(&device, config.format);
         let mut result = Self {
             surface,
@@ -250,6 +266,19 @@ impl Renderer {
             config,
             pipeline,
             blend_pipeline,
+            wire_pipeline,
+            inspection,
+            display: 0,
+            wireframe: false,
+            hidden: vec![],
+            selected: None,
+            orthographic: false,
+            range_start: 0.0,
+            range_end: f32::MAX,
+            frame_ms: 0.0,
+            statistics: false,
+            samples: 0,
+            measured: std::time::Instant::now(),
             background,
             background_color: super::default_background(),
             grid: false,
@@ -281,16 +310,19 @@ impl Renderer {
         result.reset();
         Ok(result)
     }
-    pub fn replace(&mut self, scene: Scene) {
+    pub fn replace(&mut self, mut scene: Scene) {
         let clip_changed =
             self.rig.clip.as_ref().map(|c| &c.id) != scene.rig.clip.as_ref().map(|c| &c.id);
         let meshes = self.assets.meshes(&self.device, &self.queue, &scene);
         self.meshes = meshes;
+        self.inspection = super::inspection::Inspection::take(&mut scene);
         self.rig = scene.rig;
         self.center = scene.center;
         self.radius = scene.radius;
         self.floor = scene.floor;
         if clip_changed {
+            self.range_start = 0.0;
+            self.range_end = f32::MAX;
             self.position = 0.0;
             self.playing = false;
             self.looping = self.rig.clip.as_ref().is_some_and(|c| c.r#loop);
@@ -349,6 +381,11 @@ impl Renderer {
         self.background_color = viewport.background;
         self.grid = viewport.grid;
         self.light = viewport.light;
+        self.display = viewport.display;
+        self.wireframe = viewport.wireframe;
+        self.hidden = viewport.hidden;
+        self.selected = viewport.selected;
+        self.statistics = viewport.statistics;
         let was_hidden = self.minimized;
         if !visible {
             self.window.set_visible(false);
@@ -409,10 +446,11 @@ impl Renderer {
         let visible = !self.minimized && self.parent_visible();
         if self.playing && visible {
             self.position += elapsed * self.speed;
-            let duration = self.duration();
+            let duration = self.range_end.min(self.duration());
             if self.position >= duration {
-                if self.looping && duration > 0.0 {
-                    self.position %= duration;
+                if self.looping && duration > self.range_start {
+                    self.position = self.range_start
+                        + (self.position - self.range_start) % (duration - self.range_start);
                 } else {
                     self.position = duration;
                     self.playing = false;
@@ -438,19 +476,33 @@ impl Renderer {
     pub fn playback(&mut self, action: &str, value: f32) {
         match action {
             "play" => {
-                if self.position >= self.duration() {
-                    self.position = 0.0;
+                if self.position >= self.range_end.min(self.duration())
+                    || self.position < self.range_start
+                {
+                    self.position = self.range_start;
                 }
                 self.playing = self.rig.clip.is_some();
             }
             "pause" => self.playing = false,
             "restart" => {
-                self.position = 0.0;
+                self.position = self.range_start;
                 self.playing = self.rig.clip.is_some();
             }
             "seek" => self.position = value.clamp(0.0, self.duration()),
             "speed" => self.speed = value.clamp(0.1, 4.0),
             "loop" => self.looping = value != 0.0,
+            "previousFrame" | "nextFrame" => {
+                let rate = self.rig.clip.as_ref().map(|c| c.rate).unwrap_or(30) as f32;
+                self.position = ((self.position * rate).round()
+                    + if action == "nextFrame" { 1.0 } else { -1.0 })
+                .clamp(0.0, self.duration() * rate)
+                    / rate;
+                self.playing = false;
+            }
+            "rangeStart" => {
+                self.range_start = value.clamp(0.0, self.range_end.min(self.duration()))
+            }
+            "rangeEnd" => self.range_end = value.clamp(self.range_start, self.duration()),
             _ => {}
         }
         self.tick = std::time::Instant::now();
@@ -482,6 +534,7 @@ impl Renderer {
         self.window.request_redraw();
     }
     pub fn render(&mut self) -> Result<(), String> {
+        let started = std::time::Instant::now();
         if self.failed.load(Ordering::Acquire) {
             return Err("KM-MODEL-GPU-UNAVAILABLE".into());
         }
@@ -490,6 +543,17 @@ impl Renderer {
         }
         let frame_position =
             self.position * self.rig.clip.as_ref().map(|c| c.rate).unwrap_or(1) as f32;
+        for (i, mesh) in self.meshes.iter_mut().enumerate() {
+            if (self.wireframe || self.selected == Some(i))
+                && mesh.edges.is_none()
+                && !self.hidden.contains(&i)
+            {
+                mesh.edges = Some(
+                    self.assets
+                        .edges(&self.device, &self.inspection.geometry[i].indices),
+                );
+            }
+        }
         self.queue.write_buffer(
             &self.joints,
             0,
@@ -514,22 +578,9 @@ impl Renderer {
             }
             Err(_) => return Err("KM-MODEL-GPU-UNAVAILABLE".into()),
         };
-        let target = self.center + self.pan;
-        let direction = Vec3::new(
-            self.yaw.sin() * self.pitch.cos(),
-            self.pitch.sin(),
-            self.yaw.cos() * self.pitch.cos(),
-        );
-        let view = Mat4::look_at_rh(target + direction * self.distance, target, Vec3::Y);
-        let projection = Mat4::perspective_rh(
-            45_f32.to_radians(),
-            self.config.width as f32 / self.config.height as f32,
-            self.radius * 0.005,
-            self.radius * 100.0,
-        );
-        let mut camera_values = (projection * view).to_cols_array().to_vec();
-        camera_values
-            .extend_from_slice(&(target + direction * self.distance).extend(1.0).to_array());
+        let (view_projection, eye) = self.view_projection();
+        let mut camera_values = view_projection.to_cols_array().to_vec();
+        camera_values.extend_from_slice(&eye.extend(self.display as f32).to_array());
         let azimuth = self.light[0].to_radians();
         let elevation = self.light[1].to_radians();
         let light_direction = Vec3::new(
@@ -547,7 +598,7 @@ impl Renderer {
             .write_buffer(&self.camera, 0, bytemuck::cast_slice(&camera_values));
         self.background.update(
             &self.queue,
-            projection * view,
+            view_projection,
             Vec3::new(self.center.x, self.floor + self.radius, self.center.z),
             self.radius,
             self.background_color,
@@ -597,7 +648,7 @@ impl Renderer {
                     .enumerate()
                     .filter(|(_, mesh)| mesh.blend == blend)
                 {
-                    if !self.rig.visible(i, frame_position) {
+                    if self.hidden.contains(&i) || !self.rig.visible(i, frame_position) {
                         continue;
                     }
                     pass.set_bind_group(1, &mesh.material, &[]);
@@ -606,10 +657,121 @@ impl Renderer {
                     pass.draw_indexed(0..mesh.count, 0, 0..1);
                 }
             }
+            pass.set_pipeline(&self.wire_pipeline);
+            for (i, mesh) in self.meshes.iter().enumerate() {
+                if (self.wireframe || self.selected == Some(i))
+                    && !self.hidden.contains(&i)
+                    && self.rig.visible(i, frame_position)
+                {
+                    pass.set_bind_group(1, &mesh.material, &[]);
+                    pass.set_vertex_buffer(0, mesh.vertices.slice(..));
+                    let Some(edges) = &mesh.edges else {
+                        continue;
+                    };
+                    pass.set_index_buffer(edges.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..mesh.count * 2, 0, 0..1);
+                }
+            }
         }
         self.queue.submit(Some(encoder.finish()));
         frame.present();
+        self.samples += 1;
+        self.frame_ms = started.elapsed().as_secs_f32() * 1000.0;
         Ok(())
+    }
+    fn view_projection(&self) -> (Mat4, Vec3) {
+        let target = self.center + self.pan;
+        let direction = Vec3::new(
+            self.yaw.sin() * self.pitch.cos(),
+            self.pitch.sin(),
+            self.yaw.cos() * self.pitch.cos(),
+        );
+        let eye = target + direction * self.distance;
+        let up = if self.pitch.cos().abs() < 0.001 {
+            Vec3::new(0.0, 0.0, -self.pitch.signum())
+        } else {
+            Vec3::Y
+        };
+        let view = Mat4::look_at_rh(eye, target, up);
+        let aspect = self.config.width as f32 / self.config.height.max(1) as f32;
+        let size = self.distance * 22.5_f32.to_radians().tan();
+        let projection = if self.orthographic {
+            Mat4::orthographic_rh(
+                -size * aspect,
+                size * aspect,
+                -size,
+                size,
+                self.radius * 0.005,
+                self.radius * 100.0,
+            )
+        } else {
+            Mat4::perspective_rh(
+                45_f32.to_radians(),
+                aspect,
+                self.radius * 0.005,
+                self.radius * 100.0,
+            )
+        };
+        (projection * view, eye)
+    }
+    pub fn stats(&mut self) -> serde_json::Value {
+        let elapsed = self.measured.elapsed().as_secs_f32().max(0.001);
+        let fps = self.samples as f32 / elapsed;
+        self.samples = 0;
+        self.measured = std::time::Instant::now();
+        serde_json::json!({"fps": fps, "yaw": self.yaw, "pitch": self.pitch})
+    }
+    pub fn viewpoint(&mut self, action: &str) {
+        use std::f32::consts::{FRAC_PI_2, PI};
+        match action {
+            "front" => {
+                self.yaw = 0.0;
+                self.pitch = 0.0;
+            }
+            "back" => {
+                self.yaw = PI;
+                self.pitch = 0.0;
+            }
+            "sideLeft" => {
+                self.yaw = -FRAC_PI_2;
+                self.pitch = 0.0;
+            }
+            "sideRight" => {
+                self.yaw = FRAC_PI_2;
+                self.pitch = 0.0;
+            }
+            "top" => {
+                self.pitch = FRAC_PI_2;
+                self.yaw = 0.0;
+            }
+            "bottom" => {
+                self.pitch = -FRAC_PI_2;
+                self.yaw = 0.0;
+            }
+            "orthographic" => self.orthographic = true,
+            "perspective" => self.orthographic = false,
+            _ => return,
+        }
+        self.window.request_redraw();
+    }
+    pub fn pick(&mut self, x: f32, y: f32) -> Option<usize> {
+        let inverse = self.view_projection().0.inverse();
+        let screen = glam::Vec2::new(
+            x / self.config.width as f32 * 2.0 - 1.0,
+            1.0 - y / self.config.height as f32 * 2.0,
+        );
+        let near = inverse.project_point3(screen.extend(0.0));
+        let far = inverse.project_point3(screen.extend(1.0));
+        let frame = self.position * self.rig.clip.as_ref().map(|c| c.rate).unwrap_or(1) as f32;
+        self.selected = self.inspection.pick(
+            &self.rig,
+            frame,
+            near,
+            (far - near).normalize(),
+            &self.hidden,
+        );
+        self.window.request_redraw();
+        self.selected
     }
 }
 #[link(name = "user32")]

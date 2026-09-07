@@ -30,7 +30,7 @@ struct VertexOutput {
     @location(4) skin_y: vec3<f32>,
     @location(5) skin_z: vec3<f32>,
 };
-@vertex fn vs_main(@location(0) position: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) uv: vec2<f32>, @location(3) indices: vec4<f32>, @location(4) weights: vec4<f32>) -> VertexOutput {
+fn vertex_data(position: vec3<f32>, normal: vec3<f32>, uv: vec2<f32>, indices: vec4<f32>, weights: vec4<f32>) -> VertexOutput {
     var output: VertexOutput;
     var point = vec4<f32>(position, 1.0);
     var n = normal;
@@ -49,6 +49,14 @@ struct VertexOutput {
     output.normal = n;
     output.uv = uv;
     output.world = point.xyz;
+    return output;
+}
+@vertex fn vs_main(@location(0) position: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) uv: vec2<f32>, @location(3) indices: vec4<f32>, @location(4) weights: vec4<f32>) -> VertexOutput {
+    return vertex_data(position, normal, uv, indices, weights);
+}
+@vertex fn vs_wire(@location(0) position: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) uv: vec2<f32>, @location(3) indices: vec4<f32>, @location(4) weights: vec4<f32>) -> VertexOutput {
+    var output = vertex_data(position, normal, uv, indices, weights);
+    output.position.z -= output.position.w * .00005;
     return output;
 }
 fn address(value: f32, mode: f32) -> f32 {
@@ -192,9 +200,30 @@ fn hue_rotate(rgb: vec3<f32>, degrees: f32) -> vec3<f32> {
             rgb = lit * (vec3<f32>(1.0) - clamp(emission_weight, vec3<f32>(0.0), vec3<f32>(1.0))) + albedo * emission_weight;
         }
         if base.a < max(.001, material.surface[1].w) || any(cutout < material.surface[40]) { discard; }
-        return vec4<f32>(rgb, base.a);
+        var inspected = rgb;
+        switch u32(camera.eye.w) {
+            case 1u: { inspected = albedo; }
+            case 2u: { inspected = n * .5 + .5; }
+            case 3u: { inspected = vec3<f32>(roughness); }
+            case 4u: { inspected = vec3<f32>(metallic); }
+            case 5u: { inspected = vec3<f32>(occlusion); }
+            case 6u: { inspected = mask.rgb; }
+            default: {}
+        }
+        return vec4<f32>(inspected, base.a);
     }
     if base.a < 0.01 { discard; }
     let light = light_energy * max(dot(select(-n, n, front), l), 0.0);
-    return vec4<f32>(rgb * light + highlight.r * material.highlight_color.rgb, base.a);
+    var inspected = rgb * light + highlight.r * material.highlight_color.rgb;
+    switch u32(camera.eye.w) {
+        case 1u: { inspected = rgb; }
+        case 2u: { inspected = n*.5 + .5; }
+        case 3u: { inspected = rough_texel.rgb; }
+        case 4u: { inspected = vec3<f32>(0.0); }
+        case 5u: { inspected = occlusion_texel.rgb; }
+        case 6u: { inspected = mask.rgb; }
+        default: {}
+    }
+    return vec4<f32>(inspected, base.a);
 }
+@fragment fn fs_wire() -> @location(0) vec4<f32> { return vec4<f32>(1.0, .68, .12, 1.0); }

@@ -5,6 +5,7 @@ import { useLocalization } from '../../localization';
 import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditorDiagnostics';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { ViewerColorPicker } from './ViewerColorPicker';
+import { useModelDraft, useModelHistory } from './ModelEditHistory';
 import { loadModelProperties, stagedAssetChanges, type AssetChange, type MaterialField, type ModelProperties } from './modelTextureBridge';
 
 type Draft = { values: string[]; text: string | null };
@@ -12,12 +13,14 @@ type Props = {
   paths: ProjectPaths; model: string; session: EditSession | null; disabled: boolean;
   onDirtyChange: (dirty: boolean) => void; onPreview: (changes: AssetChange[]) => void;
   onStage: (model: string, change: AssetChange | null, restore?: boolean) => Promise<boolean>;
+  selectedMaterial?: string;
 };
-export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyChange, onPreview, onStage }: Props) {
+export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyChange, onPreview, onStage, selectedMaterial }: Props) {
   const { t } = useLocalization();
   const [properties, setProperties] = useState<ModelProperties | null>(null);
   const [selection, setSelection] = useState(''); const [search, setSearch] = useState('');
-  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [drafts, editDrafts, setDrafts] = useModelDraft<Record<string, Draft>>({}, 'material');
+  const history = useModelHistory();
   const [busy, setBusy] = useState(false); const [error, setError] = useState(false);
   const pathKey = JSON.stringify(paths);
   useEffect(() => {
@@ -27,6 +30,10 @@ export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyCh
     }).catch(() => { if (live) setError(true); });
     return () => { live = false; };
   }, [pathKey, model]);
+  useEffect(() => {
+    const match = properties?.materials.find(a => a.fields.some(f => f.material === selectedMaterial));
+    if (match) { setSelection(`${match.id}|${selectedMaterial}`); setSearch(''); }
+  }, [selectedMaterial, properties]);
   const staged = useMemo(() => stagedAssetChanges(session, model), [session, model]);
   const asset = properties?.materials.find(a => selection.startsWith(a.id + '|'));
   const material = asset ? selection.slice(asset.id.length + 1) : '';
@@ -56,27 +63,27 @@ export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyCh
   usePublishCommonEditorDiagnostics(error ? [{ code: 'KM-MODEL-ASSET-EDIT-INVALID', domain: 'workflow.modelTextures', severity: 'error', message: t('modelEditor.error') }] : []);
   const edit = (field: MaterialField, value: Draft) => {
     if (!asset) return;
-    setDrafts(previous => { const result = { ...previous }; const id = key(asset.id, field);
+    editDrafts(previous => { const result = { ...previous }; const id = key(asset.id, field);
       if (JSON.stringify(value) === JSON.stringify(baseline(asset.id, field))) delete result[id]; else result[id] = value;
       return result;
-    });
+    }, field.name, `${asset.id}|${field.key}`);
   };
   const save = async () => {
-    if (!asset || invalid) return; setBusy(true); setError(false);
+    if (!asset || invalid) return; setBusy(true); setError(false); history?.lock(true);
     try {
-      if (await onStage(model, changes.find(c => c.asset === asset.id) ?? { asset: asset.id, sourceHash: asset.sourceHash, changes: [] }))
-        setDrafts(previous => Object.fromEntries(Object.entries(previous).filter(([id]) => !id.startsWith(asset.id + '|'))));
+      if (await onStage(model, changes.find(c => c.asset === asset.id) ?? { asset: asset.id, sourceHash: asset.sourceHash, changes: [] })) {
+        setDrafts(Object.fromEntries(Object.entries(drafts).filter(([id]) => !id.startsWith(asset.id + '|')))); history?.clear();
+      }
       else setError(true);
-    } catch { setError(true); } finally { setBusy(false); }
+    } catch { setError(true); } finally { setBusy(false); history?.lock(false); }
   };
   const fields = asset?.fields.filter(f => f.material === material && `${f.name} ${f.group}`.toLowerCase().includes(search.toLowerCase())) ?? [];
   return <section className="model-materials" aria-labelledby="model-materials-title" aria-busy={busy || !properties}>
     <h3 id="model-materials-title">{t('modelEditor.materials')}</h3>
-    <p>{t('modelEditor.materialHelp')}</p>
+    <details className="model-workspace__help"><summary>{t('modelWorkspace.help')}</summary><p>{t('modelEditor.materialHelp')}</p><p>{t('modelEditor.studioPreview')}</p></details>
     {error ? <p role="alert">{t('modelEditor.error')}</p> : null}
     {!properties && !error ? <p role="status">{t('modelViewer.loading')}</p> : null}
     {properties ? <>
-      <p>{t('modelEditor.studioPreview')}</p>
       <label htmlFor="model-material-select">{t('modelEditor.material')}</label>
       <SearchableOptionInput id="model-material-select" ariaLabel={t('modelEditor.material')} value={selection} disabled={busy || disabled}
         isFiniteCatalog localizeOptions={false} onChange={setSelection} options={properties.materials.flatMap(a => [...new Set(a.fields.map(f => f.material))].map(name => ({ value: `${a.id}|${name}`, label: `${name} (${a.id.split('/').at(-1)})` })))} />
@@ -88,7 +95,9 @@ export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyCh
           {fields.filter(f => f.group === group).map(field => {
             const value = current(asset!.id, field);
             const selectedRestore = staged.some(a => a.asset === asset?.id && a.restore);
-            return <fieldset key={field.key} className="model-materials__field" disabled={!field.editable || selectedRestore}>
+            const original = { values: field.values.map(String), text: field.text };
+            const changed = JSON.stringify(value) !== JSON.stringify(original);
+            return <fieldset key={field.key} className={`model-materials__field${changed ? ' model-materials__field--changed' : ''}`} disabled={!field.editable || selectedRestore}>
               <legend data-localization-ignore="true">{field.name}</legend>
               {field.options.length ? <SearchableOptionInput id={`model-property-${field.key}`} ariaLabel={field.name}
                 disabled={!field.editable || selectedRestore || busy || disabled} isFiniteCatalog localizeOptions={false}
@@ -104,6 +113,8 @@ export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyCh
                     { values: value.values.map((old, at) => at === index ? event.target.value : old), text: null })} />
                 </label>)}</div>
               </>}
+              {field.editable ? <div className="model-materials__reset"><small>{t('modelWorkspace.originalValue')} <span data-localization-ignore="true">{field.text ?? field.values.join(', ')}</span></small>
+                <button type="button" disabled={!changed} onClick={() => edit(field, original)}>{t('modelWorkspace.resetProperty')}</button></div> : null}
               {!field.editable ? <small>{t('modelEditor.readOnly')}</small> : !field.previewed ? <small>{t('modelEditor.gameOnly')}</small> : null}
             </fieldset>;
           })}
@@ -112,7 +123,7 @@ export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyCh
       {invalid ? <p role="alert">{t('modelEditor.invalid')}</p> : null}
       <div className="model-viewer__toolbar">
         <button type="button" disabled={busy || disabled || invalid || !asset || !Object.keys(drafts).some(k => k.startsWith(asset.id + '|'))} onClick={() => void save()}>{t('modelEditor.stageMaterial')}</button>
-        <button type="button" disabled={busy || disabled || !dirty} onClick={() => setDrafts({})}>{t('modelViewer.texture.discard')}</button>
+        <button type="button" disabled={busy || disabled || !dirty} onClick={() => editDrafts({}, t('modelViewer.texture.discard'), 'discard-materials')}>{t('modelViewer.texture.discard')}</button>
       </div>
       <details><summary>{t('modelEditor.assets', { count: properties.assets.length })}</summary>
         <ul className="model-materials__assets">{properties.assets.map(a => <li key={a.id} data-localization-ignore="true" title={a.id}>{a.id.split('/').at(-1)} ({a.size.toLocaleString()} B)</li>)}</ul>

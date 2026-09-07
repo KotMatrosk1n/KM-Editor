@@ -5,12 +5,15 @@ import { useLocalization } from '../../localization';
 import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditorDiagnostics';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { ViewerColorPicker } from './ViewerColorPicker';
+import { useModelDraft, useModelHistory } from './ModelEditHistory';
 import { loadModelTextures, stagedTextureChanges, type ModelTexture, type TextureChange, type TextureRule } from './modelTextureBridge';
 
 type Props = {
   paths: ProjectPaths; model: string; session: EditSession | null; disabled: boolean;
   onPreview: (changes: TextureChange[]) => void; onStage: (model: string, change: TextureChange) => Promise<boolean>;
   onDirtyChange: (dirty: boolean) => void;
+  onInspect?: (texture: ModelTexture, changes: TextureRule[]) => void;
+  selectedMaterial?: string;
 };
 function TextureImage({ texture, onColor, disabled }: { texture: ModelTexture; onColor: (color: string) => void; disabled: boolean }) {
   const { t } = useLocalization(); const canvas = useRef<HTMLCanvasElement>(null);
@@ -29,24 +32,36 @@ function TextureImage({ texture, onColor, disabled }: { texture: ModelTexture; o
       if (rgba && rgba[3]) onColor(`#${[...rgba.slice(0, 3)].map(value => value.toString(16).padStart(2, '0')).join('')}`);
     }} />;
 }
-export function ModelTextureEditor({ paths, model, session, disabled, onPreview, onStage, onDirtyChange }: Props) {
+export function ModelTextureEditor({ paths, model, session, disabled, onPreview, onStage, onDirtyChange, onInspect, selectedMaterial }: Props) {
   const { t } = useLocalization();
-  const [textures, setTextures] = useState<ModelTexture[]>([]); const [selected, setSelected] = useState('');
+  const [textures, setTextures] = useState<ModelTexture[]>([]);
   const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false); const [error, setError] = useState(false);
-  const [drafts, setDrafts] = useState<Record<string, TextureRule[]>>({});
-  const [history, setHistory] = useState<Record<string, TextureRule[]>[]>([]);
-  const [from, setFrom] = useState('#ffffff'); const [to, setTo] = useState('#ffffff'); const [tolerance, setTolerance] = useState(15);
+  const [state, editState, applyState] = useModelDraft({ drafts: {} as Record<string, TextureRule[]>, selected: '', from: '#ffffff', to: '#ffffff', tolerance: 15 }, 'texture');
+  const { drafts, selected, from, to, tolerance } = state;
+  const history = useModelHistory();
+  const setFrom = (from: string) => editState(old => ({ ...old, from }), t('modelViewer.texture.from'), 'texture-from');
+  const setTo = (to: string) => editState(old => ({ ...old, to }), t('modelViewer.texture.to'), 'texture-to');
+  const setTolerance = (tolerance: number) => editState(old => ({ ...old, tolerance }), t('modelViewer.texture.title'), 'texture-tolerance');
   const pathKey = JSON.stringify(paths);
   useEffect(() => {
     let live = true; setLoading(true); setError(false);
     void loadModelTextures(JSON.parse(pathKey) as ProjectPaths, model).then(items => {
-      if (live) { setTextures(items); setSelected(items[0]?.id ?? ''); }
+      if (live) { setTextures(items); const color = items[0]?.colors[0] ?? '#ffffff'; applyState({ ...state, selected: items[0]?.id ?? '', from: color, to: color }); }
     }).catch(() => { if (live) setError(true); }).finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
   }, [pathKey, model]);
   const texture = textures.find(item => item.id === selected);
   const staged = useMemo(() => stagedTextureChanges(session, textures.map(item => item.id)), [session, textures]);
-  useEffect(() => { const color = texture?.colors[0] ?? '#ffffff'; setFrom(color); setTo(color); }, [texture]);
+  const setSelected = (value: string) => {
+    const color = textures.find(item => item.id === value)?.colors[0] ?? '#ffffff';
+    if (from.toLowerCase() === to.toLowerCase()) { applyState({ ...state, selected: value, from: color, to: color }); return; }
+    editState(old => ({ ...old, selected: value, from: color, to: color,
+      drafts: from.toLowerCase() !== to.toLowerCase() ? { ...old.drafts, [selected]: pending.find(c => c.texture === selected)?.changes ?? [] } : old.drafts }), t('modelViewer.texture.select'), 'texture-selection');
+  };
+  useEffect(() => {
+    const match = textures.find(item => item.materials.includes(selectedMaterial ?? ''));
+    if (match && from.toLowerCase() === to.toLowerCase()) setSelected(match.id);
+  }, [selectedMaterial, textures]);
   const pending = useMemo(() => textures.flatMap(item => {
     const previous = staged.find(change => change.texture === item.id);
     const rules = drafts[item.id] ?? previous?.changes ?? [];
@@ -56,7 +71,7 @@ export function ModelTextureEditor({ paths, model, session, disabled, onPreview,
   const signature = (items: TextureChange[]) => JSON.stringify([...items].sort((a, b) => a.texture.localeCompare(b.texture)));
   const dirty = signature(pending) !== signature(staged);
   const selectedDirty = signature(pending.filter(item => item.texture === selected)) !== signature(staged.filter(item => item.texture === selected));
-  const locked = busy || disabled;
+  const locked = busy || disabled || history?.locked === true;
   const colorLocked = locked || texture?.editable === false;
   const previewKey = JSON.stringify(pending);
   useEffect(() => {
@@ -66,21 +81,22 @@ export function ModelTextureEditor({ paths, model, session, disabled, onPreview,
   useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
   usePublishCommonEditorDiagnostics(error ? [{ code: 'KM-MODEL-TEXTURE-EDIT-INVALID', domain: 'workflow.modelTextures', severity: 'error', message: t('modelViewer.texture.error') }] : []);
-  const pick = (color: string) => { keep(); setFrom(color); setTo(color); };
+  const pick = (color: string) => {
+    editState(old => ({ ...old, drafts: texture && from.toLowerCase() !== to.toLowerCase() ? { ...old.drafts, [selected]: pending.find(c => c.texture === selected)?.changes ?? [] } : old.drafts,
+      from: color, to: color }), t('modelViewer.texture.keep'), 'texture-pick');
+  };
   const keep = () => {
     if (!texture || from.toLowerCase() === to.toLowerCase()) return;
-    setHistory(previous => [...previous.slice(-31), drafts]);
-    setDrafts(previous => ({ ...previous, [selected]: pending.find(change => change.texture === selected)?.changes ?? [] }));
-    setFrom(to);
+    editState(old => ({ ...old, drafts: { ...old.drafts, [selected]: pending.find(change => change.texture === selected)?.changes ?? [] }, from: to }), t('modelViewer.texture.keep'), 'texture-keep');
   };
   const stage = async () => {
-    if (!texture) return; setBusy(true); setError(false);
+    if (!texture) return; setBusy(true); setError(false); history?.lock(true);
     const change = pending.find(item => item.texture === texture.id) ?? { texture: texture.id, sourceHash: texture.sourceHash, changes: [] };
     try {
-      if (await onStage(model, change)) { setDrafts(current => { const next = { ...current }; delete next[texture.id]; return next; }); setFrom(to); setHistory([]); }
+      if (await onStage(model, change)) { const next = { ...drafts }; delete next[texture.id]; applyState({ ...state, drafts: next, from: to }); history?.clear(); }
       else setError(true);
     } catch { setError(true); }
-    finally { setBusy(false); }
+    finally { setBusy(false); history?.lock(false); }
   };
   return <section className="model-textures" aria-labelledby="model-textures-title" aria-busy={loading || busy}>
     <h3 id="model-textures-title">{t('modelViewer.texture.title')}</h3>
@@ -89,12 +105,13 @@ export function ModelTextureEditor({ paths, model, session, disabled, onPreview,
     {loading ? <p role="status">{t('modelViewer.loading')}</p> : textures.length === 0 ? <p>{t('modelViewer.texture.empty')}</p> : <>
       <label htmlFor="model-texture-select">{t('modelViewer.texture.select')}</label>
       <SearchableOptionInput id="model-texture-select" ariaLabel={t('modelViewer.texture.select')} value={selected} disabled={locked}
-        isFiniteCatalog localizeOptions={false} onChange={value => { keep(); setSelected(value); }}
+        isFiniteCatalog localizeOptions={false} onChange={setSelected}
         options={textures.map(item => ({ value: item.id, label: item.id.split('/').at(-1) ?? item.id }))} />
       {texture ? <>
         {!texture.editable ? <p role="status">{t('modelViewer.texture.unsupported')}</p> : null}
         <p data-localization-ignore="true">{texture.materials.join(', ')}</p>
         <p>{t('modelViewer.texture.size', { width: texture.width, height: texture.height, levels: texture.mipCount })}</p>
+        {onInspect ? <button type="button" disabled={locked} onClick={() => onInspect(texture, pending.find(c => c.texture === selected)?.changes ?? [])}>{t('modelWorkspace.inspectTexture')}</button> : null}
         <div className="model-textures__colors">
           <TextureImage texture={texture} onColor={pick} disabled={colorLocked} />
           <fieldset disabled={colorLocked}>
@@ -112,14 +129,10 @@ export function ModelTextureEditor({ paths, model, session, disabled, onPreview,
           </fieldset>
         </div>
         <div className="model-viewer__toolbar">
-          <button type="button" disabled={busy || from.toLowerCase() === to.toLowerCase() || (pending.find(item => item.texture === selected)?.changes.length ?? 0) >= 32} onClick={keep}>{t('modelViewer.texture.keep')}</button>
-          <button type="button" disabled={busy || (history.length === 0 && from.toLowerCase() === to.toLowerCase())} onClick={() => {
-            if (from.toLowerCase() !== to.toLowerCase()) setTo(from);
-            else { setDrafts(history.at(-1) ?? {}); setHistory(previous => previous.slice(0, -1)); }
-          }}>{t('modelViewer.texture.undo')}</button>
-          <button type="button" disabled={busy} onClick={() => { setHistory(previous => [...previous.slice(-31), drafts]); setDrafts(previous => ({ ...previous, [selected]: [] })); setTo(from); }}>{t('modelViewer.texture.reset')}</button>
+          <button type="button" disabled={colorLocked || from.toLowerCase() === to.toLowerCase()} onClick={keep}>{t('modelViewer.texture.keep')}</button>
+          <button type="button" disabled={colorLocked} onClick={() => editState(old => ({ ...old, drafts: { ...old.drafts, [selected]: [] }, to: from }), t('modelViewer.texture.reset'), 'texture-reset')}>{t('modelViewer.texture.reset')}</button>
           <button type="button" disabled={locked || !selectedDirty} onClick={() => void stage()}>{t(busy ? 'modelViewer.texture.encoding' : 'modelViewer.texture.stage')}</button>
-          <button type="button" disabled={locked || !dirty} onClick={() => { setDrafts({}); setHistory([]); setTo(from); }}>{t('modelViewer.texture.discard')}</button>
+          <button type="button" disabled={locked || !dirty} onClick={() => editState(old => ({ ...old, drafts: {}, to: from }), t('modelViewer.texture.discard'), 'texture-discard')}>{t('modelViewer.texture.discard')}</button>
         </div>
       </> : null}
     </>}

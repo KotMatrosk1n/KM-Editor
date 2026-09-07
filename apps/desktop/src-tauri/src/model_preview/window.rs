@@ -15,6 +15,11 @@ use winit::{
 };
 
 pub enum Event {
+    Inspect {
+        session: String,
+        part: usize,
+        result: tokio::sync::oneshot::Sender<Result<serde_json::Value, String>>,
+    },
     Open {
         scene: Scene,
         title: String,
@@ -70,6 +75,8 @@ pub fn start(
                 left: false,
                 right: false,
                 cursor: None,
+                pressed: None,
+                modifiers: winit::keyboard::ModifiersState::empty(),
                 status: std::time::Instant::now(),
             };
             let _ = event_loop.run_app(&mut host);
@@ -88,6 +95,8 @@ struct Host {
     left: bool,
     right: bool,
     cursor: Option<(f64, f64)>,
+    pressed: Option<(f64, f64)>,
+    modifiers: winit::keyboard::ModifiersState,
     status: std::time::Instant,
 }
 impl Host {
@@ -116,7 +125,7 @@ impl ApplicationHandler<Event> for Host {
         } else if self
             .renderer
             .as_ref()
-            .is_some_and(|renderer| renderer.playing)
+            .is_some_and(|renderer| renderer.playing || renderer.statistics)
         {
             ControlFlow::WaitUntil(
                 std::time::Instant::now() + std::time::Duration::from_millis(250),
@@ -125,14 +134,28 @@ impl ApplicationHandler<Event> for Host {
             ControlFlow::Wait
         });
         if self.status.elapsed().as_millis() >= 100 {
-            if let (Some(renderer), Some(session)) = (&self.renderer, &self.session) {
-                let _ = self.app.emit("model-preview-playback", serde_json::json!({ "session": session, "position": renderer.position, "playing": renderer.playing }));
+            if let (Some(renderer), Some(session)) = (&mut self.renderer, &self.session) {
+                let stats = renderer.stats();
+                let _ = self.app.emit("model-preview-playback", serde_json::json!({ "session": session, "position": renderer.position, "playing": renderer.playing, "frameMs": renderer.frame_ms, "stats": stats }));
             }
             self.status = std::time::Instant::now();
         }
     }
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: Event) {
         match event {
+            Event::Inspect {
+                session,
+                part,
+                result,
+            } => {
+                let value = self
+                    .renderer
+                    .as_ref()
+                    .filter(|_| self.session.as_deref() == Some(&session))
+                    .ok_or_else(|| "KM-MODEL-CANCELLED".to_owned())
+                    .and_then(|r| r.inspection.uv(part));
+                let _ = result.send(value);
+            }
             Event::Playback {
                 session,
                 action,
@@ -164,7 +187,7 @@ impl ApplicationHandler<Event> for Host {
                             "in" => renderer.zoom(1.0),
                             "out" => renderer.zoom(-1.0),
                             "focus" => renderer.window.focus_window(),
-                            _ => {}
+                            _ => renderer.viewpoint(&action),
                         }
                     }
                 }
@@ -248,6 +271,11 @@ impl ApplicationHandler<Event> for Host {
                             duration: renderer.duration(),
                             looped: renderer.looping,
                             warnings: renderer.rig.warnings.clone(),
+                            frame_rate: renderer.rig.clip.as_ref().map(|c| c.rate).unwrap_or(30),
+                            frames: renderer.rig.clip.as_ref().map(|c| c.frames).unwrap_or(1),
+                            parts: renderer.inspection.parts(&renderer.rig),
+                            textures: renderer.inspection.textures.clone(),
+                            texture_bytes: renderer.inspection.texture_bytes,
                         };
                         renderer.viewport(viewport);
                         renderer.window.request_redraw();
@@ -268,6 +296,7 @@ impl ApplicationHandler<Event> for Host {
             return;
         };
         match event {
+            WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
             WindowEvent::CloseRequested => self.close(None),
             WindowEvent::Resized(size) => renderer.resize(size.width, size.height),
             WindowEvent::RedrawRequested => {
@@ -279,9 +308,25 @@ impl ApplicationHandler<Event> for Host {
                 self.left = false;
                 self.right = false;
                 self.cursor = None;
+                self.pressed = None;
             }
             WindowEvent::MouseInput { state, button, .. } => match button {
-                MouseButton::Left => self.left = state == ElementState::Pressed,
+                MouseButton::Left => {
+                    self.left = state == ElementState::Pressed;
+                    if self.left {
+                        self.pressed = self.cursor;
+                    } else if let (Some((sx, sy)), Some((x, y)), Some(session)) =
+                        (self.pressed.take(), self.cursor, &self.session)
+                    {
+                        if (sx - x).hypot(sy - y) < 4.0 {
+                            let part = renderer.pick(x as f32, y as f32);
+                            let _ = self.app.emit(
+                                "model-preview-selection",
+                                serde_json::json!({"session": session, "part": part}),
+                            );
+                        }
+                    }
+                }
                 MouseButton::Right => self.right = state == ElementState::Pressed,
                 _ => {}
             },
@@ -302,6 +347,22 @@ impl ApplicationHandler<Event> for Host {
                 MouseScrollDelta::PixelDelta(p) => p.y as f32 / 100.0,
             }),
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
+                if self.modifiers.control_key()
+                    && matches!(
+                        event.physical_key,
+                        PhysicalKey::Code(KeyCode::KeyZ | KeyCode::KeyY)
+                    )
+                {
+                    if let Some(session) = &self.session {
+                        let redo = self.modifiers.shift_key()
+                            || event.physical_key == PhysicalKey::Code(KeyCode::KeyY);
+                        let _ = self.app.emit(
+                            "model-preview-history",
+                            serde_json::json!({"session": session, "redo": redo}),
+                        );
+                    }
+                    return;
+                }
                 match event.physical_key {
                     PhysicalKey::Code(KeyCode::KeyR) => renderer.reset(),
                     PhysicalKey::Code(KeyCode::KeyF) => renderer.frame(),

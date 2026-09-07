@@ -176,6 +176,10 @@ const editorSurfaceInventory = {
 const embeddedEditableSurfaceInventory = {
   modelViewerPalette: ['src/features/model-viewer/ViewerColorPicker.tsx', 'ViewerColorPicker', 'utility-input'],
   modelViewerLight: ['src/features/model-viewer/ModelLightControls.tsx', 'ModelLightControls', 'utility-input'],
+  modelWorkspaceTools: ['src/features/model-viewer/ModelWorkspaceTools.tsx', 'ModelWorkspaceTools', 'utility-input'],
+  modelParts: ['src/features/model-viewer/ModelWorkspaceTools.tsx', 'ModelParts', 'utility-input'],
+  modelFrameInput: ['src/features/model-viewer/ModelWorkspaceTools.tsx', 'ModelFrameInput', 'utility-input'],
+  modelTextureInspector: ['src/features/model-viewer/ModelTextureInspector.tsx', 'ModelTextureInspector', 'utility-input'],
   modelResolutionSettings: ['src/features/model-viewer/ModelResolutionSettings.tsx', 'ModelResolutionSettings', 'utility-input'],
   modelTextureEditor: ['src/features/model-viewer/ModelTextureEditor.tsx', 'ModelTextureEditor', 'raw-local-draft'],
   modelMaterialEditor: ['src/features/model-viewer/ModelMaterialEditor.tsx', 'ModelMaterialEditor', 'raw-local-draft'],

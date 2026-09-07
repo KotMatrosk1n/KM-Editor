@@ -55,7 +55,34 @@ internal static class ModelPreviewBridge
     internal static object Textures(ModelTexturesRequest request)
     {
         var project = Open(request.Paths);
-        return Resources(project, request.Id).Select(resource => ModelDerivedCache<object>.Get(resource.Bytes,
+        var resources = Resources(project, request.Id);
+        if (request.Texture is not null)
+        {
+            if (request.Texture.Length > 1024 || request.Changes is { Length: > 32 } || request.Changes?.Any(c => c is null) == true)
+                throw new InvalidDataException("Texture preview changes are invalid.");
+            var resource = resources.SingleOrDefault(r => r.Id == request.Texture) ?? throw new InvalidDataException("Texture is not part of the model.");
+            var hash = ModelTextureIntent.Hash(resource.Bytes);
+            if (hash != request.SourceHash) throw new InvalidDataException("Texture source changed. Reload the model.");
+            var texture = PreviewTexture.Read(resource.Bytes);
+            byte[] pixels;
+            try
+            {
+                var document = new ModelTextureDocument(resource.Bytes);
+                pixels = document.Preview((request.Changes ?? []).Select(c => new ModelTextureColorChange(c.From, c.To, c.Tolerance)).ToArray());
+            }
+            catch (InvalidDataException) when (request.Changes is null or { Length: 0 })
+            {
+                pixels = texture.Format is 0x0b01 or 0x0b06 ? texture.Blocks.ToArray() : new BCnEncoder.Decoder.BcDecoder().DecodeRaw(texture.Blocks, texture.Width, texture.Height,
+                    texture.Format switch { 0x1d01 => BCnEncoder.Shared.CompressionFormat.Bc4, 0x1e01 => BCnEncoder.Shared.CompressionFormat.Bc5,
+                        0x1a01 or 0x1a06 => BCnEncoder.Shared.CompressionFormat.Bc1WithAlpha,
+                        0x1b01 or 0x1b06 => BCnEncoder.Shared.CompressionFormat.Bc2,
+                        0x1c01 or 0x1c06 => BCnEncoder.Shared.CompressionFormat.Bc3,
+                        0x2001 or 0x2006 => BCnEncoder.Shared.CompressionFormat.Bc7,
+                        _ => throw new InvalidDataException("Texture layout is unsupported.") }).SelectMany(p => new[] { p.r, p.g, p.b, p.a }).ToArray();
+            }
+            return new { texture.Width, texture.Height, SourceHash = hash, Pixels = Convert.ToBase64String(pixels) };
+        }
+        return resources.Select(resource => ModelDerivedCache<object>.Get(resource.Bytes,
             resource.Id + System.Text.Json.JsonSerializer.Serialize(resource.Materials), () =>
         {
             ModelTextureDocument? document = null;
