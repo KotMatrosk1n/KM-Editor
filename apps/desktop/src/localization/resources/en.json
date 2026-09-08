@@ -4023,6 +4023,7 @@
     "modelEditor.verified": "Verified model changes",
     "modelEditor.group.parameters": "Parameters",
     "modelEditor.group.colors": "Colors and vectors",
+    "modelEditor.colorHelp": "Texture colors and material tints work together. White tints preserve the texture's colors.",
     "modelEditor.group.lighting": "Lighting",
     "modelEditor.group.flags": "Flags",
     "modelEditor.group.shader": "Shader",

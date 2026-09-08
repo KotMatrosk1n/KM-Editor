@@ -86,6 +86,8 @@ pub struct SurfaceInfo {
     pub values: Vec<[f32; 4]>,
     pub textures: Vec<i32>,
     pub wraps: Vec<[f32; 4]>,
+    #[serde(default, rename = "tintSubsurfaceByBaseColor")]
+    pub tint_subsurface_by_base_color: bool,
 }
 fn all_channels() -> [f32; 4] {
     [1.0; 4]

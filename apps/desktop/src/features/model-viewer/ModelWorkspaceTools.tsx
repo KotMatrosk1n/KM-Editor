@@ -72,9 +72,10 @@ export function ModelHistoryPanel() {
     {history?.entries.length ? <ol>{history.entries.map((label, i) => <li key={i} data-localization-ignore="true">{label}</li>)}</ol> : <p>{t('modelWorkspace.historyEmpty')}</p>}
   </section>;
 }
-export function ModelParts({ parts, options, onOptions, onMaterial }: {
+export function ModelParts({ parts, options, onOptions, onMaterial, onSelect }: {
   parts: { id: number; name: string; material: string; triangles: number }[]; options: ModelViewOptions;
   onOptions: (options: ModelViewOptions) => void; onMaterial: () => void;
+  onSelect: (part: number) => void;
 }) {
   const { t } = useLocalization(), [search, setSearch] = useState('');
   const selected = parts.find(p => p.id === options.selected);
@@ -90,7 +91,7 @@ export function ModelParts({ parts, options, onOptions, onMaterial }: {
     <ul>{parts.filter(p => `${p.name} ${p.material}`.toLowerCase().includes(search.toLowerCase())).map(part => <li key={part.id}>
       <input type="checkbox" checked={!options.hidden.includes(part.id)} aria-label={t('modelWorkspace.partVisible', { name: part.name })}
         onChange={event => onOptions({ ...options, hidden: event.target.checked ? options.hidden.filter(id => id !== part.id) : [...options.hidden, part.id] })} />
-      <button type="button" aria-pressed={part.id === options.selected} onClick={() => onOptions({ ...options, selected: part.id })} data-localization-ignore="true">
+      <button type="button" aria-pressed={part.id === options.selected} onClick={() => onSelect(part.id)} data-localization-ignore="true">
         <strong>{part.name}</strong><small>{part.material}</small>
       </button>
     </li>)}</ul>

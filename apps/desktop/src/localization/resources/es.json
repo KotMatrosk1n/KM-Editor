@@ -4023,6 +4023,7 @@
     "modelEditor.verified": "Cambios del modelo verificados",
     "modelEditor.group.parameters": "Parámetros",
     "modelEditor.group.colors": "Colores y vectores",
+    "modelEditor.colorHelp": "Los colores de textura y los tintes del material actúan juntos. Los tintes blancos conservan los colores de la textura.",
     "modelEditor.group.lighting": "Iluminación",
     "modelEditor.group.flags": "Indicadores",
     "modelEditor.group.shader": "Shader",

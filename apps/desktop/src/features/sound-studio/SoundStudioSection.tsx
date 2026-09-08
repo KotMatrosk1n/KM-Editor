@@ -111,7 +111,7 @@ export default function SoundStudioSection({ paths }: { paths: ProjectPaths }) {
           <dt>{t('soundStudio.identifier')}</dt><dd>{selected.identifier}</dd><dt>{t('soundStudio.bank')}</dt><dd>{selected.bank}</dd>
           <dt>{t('soundStudio.format')}</dt><dd>{selected.codec || t('soundStudio.unknown')} · {info?.rate ?? selected.sampleRate} Hz · {info?.channels ?? selected.channels} {t('soundStudio.channels')}</dd>
           <dt>{t('soundStudio.loop')}</dt><dd>{info && info.loopEnd > info.loopStart ? `${time(info.loopStart / info.rate)} → ${time(info.loopEnd / info.rate)}` : t('soundStudio.noLoop')}</dd>
-        </dl><p>{t('soundStudio.meterHelp')}</p>{(info?.channels ?? 0) > 2 ? <p>{t('soundStudio.multichannel')}</p> : null}<p>{t('soundStudio.eventHelp')}</p><a href="/audio-decoder/NOTICE.txt" target="_blank" rel="noreferrer">{t('soundStudio.licenses')}</a></details> : null}
+        </dl><p>{t('soundStudio.meterHelp')}</p>{(info?.channels ?? 0) > 2 ? <p>{t('soundStudio.multichannel')}</p> : null}<p>{t('soundStudio.eventHelp')}</p><a href="https://github.com/KotMatrosk1n/KM-Editor/blob/master/apps/desktop/public/audio-decoder/NOTICE.txt" target="_blank" rel="noreferrer">{t('soundStudio.licenses')}</a></details> : null}
       </div>
     </div>
   </section>;

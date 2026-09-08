@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { CheckCircle2, ClipboardCheck, Coffee, RotateCcw, Save, TriangleAlert } from 'lucide-react';
+import { CheckCircle2, Coffee, RotateCcw, Save, TriangleAlert, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { type EditSession } from '../../bridge/contracts';
 import {
@@ -11,6 +11,7 @@ import {
 } from '../../bridge/battleCafeRewardsContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
+import { EditorSessionBar, EditorSessionBarActions } from '../../components/EditorSessionBar';
 import {
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
@@ -34,9 +35,10 @@ export function BattleCafeRewardsSection({
   editSession,
   isChangePlanApplying,
   isChangePlanCreating,
+  isEditStarting,
   isStaging,
-  onApplyChangePlan,
-  onCreateChangePlan,
+  onStartEditSession,
+  onCancelEditSession,
   onDirtyChange,
   onStageRows,
   panelOutput,
@@ -45,9 +47,10 @@ export function BattleCafeRewardsSection({
   editSession: EditSession | null;
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
+  isEditStarting: boolean;
   isStaging: boolean;
-  onApplyChangePlan: () => void;
-  onCreateChangePlan: () => void;
+  onStartEditSession: () => void;
+  onCancelEditSession: (onDiscard: () => void) => void;
   onDirtyChange: (isDirty: boolean) => void;
   onStageRows: (
     rows: BattleCafeRewardRowEdit[],
@@ -140,17 +143,14 @@ export function BattleCafeRewardsSection({
   const itemChoicesAreUnique = new Set(draftRows.map((row) => row.itemId)).size === draftRows.length;
   const hasDirtyDraft = dirtyRowIndexes.size > 0;
   const isBusy = isStaging || isChangePlanCreating || isChangePlanApplying;
-  const canEdit = workflow?.summary.availability === 'available';
+  const available = workflow?.summary.availability === 'available';
+  const canEdit = available && editSession !== null;
   const canStage =
     canEdit &&
     !hasInvalidStagedChange &&
     !isBusy &&
     hasDirtyDraft &&
     percentagesAreValid;
-  const canReview = hasStagedChange && !hasInvalidStagedChange && !hasDirtyDraft &&
-    totalsAreExact && itemChoicesAreUnique && !isBusy;
-  const canApply = canReview && panelOutput.changePlan !== null &&
-    panelOutput.changePlan.canApply && panelOutput.changePlan.writes.length > 0;
   usePublishCommonEditorError({
     domain: battleCafeRewardsDomain,
     field: 'percentages',
@@ -196,7 +196,7 @@ export function BattleCafeRewardsSection({
   };
 
   const stageRows = () => {
-    if (!workflow) {
+    if (!workflow || !canStage) {
       return;
     }
 
@@ -239,6 +239,30 @@ export function BattleCafeRewardsSection({
         </div>
 
         <p className="panel-lede">{t('battleCafeRewards.description')}</p>
+
+        {workflow ? (
+          <EditorSessionBar
+            canEdit={available}
+            isEditing={editSession !== null}
+            isStarting={isEditStarting}
+            label={t('battleCafeRewards.title')}
+            onStart={onStartEditSession}
+          />
+        ) : null}
+        {workflow && editSession ? (
+          <EditorSessionBarActions>
+            <button aria-busy={isStaging || undefined} className="primary-button"
+              disabled={!canStage} onClick={stageRows} type="button">
+              {isStaging ? <RotateCcw aria-hidden="true" className="button-busy-icon" size={16} /> : <Save aria-hidden="true" size={16} />}
+              <span>{translateLiteral(isStaging ? 'Staging' : 'Stage')}</span>
+            </button>
+            <button className="danger-button" disabled={isBusy} type="button"
+              onClick={() => onCancelEditSession(() => setDraftRows(cleanRowsRef.current))}>
+              <X aria-hidden="true" size={16} /><span>{translateLiteral('Cancel')}</span>
+            </button>
+            <span className="draft-action-summary">{t('battleCafeRewards.status.draft', { count: dirtyRowIndexes.size })}</span>
+          </EditorSessionBarActions>
+        ) : null}
 
         {workflow ? (
           <div className="battle-cafe-rewards-editor">
@@ -305,39 +329,6 @@ export function BattleCafeRewardsSection({
                   row={row}
                 />
               ))}
-            </div>
-
-            <div className="battle-cafe-actions">
-              <button
-                aria-busy={isStaging}
-                className="primary-button"
-                disabled={!canStage}
-                onClick={stageRows}
-                type="button"
-              >
-                <Save aria-hidden="true" size={16} />
-                <span>{isStaging ? t('battleCafeRewards.action.staging') : t('battleCafeRewards.action.stage')}</span>
-              </button>
-              <button
-                aria-busy={isChangePlanCreating}
-                className="secondary-button"
-                disabled={!canReview}
-                onClick={onCreateChangePlan}
-                type="button"
-              >
-                <ClipboardCheck aria-hidden="true" size={16} />
-                <span>{isChangePlanCreating ? t('battleCafeRewards.action.reviewing') : t('battleCafeRewards.action.review')}</span>
-              </button>
-              <button
-                aria-busy={isChangePlanApplying}
-                className="primary-button"
-                disabled={!canApply}
-                onClick={onApplyChangePlan}
-                type="button"
-              >
-                <Save aria-hidden="true" size={16} />
-                <span>{isChangePlanApplying ? t('battleCafeRewards.action.applying') : t('battleCafeRewards.action.apply')}</span>
-              </button>
             </div>
 
             {workflow.provenance ? (

@@ -66,6 +66,13 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
   const [original, setOriginal] = useState(false);
   const [properties, setProperties] = useState<ModelProperties | null>(null);
   const [options, setOptions] = useState<ModelViewOptions>({ display: 0, wireframe: false, hidden: [], selected: null });
+  const [selectionRevision, setSelectionRevision] = useState(0);
+  const [materialTextureHost, setMaterialTextureHost] = useState<HTMLDivElement | null>(null);
+  const [inspectedMaterial, setInspectedMaterial] = useState('');
+  const selectPart = (part: number | null) => {
+    setOptions(old => ({ ...old, selected: part }));
+    setSelectionRevision(value => value + 1);
+  };
   const [statistics, setStatistics] = useState(false);
   const [inGame, setInGame] = useState(true);
   const [image, setImage] = useState<{ texture: ModelTexture; changes: TextureRule[] } | null>(null);
@@ -90,7 +97,7 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
   const viewer = useModelViewport(paths, selected, animation, revision, !!image, background, original ? [] : textureChanges,
     original ? vanillaAssets : assetChanges ?? stagedAssetChanges(session, selected), light,
     editing ? { ...options, statistics, inGame } : { display: 0, wireframe: false, hidden: [], selected: null, statistics: false, inGame: true },
-    part => { setOptions(old => ({ ...old, selected: part })); }, redo => { if (!original && !disabled && !restoring) { if (redo) history.redo(); else history.undo(); } });
+    selectPart, redo => { if (!original && !disabled && !restoring) { if (redo) history.redo(); else history.undo(); } });
   useEffect(() => {
     history.clear(); setOriginal(false); setProperties(null); setImage(null); setUv([]); uvRequest.current++;
     setOptions({ display: 0, wireframe: false, hidden: [], selected: null });
@@ -271,7 +278,8 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
             {['parts','materials','textures','scene'].map(value => <button type="button" key={value} aria-pressed={tab === value} onClick={() => setTab(value)}>{t(`modelWorkspace.${value}`)}</button>)}
           </nav> : null}
           {editing && tab === 'history' ? <ModelHistoryPanel /> : null}
-          <div hidden={editing && tab !== 'parts'}>{editing ? <ModelParts parts={viewer.info?.parts ?? []} options={options} onOptions={setOptions} onMaterial={() => setTab('materials')} /> : null}</div>
+          <div hidden={editing && tab !== 'parts'}>{editing ? <ModelParts parts={viewer.info?.parts ?? []} options={options} onOptions={setOptions} onSelect={selectPart}
+            onMaterial={() => { setSelectionRevision(value => value + 1); setTab('materials'); }} /> : null}</div>
           <div hidden={editing && tab !== 'scene'}>
             {editing && !inGame ? <ModelLightControls light={light} onChange={setLight} /> : editing ? <p className="model-workspace__lighting-help">{t('modelWorkspace.inGameHelp')}</p> : null}
             {editing ? <div className="model-workspace__scene-background">
@@ -291,10 +299,16 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
               {pendingRestore ? <p role="status">{t('modelEditor.pendingRestore')}</p> : null}
               <div hidden={tab !== 'materials'}><ModelMaterialEditor key={`${selected}/${restoreRevision}`} paths={paths} model={selected} session={session} disabled={disabled || restoring || pendingRestore || original}
                 selectedMaterial={viewer.info?.parts.find(p => p.id === options.selected)?.material}
+                selectionRevision={selectionRevision}
+                onSelectMaterial={material => selectPart(viewer.info?.parts.find(p => p.material === material)?.id ?? null)}
+                onInspectedMaterial={setInspectedMaterial} onTextureHost={setMaterialTextureHost}
                 onDirtyChange={materialDirtyChange} onStage={onStageAsset} onPreview={setAssetChanges} /></div>
             </> : null}
             <div hidden={editing && tab !== 'textures'}><ModelTextureEditor key={`${selected}/${restoreRevision}`} paths={paths} model={selected} session={session} disabled={disabled || restoring || pendingRestore || original}
               selectedMaterial={viewer.info?.parts.find(p => p.id === options.selected)?.material} onInspect={(texture, changes) => void inspectTexture(texture, changes)}
+              selectionRevision={selectionRevision}
+              container={editing && tab === 'materials' ? materialTextureHost : null}
+              materialFilter={editing && tab === 'materials' ? inspectedMaterial : undefined}
               onPreview={setTextureChanges} onStage={onStage} onDirtyChange={dirtyChange} /></div>
           </div> : null}
           </div>

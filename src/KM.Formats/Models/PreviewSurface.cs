@@ -5,6 +5,7 @@ namespace KM.Formats.Models;
 /// <summary>Declared surface properties evaluated under the preview's studio lighting.</summary>
 public sealed record PreviewSurface(float[][] Values, int[] Textures, float[][] Wraps)
 {
+    public bool TintSubsurfaceByBaseColor { get; init; }
     public const int ValueCount = 41;
     public const int TextureCount = 12;
     private static readonly string[][] Scalars =

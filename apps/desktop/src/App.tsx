@@ -20521,9 +20521,19 @@ export function App({
         />
       ) : null;
 
+  const updatePrompt = availableUpdate && isUpdatePromptOpen ? (
+    <UpdatePromptModal
+      onDismiss={handleDismissUpdatePrompt}
+      onDownload={handleDownloadAvailableUpdate}
+      status={updateCheckStatus}
+      update={availableUpdate}
+    />
+  ) : null;
+
   if (!selectedGame || isGamePickerOpen) {
     return (
       <CommonEditorDiagnosticsProvider key="welcome">
+        <UpdateStatusDiagnostics status={updateCheckStatus} update={availableUpdate} />
         <WelcomeHub
           games={visibleGameSelectionGames}
           definitions={gameDefinitions}
@@ -20553,6 +20563,7 @@ export function App({
           </>}
           settings={settingsSection}
         />
+        {updatePrompt}
       </CommonEditorDiagnosticsProvider>
     );
   }
@@ -22170,9 +22181,10 @@ export function App({
                 editSession={getEditSessionForSection('battleCafeRewards')}
                 isChangePlanApplying={isChangePlanApplying}
                 isChangePlanCreating={isChangePlanCreating}
+                isEditStarting={isEditStarting}
                 isStaging={isBattleCafeRewardsStaging}
-                onApplyChangePlan={() => void handleApplyScopedEditorChangePlan('battleCafeRewards')}
-                onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('battleCafeRewards')}
+                onStartEditSession={handleStartEditSession}
+                onCancelEditSession={requestCancelEditSession}
                 onDirtyChange={(isDirty) =>
                   registerEditorDraftDirty('battleCafeRewards', isDirty)
                 }
@@ -22618,14 +22630,7 @@ export function App({
           onOpenSection={(section) => void handleNavigateSection(section)}
         />
       ) : null}
-      {availableUpdate && isUpdatePromptOpen ? (
-        <UpdatePromptModal
-          onDismiss={handleDismissUpdatePrompt}
-          onDownload={handleDownloadAvailableUpdate}
-          status={updateCheckStatus}
-          update={availableUpdate}
-        />
-      ) : null}
+      {updatePrompt}
       {dependencyWarning ? (
         <DependencyWarningModal
           warning={dependencyWarning}

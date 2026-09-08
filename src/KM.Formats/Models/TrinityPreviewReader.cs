@@ -6,7 +6,7 @@ using System.Numerics;
 namespace KM.Formats.Models;
 
 /// <summary>Reads bounded model geometry, skinning and layered color materials.</summary>
-public sealed class TrinityPreviewReader(Func<string, byte[]> read, bool topOriginMaterialUv = false)
+public sealed class TrinityPreviewReader(Func<string, byte[]> read, bool topOriginMaterialUv = false, bool tintSubsurfaceByBaseColor = false)
 {
     private readonly List<PreviewTexture> textures = [];
     private readonly Dictionary<string, int> textureIndices = new(StringComparer.Ordinal);
@@ -91,7 +91,7 @@ public sealed class TrinityPreviewReader(Func<string, byte[]> read, bool topOrig
         foreach (var material in data.Tables(data.Root, 1, 128))
         {
             var name = Required(data.Text(material, 0));
-            var surface = PreviewSurface.Read(data, material, false);
+            var surface = PreviewSurface.Read(data, material, false) with { TintSubsurfaceByBaseColor = tintSubsurfaceByBaseColor };
             var color = Vector4.One;
             var layers = new[] { Vector4.One, Vector4.One, Vector4.One, Vector4.One };
             var maskChannels = Vector4.Zero;

@@ -4023,6 +4023,7 @@
     "modelEditor.verified": "已验证的模型更改",
     "modelEditor.group.parameters": "参数",
     "modelEditor.group.colors": "颜色与向量",
+    "modelEditor.colorHelp": "纹理颜色与材质色调共同作用。白色色调保留纹理的原有颜色。",
     "modelEditor.group.lighting": "光照",
     "modelEditor.group.flags": "标志",
     "modelEditor.group.shader": "着色器",
