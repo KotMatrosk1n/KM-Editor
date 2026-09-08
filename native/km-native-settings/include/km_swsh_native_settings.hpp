@@ -16,8 +16,6 @@ struct SwShNativeSettingsProfileView {
     const char* update_version;
     const char* full_build_id;
     uintptr_t text_size;
-    uintptr_t registration_hook_offset;
-    uintptr_t native_array_registrar_offset;
     const char* settings_journal_path;
 };
 

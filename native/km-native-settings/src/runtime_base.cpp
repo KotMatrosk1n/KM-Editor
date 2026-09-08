@@ -12,6 +12,10 @@ using km::Result;
 constexpr uint32_t MemoryTypeMask = 0xFF;
 constexpr uint32_t InfoAliasRegionAddress = 2;
 constexpr uint32_t InfoAliasRegionSize = 3;
+constexpr uint32_t InfoHeapRegionAddress = 4;
+constexpr uint32_t InfoHeapRegionSize = 5;
+constexpr uint32_t InfoAslrRegionAddress = 12;
+constexpr uint32_t InfoAslrRegionSize = 13;
 constexpr uint32_t InfoMesosphereCurrentProcess = 65001;
 constexpr uint64_t InfiniteTimeout = ~uint64_t{0};
 constexpr size_t MaximumDynamicEntries = 4096;
@@ -257,33 +261,66 @@ Handle GetCurrentProcessHandleViaIpc() {
 }
 
 bool FindAliasDestination(size_t size, uintptr_t* output) {
+    // MapProcessMemory creates SharedCode mappings. The IPC alias region is
+    // specifically excluded, even when its pages are currently unmapped.
+    // Search the ASLR region while excluding both reserved IPC and heap spans.
     uint64_t alias_address = 0;
     uint64_t alias_size = 0;
+    uint64_t heap_address = 0;
+    uint64_t heap_size = 0;
+    uint64_t aslr_address = 0;
+    uint64_t aslr_size = 0;
     if (km::km_svc_get_info(&alias_address, InfoAliasRegionAddress,
                         km::CurrentProcessPseudoHandle, 0) != km::ResultSuccess
         || km::km_svc_get_info(&alias_size, InfoAliasRegionSize,
                            km::CurrentProcessPseudoHandle, 0) != km::ResultSuccess
-        || alias_size < size || alias_address + alias_size < alias_address) {
+        || km::km_svc_get_info(&heap_address, InfoHeapRegionAddress,
+                           km::CurrentProcessPseudoHandle, 0) != km::ResultSuccess
+        || km::km_svc_get_info(&heap_size, InfoHeapRegionSize,
+                           km::CurrentProcessPseudoHandle, 0) != km::ResultSuccess
+        || km::km_svc_get_info(&aslr_address, InfoAslrRegionAddress,
+                           km::CurrentProcessPseudoHandle, 0) != km::ResultSuccess
+        || km::km_svc_get_info(&aslr_size, InfoAslrRegionSize,
+                           km::CurrentProcessPseudoHandle, 0) != km::ResultSuccess
+        || size == 0 || (size & (km::PageSize - 1)) != 0
+        || aslr_size < size || aslr_address + aslr_size < aslr_address
+        || alias_address + alias_size < alias_address
+        || heap_address + heap_size < heap_address) {
         return false;
     }
 
     const auto alias_end = alias_address + alias_size;
-    auto cursor = alias_address;
-    for (size_t iteration = 0; iteration < 16384 && cursor < alias_end; ++iteration) {
+    const auto heap_end = heap_address + heap_size;
+    const auto aslr_end = aslr_address + aslr_size;
+    auto cursor = aslr_address;
+    for (size_t iteration = 0; iteration < 16384 && cursor < aslr_end; ++iteration) {
         MemoryInfo info{};
         uint32_t page_info = 0;
         if (km_svc_query_memory(&info, &page_info, cursor) != km::ResultSuccess
             || info.size == 0 || info.address + info.size <= cursor) {
             return false;
         }
-        const auto candidate = AlignUp(
-            info.address < alias_address ? alias_address : info.address,
-            km::PageSize);
+        if (cursor > UINTPTR_MAX - (km::PageSize - 1)) {
+            return false;
+        }
+        const auto candidate = AlignUp(cursor, km::PageSize);
         uintptr_t candidate_end = 0;
+        if (!AddWithoutOverflow(candidate, size, &candidate_end)) {
+            return false;
+        }
+        // Reserved regions need not be split in QueryMemory's free spans.
+        if (alias_size != 0 && candidate < alias_end && candidate_end > alias_address) {
+            cursor = alias_end;
+            continue;
+        }
+        if (heap_size != 0 && candidate < heap_end && candidate_end > heap_address) {
+            cursor = heap_end;
+            continue;
+        }
         if ((info.type & MemoryTypeMask) == static_cast<uint32_t>(km::MemoryType::Unmapped)
             && AddWithoutOverflow(candidate, size, &candidate_end)
             && candidate_end <= info.address + info.size
-            && candidate_end <= alias_end) {
+            && candidate_end <= aslr_end) {
             *output = candidate;
             return true;
         }

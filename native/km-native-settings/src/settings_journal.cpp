@@ -250,7 +250,7 @@ void SerializeSlot(uint8_t* slot, const km::SettingsState& current,
     WriteU64(slot + 0x20, current.generation + 1);
     WriteU16(slot + 0x28, 2);
     WriteU16(slot + 0x2A, 5);
-    WriteU16(slot + 0x2C, 0);
+    WriteU16(slot + 0x2C, 1);
     WriteU64(slot + 0x30, current.presence);
     WriteU32(slot + 0x38, values.experience_rate_basis_points);
     slot[0x3C] = values.experience_share ? 1 : 0;

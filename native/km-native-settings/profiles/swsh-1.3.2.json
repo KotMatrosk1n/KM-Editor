@@ -11,24 +11,6 @@
     "lifetimeRule": "no executable mutation after startup transaction",
     "journalRule": "missing journal retains a zero unpublished snapshot and retries data only"
   },
-  "nativeAbi": {
-    "registrationCallback": "void(uint64_t vm_owner)",
-    "registrationOrder": "retail-first-km-second",
-    "arrayRegistrar": "void(uint64_t vm_owner, const Symbol* null_terminated_symbols)",
-    "symbol": "{ const char* name; uint64_t (*function)(void*, uint64_t*) }",
-    "callbacks": [
-      {
-        "name": "KmSettingsRead_",
-        "nameHash": "65B0E246",
-        "parameters": 0
-      },
-      {
-        "name": "KmSettingsWrite_",
-        "nameHash": "9311142F",
-        "parameters": 1
-      }
-    ]
-  },
   "gameplayApply": {
     "journalPresence": [
       "experience-share",
@@ -73,16 +55,6 @@
   },
   "sharedWindows": [
     {
-      "id": "native-array-registrar",
-      "textOffset": "0066CBA0",
-      "preimage": "008001910200801272030014"
-    },
-    {
-      "id": "native-low-level-registrar",
-      "textOffset": "0066D970",
-      "preimage": "F85FBCA9F65701A9F44F02A9FD7B03A9"
-    },
-    {
       "id": "experience-share-function",
       "textOffset": "007FB2C0",
       "preimage": "E0030032C0035FD60000000000000000"
@@ -107,9 +79,10 @@
       "textSha256": "82A40B8D3C334DBA1B5D9D1F2F99D5BA6A04D0B1953A069C39C3E9097264A37E",
       "textLength": 26218288,
       "textMappingSize": 26218496,
-      "registrationHookOffset": "01464FC0",
-      "registrationPreimage": "F30F1EF8FD7B01A9FD430091F30300AA88310094",
-      "settingsJournal": "sd:/config/km-editor/gameplay-settings/0100ABF008968000/settings.bin"
+      "settingsJournal": "sd:/config/km-editor/gameplay-settings/0100ABF008968000/settings.bin",
+      "optionsConstructorOffset": "014D8570",
+      "optionsCodeStart": "014D7BD0",
+      "optionsCodeEnd": "014DEDD0"
     },
     {
       "edition": "shield",
@@ -119,9 +92,24 @@
       "textSha256": "88F4650C736FB61E1D0C624BFDFF1718C87A286F2686C7C3CBB9378301F8EB28",
       "textLength": 26218432,
       "textMappingSize": 26218496,
-      "registrationHookOffset": "01464FF0",
-      "registrationPreimage": "F30F1EF8FD7B01A9FD430091F30300AA88310094",
-      "settingsJournal": "sd:/config/km-editor/gameplay-settings/01008DB008C2C000/settings.bin"
+      "settingsJournal": "sd:/config/km-editor/gameplay-settings/01008DB008C2C000/settings.bin",
+      "optionsConstructorOffset": "014D85A0",
+      "optionsCodeStart": "014D7C00",
+      "optionsCodeEnd": "014DEE00"
     }
-  ]
+  ],
+  "optionsMenuAbi": {
+    "location": "X > Options",
+    "stockRows": 16,
+    "gameplayRows": 3,
+    "viewAllocation": "1080",
+    "descriptorOffset": "C50",
+    "visibleCountOffset": "5D4",
+    "visibleMapOffset": "5D8",
+    "commit": "Confirm writes and verifies the journal before stock settings apply. Failure returns to editing and restores stock and KM drafts across controller activation.",
+    "cancel": "Discard the view draft; journal stays unchanged.",
+    "slider": "Only animation receives the 0 to 10 projection. Numeric labels retain full values.",
+    "legacyPc": "No script imports or PC patch. Owned older PC files retire during package upgrade.",
+    "reset": "Restore Defaults commits the vanilla journal before the stock defaults are persisted. A failed write preserves the draft."
+  }
 }
