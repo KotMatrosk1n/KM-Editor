@@ -17,7 +17,7 @@ The custom setup release assets are:
 
 ## Desktop Update Checks
 
-The installed desktop app checks for a newer stable release after launch without interrupting startup. When an update is available, Settings shows a gold notice and changes its update action to install the native update or open the matching GitHub Release. Users can defer the prompt and return to the same action later.
+The installed desktop app checks for a newer stable release after launch without interrupting startup. When an update is available, Settings shows a gold notice in both the Welcome Hub and game sidebar and changes its update action to install the native update or open the matching GitHub Release. Users can defer the prompt and return to the same action later.
 
 Native updates use Tauri's updater plugin, the public key in `apps/desktop/src-tauri/tauri.conf.json`, and the `latest.json` asset attached to the latest published GitHub Release. Settings also keeps a manual check for users who want to retry or confirm that the installed version is current.
 

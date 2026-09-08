@@ -2082,7 +2082,7 @@ dependencies = [
 
 [[package]]
 name = "km-editor-desktop"
-version = "2.6.0"
+version = "2.6.1"
 dependencies = [
  "bytemuck",
  "glam",
