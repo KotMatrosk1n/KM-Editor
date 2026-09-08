@@ -4023,6 +4023,7 @@
     "modelEditor.verified": "Geprüfte Modelländerungen",
     "modelEditor.group.parameters": "Parameter",
     "modelEditor.group.colors": "Farben und Vektoren",
+    "modelEditor.colorHelp": "Texturfarben und Materialtönungen wirken zusammen. Weiße Tönungen erhalten die Farben der Textur.",
     "modelEditor.group.lighting": "Beleuchtung",
     "modelEditor.group.flags": "Flags",
     "modelEditor.group.shader": "Shader",

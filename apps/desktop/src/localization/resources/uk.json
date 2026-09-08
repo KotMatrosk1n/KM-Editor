@@ -4023,6 +4023,7 @@
     "modelEditor.verified": "Перевірені зміни моделі",
     "modelEditor.group.parameters": "Параметри",
     "modelEditor.group.colors": "Кольори й вектори",
+    "modelEditor.colorHelp": "Кольори текстур поєднуються з відтінками матеріалу. Білий відтінок зберігає початкові кольори текстури.",
     "modelEditor.group.lighting": "Освітлення",
     "modelEditor.group.flags": "Прапорці",
     "modelEditor.group.shader": "Шейдер",

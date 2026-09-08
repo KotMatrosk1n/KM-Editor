@@ -118,8 +118,8 @@ assert.match(
 );
 assert.match(
   battleCafe,
-  /const canEdit = workflow\?\.summary\.availability === 'available';/,
-  'Battle Cafe must keep local fields correctable when an older staged payload is invalid.'
+  /const available = workflow\?\.summary\.availability === 'available';\s*const canEdit = available && editSession !== null;/,
+  'Battle Cafe must require an editing session while keeping local fields correctable when an older staged payload is invalid.'
 );
 
 const npcItemGift = read('src/features/npc-item-gift/NpcItemGiftSection.tsx');

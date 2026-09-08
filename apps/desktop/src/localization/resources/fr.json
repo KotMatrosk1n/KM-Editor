@@ -4023,6 +4023,7 @@
     "modelEditor.verified": "Modifications du modèle vérifiées",
     "modelEditor.group.parameters": "Paramètres",
     "modelEditor.group.colors": "Couleurs et vecteurs",
+    "modelEditor.colorHelp": "Les couleurs des textures et les teintes du matériau se combinent. Une teinte blanche conserve les couleurs de la texture.",
     "modelEditor.group.lighting": "Éclairage",
     "modelEditor.group.flags": "Indicateurs",
     "modelEditor.group.shader": "Shader",

@@ -49,6 +49,7 @@ export type SearchableOptionInputProps = Readonly<{
   name?: string;
   noOptionsLabel?: string;
   onChange: (value: string) => void;
+  onReselect?: (value: string) => void;
   onFocus?: () => void;
   onSearchQueryChange?: (query: string) => void;
   onCatalogEndReached?: () => void;
@@ -87,6 +88,7 @@ export function SearchableOptionInput({
   name,
   noOptionsLabel,
   onChange,
+  onReselect,
   onFocus,
   onSearchQueryChange,
   onCatalogEndReached,
@@ -323,6 +325,8 @@ export function SearchableOptionInput({
     const selectedValue = option.value.toString();
     if (selectedValue !== value.trim()) {
       onChange(selectedValue);
+    } else {
+      onReselect?.(selectedValue);
     }
     setQuery(option.inputLabel ?? option.label);
     setHasUserQuery(false);

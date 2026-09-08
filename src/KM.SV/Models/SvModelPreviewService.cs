@@ -49,7 +49,7 @@ public sealed class SvModelPreviewService
         }
         if (project.Paths.BaseRomFsPath is { } root)
         {
-            var reader = new TrinityPreviewReader(path => source.Read(project, path).Bytes);
+            var reader = new TrinityPreviewReader(path => source.Read(project, path).Bytes, tintSubsurfaceByBaseColor: true);
             foreach (var model in SvModelDiscovery.Discover(root))
                 if (seen.Add(model.Id)) results.Add(model.Category == "trainers" && !reader.HasCharacterSurface(model.Id)
                     ? model with { Category = "other" } : model);
@@ -102,7 +102,7 @@ public sealed class SvModelPreviewService
             var tablePath = TrinityPreviewReader.Resolve("pokemon/data/catalog", catalog.Text(entry, 2) ?? throw new InvalidDataException("Shiny materials are unavailable."));
             variant = PreviewMaterialVariant.Shiny(new(Read(tablePath)), tablePath) ?? throw new InvalidDataException("Shiny materials are unavailable.");
         }
-        var scene = ModelPreviewCache.Load("SV", id, variant, Read, read => new TrinityPreviewReader(read).Load(id, variant));
+        var scene = ModelPreviewCache.Load("SV", id, variant, Read, read => new TrinityPreviewReader(read, tintSubsurfaceByBaseColor: true).Load(id, variant));
         var warnings = scene.Rig.Warnings.ToList();
         PreviewClipReference[] clips;
         try { clips = Clips(project, id, Read); }

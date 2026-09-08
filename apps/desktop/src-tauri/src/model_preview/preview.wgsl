@@ -208,7 +208,8 @@ fn game_highlight(value: vec3<f32>) -> vec3<f32> {
         let rim_color = mix(material.surface[35].rgb, material.surface[8].rgb, shade) * rim_mask * (rim * (material.surface[4].x + material.surface[4].w * max(-nl, 0.0)) + pow(1.0 - nv, max(material.surface[34].z, .01)) * material.surface[34].w);
         let coat = mix(vec3<f32>(.04), material.surface[28].rgb, clamp(material.surface[29].x, 0.0, 1.0)) * pow(max(dot(n, h), 0.0), clamp(2.0 / max(material.surface[29].y * material.surface[29].y, .0001), 1.0, 2048.0)) * material.surface[28].a;
         let highlight_reflection = highlight.r * mix(vec3<f32>(.04), rgb, clamp(material.surface[29].z, 0.0, 1.0)) * pow(max(dot(n, h), 0.0), clamp(2.0 / max(material.surface[29].w * material.surface[29].w, .0001), 1.0, 2048.0));
-        let subsurface = material.surface[30].rgb * max(-nl, 0.0) * light_energy * clamp(subsurface_weight * material.surface[31].x + material.surface[31].y, 0.0, 1.0);
+        let subsurface_tint = select(vec3<f32>(1.0), rgb, material.flags.z > 0.0);
+        let subsurface = subsurface_tint * material.surface[30].rgb * max(-nl, 0.0) * light_energy * clamp(subsurface_weight * material.surface[31].x + material.surface[31].y, 0.0, 1.0);
         let eyelid_color = mix(vec3<f32>(1.0), material.surface[39].rgb, clamp(eyelid * material.map_scale[10].z, 0.0, 1.0));
         let accents = (reflection + rim_color + coat + highlight_reflection) * direct;
         let shaded = rgb * light * eyelid_color + select(accents, game_highlight(accents), in_game) + subsurface;

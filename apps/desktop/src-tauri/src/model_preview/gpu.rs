@@ -546,8 +546,18 @@ impl Renderer {
         }
         let frame_position =
             self.position * self.rig.clip.as_ref().map(|c| c.rate).unwrap_or(1) as f32;
+        let selected_material = self
+            .selected
+            .and_then(|i| self.rig.meshes.get(i))
+            .map(|mesh| &mesh.material);
+        let selected_meshes: Vec<bool> = self
+            .rig
+            .meshes
+            .iter()
+            .map(|mesh| selected_material == Some(&mesh.material))
+            .collect();
         for (i, mesh) in self.meshes.iter_mut().enumerate() {
-            if (self.wireframe || self.selected == Some(i))
+            if (self.wireframe || selected_meshes[i])
                 && mesh.edges.is_none()
                 && !self.hidden.contains(&i)
             {
@@ -663,7 +673,7 @@ impl Renderer {
             }
             pass.set_pipeline(&self.wire_pipeline);
             for (i, mesh) in self.meshes.iter().enumerate() {
-                if (self.wireframe || self.selected == Some(i))
+                if (self.wireframe || selected_meshes[i])
                     && !self.hidden.contains(&i)
                     && self.rig.visible(i, frame_position)
                 {
@@ -674,7 +684,7 @@ impl Renderer {
                     };
                     pass.set_index_buffer(edges.slice(..), wgpu::IndexFormat::Uint32);
                     // Encode selection in the instance index, keeping one edge draw per mesh.
-                    let selected = u32::from(self.selected == Some(i));
+                    let selected = u32::from(selected_meshes[i]);
                     pass.draw_indexed(0..mesh.count * 2, 0, selected..selected + 1);
                 }
             }

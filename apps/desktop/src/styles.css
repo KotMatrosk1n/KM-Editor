@@ -16607,18 +16607,6 @@ select.km-select-control:dir(rtl) {
   right: 0.65rem;
 }
 
-.battle-cafe-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.65rem;
-}
-
-.battle-cafe-actions button {
-  align-items: center;
-  display: inline-flex;
-  gap: 0.4rem;
-}
-
 .battle-cafe-provenance {
   display: grid;
   gap: 0.65rem;
@@ -16662,15 +16650,6 @@ select.km-select-control:dir(rtl) {
     grid-template-columns: 1fr;
   }
 
-  .battle-cafe-actions {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .battle-cafe-actions button {
-    justify-content: center;
-    width: 100%;
-  }
 }
 
 .theme-settings,

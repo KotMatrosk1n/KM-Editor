@@ -4023,6 +4023,7 @@
     "modelEditor.verified": "Проверенные изменения модели",
     "modelEditor.group.parameters": "Параметры",
     "modelEditor.group.colors": "Цвета и векторы",
+    "modelEditor.colorHelp": "Цвета текстур сочетаются с оттенками материала. Белый оттенок сохраняет исходные цвета текстуры.",
     "modelEditor.group.lighting": "Освещение",
     "modelEditor.group.flags": "Флаги",
     "modelEditor.group.shader": "Шейдер",

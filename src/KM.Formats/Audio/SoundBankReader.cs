@@ -4,7 +4,8 @@ using System.Text;
 namespace KM.Formats.Audio;
 
 public sealed record SoundBankItem(string Identifier, string Kind, long Offset, long Length, string Bank,
-    string Codec = "", int Channels = 0, int SampleRate = 0, string Status = "sample", uint[]? Media = null);
+    string Codec = "", int Channels = 0, int SampleRate = 0, string Status = "sample", uint[]? Media = null,
+    bool IsMusic = false);
 
 /// <summary>Reads bounded bank indexes and media headers without decoding audio.</summary>
 public sealed class SoundBankReader(Stream stream, CancellationToken cancellationToken)
@@ -85,17 +86,47 @@ public sealed class SoundBankReader(Stream stream, CancellationToken cancellatio
             Check(p + 5, size, hEnd); if (size < 4) throw new InvalidDataException("Audio object is truncated.");
             objects.Add((U32(p + 5), type, p + 9, size - 4)); p += 5L + size;
         }
-        var media = new Dictionary<uint, uint>();
+        var media = new HashSet<uint>();
+        var music = new HashSet<uint>();
         if (version is 128 or 140 or 145)
-            foreach (var obj in objects.Where(o => o.Type == 2 && o.Size >= 9))
+            foreach (var obj in objects.Where(o => o.Type is 2 or 11))
             {
-                if ((U32(obj.Offset) & 0xf) == 1) media.TryAdd(obj.Id, U32(obj.Offset + 5));
-                else items.Add(new(obj.Id.ToString(), "event", 0, 0, name, Status: "procedural"));
+                var sourceEnd = obj.Offset + obj.Size;
+                var sourceOffset = obj.Offset;
+                uint sourceCount = 1;
+                if (obj.Type == 11)
+                {
+                    Check(sourceOffset, 5, sourceEnd);
+                    sourceCount = U32(sourceOffset + 1); sourceOffset += 5;
+                    if (sourceCount > MaxItems) throw new InvalidDataException("Audio track source count is invalid.");
+                }
+                for (var i = 0; i < sourceCount; i++)
+                {
+                    Check(sourceOffset, 14, sourceEnd);
+                    var pluginType = U32(sourceOffset) & 0xf;
+                    var source = U32(sourceOffset + 5);
+                    if (pluginType == 1)
+                    {
+                        media.Add(source);
+                        if (media.Count > MaxItems) throw new InvalidDataException("Audio bank source count is invalid.");
+                        if (obj.Type == 11) music.Add(source);
+                    }
+                    else items.Add(new(obj.Id.ToString(), "event", 0, 0, name, Status: "procedural"));
+                    sourceOffset += 14;
+                    if (pluginType == 2)
+                    {
+                        Check(sourceOffset, 4, sourceEnd);
+                        var parameterSize = U32(sourceOffset); sourceOffset += 4;
+                        Check(sourceOffset, parameterSize, sourceEnd); sourceOffset += parameterSize;
+                    }
+                }
             }
-        var sources = media.Values.Distinct().ToArray();
-        foreach (var source in sources)
+        for (var i = 0; i < items.Count; i++)
+            if (items[i].Bank == name && uint.TryParse(items[i].Identifier, out var id) && music.Contains(id))
+                items[i] = items[i] with { IsMusic = true };
+        foreach (var source in media)
             if (!items.Any(item => item.Identifier == source.ToString() && item.Bank == name && item.Kind == "sample"))
-                items.Add(new(source.ToString(), "reference", 0, 0, name, Status: "missing"));
+                items.Add(new(source.ToString(), "reference", 0, 0, name, Status: "missing", IsMusic: music.Contains(source)));
         foreach (var obj in objects.Where(o => o.Type is 4 or 15))
             items.Add(new(obj.Id.ToString(), "event", 0, 0, name, Status: "event"));
         if (version is not (128 or 140 or 145))

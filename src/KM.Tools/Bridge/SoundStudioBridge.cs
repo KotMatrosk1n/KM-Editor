@@ -12,7 +12,8 @@ namespace KM.Tools.Bridge;
 
 internal static class SoundStudioBridge
 {
-    private sealed record Asset(SoundBankItem Item, string Path, long FileSize, long Stamp);
+    private sealed record Asset(SoundBankItem Item, string Path, long FileSize, long Stamp, string? InferredCategory = null,
+        string? SourceDirectory = null);
     private sealed class Catalog(string token, ProjectPaths paths)
     {
         public string Token { get; } = token;
@@ -57,7 +58,7 @@ internal static class SoundStudioBridge
                 return state.Assets.Skip(request.Index).Take(512).Select((asset, i) => new {
                     Id = request.Index + i, asset.Item.Identifier, asset.Item.Kind, asset.Item.Bank,
                     asset.Item.Codec, asset.Item.Channels, asset.Item.SampleRate, asset.Item.Status,
-                    Size = asset.Item.Length, Category = Category(asset.Item.Bank), Species = Species(asset.Item.Bank),
+                    Size = asset.Item.Length, Category = AssetCategory(asset), Species = Species(asset.Item.Bank),
                     Name = DisplayName(asset.Item, state.SpeciesNames)
                 }).ToArray();
             }
@@ -132,7 +133,8 @@ internal static class SoundStudioBridge
                 try
                 {
                     using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 16384, FileOptions.RandomAccess);
-                    foreach (var item in new SoundBankReader(stream, token).Read(entry.RelativePath[6..])) assets.Add(new(item, path, size, stamp));
+                    foreach (var item in new SoundBankReader(stream, token).Read(entry.RelativePath[6..]))
+                        assets.Add(new(item, path, size, stamp, SourceDirectory: Path.GetDirectoryName(entry.RelativePath)));
                 }
                 catch (Exception e) when (e is InvalidDataException or EndOfStreamException or OverflowException)
                 { assets.Add(new(new(Path.GetFileName(entry.RelativePath), "bank", 0, 0, entry.RelativePath[6..], Status: "damaged"), path, size, stamp)); }
@@ -147,14 +149,29 @@ internal static class SoundStudioBridge
             {
                 token.ThrowIfCancellationRequested(); var asset = assets[i];
                 if (asset.Item.Status is not ("missing" or "prefetch") || !complete.TryGetValue(asset.Item.Identifier, out var candidates)) continue;
-                var related = candidates.Where(c => c.Item.Bank.Split('/')[0] == asset.Item.Bank.Split('/')[0]).ToArray();
-                if (related.Length == 1) assets[i] = related[0] with { Item = related[0].Item with { Bank = asset.Item.Bank } };
+                var related = candidates.Where(c => string.Equals(c.SourceDirectory, asset.SourceDirectory, StringComparison.OrdinalIgnoreCase)).ToArray();
+                if (related.Length == 1) assets[i] = related[0] with { Item = related[0].Item with { Bank = asset.Item.Bank, IsMusic = asset.Item.IsMusic } };
+            }
+            // Shared package recordings inherit a category only when their resolved bank uses agree.
+            var categories = assets.Where(a => a.Item.Status == "sample" && AssetCategory(a) != "other")
+                .GroupBy(a => (a.Path, a.Item.Offset, a.Item.Length))
+                .ToDictionary(g => g.Key, g => g.Select(AssetCategory).Distinct().ToArray());
+            for (var i = 0; i < assets.Count; i++)
+            {
+                token.ThrowIfCancellationRequested(); var asset = assets[i];
+                if (AssetCategory(asset) == "other" && categories.TryGetValue((asset.Path, asset.Item.Offset, asset.Item.Length), out var choices) && choices.Length == 1)
+                    assets[i] = asset with { InferredCategory = choices[0] };
             }
             state.Assets = assets.ToArray(); state.Done = true;
         }
         catch (OperationCanceledException) { }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
         { state.Error = "KM-AUDIO-SOURCE-UNAVAILABLE"; state.Done = true; }
+    }
+    private static string AssetCategory(Asset asset)
+    {
+        var category = Category(asset.Item.Bank);
+        return category != "other" ? category : asset.InferredCategory ?? (asset.Item.IsMusic ? "music" : "other");
     }
     private static string Category(string bank)
     {

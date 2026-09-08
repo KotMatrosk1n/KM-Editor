@@ -14,14 +14,19 @@ type Props = {
   onDirtyChange: (dirty: boolean) => void; onPreview: (changes: AssetChange[]) => void;
   onStage: (model: string, change: AssetChange | null, restore?: boolean) => Promise<boolean>;
   selectedMaterial?: string;
+  selectionRevision?: number;
+  onSelectMaterial: (material: string) => void;
+  onInspectedMaterial: (material: string) => void;
+  onTextureHost: (host: HTMLDivElement | null) => void;
 };
-export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyChange, onPreview, onStage, selectedMaterial }: Props) {
+export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyChange, onPreview, onStage, selectedMaterial, selectionRevision, onSelectMaterial, onInspectedMaterial, onTextureHost }: Props) {
   const { t } = useLocalization();
   const [properties, setProperties] = useState<ModelProperties | null>(null);
   const [selection, setSelection] = useState(''); const [search, setSearch] = useState('');
   const [drafts, editDrafts, setDrafts] = useModelDraft<Record<string, Draft>>({}, 'material');
   const history = useModelHistory();
   const [busy, setBusy] = useState(false); const [error, setError] = useState(false);
+  const locked = busy || disabled || history?.locked === true;
   const pathKey = JSON.stringify(paths);
   useEffect(() => {
     let live = true;
@@ -33,10 +38,11 @@ export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyCh
   useEffect(() => {
     const match = properties?.materials.find(a => a.fields.some(f => f.material === selectedMaterial));
     if (match) { setSelection(`${match.id}|${selectedMaterial}`); setSearch(''); }
-  }, [selectedMaterial, properties]);
+  }, [selectedMaterial, selectionRevision, properties]);
   const staged = useMemo(() => stagedAssetChanges(session, model), [session, model]);
   const asset = properties?.materials.find(a => selection.startsWith(a.id + '|'));
   const material = asset ? selection.slice(asset.id.length + 1) : '';
+  useEffect(() => { onInspectedMaterial(material); }, [material, onInspectedMaterial]);
   const key = (id: string, field: MaterialField) => `${id}|${field.key}`;
   const baseline = (id: string, field: MaterialField): Draft => {
     const saved = staged.find(a => a.asset === id)?.changes.find(c => c.key === field.key);
@@ -78,6 +84,11 @@ export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyCh
     } catch { setError(true); } finally { setBusy(false); history?.lock(false); }
   };
   const fields = asset?.fields.filter(f => f.material === material && `${f.name} ${f.group}`.toLowerCase().includes(search.toLowerCase())) ?? [];
+  const selectMaterial = (value: string) => {
+    setSelection(value); setSearch('');
+    const selectedAsset = properties?.materials.find(a => value.startsWith(a.id + '|'));
+    if (selectedAsset) onSelectMaterial(value.slice(selectedAsset.id.length + 1));
+  };
   return <section className="model-materials" aria-labelledby="model-materials-title" aria-busy={busy || !properties}>
     <h3 id="model-materials-title">{t('modelEditor.materials')}</h3>
     <details className="model-workspace__help"><summary>{t('modelWorkspace.help')}</summary><p>{t('modelEditor.materialHelp')}</p><p>{t('modelEditor.studioPreview')}</p></details>
@@ -85,13 +96,15 @@ export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyCh
     {!properties && !error ? <p role="status">{t('modelViewer.loading')}</p> : null}
     {properties ? <>
       <label htmlFor="model-material-select">{t('modelEditor.material')}</label>
-      <SearchableOptionInput id="model-material-select" ariaLabel={t('modelEditor.material')} value={selection} disabled={busy || disabled}
-        isFiniteCatalog localizeOptions={false} onChange={setSelection} options={properties.materials.flatMap(a => [...new Set(a.fields.map(f => f.material))].map(name => ({ value: `${a.id}|${name}`, label: `${name} (${a.id.split('/').at(-1)})` })))} />
+      <SearchableOptionInput id="model-material-select" ariaLabel={t('modelEditor.material')} value={selection} disabled={locked}
+        isFiniteCatalog localizeOptions={false} onChange={selectMaterial} onReselect={selectMaterial}
+        options={properties.materials.flatMap(a => [...new Set(a.fields.map(f => f.material))].map(name => ({ value: `${a.id}|${name}`, label: `${name} (${a.id.split('/').at(-1)})` })))} />
       <label htmlFor="model-property-search">{t('modelEditor.search')}</label>
       <input id="model-property-search" type="search" value={search} onChange={event => setSearch(event.target.value)} />
-      <fieldset disabled={busy || disabled}>
-        {[...new Set(fields.map(f => f.group))].map(group => <details key={group} open={group === 'colors' || !!search}>
+      <fieldset disabled={locked}>
+        {[...new Set(['colors', ...fields.map(f => f.group)])].map(group => <details key={group} open={group === 'colors' || !!search}>
           <summary>{t(`modelEditor.group.${group}`)} ({fields.filter(f => f.group === group).length})</summary>
+          {group === 'colors' ? <><p>{t('modelEditor.colorHelp')}</p><div ref={onTextureHost} /></> : null}
           {fields.filter(f => f.group === group).map(field => {
             const value = current(asset!.id, field);
             const selectedRestore = staged.some(a => a.asset === asset?.id && a.restore);
@@ -100,7 +113,7 @@ export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyCh
             return <fieldset key={field.key} className={`model-materials__field${changed ? ' model-materials__field--changed' : ''}`} disabled={!field.editable || selectedRestore}>
               <legend data-localization-ignore="true">{field.name}</legend>
               {field.options.length ? <SearchableOptionInput id={`model-property-${field.key}`} ariaLabel={field.name}
-                disabled={!field.editable || selectedRestore || busy || disabled} isFiniteCatalog localizeOptions={false}
+                disabled={!field.editable || selectedRestore || locked} isFiniteCatalog localizeOptions={false}
                 value={field.kind === 'int' ? value.values[0] : value.text ?? ''}
                 onChange={text => edit(field, field.kind === 'int' ? { values: [text], text: null } : { values: [], text })}
                 options={field.options.map(option => ({ value: option, label: option }))} />
@@ -122,8 +135,8 @@ export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyCh
       </fieldset>
       {invalid ? <p role="alert">{t('modelEditor.invalid')}</p> : null}
       <div className="model-viewer__toolbar">
-        <button type="button" disabled={busy || disabled || invalid || !asset || !Object.keys(drafts).some(k => k.startsWith(asset.id + '|'))} onClick={() => void save()}>{t('modelEditor.stageMaterial')}</button>
-        <button type="button" disabled={busy || disabled || !dirty} onClick={() => editDrafts({}, t('modelViewer.texture.discard'), 'discard-materials')}>{t('modelViewer.texture.discard')}</button>
+        <button type="button" disabled={locked || invalid || !asset || !Object.keys(drafts).some(k => k.startsWith(asset.id + '|'))} onClick={() => void save()}>{t('modelEditor.stageMaterial')}</button>
+        <button type="button" disabled={locked || !dirty} onClick={() => editDrafts({}, t('modelViewer.texture.discard'), 'discard-materials')}>{t('modelViewer.texture.discard')}</button>
       </div>
       <details><summary>{t('modelEditor.assets', { count: properties.assets.length })}</summary>
         <ul className="model-materials__assets">{properties.assets.map(a => <li key={a.id} data-localization-ignore="true" title={a.id}>{a.id.split('/').at(-1)} ({a.size.toLocaleString()} B)</li>)}</ul>

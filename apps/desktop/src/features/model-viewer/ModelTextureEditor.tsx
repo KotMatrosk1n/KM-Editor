@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { EditSession, ProjectPaths } from '../../bridge/contracts';
 import { useLocalization } from '../../localization';
 import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditorDiagnostics';
@@ -14,6 +15,9 @@ type Props = {
   onDirtyChange: (dirty: boolean) => void;
   onInspect?: (texture: ModelTexture, changes: TextureRule[]) => void;
   selectedMaterial?: string;
+  selectionRevision?: number;
+  container?: HTMLElement | null;
+  materialFilter?: string;
 };
 function TextureImage({ texture, onColor, disabled }: { texture: ModelTexture; onColor: (color: string) => void; disabled: boolean }) {
   const { t } = useLocalization(); const canvas = useRef<HTMLCanvasElement>(null);
@@ -32,7 +36,7 @@ function TextureImage({ texture, onColor, disabled }: { texture: ModelTexture; o
       if (rgba && rgba[3]) onColor(`#${[...rgba.slice(0, 3)].map(value => value.toString(16).padStart(2, '0')).join('')}`);
     }} />;
 }
-export function ModelTextureEditor({ paths, model, session, disabled, onPreview, onStage, onDirtyChange, onInspect, selectedMaterial }: Props) {
+export function ModelTextureEditor({ paths, model, session, disabled, onPreview, onStage, onDirtyChange, onInspect, selectedMaterial, selectionRevision, container, materialFilter }: Props) {
   const { t } = useLocalization();
   const [textures, setTextures] = useState<ModelTexture[]>([]);
   const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false); const [error, setError] = useState(false);
@@ -50,24 +54,30 @@ export function ModelTextureEditor({ paths, model, session, disabled, onPreview,
     }).catch(() => { if (live) setError(true); }).finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
   }, [pathKey, model]);
-  const texture = textures.find(item => item.id === selected);
+  const visibleTextures = materialFilter === undefined ? textures : textures.filter(item => item.materials.includes(materialFilter));
+  const texture = visibleTextures.find(item => item.id === selected);
   const staged = useMemo(() => stagedTextureChanges(session, textures.map(item => item.id)), [session, textures]);
   const setSelected = (value: string) => {
+    if (value === selected) return;
     const color = textures.find(item => item.id === value)?.colors[0] ?? '#ffffff';
     if (from.toLowerCase() === to.toLowerCase()) { applyState({ ...state, selected: value, from: color, to: color }); return; }
     editState(old => ({ ...old, selected: value, from: color, to: color,
       drafts: from.toLowerCase() !== to.toLowerCase() ? { ...old.drafts, [selected]: pending.find(c => c.texture === selected)?.changes ?? [] } : old.drafts }), t('modelViewer.texture.select'), 'texture-selection');
   };
-  useEffect(() => {
-    const match = textures.find(item => item.materials.includes(selectedMaterial ?? ''));
-    if (match && from.toLowerCase() === to.toLowerCase()) setSelected(match.id);
-  }, [selectedMaterial, textures]);
   const pending = useMemo(() => textures.flatMap(item => {
     const previous = staged.find(change => change.texture === item.id);
     const rules = drafts[item.id] ?? previous?.changes ?? [];
     const current = item.id === selected && rules.length < 32 && from.toLowerCase() !== to.toLowerCase() ? [...rules, { from, to, tolerance }] : rules;
     return current.length ? [{ texture: item.id, sourceHash: item.sourceHash, changes: current }] : [];
   }), [textures, drafts, staged, selected, from, to, tolerance]);
+  useEffect(() => {
+    if (materialFilter !== undefined && materialFilter !== selectedMaterial) return;
+    const match = textures.find(item => item.materials.includes(selectedMaterial ?? ''));
+    if (match) setSelected(match.id);
+  }, [selectedMaterial, selectionRevision, textures]);
+  useEffect(() => {
+    if (!visibleTextures.some(item => item.id === selected)) setSelected(visibleTextures[0]?.id ?? '');
+  }, [materialFilter, textures]);
   const signature = (items: TextureChange[]) => JSON.stringify([...items].sort((a, b) => a.texture.localeCompare(b.texture)));
   const dirty = signature(pending) !== signature(staged);
   const selectedDirty = signature(pending.filter(item => item.texture === selected)) !== signature(staged.filter(item => item.texture === selected));
@@ -98,15 +108,15 @@ export function ModelTextureEditor({ paths, model, session, disabled, onPreview,
     } catch { setError(true); }
     finally { setBusy(false); history?.lock(false); }
   };
-  return <section className="model-textures" aria-labelledby="model-textures-title" aria-busy={loading || busy}>
+  const content = <section className="model-textures" aria-labelledby="model-textures-title" aria-busy={loading || busy}>
     <h3 id="model-textures-title">{t('modelViewer.texture.title')}</h3>
     <p>{t('modelViewer.texture.shared')}</p>
     {dirty ? <p role="status">{t('modelViewer.texture.dirty')}</p> : null}
-    {loading ? <p role="status">{t('modelViewer.loading')}</p> : textures.length === 0 ? <p>{t('modelViewer.texture.empty')}</p> : <>
+    {loading ? <p role="status">{t('modelViewer.loading')}</p> : visibleTextures.length === 0 ? <p>{t('modelViewer.texture.empty')}</p> : <>
       <label htmlFor="model-texture-select">{t('modelViewer.texture.select')}</label>
       <SearchableOptionInput id="model-texture-select" ariaLabel={t('modelViewer.texture.select')} value={selected} disabled={locked}
         isFiniteCatalog localizeOptions={false} onChange={setSelected}
-        options={textures.map(item => ({ value: item.id, label: item.id.split('/').at(-1) ?? item.id }))} />
+        options={visibleTextures.map(item => ({ value: item.id, label: item.id.split('/').at(-1) ?? item.id }))} />
       {texture ? <>
         {!texture.editable ? <p role="status">{t('modelViewer.texture.unsupported')}</p> : null}
         <p data-localization-ignore="true">{texture.materials.join(', ')}</p>
@@ -138,4 +148,5 @@ export function ModelTextureEditor({ paths, model, session, disabled, onPreview,
     </>}
     {error ? <p role="alert">{t('modelViewer.texture.error')} <code>KM-MODEL-TEXTURE-EDIT-INVALID</code></p> : null}
   </section>;
+  return container ? createPortal(content, container) : content;
 }

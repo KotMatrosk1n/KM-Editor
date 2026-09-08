@@ -246,7 +246,11 @@ impl Assets {
             values.extend_from_slice(&[
                 if surface.is_some() { 1.0 } else { 0.0 },
                 if primitive.blend { 1.0 } else { 0.0 },
-                0.0,
+                if surface.is_some_and(|s| s.tint_subsurface_by_base_color) {
+                    1.0
+                } else {
+                    0.0
+                },
                 0.0,
             ]);
             let color = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
