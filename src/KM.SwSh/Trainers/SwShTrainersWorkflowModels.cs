@@ -118,4 +118,7 @@ public sealed record SwShTrainersWorkflow(
     IReadOnlyList<SwShTrainerRecord> Trainers,
     IReadOnlyList<SwShTrainerEditableField> EditableFields,
     SwShTrainersWorkflowStats Stats,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    internal IReadOnlyList<string> SpriteSpeciesNames { get; init; } = [];
+}

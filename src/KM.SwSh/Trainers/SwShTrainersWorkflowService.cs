@@ -744,7 +744,7 @@ public sealed class SwShTrainersWorkflowService
                 trainers.Count,
                 trainers.Sum(GetOccupiedPokemonCount),
                 sourceFileCount),
-            diagnostics);
+            diagnostics) { SpriteSpeciesNames = names?.SpriteSpeciesNames ?? [] };
     }
 
     private static IReadOnlyList<SwShTrainerEditableField> CreateEditableFields(TrainerLookupTables? names)

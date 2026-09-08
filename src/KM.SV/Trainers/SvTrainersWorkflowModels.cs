@@ -120,4 +120,8 @@ public sealed record SvTrainersWorkflow(
     IReadOnlyList<SvTrainerRecord> Trainers,
     IReadOnlyList<SvTrainerEditableField> EditableFields,
     SvTrainersWorkflowStats Stats,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    internal KM.SV.Data.SvTextLabelLookup Labels { get; init; } = KM.SV.Data.SvTextLabelLookup.None();
+    internal KM.SV.Data.SvTextLabelLookup SpriteLabels { get; init; } = KM.SV.Data.SvTextLabelLookup.None();
+}

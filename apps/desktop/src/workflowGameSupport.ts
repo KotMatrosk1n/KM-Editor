@@ -38,6 +38,7 @@ import { type BattleCafeRewardsWorkflow } from './bridge/battleCafeRewardsContra
 import { type FashionUnlockWorkflow } from './bridge/fashionUnlockContracts';
 import { type FashionCatalogWorkflow } from './bridge/fashionCatalogContracts';
 import { type GymUniformRemovalWorkflow } from './bridge/gymUniformRemovalContracts';
+import { type StarmobilesWorkflow } from './bridge/starmobilesContracts';
 import { type HabitatCoordinatesWorkflow } from './bridge/habitatCoordinatesContracts';
 import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContracts';
 import { type FairyGymBoostsWorkflow } from './bridge/fairyGymBoostsContracts';
@@ -77,7 +78,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
   {
     id: 'editors',
     label: 'Editors',
-    sectionIds: ['pokemon', 'trainers', 'trainerPools', 'moves', 'items', 'placement', 'behavior', 'text']
+    sectionIds: ['pokemon', 'trainers', 'starmobiles', 'trainerPools', 'moves', 'items', 'placement', 'behavior', 'text']
   },
   {
     id: 'encountersPokemonSources',
@@ -169,6 +170,7 @@ export const sharedStagedEditorSectionIds = new Set<WorkbenchSection>([
   'modelViewer',
   'pokemon',
   'trainers',
+  'starmobiles',
   'moves',
   'items',
   'placement',
@@ -191,6 +193,7 @@ export const sharedStagedEditorDomains = new Set([
   'workflow.modelTextures',
   'workflow.pokemon',
   'workflow.trainers',
+  'workflow.starmobiles',
   'workflow.moves',
   'workflow.items',
   'workflow.placement',
@@ -272,6 +275,7 @@ export type LoadedWorkflowStateBySection = {
   shopsWorkflow: ShopsWorkflow | null;
   tmMachineControlsWorkflow: TmMachineControlsWorkflow | null;
   habitatCoordinatesWorkflow: HabitatCoordinatesWorkflow | null;
+  starmobilesWorkflow: StarmobilesWorkflow | null;
   spreadsheetImportWorkflow: SpreadsheetImportWorkflow | null;
   startingItemsWorkflow: StartingItemsWorkflow | null;
   staticEncountersWorkflow: StaticEncountersWorkflow | null;
@@ -399,6 +403,8 @@ export function getLoadedWorkflowStateForSection(
       return state.shopsWorkflow !== null;
     case 'tmMachineControls':
       return state.tmMachineControlsWorkflow !== null;
+    case 'starmobiles':
+      return state.starmobilesWorkflow !== null;
     case 'habitatCoordinates':
       return state.habitatCoordinatesWorkflow !== null;
     case 'spreadsheetImport':

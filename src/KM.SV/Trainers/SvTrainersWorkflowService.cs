@@ -192,12 +192,13 @@ internal sealed class SvTrainersWorkflowService
         var diagnostics = new List<ValidationDiagnostic>();
         SvWorkflowFile? source = null;
         var labels = SvTextLabelLookup.None();
+        var spriteLabels = SvTextLabelLookup.None();
         var trainers = Array.Empty<SvTrainerRecord>();
 
         try
         {
             labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
-            var spriteLabels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
+            spriteLabels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
             var abilityResolver = SvTrainerAbilityResolver.Load(project, fileSource, labels, diagnostics);
             var moveResolver = SvDefaultMoveResolver.Load(project, fileSource, diagnostics);
             source = fileSource.Read(project, SvDataPaths.TrainerDataArray);
@@ -226,7 +227,7 @@ internal sealed class SvTrainersWorkflowService
                 trainers.Length,
                 trainers.Sum(GetOccupiedPokemonCount),
                 source is null ? 0 : 1),
-            diagnostics);
+            diagnostics) { Labels = labels, SpriteLabels = spriteLabels };
     }
 
     private IEnumerable<SvTrainerRecord> LoadRecords(

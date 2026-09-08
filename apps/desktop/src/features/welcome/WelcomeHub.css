@@ -22,6 +22,7 @@
 .welcome-resources { display: grid; gap: .2rem; margin-top: auto; padding-top: 1.1rem; border-top: 1px solid var(--color-border); }
 .welcome-resources a, .welcome-resources button, .welcome-guide-links a { display: flex; align-items: center; gap: .85rem; padding: .6rem 0; color: var(--color-text-muted); background: transparent; border: 0; text-decoration: none; text-align: start; font-size: .93rem; }
 .welcome-resources span, .welcome-guide-links span { flex: 1; }
+.welcome-resources .nav-count { flex: 0 0 auto; }
 .welcome-resources svg, .welcome-guide-links svg { flex-shrink: 0; }
 .welcome-resources a:hover, .welcome-resources button:hover, .welcome-guide-links a:hover { color: var(--color-text); }
 .welcome-resources button[aria-pressed='true'] { color: var(--color-accent-bright); }

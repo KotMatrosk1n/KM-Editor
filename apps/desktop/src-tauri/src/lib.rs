@@ -197,6 +197,8 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "gymUniformRemoval.uninstall.stage",
     "habitatCoordinates.coordinate.stage",
     "habitatCoordinates.load",
+    "starmobiles.load",
+    "starmobiles.fields.stage",
     "hyperTraining.load",
     "hyperTraining.stage",
     "hyperspaceBypass.install.stage",
@@ -2800,6 +2802,7 @@ fn is_project_bridge_workflow_load_command(command: &str) -> bool {
             | "giftPokemon.load"
             | "gymUniformRemoval.load"
             | "habitatCoordinates.load"
+            | "starmobiles.load"
             | "hyperspaceBypass.load"
             | "hyperTraining.load"
             | "items.load"
@@ -2955,6 +2958,7 @@ fn is_replay_safe_edit_session_command(command: &str) -> bool {
             | "gymUniformRemoval.install.stage"
             | "gymUniformRemoval.uninstall.stage"
             | "habitatCoordinates.coordinate.stage"
+            | "starmobiles.fields.stage"
             | "hyperTraining.stage"
             | "hyperspaceBypass.install.stage"
             | "hyperspaceBypass.uninstall.stage"

@@ -10,6 +10,9 @@ namespace KM.Core.Projects;
 
 public sealed class ProjectValidator
 {
+    public const string BaseRomFsVerifiedDiagnosticCode = "KM-PROJECT-ROMFS-VERIFIED";
+    public const string BaseExeFsVerifiedDiagnosticCode = "KM-PROJECT-EXEFS-VERIFIED";
+    public const string OutputRootVerifiedDiagnosticCode = "KM-PROJECT-OUTPUT-VERIFIED";
     public const string OutputRootNotConfiguredDiagnosticCode = "KM-PROJECT-OUTPUT-NOT-CONFIGURED";
     public const string OutputRootMissingDiagnosticCode = "KM-PROJECT-OUTPUT-MISSING";
     public const string SaveFileWrongKindDiagnosticCode = "KM-PROJECT-SAVE-WRONG-KIND";
@@ -510,7 +513,8 @@ public sealed class ProjectValidator
         baseRomFs.AddDiagnostic(
             DiagnosticSeverity.Info,
             $"Base RomFS contains the Trinity archive required for {gameInfo.DisplayName}.",
-            expected: "arc/data.trpfd and arc/data.trpfs");
+            expected: "arc/data.trpfd and arc/data.trpfs",
+            code: BaseRomFsVerifiedDiagnosticCode);
     }
 
     private static void AddBaseExeFsGameDiagnostic(PathValidationDraft baseExeFs, ProjectGame selectedGame)
@@ -569,7 +573,8 @@ public sealed class ProjectValidator
             baseExeFs.AddDiagnostic(
                 DiagnosticSeverity.Info,
                 $"Base ExeFS matches selected {FormatGame(selectedGame)} title id 0x{titleId!.Value:X16}.",
-                expected: $"0x{GetTitleId(selectedGame):X16} for {FormatGame(selectedGame)}");
+                expected: $"0x{GetTitleId(selectedGame):X16} for {FormatGame(selectedGame)}",
+                code: BaseExeFsVerifiedDiagnosticCode);
         }
         catch (IOException exception)
         {
@@ -608,7 +613,8 @@ public sealed class ProjectValidator
             outputRoot.AddDiagnostic(
                 DiagnosticSeverity.Info,
                 $"Output root folder matches selected {FormatGame(selectedGame)} title id 0x{selectedTitleId}.",
-                expected: $"LayeredFS output folder named {selectedTitleId}");
+                expected: $"LayeredFS output folder named {selectedTitleId}",
+                code: OutputRootVerifiedDiagnosticCode);
             return;
         }
 

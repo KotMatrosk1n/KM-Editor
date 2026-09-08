@@ -10,6 +10,7 @@ export const workbenchSections = [
   'moves',
   'text',
   'trainers',
+  'starmobiles',
   'trainerPools',
   'fashionCatalog',
   'giftPokemon',

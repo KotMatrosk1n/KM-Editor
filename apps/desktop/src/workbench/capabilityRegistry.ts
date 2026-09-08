@@ -39,6 +39,7 @@ import {
   Shuffle,
   Sparkle,
   Sparkles,
+  Star,
   Store,
   Table2,
   Trees,
@@ -114,6 +115,8 @@ function toContractSegment(section: WorkbenchSection) {
 }
 
 export const workbenchCapabilityRegistry = [
+  workflow({ id: 'starmobiles', label: 'Starmobiles', games: scarletVioletGames,
+    icon: Star, description: 'Edit Team Star Starmobile levels and combat stats.' }),
   {
     capabilityKinds: ['navigation', 'command'],
     description: 'Configure, validate, and inspect the active project.',

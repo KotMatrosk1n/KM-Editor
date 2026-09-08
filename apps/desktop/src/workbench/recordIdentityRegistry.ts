@@ -26,6 +26,7 @@ const registrations = {
   dexLayout: intrinsic('dexLayout', 'stored species ID and dex kind'),
   moves: intrinsic('moves', 'stored move ID'),
   text: intrinsic('text', 'stored message key'),
+  starmobiles: sourceRevisionBound('starmobiles', 'physical boss row and exact source revision'),
   trainers: intrinsic('trainers', 'stored trainer ID and fixed party slot'),
   trainerPools: fixedSchemaSlot('trainerPools', 'stored pool identity and fixed member slot'),
   fashionCatalog: sourceRevisionBound(

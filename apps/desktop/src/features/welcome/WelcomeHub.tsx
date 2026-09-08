@@ -17,10 +17,10 @@ export type WelcomeHubProps = {
   onSelectionChange?: (game: ProjectGame) => void;
   onCancel?: () => void; onOpenGame: (game: ProjectGame) => Promise<void>;
   onOpenLink: (url: string) => Promise<void>; settings: ReactNode; diagnostics?: ReactNode;
-  content?: WelcomeContent;
+  content?: WelcomeContent; hasAvailableUpdate?: boolean;
 };
 export default function WelcomeHub({ games, definitions, logo, version, configuredGames, currentGame, isLoading, onCancel,
-  onSelectionChange, onOpenGame, onOpenLink, settings, diagnostics, content = welcomeContent }: WelcomeHubProps) {
+  onSelectionChange, onOpenGame, onOpenLink, settings, diagnostics, content = welcomeContent, hasAvailableUpdate = false }: WelcomeHubProps) {
   const { t, interfaceLocale, translateLiteral } = useLocalization();
   const [game, setGame] = useState<ProjectGame>(() => currentGame ?? readWelcomeGame());
   useEffect(() => { onSelectionChange?.(game); }, [game, onSelectionChange]);
@@ -74,7 +74,13 @@ export default function WelcomeHub({ games, definitions, logo, version, configur
         {resource(t('welcome.documentation'), 'https://github.com/KotMatrosk1n/KM-Editor/wiki', BookOpen)}
         {resource('GitHub', 'https://github.com/KotMatrosk1n/KM-Editor', GitFork)}
         {resource(t('welcome.report'), githubIssuesUrl, TriangleAlert)}
-        <button type="button" aria-pressed={showSettings} onClick={() => setShowSettings(value => !value)}><Settings size={21} aria-hidden="true" /><span>{t('welcome.settings')}</span><ChevronRight size={16} aria-hidden="true" /></button>
+        <button type="button" aria-pressed={showSettings}
+          aria-label={hasAvailableUpdate ? `${t('welcome.settings')}: ${translateLiteral('Update Available')}` : t('welcome.settings')}
+          onClick={() => setShowSettings(value => !value)}>
+          <Settings size={21} aria-hidden="true" /><span>{t('welcome.settings')}</span>
+          {hasAvailableUpdate ? <span aria-hidden="true" className="nav-count">!</span> : null}
+          <ChevronRight size={16} aria-hidden="true" />
+        </button>
         {onCancel ? <button type="button" disabled={busy} onClick={onCancel}><ArrowRight size={21} aria-hidden="true" /><span>{t('welcome.return')}</span></button> : null}
       </nav>
     </aside>

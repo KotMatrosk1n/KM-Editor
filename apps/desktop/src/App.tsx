@@ -468,6 +468,9 @@ import {
   FashionCatalogSection,
   type FashionCatalogFieldEditInput
 } from './features/fashion-catalog/FashionCatalogSection';
+import { StarmobilesSection } from './features/starmobiles/StarmobilesSection';
+import { type StarmobileUpdate, type StarmobilesWorkflow } from './bridge/starmobilesContracts';
+import { pokemonTypeOptions } from './pokemonTypeOptions';
 import {
   HabitatCoordinatesSection,
   type HabitatCoordinateStageInput
@@ -683,7 +686,8 @@ import { ProcessMemoryPanel } from './features/settings/ProcessMemoryPanel';
 import { CompatibilityActions } from './features/pokemon/CompatibilityActions';
 import { compatibilityEntryEnabled, compatibilityGroupField, compatibilityGroupValue, compatibilityToggleValues, isMoveListCompatibility } from './features/pokemon/compatibilityDrafts';
 import { ShopPendingRemovals } from './features/shops/ShopPendingRemovals';
-import { OutputHistoryPage } from './features/output-safety/OutputHistoryPage';
+import { OutputHistoryPage, type HistoryChange, type HistoryChangeFormatter } from './features/output-safety/OutputHistoryPage';
+import { createHistoryDisplayContext, loadHistoryDisplayContext } from './features/output-safety/historyDisplayContext';
 import { restorePendingShopInventoryRow } from './features/shops/shopPendingInventory';
 import {
   PersonalizationSettingsPanel,
@@ -3274,6 +3278,11 @@ export function App({
   const [isTrainerPoolsStaging, setIsTrainerPoolsStaging] = useState(false);
   const [isFashionCatalogLoading, setIsFashionCatalogLoading] = useState(false);
   const [isFashionCatalogStaging, setIsFashionCatalogStaging] = useState(false);
+  const starmobilesWorkflow = useWorkbenchStore(state => state.starmobilesWorkflow);
+  const setStarmobilesWorkflow = useWorkbenchStore(state => state.setStarmobilesWorkflow);
+  const [isStarmobilesLoading, setIsStarmobilesLoading] = useState(false);
+  const [isStarmobilesStaging, setIsStarmobilesStaging] = useState(false);
+  const starmobilesGenerationRef = useRef(0);
   const [isHabitatCoordinatesLoading, setIsHabitatCoordinatesLoading] = useState(false);
   const [isHabitatCoordinateStaging, setIsHabitatCoordinateStaging] = useState(false);
   const [isGiftPokemonLoading, setIsGiftPokemonLoading] = useState(false);
@@ -3473,6 +3482,14 @@ export function App({
       ]),
     [bridgeDiagnostics, editValidationDiagnostics]
   );
+  const formatHistoryChange = useCallback<HistoryChangeFormatter>(change =>
+    selectedGame ? formatHistoryChangeSummary(change, createHistoryDisplayContext(selectedGame), t, translateLiteral)
+      : translateLiteral(change.summary),
+  [selectedGame, t, translateLiteral]);
+  const loadHistoryFormatter = useCallback(async (domain: string): Promise<HistoryChangeFormatter> => {
+    const context = await loadHistoryDisplayContext(bridge, createProjectPaths(draftPaths), domain);
+    return change => formatHistoryChangeSummary(change, context, t, translateLiteral);
+  }, [bridge, createProjectPaths, draftPaths, t, translateLiteral]);
   // Ordinary editor input is intentionally session-local. Nothing is written,
   // validated against storage, or reconciled while the user is typing.
   const settleLocalEditorDrafts = useCallback(async () => true, []);
@@ -4259,6 +4276,7 @@ export function App({
           fairyGymBoostsWorkflow,
           fashionCatalogWorkflow,
           habitatCoordinatesWorkflow,
+          starmobilesWorkflow,
           fashionUnlockWorkflow,
           flagworkSaveWorkflow,
           giftPokemonWorkflow,
@@ -4304,6 +4322,7 @@ export function App({
       fairyGymBoostsWorkflow,
       fashionCatalogWorkflow,
       habitatCoordinatesWorkflow,
+      starmobilesWorkflow,
       fashionUnlockWorkflow,
       flagworkSaveWorkflow,
       giftPokemonWorkflow,
@@ -4414,6 +4433,7 @@ export function App({
     angeFightWorkflow, bagHookWorkflow, battleCafeRewardsWorkflow, behaviorWorkflow, catchCapWorkflow, dynamaxAdventuresWorkflow,
     encountersWorkflow, exeFsPatchWorkflow, fairyGymBoostsWorkflow, fashionCatalogWorkflow,
     habitatCoordinatesWorkflow,
+    starmobilesWorkflow,
     fashionUnlockWorkflow,
     flagworkSaveWorkflow, giftPokemonWorkflow, gymUniformRemovalWorkflow, hyperTrainingWorkflow,
     hyperspaceBypassWorkflow,
@@ -4537,6 +4557,8 @@ export function App({
     (isDirty: boolean) => registerEditorDraftDirty('fashionCatalog', isDirty),
     [registerEditorDraftDirty]
   );
+  const handleStarmobilesDirtyChange = useCallback(
+    (dirty: boolean) => registerEditorDraftDirty('starmobiles', dirty), [registerEditorDraftDirty]);
   const handleHabitatCoordinatesDirtyChange = useCallback(
     (isDirty: boolean) => registerEditorDraftDirty('habitatCoordinates', isDirty),
     [registerEditorDraftDirty]
@@ -10892,6 +10914,51 @@ export function App({
     );
   };
 
+  const handleOpenStarmobilesWorkflow = async () => {
+    const session = getEditSessionForSection('starmobiles');
+    const signature = getEditSessionSignature(session);
+    const generation = starmobilesGenerationRef.current;
+    await runRetainedWorkflowLoad('starmobiles', setIsStarmobilesLoading,
+      () => bridge.loadStarmobiles({ paths: createProjectPaths(draftPaths), session }),
+      response => setStarmobilesWorkflow(response.workflow),
+      () => generation === starmobilesGenerationRef.current && signature === getEditSessionSignature(editSessionRef.current));
+  };
+
+  const handleStageStarmobiles = async (sourceRevision: string, updates: StarmobileUpdate[]) => {
+    const activeSession = getEditSessionForSection('starmobiles');
+    if (!activeSession) return false;
+    let accepted = false;
+    starmobilesGenerationRef.current += 1;
+    setIsStarmobilesStaging(true);
+    prepareScopedEditorPanelAction('starmobiles');
+    try {
+      await runEditSessionMutation(async session => {
+        const response = await bridge.stageStarmobiles({ paths: createProjectPaths(draftPaths), session, sourceRevision, updates });
+        const matches = response.workflow.sourceRevision === sourceRevision &&
+          response.workflow.summary.availability === 'available' &&
+          (session === null || response.session.sessionId === session.sessionId) &&
+          updates.every(update => response.workflow.rows.find(row => row.id === update.rowId)?.values[update.field] === update.value);
+        const diagnostics = [...response.diagnostics, ...response.workflow.diagnostics];
+        if (!matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error')) {
+          diagnostics.push({ severity: 'error', domain: 'workflow.starmobiles',
+            code: 'KM-SV-STARMOBILES-EDIT-INVALID', message: t('starmobiles.failed') });
+        }
+        const didSucceed = matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error');
+        return { ...response, diagnostics, didSucceed, session: didSucceed ? response.session : session };
+      }, response => {
+        setScopedEditorPanelDiagnostics('starmobiles', response.diagnostics);
+        if (response.didSucceed) {
+          accepted = true;
+          setStarmobilesWorkflow(response.workflow);
+          setEditSessionSection('starmobiles');
+        }
+      }, activeSession);
+    } catch (error) {
+      setScopedEditorPanelDiagnostics('starmobiles', toBridgeDiagnostics(error));
+    } finally { setIsStarmobilesStaging(false); }
+    return accepted;
+  };
+
   const handleOpenTmMachineControlsWorkflow = async () => {
     await runRetainedWorkflowLoad(
       'tmMachineControls',
@@ -12662,6 +12729,9 @@ export function App({
         case 'fashionCatalog':
           if (!currentState.fashionCatalogWorkflow) await handleOpenFashionCatalogWorkflow();
           break;
+        case 'starmobiles':
+          if (!currentState.starmobilesWorkflow) await handleOpenStarmobilesWorkflow();
+          break;
         case 'habitatCoordinates':
           if (!currentState.habitatCoordinatesWorkflow) {
             await handleOpenHabitatCoordinatesWorkflow();
@@ -13032,6 +13102,9 @@ export function App({
           void handleOpenFashionCatalogWorkflow();
         }
         break;
+      case 'starmobiles':
+        if (!starmobilesWorkflow && !isStarmobilesLoading) { markLazyLoadStarted(); void handleOpenStarmobilesWorkflow(); }
+        break;
       case 'habitatCoordinates':
         if (!habitatCoordinatesWorkflow && !isHabitatCoordinatesLoading) {
           markLazyLoadStarted();
@@ -13282,6 +13355,7 @@ export function App({
     fairyGymBoostsWorkflow,
     fashionCatalogWorkflow,
     habitatCoordinatesWorkflow,
+    starmobilesWorkflow,
     fashionUnlockWorkflow,
     flagworkSaveWorkflow,
     giftPokemonWorkflow,
@@ -13308,6 +13382,7 @@ export function App({
     isFairyGymBoostsLoading,
     isFashionCatalogLoading,
     isHabitatCoordinatesLoading,
+    isStarmobilesLoading,
     isFashionUnlockLoading,
     isGymUniformRemovalLoading,
     isHyperTrainingLoading,
@@ -19334,6 +19409,7 @@ export function App({
       'trainerPools',
       'fashionCatalog',
       'habitatCoordinates',
+      'starmobiles',
       'giftPokemon',
       'tradePokemon',
       'staticEncounters',
@@ -19382,6 +19458,7 @@ export function App({
       fairyGymBoosts: setIsFairyGymBoostsLoading,
       fashionCatalog: setIsFashionCatalogLoading,
       habitatCoordinates: setIsHabitatCoordinatesLoading,
+      starmobiles: setIsStarmobilesLoading,
       fashionUnlock: setIsFashionUnlockLoading,
       flagworkSave: setIsFlagworkSaveLoading,
       giftPokemon: setIsGiftPokemonLoading,
@@ -19583,6 +19660,12 @@ export function App({
           }
         }
       );
+    }
+    if (starmobilesWorkflow && refreshSections.has('starmobiles')) {
+      reloadTasks.push(async () => {
+        const response = await bridge.loadStarmobiles({ paths, session: getEditSessionForSection('starmobiles') });
+        if (canCommitRefresh()) setStarmobilesWorkflow(response.workflow);
+      });
     }
     if (habitatCoordinatesWorkflow && refreshSections.has('habitatCoordinates')) {
       reloadTasks.push(
@@ -20446,6 +20529,7 @@ export function App({
           definitions={gameDefinitions}
           logo={kmLogoUrl}
           version={appVersion}
+          hasAvailableUpdate={availableUpdate !== null}
           configuredGames={applicationWorkspaceSnapshot.document?.recentProjects.map(
             (profile) => profile.game
           ) ?? []}
@@ -21299,6 +21383,15 @@ export function App({
                 workflow={fashionCatalogWorkflow}
               />
             )
+          ) : null}
+          {activeSection === 'starmobiles' ? (
+            isStarmobilesLoading && !starmobilesWorkflow ? <WorkflowLoadingPanel label={t('starmobiles.title')} /> :
+              <StarmobilesSection workflow={starmobilesWorkflow} isStaging={isStarmobilesStaging}
+                key={getEditSessionForSection('starmobiles')?.sessionId ?? 'viewing'}
+                isEditing={getEditSessionForSection('starmobiles') !== null} isEditStarting={isEditStarting}
+                onStartEditSession={handleStartEditSession} onCancelEditSession={requestCancelEditSession}
+                onStage={handleStageStarmobiles} onDirtyStateChange={handleStarmobilesDirtyChange}
+                panelOutput={getOutputSafeScopedEditorPanelOutput('starmobiles')} />
           ) : null}
           {activeSection === 'habitatCoordinates' ? (
             isHabitatCoordinatesLoading && !habitatCoordinatesWorkflow ? (
@@ -22315,6 +22408,7 @@ export function App({
               diagnostics={editValidationDiagnostics}
               editSession={editSession}
               pendingEditContext={{
+                starmobilesWorkflow,
                 angeFightWorkflow,
                 bagHookWorkflow,
                 catchCapWorkflow,
@@ -22367,7 +22461,7 @@ export function App({
             />
           ) : null}
           {activeSection === 'history' ? (
-            <OutputHistoryPage controller={outputSafety}
+            <OutputHistoryPage controller={outputSafety} formatChange={formatHistoryChange} loadFormatter={loadHistoryFormatter}
               key={`${outputSafetyScope?.projectId ?? ''}:${outputSafetyScope?.paths.outputRootPath ?? ''}`} />
           ) : null}
           {activeSection === 'settings' ? (
@@ -22387,7 +22481,10 @@ export function App({
               message={advancedAuthoringHistorySyncError}
             />
           ) : null}
-          <CommonBottomDiagnosticsSection diagnostics={bottomDiagnostics} />
+          <CommonBottomDiagnosticsSection
+            diagnostics={bottomDiagnostics}
+            showProjectSetupConfirmations={activeSection === 'health'}
+          />
           {personalWorkspaceError && activeSection === 'workbench' ? (
             <div className="diagnostic-error" role="alert">
               <p>{t('workbench.personalState.loadError')}</p>
@@ -35956,6 +36053,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.fairyGymBoosts': 'Fairy Gym Boosts',
     'workflow.fashionCatalog': 'Fashion Catalog',
     'workflow.habitatCoordinates': 'Habitat Coordinates',
+    'workflow.starmobiles': 'Starmobiles',
     'workflow.fashionUnlock': 'Fashion Unlock',
     'workflow.giftPokemon': 'Gift Pokemon',
     'workflow.gymUniformRemoval': 'Gym Uniform Removal',
@@ -36014,6 +36112,7 @@ function getPendingEditSection(edit: PendingEdit): WorkbenchSection | null {
     'workflow.fairyGymBoosts': 'fairyGymBoosts',
     'workflow.fashionCatalog': 'fashionCatalog',
     'workflow.habitatCoordinates': 'habitatCoordinates',
+    'workflow.starmobiles': 'starmobiles',
     'workflow.fashionUnlock': 'fashionUnlock',
     'workflow.giftPokemon': 'giftPokemon',
     'workflow.gymUniformRemoval': 'gymUniformRemoval',
@@ -36410,6 +36509,31 @@ function getPendingEditDisplayDetails(
       return getTrainerPoolsPendingEditDisplayDetails(edit, context, editorLabel);
     case 'workflow.habitatCoordinates':
       return getHabitatPendingEditDisplayDetails(edit, editorLabel);
+    case 'workflow.starmobiles': {
+      let value = '';
+      try {
+        const payload: unknown = JSON.parse(edit.newValue ?? '{}');
+        const rawValue = typeof payload === 'number' ? payload
+          : payload && typeof payload === 'object' && 'Value' in payload ? payload.Value : undefined;
+        if (typeof rawValue === 'number' && Number.isFinite(rawValue)) value = String(rawValue);
+      }
+      catch { /* Keep malformed pending values out of the display. */ }
+      if (isPendingPokemonTypeEdit(edit)) {
+        value = formatPendingOptionValue(value, pokemonTypeOptions);
+      } else if (edit.field === 'ability') {
+        value = formatPendingOptionValue(value, context.starmobilesWorkflow?.abilityOptions);
+      } else if (edit.field?.startsWith('move')) {
+        value = formatPendingOptionValue(value, context.starmobilesWorkflow?.moveOptions);
+      }
+      const boss = ['fire', 'dark', 'fairy', 'fighting', 'poison'][Number(edit.recordId?.split(':')[1])] ?? 'unknown';
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel, fieldLocalizationKey: `starmobiles.field.${edit.field}`,
+        recordLocalizationKey: `starmobiles.boss.${boss}`, newValueLabel: value,
+        summaryLocalizationKey: 'starmobiles.pendingSummary',
+        summaryLocalizationParams: { value },
+        summaryLocalizationParamKeys: { boss: `starmobiles.boss.${boss}`, field: `starmobiles.field.${edit.field}` }
+      });
+    }
     case 'workflow.tmMachineControls':
       return getTmMachineControlsPendingEditDisplayDetails(edit, editorLabel);
     case 'workflow.battleCafeRewards': {
@@ -37236,12 +37360,27 @@ function getPokemonPendingEditDisplayDetails(
     });
   }
 
+  if (fieldKey.startsWith('compatibilityGroup:')) {
+    const groupId = fieldKey.slice('compatibilityGroup:'.length);
+    const group = pokemon?.compatibility.find(candidate => candidate.groupId === groupId);
+    const moves = (edit.newValue ?? '').split(',').filter(Boolean)
+      .map(value => formatPendingOptionValue(value, context.pokemonWorkflow?.learnsetMoveOptions));
+    return createPendingEditDisplayDetails(edit, {
+      editorLabel,
+      fieldLabel: group?.label ?? humanizePendingEditKey(groupId),
+      newValueLabel: moves.length ? moves.join(', ') : 'None',
+      recordLabel: pokemon ? `${pokemon.name} (#${pokemon.personalId})` : undefined
+    });
+  }
+
   const field = findPendingEditableField(context.pokemonWorkflow?.editableFields, edit.field);
 
   return createPendingEditDisplayDetails(edit, {
     editorLabel,
     fieldLabel: field?.label,
-    newValueLabel: formatPendingEditValue(edit.newValue, field),
+    newValueLabel: isPendingPokemonTypeEdit(edit)
+      ? formatPendingOptionValue(edit.newValue, pokemonTypeOptions)
+      : formatPendingEditValue(edit.newValue, field),
     recordLabel: pokemon ? `${pokemon.name} (#${pokemon.personalId})` : undefined
   });
 }
@@ -37446,21 +37585,87 @@ function localizePendingEditFieldLabel(
 function localizePendingEditSummary(
   edit: PendingEdit,
   details: PendingEditDisplayDetails,
-  t: ZaLocalizationFormatter
+  t: ZaLocalizationFormatter,
+  translateLiteral: (literal: string) => string
 ) {
+  if (isPendingPokemonTypeEdit(edit) && edit.domain === 'workflow.pokemon') {
+    return t('changes.pending.pokemonTypeSummary', {
+      pokemon: details.recordLabel,
+      field: translateLiteral(details.fieldLabel),
+      value: translateLiteral(details.newValueLabel)
+    });
+  }
   return details.summaryLocalizationKey
     ? localizePendingEditTemplate(
         details.summaryLocalizationKey,
-        details.summaryLocalizationParams,
+        isPendingPokemonTypeEdit(edit)
+          ? { ...details.summaryLocalizationParams, value: translateLiteral(details.newValueLabel) }
+          : details.summaryLocalizationParams,
         details.summaryLocalizationParamKeys,
         t
       )
     : edit.summary;
 }
 
+function formatHistoryChangeSummary(
+  change: HistoryChange,
+  context: PendingEditContext,
+  t: ZaLocalizationFormatter,
+  translateLiteral: (literal: string) => string
+) {
+  const edit: PendingEdit = { ...change, sources: [], association: null };
+  try {
+    const details = getPendingEditDisplayDetails(edit, context);
+    if (edit.domain === 'workflow.starmobiles' && (!details.newValueLabel || details.newValueLabel === 'n/a')) {
+      return translateLiteral(change.summary);
+    }
+    // Prefer the name recorded at the time of the change over a subsequently edited record.
+    if (edit.domain !== 'workflow.starmobiles') for (const label of [details.fieldLabel, edit.field]) {
+      if (!label) continue;
+      const marker = ` ${label.toLowerCase()} to `;
+      const markerIndex = change.summary.toLowerCase().lastIndexOf(marker);
+      if (change.summary.startsWith('Set ') && markerIndex > 4) {
+        const recordedName = change.summary.slice(4, markerIndex);
+        if (!/^(?:move|pokemon|item|trainer) \d+(?: field)?$/iu.test(recordedName)) details.recordLabel = recordedName;
+        break;
+      }
+    }
+    if ((details.summaryLocalizationKey && edit.domain !== 'workflow.fashionCatalog') || isPendingPokemonTypeEdit(edit)) {
+      return localizePendingEditSummary(edit, details, t, translateLiteral);
+    }
+    const record = localizePendingEditRecordLabel(edit, context, details, t);
+    const field = localizePendingEditFieldLabel(edit, context, details, t, translateLiteral);
+    let value = localizePendingEditNewValue(edit, details, t, translateLiteral);
+    if (edit.domain === 'workflow.typeChart') {
+      const values = decodeTypeChartPendingValues(edit.newValue);
+      if (values) value = t('history.matchupValues', { count: values.length });
+    }
+    // A historical ability or gender mode must not become the current species' derived label.
+    const workflow = edit.domain === 'workflow.giftPokemon' ? context.giftPokemonWorkflow
+      : edit.domain === 'workflow.tradePokemon' ? context.tradePokemonWorkflow : null;
+    const editableField = findPendingEditableField(workflow?.editableFields, edit.field);
+    if (editableField && (edit.field === abilityFieldName || edit.field === genderFieldName)) {
+      value = formatPendingEditValue(edit.newValue, editableField);
+    }
+    if (['gender', 'nature', 'ability', 'abilityMode', 'shiny', 'shinyMode', 'teraType', 'battleType', 'category',
+      'damageType', 'target', 'eggGroup1', 'eggGroup2', 'growthRate', 'color'].includes(edit.field ?? '')
+      || value === 'Enabled' || value === 'Disabled' || value === 'None') value = translateLiteral(value);
+    const opaqueValue = value === edit.newValue && /[|;]|^[A-Za-z0-9+/=]{64,}$/u.test(value);
+    if (record !== details.recordKey && value !== 'n/a' && !/^[\[{]/u.test(value) && !opaqueValue) {
+      return t('history.changeSummary', { record, field, value });
+    }
+    // Preserve the recorded description when current data cannot resolve its identity.
+    return translateLiteral(change.summary);
+  } catch {
+    return translateLiteral(change.summary);
+  }
+}
+
 function localizePendingEditNewValue(
+  edit: PendingEdit,
   details: PendingEditDisplayDetails,
-  t: ZaLocalizationFormatter
+  t: ZaLocalizationFormatter,
+  translateLiteral: (literal: string) => string
 ) {
   return details.newValueLocalizationKey
     ? localizePendingEditTemplate(
@@ -37469,7 +37674,12 @@ function localizePendingEditNewValue(
         undefined,
         t
       )
-    : details.newValueLabel;
+    : isPendingPokemonTypeEdit(edit) ? translateLiteral(details.newValueLabel) : details.newValueLabel;
+}
+
+function isPendingPokemonTypeEdit(edit: PendingEdit) {
+  return (edit.domain === 'workflow.pokemon' || edit.domain === 'workflow.starmobiles')
+    && (edit.field === 'type1' || edit.field === 'type2');
 }
 
 function localizePendingEditTemplate(
@@ -58477,7 +58687,8 @@ function SelectedSpreadsheetImportPanel({
 
 type PendingEdit = EditSession['pendingEdits'][number];
 
-type PendingEditContext = {
+export type PendingEditContext = {
+  starmobilesWorkflow?: StarmobilesWorkflow | null;
   angeFightWorkflow: AngeFightWorkflow | null;
   bagHookWorkflow: BagHookWorkflow | null;
   catchCapWorkflow: CatchCapWorkflow | null;
@@ -59417,9 +59628,10 @@ function ChangesSection({
                         <button
                           aria-label={t('changes.pending.removeAria', {
                             index: index + 1,
-                            summary: localizePendingEditSummary(edit, details, t)
+                            summary: localizePendingEditSummary(edit, details, t, translateLiteral)
                           })}
                           className="danger-button icon-button pending-edit-remove-button"
+                          data-localization-ignore={isPendingPokemonTypeEdit(edit) ? 'true' : undefined}
                           disabled={
                             isEditSessionMutating ||
                             isSessionValidating ||
@@ -59434,8 +59646,8 @@ function ChangesSection({
                         </button>
                         <div className="pending-edit-content">
                           <div className="pending-edit-title-row">
-                            <strong>
-                              {localizePendingEditSummary(edit, details, t)}
+                            <strong data-localization-ignore={isPendingPokemonTypeEdit(edit) ? 'true' : undefined}>
+                              {localizePendingEditSummary(edit, details, t, translateLiteral)}
                             </strong>
                           </div>
                           <dl className="pending-edit-meta pending-edit-summary-meta">
@@ -59464,7 +59676,9 @@ function ChangesSection({
                             </div>
                             <div>
                               <dt>{translateLiteral('New value')}</dt>
-                              <dd>{localizePendingEditNewValue(details, t)}</dd>
+                              <dd data-localization-ignore={isPendingPokemonTypeEdit(edit) ? 'true' : undefined}>
+                                {localizePendingEditNewValue(edit, details, t, translateLiteral)}
+                              </dd>
                             </div>
                           </dl>
                           <ShopPendingRemovals edit={edit} workflow={pendingEditContext.shopsWorkflow}

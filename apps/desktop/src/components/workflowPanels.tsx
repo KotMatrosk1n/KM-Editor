@@ -3,7 +3,7 @@
 import { Activity, AlertCircle, AlertTriangle, CheckCircle, ClipboardCheck } from 'lucide-react';
 import { type ReactNode, useId, useMemo } from 'react';
 import { type ApiDiagnostic, type ApplyResult, type ChangePlan } from '../bridge/contracts';
-import { formatDiagnosticSummary } from '../diagnostics';
+import { formatDiagnosticSummary, isProjectSetupConfirmation } from '../diagnostics';
 import { useDiagnosticNavigation } from '../diagnosticActions';
 import { useLocalization } from '../localization';
 import {
@@ -397,14 +397,17 @@ function DiagnosticsPanel({
  * diagnostics owned by the app shell itself.
  */
 export function CommonBottomDiagnosticsSection({
-  diagnostics
+  diagnostics,
+  showProjectSetupConfirmations = false
 }: {
   diagnostics: ApiDiagnostic[];
+  showProjectSetupConfirmations?: boolean;
 }) {
   const publishedDiagnostics = useCommonEditorDiagnostics();
   const combinedDiagnostics = useMemo(
-    () => mergeEditorDiagnostics(diagnostics, publishedDiagnostics),
-    [diagnostics, publishedDiagnostics]
+    () => mergeEditorDiagnostics(diagnostics, publishedDiagnostics)
+      .filter(diagnostic => showProjectSetupConfirmations || !isProjectSetupConfirmation(diagnostic)),
+    [diagnostics, publishedDiagnostics, showProjectSetupConfirmations]
   );
 
   return combinedDiagnostics.length > 0 ? (

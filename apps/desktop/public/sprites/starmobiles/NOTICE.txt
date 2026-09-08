@@ -1,0 +1,14 @@
+Starmobile sprites from the PokeRogue asset collection by Pagefault Games and contributors.
+Source: https://github.com/pagefaultgames/pokerogue-assets/tree/cc5326700576bb2f749f0258f9044bc8c6ca4ce5/images/pokemon
+Credits: https://github.com/pagefaultgames/pokerogue/blob/beta/CREDITS.md
+
+segin.png, schedar.png, navi.png, ruchbah.png and caph.png are unmodified copies
+of the corresponding 966-*-starmobile.png files.
+
+These artwork files are distributed separately from the application code under
+Creative Commons Attribution NonCommercial ShareAlike 4.0 International.
+The complete license is included in LICENSE.txt in this directory.
+https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+Pokemon and related character designs belong to their respective rights holders.
+No endorsement is implied.

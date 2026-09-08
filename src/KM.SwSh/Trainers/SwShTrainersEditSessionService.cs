@@ -1593,6 +1593,7 @@ public sealed class SwShTrainersEditSessionService
                 Species = value == 0
                     ? "None"
                     : GetWorkflowOptionLabel(workflow, field, value, "Species"),
+                SpriteName = GetSpriteSpeciesName(workflow, value),
             },
             SwShTrainersWorkflowService.FormField => pokemon with { Form = value },
             SwShTrainersWorkflowService.LevelField => pokemon with { Level = value },
@@ -1738,8 +1739,15 @@ public sealed class SwShTrainersEditSessionService
                     personal.SpecialAttack,
                     personal.SpecialDefense,
                     personal.Speed),
-            SpriteName = species,
+            SpriteName = GetSpriteSpeciesName(workflow, pokemon.SpeciesId),
         };
+    }
+
+    private static string? GetSpriteSpeciesName(SwShTrainersWorkflow? workflow, int speciesId)
+    {
+        var names = workflow?.SpriteSpeciesNames;
+        return names is not null && speciesId > 0 && speciesId < names.Count
+            && !string.IsNullOrWhiteSpace(names[speciesId]) ? names[speciesId] : null;
     }
 
     private static string GetWorkflowOptionLabel(

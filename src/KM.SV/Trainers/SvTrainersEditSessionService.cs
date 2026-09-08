@@ -820,7 +820,7 @@ internal sealed class SvTrainersEditSessionService
             return workflow with
             {
                 Trainers = workflow.Trainers
-                    .Select(trainer => trainer.TrainerId == trainerId ? OverlayTrainerPokemon(trainer, slot, edit.Field, value) : trainer)
+                    .Select(trainer => trainer.TrainerId == trainerId ? OverlayTrainerPokemon(trainer, slot, edit.Field, value, workflow) : trainer)
                     .ToArray(),
             };
         }
@@ -859,19 +859,19 @@ internal sealed class SvTrainersEditSessionService
         };
     }
 
-    private static SvTrainerRecord OverlayTrainerPokemon(SvTrainerRecord trainer, int slot, string? field, int value)
+    private static SvTrainerRecord OverlayTrainerPokemon(SvTrainerRecord trainer, int slot, string? field, int value, SvTrainersWorkflow workflow)
     {
         var updatedTrainer = trainer with
         {
             Team = trainer.Team
-                .Select(pokemon => pokemon.Slot == slot ? OverlayPokemon(pokemon, field, value) : pokemon)
+                .Select(pokemon => pokemon.Slot == slot ? OverlayPokemon(pokemon, field, value, workflow) : pokemon)
                 .ToArray(),
         };
 
         return WithTeraTarget(updatedTrainer);
     }
 
-    private static SvTrainerPokemonRecord OverlayPokemon(SvTrainerPokemonRecord pokemon, string? field, int value)
+    private static SvTrainerPokemonRecord OverlayPokemon(SvTrainerPokemonRecord pokemon, string? field, int value, SvTrainersWorkflow workflow)
     {
         if (string.Equals(field, SvTrainersWorkflowService.SpeciesIdField, StringComparison.Ordinal) && value == 0)
         {
@@ -883,7 +883,8 @@ internal sealed class SvTrainersEditSessionService
             SvTrainersWorkflowService.SpeciesIdField => pokemon with
             {
                 SpeciesId = value,
-                Species = value == 0 ? "None" : SvLabels.Pokemon(value),
+                Species = workflow.Labels.Pokemon(value),
+                SpriteName = workflow.SpriteLabels.Pokemon(value),
             },
             SvTrainersWorkflowService.FormField => pokemon with { Form = value },
             SvTrainersWorkflowService.LevelField => pokemon with { Level = value },
