@@ -81,7 +81,7 @@ int km_opus_render(float* output, int count) {
         }
         if (skip) { int take = pending - consumed < skip ? pending - consumed : skip; skip -= take; consumed += take; continue; }
         int take = pending - consumed < count - written ? pending - consumed : count - written;
-        if (output) memcpy(output + written * channels, samples + consumed * channels, take * channels * sizeof(float));
+        if (output) memcpy(output + written * channels, samples + consumed * channels, (size_t)take * (size_t)channels * sizeof(float));
         consumed += take; written += take;
     }
     position += written; return written;
