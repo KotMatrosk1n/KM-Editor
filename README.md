@@ -7,39 +7,39 @@
 ![Localization](https://img.shields.io/badge/localized-EN%20%7C%20ES%20%7C%20FR%20%7C%20DE%20%7C%20RU%20%7C%20UKR%20%7C%20ZH-orange)
 [![License](https://img.shields.io/badge/license-GPL--3.0--only-lightgrey)](LICENSE)
 
-KM Editor is a Windows desktop modding toolkit for Pokémon Sword and Shield, Pokémon Scarlet and Violet, and Pokémon Legends Z-A. It replaces raw tables and mystery IDs with searchable, game-aware editors that show what will be written before anything reaches your mod.
+KM Editor is a Windows desktop modding toolkit for Pokémon Sword and Shield, Pokémon Scarlet and Violet, and Pokémon Legends Z-A. It provides dedicated game data editors, model and audio tools, and a shared workflow for reviewing changes before writing mod output.
 
 [Download the latest release](https://github.com/KotMatrosk1n/KM-Editor/releases/latest) | [Explore the wiki](https://github.com/KotMatrosk1n/KM-Editor/wiki) | [Report an issue](https://github.com/KotMatrosk1n/KM-Editor/issues/new/choose)
 
-## Why Modders Use KM Editor
+## Editors and Tools
 
-- Find records through readable names, sprites, selectors, filters, and game-aware labels.
-- Edit with controls built for each game's verified data instead of treating every title as the same format.
-- Review normal changes in one staged plan, with dedicated previews for advanced workflows that need their own write boundary.
-- Keep unfinished work organized through project navigation, record tabs, recents, pins, bookmarks, saved views, notes, and read-only analysis tools.
-- Build Trainer teams across multiple records, reuse copied party members, and stage the complete retained draft with one **Stage Trainer Changes** action.
-- Browse Sword, Shield, Scarlet, Violet, and Legends Z-A models and animations in the read-only [3D Model Viewer](https://github.com/KotMatrosk1n/KM-Editor/wiki/3D-Model-Viewer) under Tools.
+- Edit Pokémon, trainer teams, moves, items, encounters, and other supported records with names, sprites, search, and controls specific to each game.
+- Edit Team Star bosses in the Scarlet and Violet [Starmobiles editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/Starmobiles-Editor), including supported stats, types, abilities, and moves.
+- Inspect models and animations, recolor textures, edit supported materials, and restore original assets in the [3D Model Editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/3D-Model-Editor) for all five games.
+- Browse and play discovered game recordings in [Sound Studio](https://github.com/KotMatrosk1n/KM-Editor/wiki/Sound-Studio), with seeking, loops, volume controls, and audio meters.
+- Review staged changes and output plans, inspect completed History entries, and manage checkpoints and recovery through the shared output tools.
+- Organize projects with recents, pins, bookmarks, saved views, and notes. Workbench adds exploration, comparison, and analysis tools that do not write game data.
 
-Exact editor and advanced-tool coverage differs by game. The [wiki](https://github.com/KotMatrosk1n/KM-Editor/wiki) is the authoritative feature guide for the latest public release.
+Supported fields and output rules differ by game. The [wiki](https://github.com/KotMatrosk1n/KM-Editor/wiki) explains each editor's workflow, data model, and limits.
 
-## Start Building
+## Getting Started
 
 1. Install the latest Windows release.
 2. Choose your game in the welcome hub, then select **Open** for that game.
 3. Open **Project Setup** and select clean Base RomFS and Base ExeFS folders.
-4. Choose a separate, non-overlapping Output Root for the generated mod.
+4. Choose a separate Output Root that does not overlap your source folders.
 5. Select **Validate Paths**.
 6. Open an editor, save or stage your changes, then review the output plan before applying it.
 
-The welcome hub shows game-filtered release notes and restores saved project paths. Loading game data and preparing caches wait until you select **Validate Paths**.
+The welcome hub shows release notes filtered by game and restores saved project paths. Loading game data and preparing caches wait until you select **Validate Paths**.
 
-Optional Scarlet/Violet data support requires an external user-selected dependency folder. Legends Z-A archive-backed editors also require a user-selected support folder. See [Project Setup](https://github.com/KotMatrosk1n/KM-Editor/wiki/Project-Setup) for the complete path requirements.
+Optional Scarlet/Violet data support requires an external dependency folder selected by the user. Legends Z-A archive editors also require a selected support folder. See [Project Setup](https://github.com/KotMatrosk1n/KM-Editor/wiki/Project-Setup) for the complete path requirements.
 
 KM Editor does not include ROM dumps, RomFS, ExeFS, console keys, or save data. You are responsible for obtaining and using required game data in compliance with applicable law.
 
 Regular users do not need .NET, Node.js, Rust, Git, or a separate backend installation.
 
-## Three Games, Three Dedicated Toolsets
+## Supported Games
 
 | Game family | Complete guide |
 | --- | --- |
@@ -49,13 +49,13 @@ Regular users do not need .NET, Node.js, Rust, Git, or a separate backend instal
 
 Data models, supported editors, and output rules differ by game. Depending on the workflow, KM Editor can produce standard LayeredFS output or layouts for supported Trinity Mod Manager setups. Keep a separate Output Root for each game.
 
-## Safety for Ongoing Projects
+## Projects and Output
 
 Normal editor changes are staged before they are applied. Open **Changes** to inspect pending targets and remove anything you do not want. Advanced workflows provide their own review and apply plans when they cannot safely share the normal edit session.
 
 Unstaged drafts and staged changes are separate. Moving to Changes preserves staged work; if a local draft still needs attention, the warning identifies that draft before you discard it. Review checks the combined session against current source and output files, and a failed final review blocks output even when the individual edits passed validation.
 
-Clean Base RomFS and Base ExeFS inputs remain untouched. KM Editor writes to a separate Output Root and provides output history, checkpoints, and recovery tools. Existing output stays editable after configuration changes, including changes to support folders; current file checks still protect reviewed writes.
+Clean Base RomFS and Base ExeFS inputs remain untouched. Normal edits write to a separate Output Root, with output history, checkpoints, and recovery tools. Gameplay Settings can also install its reviewed package into a selected emulator data folder. Existing output stays editable after configuration changes, including changes to support folders; current file checks still protect reviewed writes.
 
 ## Learn More
 
@@ -84,12 +84,12 @@ Development requirements, setup commands, interface contracts, and project check
 
 Contributors should also read the [Code of Conduct](CODE_OF_CONDUCT.md) and [Security Policy](SECURITY.md).
 
-## License and Third-Party Assets
+## License and Asset Credits
 
-KM Editor includes Pokémon sprites from Pokémon Showdown's public `gen5` and `ani` directories and may use that service as a missing-sprite fallback. See the [Pokémon Showdown credits](https://pokemonshowdown.com/credits) for contributing artists and upstream sources. These files are excluded from KM Editor's GPL license.
+KM Editor includes Pokémon sprites from Pokémon Showdown's public `gen5` and `ani` directories and may use that service when a bundled sprite is missing. See the [Pokémon Showdown credits](https://pokemonshowdown.com/credits) for contributing artists and upstream sources. These files are excluded from KM Editor's GPL license.
 
-Trainer party cards use item artwork, classic item sprites, and the `helditem.png` fallback from [PKHeX](https://github.com/kwsch/PKHeX) `PKHeX.Drawing.PokeSprite` resources. Those assets are redistributed under PKHeX's GPL-3.0 license.
+Item artwork uses PokeSprite and PokeAPI assets alongside KM category symbols. See the bundled [item artwork notices](apps/desktop/public/item-icons/NOTICE.txt). Starmobile artwork has its own [attribution and license](apps/desktop/public/sprites/starmobiles/NOTICE.txt), and Sound Studio includes [decoder notices](apps/desktop/public/audio-decoder/NOTICE.txt).
 
-KM Editor is an unofficial fan-made project and is not affiliated with or endorsed by the games' publishers or developers. Related names, trademarks, and artwork belong to their respective owners.
+KM Editor is an unofficial fan project and is not affiliated with or endorsed by the games' publishers or developers. Related names, trademarks, and artwork belong to their respective owners.
 
-KM Editor source code is distributed under the [GPL 3.0 only license](LICENSE). Third-party assets remain subject to their own applicable rights and terms.
+KM Editor source code is distributed under the [GPL 3.0 only license](LICENSE). Other assets remain subject to their own applicable rights and terms.

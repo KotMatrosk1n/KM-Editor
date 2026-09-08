@@ -2,6 +2,317 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "version": "2.6.1",
+      "summary": {
+        "en": "KM Editor 2.6.1 adds Sound Studio, brings the 3D Model Editor to every supported game, and introduces a dedicated Starmobiles editor for Scarlet and Violet. It also adds direct Gameplay Settings installation to emulator folders and improves trainer copying, History, diagnostics, and desktop presentation."
+      },
+      "sections": [
+        {
+          "title": {
+            "en": "Sound Studio"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Sound Studio is a new tool below 3D Model Editor for Sword, Shield, Scarlet, Violet, and Legends Z-A. Browse music, cries, battle effects, interface sounds, ambience, and other discovered audio with categories and search."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Select a recording without autoplay, then use play, pause, stop, seeking, repeat, embedded loops, volume, and mute. Peak and RMS meters show the audio after app volume, with clipping indication and an optional spectrum display."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Original bank names and media identifiers remain visible, with readable names where reliable mappings exist. Unsupported recordings, procedural sounds, and unresolved references retain explanations. Playback auditions individual recordings; it does not recreate complete interactive events or layered music behavior. No game audio is bundled, and browsing does not write game output."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "3D Model Editor"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "The 3D Model Editor is available under Tools for all five games, including supported trainer models and animations. Edit Model opens a workspace with a model viewport, Parts, Materials, Textures, and Scene controls, plus animation playback below the model."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Recolor supported textures, adjust supported material properties and texture bindings, compare Original and Edited, and restore original model assets through the normal staging and output workflow. Shared undo and redo keep related draft changes together. Saved color palettes start empty until you add colors."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Inspect parts, isolate or hide meshes, choose standard or orthographic views, and use wireframe and selection outlines. Texture inspection includes full resolution images, RGBA channels, UV overlays, zoom, pan, and PNG export. Preview overlays and reduced texture resolution do not alter exported image dimensions."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Choose Studio lighting with a movable light or an In Game preview that approximates outdoor lighting. Background colors and the Studio grid are remembered. Quarter, Half, and Full texture resolution reduce preview memory use without changing saved model or texture resolution."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Model and texture caches reuse unchanged data, refresh changed sources, and avoid uploading unchanged textures again. The catalog shows the standard loading progress bar. Optional RAM and VRAM readings remain visible beside the editor title."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Animation fixes support packed visibility, shared clips, shorter held curves, animations containing only material tracks, missing trainer motion catalogs, and the RGBA eye texture format used by Magnemite. Effects, morphs, arbitrary character assemblies, and exact game scene lighting remain limited. Geometry, skeleton, and animation authoring are not included."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Sword And Shield"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Model browsing, material editing, texture recoloring, original restoration, and Sound Studio are available for both games through their own supported formats."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Trainer party members retain the correct sprite after copying and staging, including projects using another game text language."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Gameplay Settings packages include the runtime initialization correction for the added native menu functions, addressing the unresolved function calls encountered through the PC entry. Gameplay Settings remains Beta."
+              },
+              "audience": [
+                "swsh"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Scarlet And Violet"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "The new Starmobiles editor appears directly below Trainers and implements the Starmobile feature request in issue #506. Segin, Schedar, Navi, Ruchbah, and Caph have named sprite selectors, a full width editing panel, and individual Reset to vanilla actions."
+              },
+              "audience": [
+                "sv"
+              ]
+            },
+            {
+              "body": {
+                "en": "Edit level, fixed combat stats, HP multiplier, both types, abilities, and the three ordinary move slots. Signature moves remain locked. Speed displays the effective value set by the signature move during battle setup and is read only. Level changes do not recalculate the fixed stats; unsupported held item, EV, IV, and nature fields are omitted."
+              },
+              "audience": [
+                "sv"
+              ]
+            },
+            {
+              "body": {
+                "en": "Starmobiles uses the shared Start Editing, Stage, and Cancel flow and all three output modes. Editable combat stats accept 1 through 255; level and HP multiplier accept 1 through 100. Different types occupy both type slots, while repeating a type gives one type. Empty move slots must remain at the end."
+              },
+              "audience": [
+                "sv"
+              ]
+            },
+            {
+              "body": {
+                "en": "The 3D Model Editor supports the verified normal and shiny material variants. Texture and material writes preserve unrelated fields and assets, with original restoration available for the selected model."
+              },
+              "audience": [
+                "sv"
+              ]
+            },
+            {
+              "body": {
+                "en": "Copied trainer party slots retain localized species names and matching sprites after staging, instead of showing internal species labels."
+              },
+              "audience": [
+                "sv"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Legends Z-A"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "The 3D Model Editor supports model browsing, animation playback, material editing, texture recoloring, original restoration, and verified shiny variants through the Legends Z-A asset formats."
+              },
+              "audience": [
+                "za"
+              ]
+            },
+            {
+              "body": {
+                "en": "Sound Studio discovers supported bank and package recordings, retaining original identifiers when a reliable readable name is unavailable."
+              },
+              "audience": [
+                "za"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Gameplay Settings"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Save a Ryujinx or Eden data folder in Gameplay Settings and let KM Editor install, refresh, upgrade, or remove its package in the correct mod and SD locations. Folder checks inspect only the directories the selected operation needs. Unrelated folders and files are ignored and preserved."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "The page uses a simpler target, folder, package status, and primary action layout, with technical details and file reviews available when needed. Console output keeps its export workflow."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Package inspection uses the owning backend process and its preparation budget, correcting the inspection failures reported in 2.6.0. Reviewed source and destination checks protect installation and removal. Gameplay Settings remains restricted to its supported game builds and verified Experience award paths."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Changes And History"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Pokemon and Starmobile type changes display type names instead of numeric values. History resolves readable record names, field labels, moves, abilities, and other supported options for existing and new entries across all games."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Historical labels are presentation only. Original summaries and raw values remain in Technical Details, and older entries keep their recorded descriptions when labels cannot be resolved. Stored receipts, ownership records, review hashes, and the ability to make future changes remain intact."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Welcome Hub And Settings"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Welcome Settings now shows the same gold exclamation as the game sidebar when a newer release is available. The hub includes the 2.6.1 notes and an updated developer message."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Successful Base RomFS, Base ExeFS, and Output Root identity confirmations appear only on Project Setup. Editor and game diagnostics stay out of the Welcome Hub, whose relevant diagnostics appear below its content."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Settings subsection titles and spacing are consistent. Compact headers preserve readable controls, and GPU memory totals remain available when an interface process has no graphics allocations. New editor controls and guidance are available in all seven interface languages."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Release Metadata"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Application, setup, updater, and window title metadata identify KM Editor 2.6.1 consistently."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "The Windows release includes the custom x64 setup executable, its updater signature, the updater manifest, and checksums."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": {
+            "en": "Full changelog"
+          },
+          "url": "https://github.com/KotMatrosk1n/KM-Editor/compare/v2.6.0...v2.6.1"
+        }
+      ]
+    },
+    {
       "version": "2.6.0",
       "summary": {
         "en": "KM Editor 2.6.0 adds an animated 3D Model Viewer for Scarlet and Violet, a new welcome hub, six additional themes, and app-specific RAM and VRAM diagnostics. It also expands compatibility editing, improves History and portable output support, and fixes shared output and Z-A TM batch handling."
@@ -592,24 +903,24 @@
   ],
   "announcements": [
     {
-      "id": "model-viewer-2-6-0",
+      "id": "sound-studio-and-model-editor-2-6-1",
       "title": {
-        "en": "3D Model Editor",
-        "de": "3D-Modelleditor",
-        "es": "Editor de modelos 3D",
-        "fr": "Éditeur de modèles 3D",
-        "ru": "Редактор 3D-моделей",
-        "uk": "Редактор 3D-моделей",
-        "zh": "3D 模型编辑器"
+        "en": "Sound Studio and 3D Model Editor",
+        "de": "Sound Studio und 3D Modelleditor",
+        "es": "Sound Studio y editor de modelos 3D",
+        "fr": "Sound Studio et éditeur de modèles 3D",
+        "ru": "Sound Studio и редактор 3D моделей",
+        "uk": "Sound Studio та редактор 3D моделей",
+        "zh": "Sound Studio 和 3D 模型编辑器"
       },
       "body": {
-        "en": "Find the 3D Model Editor first under Tools for all supported games.",
-        "de": "Der 3D-Modelleditor steht für alle unterstützten Spiele an erster Stelle unter Werkzeuge.",
-        "es": "El editor de modelos 3D aparece primero en Herramientas para todos los juegos compatibles.",
-        "fr": "L’éditeur de modèles 3D est le premier outil pour tous les jeux pris en charge.",
-        "ru": "Редактор 3D-моделей стоит первым в разделе «Инструменты» для всех поддерживаемых игр.",
-        "uk": "Редактор 3D-моделей стоїть першим у розділі «Інструменти» для всіх підтримуваних ігор.",
-        "zh": "所有受支持游戏的工具列表均将 3D 模型编辑器列为第一项。"
+        "en": "Check out the new Sound Studio! The 3D Model Editor is also now avaliable for all games.",
+        "de": "Entdecke das neue Sound Studio! Der 3D Modelleditor ist jetzt auch für alle Spiele verfügbar.",
+        "es": "¡Descubre el nuevo Sound Studio! El editor de modelos 3D también está disponible para todos los juegos.",
+        "fr": "Découvrez le nouveau Sound Studio ! L’éditeur de modèles 3D est désormais aussi disponible pour tous les jeux.",
+        "ru": "Попробуйте новую Sound Studio! Редактор 3D моделей теперь также доступен для всех игр.",
+        "uk": "Спробуйте нову Sound Studio! Редактор 3D моделей тепер також доступний для всіх ігор.",
+        "zh": "快来体验全新的 Sound Studio！3D 模型编辑器现在也已支持所有游戏。"
       },
       "audience": [
         "all"
