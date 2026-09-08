@@ -124,7 +124,23 @@ internal sealed class SvTextLabelLookup
 
     public static SvTextLabelLookup None() => Empty;
 
+    public static SvTextLabelLookup LoadMoveNames(OpenedProject project, SvWorkflowFileSource fileSource,
+        ICollection<ValidationDiagnostic> diagnostics) => new(
+            [], LoadIndexedTableWithFallback(project, fileSource, SvGameTextLanguage.Resolve(project.Paths),
+                SvDataPaths.MoveNames, "move names", diagnostics), [], [], [], [],
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase), [],
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase), [],
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase));
+
     public int ItemNameCount => itemNames.Count;
+
+    public static SvTextLabelLookup LoadAbilityNames(OpenedProject project, SvWorkflowFileSource fileSource,
+        ICollection<ValidationDiagnostic> diagnostics) => new(
+            [], [], [], [], LoadIndexedTableWithFallback(project, fileSource, SvGameTextLanguage.Resolve(project.Paths),
+                SvDataPaths.AbilityNames, "ability names", diagnostics), [],
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase), [],
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase), [],
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase));
 
     public int MoveNameCount => moveNames.Count;
 

@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import { type LoadStarmobilesRequest, type LoadStarmobilesResponse, type StageStarmobilesRequest, type StageStarmobilesResponse,
+  loadStarmobilesRequestSchema, loadStarmobilesResponseSchema, stageStarmobilesRequestSchema, stageStarmobilesResponseSchema } from './starmobilesContracts';
 import { invoke } from "@tauri-apps/api/core";
 import {
   type ApplyChangePlanRequest,
@@ -823,6 +825,8 @@ export type ProjectBridge = {
   stageTmMaterialVisibility: (
     request: StageTmMaterialVisibilityRequest,
   ) => Promise<StageTmMaterialVisibilityResponse>;
+  loadStarmobiles: (request: LoadStarmobilesRequest) => Promise<LoadStarmobilesResponse>;
+  stageStarmobiles: (request: StageStarmobilesRequest) => Promise<StageStarmobilesResponse>;
   loadHabitatCoordinates: (
     request: LoadHabitatCoordinatesRequest,
   ) => Promise<LoadHabitatCoordinatesResponse>;
@@ -1644,6 +1648,10 @@ export function createProjectBridge(
         stageTmMaterialVisibilityResponseSchema,
       );
     },
+    loadStarmobiles: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadStarmobiles,
+      loadStarmobilesRequestSchema.parse(request), loadStarmobilesResponseSchema),
+    stageStarmobiles: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageStarmobiles,
+      stageStarmobilesRequestSchema.parse(request), stageStarmobilesResponseSchema),
     loadHabitatCoordinates: (request) => {
       const validatedRequest =
         loadHabitatCoordinatesRequestSchema.parse(request);

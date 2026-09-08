@@ -12977,11 +12977,11 @@ h2 {
 }
 
 .settings-tab-panel .settings-summary,
-.settings-tab-panel > .settings-subsection {
+.settings-tab-panel > .settings-subsection:first-child {
   margin-top: 0;
 }
 
-.settings-tab-panel > .settings-subsection {
+.settings-tab-panel > .settings-subsection:first-child {
   padding-top: 0;
   border-top: 0;
 }
@@ -13001,13 +13001,22 @@ h2 {
 }
 
 .settings-subsection-heading > div {
+  display: grid;
+  gap: 4px;
   min-width: 0;
 }
 
 .settings-subsection-heading svg {
   flex: 0 0 auto;
   color: var(--color-gold);
-  margin-top: 2px;
+}
+
+.settings-subsection-heading > svg {
+  margin-top: 3px;
+}
+
+.settings-subsection-heading .context-help-trigger {
+  min-height: 24px;
 }
 
 .settings-subsection-heading h3 {
@@ -13015,11 +13024,12 @@ h2 {
   margin: 0;
   overflow-wrap: anywhere;
   font-size: 1rem;
+  line-height: 24px;
 }
 
 .settings-subsection-heading p {
   min-width: 0;
-  margin: 2px 0 0;
+  margin: 0;
   overflow-wrap: anywhere;
   color: var(--color-text-muted);
   font-size: 0.8125rem;

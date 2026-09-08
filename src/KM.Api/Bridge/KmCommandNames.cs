@@ -67,6 +67,8 @@ public static class KmCommandNames
     public const string LoadTmMachineControls = "tmMachineControls.load";
     public const string StageTmRecipeAvailability = "tmMachineControls.recipeAvailability.stage";
     public const string StageTmMaterialVisibility = "tmMachineControls.materialVisibility.stage";
+    public const string LoadStarmobiles = "starmobiles.load";
+    public const string StageStarmobiles = "starmobiles.fields.stage";
     public const string LoadHabitatCoordinates = "habitatCoordinates.load";
     public const string StageHabitatCoordinate = "habitatCoordinates.coordinate.stage";
     public const string LoadEncountersWorkflow = "encounters.load";

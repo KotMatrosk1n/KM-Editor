@@ -23,6 +23,7 @@ using KM.Api.Gifts;
 using KM.Api.GymUniformRemoval;
 using KM.Api.GuidedDesign;
 using KM.Api.HabitatCoordinates;
+using KM.Api.Starmobiles;
 using KM.Api.HyperspaceBypass;
 using KM.Api.HyperTraining;
 using KM.Api.Items;
@@ -629,6 +630,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.LoadTmMachineControls => DispatchLoadTmMachineControls(requestJson),
                 KmCommandNames.StageTmRecipeAvailability => DispatchStageTmRecipeAvailability(requestJson),
                 KmCommandNames.StageTmMaterialVisibility => DispatchStageTmMaterialVisibility(requestJson),
+                KmCommandNames.LoadStarmobiles => DispatchStarmobiles(requestJson, false),
+                KmCommandNames.StageStarmobiles => DispatchStarmobiles(requestJson, true),
                 KmCommandNames.LoadHabitatCoordinates => DispatchLoadHabitatCoordinates(requestJson),
                 KmCommandNames.StageHabitatCoordinate => DispatchStageHabitatCoordinate(requestJson),
                 KmCommandNames.LoadEncountersWorkflow => DispatchLoadEncountersWorkflow(requestJson),
@@ -3652,6 +3655,32 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 session,
                 request.Payload.AlwaysVisible));
         return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStarmobiles(string requestJson, bool stage)
+    {
+        if (stage)
+        {
+            var request = DeserializeRequest<StageStarmobilesRequest>(requestJson);
+            var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+            if (!IsScarletViolet(paths)) return SerializeFailure(BridgeErrorCodes.GameMismatch,
+                "Starmobiles requires a Scarlet or Violet project.", request.RequestId);
+            var session = request.Payload.Session is null ? null : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+            var result = svWorkflowService.StageStarmobiles(paths, session, request.Payload.SourceRevision,
+                request.Payload.Updates.Select(update => new KM.SV.Starmobiles.SvStarmobileUpdate(update.RowId, update.Field, update.Value)).ToArray());
+            return SerializeSuccess(new StageStarmobilesResponse(SvStarmobilesBridgeMapper.ToDto(result.Workflow),
+                EditSessionBridgeMapper.ToDto(result.Session), result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray()), request.RequestId);
+        }
+        else
+        {
+            var request = DeserializeRequest<LoadStarmobilesRequest>(requestJson);
+            var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+            if (!IsScarletViolet(paths)) return SerializeFailure(BridgeErrorCodes.GameMismatch,
+                "Starmobiles requires a Scarlet or Violet project.", request.RequestId);
+            var session = request.Payload.Session is null ? null : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+            return SerializeSuccess(new LoadStarmobilesResponse(SvStarmobilesBridgeMapper.ToDto(
+                svWorkflowService.LoadStarmobiles(paths, session))), request.RequestId);
+        }
     }
 
     private string DispatchLoadHabitatCoordinates(string requestJson)
@@ -8025,6 +8054,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.LoadTmMachineControls or
             KmCommandNames.StageTmRecipeAvailability or
             KmCommandNames.StageTmMaterialVisibility or
+            KmCommandNames.LoadStarmobiles or
+            KmCommandNames.StageStarmobiles or
             KmCommandNames.LoadHabitatCoordinates or
             KmCommandNames.StageHabitatCoordinate or
             KmCommandNames.GetSvCacheStatus or

@@ -21,6 +21,7 @@ export const scopedEditorPanelSectionIds = new Set<WorkbenchSection>([
   'shinyRate',
   'tmMachineControls',
   'habitatCoordinates',
+  'starmobiles',
   'typeChart',
   'fairyGymBoosts',
   'fashionUnlock',

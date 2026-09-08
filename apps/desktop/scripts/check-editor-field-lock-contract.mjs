@@ -45,12 +45,12 @@ const auditedTsxSourceFiles = auditedSourceFiles.filter((sourceFile) =>
 // failure rather than silently shrinking the audit.
 assert.equal(
   auditedSourceFiles.length,
-  296,
+  300,
   'Update the field-lock source count only after reviewing every added or removed application file.'
 );
 assert.equal(
   auditedTsxSourceFiles.length,
-  102,
+  103,
   'Update the field-lock TSX count only after reviewing every added or removed editor surface.'
 );
 
@@ -118,6 +118,10 @@ const knownFieldComponents = new Set([
  * detected value control exactly; stale permits fail the gate.
  */
 const permittedTransientFieldLocks = new Map([
+  [
+    'src/features/starmobiles/StarmobilesSection.tsx#SearchableOptionInput[2]=>src/components/SearchableOptionInput.tsx#input:id={inputId}[disabled]',
+    'Starmobile signature moves and missing source slots are fixed fields. Move selection requires an active editing session, an available source and loaded catalog; invalid drafts and staging never lock editable slots.'
+  ],
   [
     'src/features/model-viewer/ModelViewerSection.tsx#ModelMaterialEditor:key={`${selected}/${restoreRevision}`}=>src/features/model-viewer/ModelMaterialEditor.tsx#SearchableOptionInput:id={`model-property-${field.key}`}[disabled]=>src/components/SearchableOptionInput.tsx#input:id={inputId}[disabled]',
     'Material property menus inherit the same staging and vanilla restoration ownership as their enclosing fields, including menus rendered in the dialog portal.'

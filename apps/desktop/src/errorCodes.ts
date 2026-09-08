@@ -16,6 +16,10 @@ export const kmErrorCodeSchema = z
   );
 
 export const projectBridgeErrorCodes = {
+  starmobilesSourceStale: "KM-SV-STARMOBILES-SOURCE-STALE",
+  starmobilesSourceUnavailable: "KM-SV-STARMOBILES-SOURCE-UNAVAILABLE",
+  starmobilesOutputFailed: "KM-SV-STARMOBILES-OUTPUT-FAILED",
+  starmobilesEditInvalid: "KM-SV-STARMOBILES-EDIT-INVALID",
   audioSourceUnavailable: "KM-AUDIO-SOURCE-UNAVAILABLE",
   audioDecodeUnsupported: "KM-AUDIO-DECODE-UNSUPPORTED",
   audioPlaybackFailed: "KM-AUDIO-PLAYBACK-FAILED",
@@ -50,6 +54,9 @@ export const projectBridgeErrorCodes = {
   outputUnsafePath: "KM-OUTPUT-UNSAFE-PATH",
   projectOutputMigrationBlocked: "KM-PROJECT-OUTPUT-MIGRATION-BLOCKED",
   projectOutputMissing: "KM-PROJECT-OUTPUT-MISSING",
+  projectRomFsVerified: "KM-PROJECT-ROMFS-VERIFIED",
+  projectExeFsVerified: "KM-PROJECT-EXEFS-VERIFIED",
+  projectOutputVerified: "KM-PROJECT-OUTPUT-VERIFIED",
   projectOutputNotConfigured: "KM-PROJECT-OUTPUT-NOT-CONFIGURED",
   projectRelocationConflict: "KM-PROJECT-RELOCATION-CONFLICT",
   projectRelocationMismatch: "KM-PROJECT-RELOCATION-MISMATCH",

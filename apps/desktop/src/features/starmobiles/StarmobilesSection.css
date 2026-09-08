@@ -1,0 +1,74 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+.starmobiles-editor { gap: 16px; }
+.starmobiles-panel { display: grid; gap: 16px; min-width: 0; }
+.starmobiles-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.starmobiles-selector { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.starmobiles-boss {
+  --starmobile-color: var(--color-gold);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 16px;
+  color: var(--color-text);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--starmobile-color) 12%, transparent), transparent), var(--color-canvas);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  text-align: center;
+}
+.starmobiles-boss-dark { --starmobile-color: #a896cf; }
+.starmobiles-boss-fire { --starmobile-color: #f59a65; }
+.starmobiles-boss-poison { --starmobile-color: #ce8bdc; }
+.starmobiles-boss-fairy { --starmobile-color: #efa7d0; }
+.starmobiles-boss-fighting { --starmobile-color: #ea9e76; }
+.starmobiles-boss[aria-pressed='true'] { border-color: var(--color-gold); box-shadow: inset 0 -3px var(--color-gold); }
+.starmobiles-sprite { display: grid; place-items: center; height: 112px; }
+.starmobiles-sprite img { width: 112px; height: 112px; object-fit: contain; image-rendering: pixelated; }
+.starmobiles-boss-copy { display: grid; gap: 4px; overflow-wrap: anywhere; }
+.starmobiles-boss-copy strong { font-size: 1rem; }
+.starmobiles-boss-copy > span { color: var(--color-text-muted); font-size: .8125rem; }
+.starmobiles-boss-status { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 18px; color: var(--color-gold); font-size: .75rem; overflow-wrap: anywhere; }
+.starmobiles-detail-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 20px; }
+.starmobiles-detail h3, .starmobiles-detail h4 { margin: 0; }
+.starmobiles-traits { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
+.starmobiles-traits .field > span { display: flex; align-items: center; gap: 6px; }
+.starmobiles-edit-layout { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(0, 4fr); gap: 24px; }
+.starmobiles-level-fields { display: grid; grid-row: span 2; grid-template-rows: subgrid; gap: 16px; padding-inline-end: 24px; border-inline-end: 1px solid var(--color-border); }
+.starmobiles-stats-heading p { margin: 6px 0 16px; }
+.starmobiles-fields { display: grid; grid-row: span 2; grid-template-rows: subgrid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.starmobiles-editor .field { display: grid; grid-template-rows: 1fr auto; min-width: 0; gap: 6px; }
+.starmobiles-edit-layout .field > span { display: flex; align-items: center; align-self: start; gap: 6px; min-height: 28px; }
+.starmobiles-editor input { box-sizing: border-box; width: 100%; min-width: 0; }
+.starmobiles-editor .starmobiles-input-edited { border-color: var(--color-gold); }
+.starmobiles-editor input[aria-invalid='true'] { border-color: var(--color-danger); }
+.starmobiles-moves { margin: 24px 0 0; padding: 16px; min-width: 0; border: 1px solid var(--color-border); border-radius: 8px; }
+.starmobiles-moves legend { padding-inline: 8px; font-weight: 600; }
+.starmobiles-move-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.starmobiles-move-label { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; }
+.starmobiles-move-label span { min-width: 0; overflow-wrap: anywhere; }
+.starmobiles-lock { display: inline-flex; align-items: center; gap: 4px; color: var(--color-text-muted); font-size: .75rem; }
+.starmobiles-input-edited input { border-color: var(--color-gold); }
+.starmobiles-details { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--color-border); }
+.starmobiles-details summary { width: fit-content; cursor: pointer; color: var(--color-text-muted); }
+.starmobiles-details dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 16px 0 0; }
+.starmobiles-details dl > div { min-width: 0; }
+.starmobiles-details dt { color: var(--color-text-muted); font-size: .8125rem; margin-bottom: 6px; }
+.starmobiles-details dd { margin: 0; overflow-wrap: anywhere; white-space: normal; font-family: var(--font-mono, monospace); }
+@container km-focused-editor (max-width: 800px) {
+  .starmobiles-move-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .starmobiles-selector { gap: 8px; }
+  .starmobiles-boss { padding: 12px 6px; }
+  .starmobiles-sprite, .starmobiles-sprite img { width: 72px; height: 72px; }
+  .starmobiles-edit-layout { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .starmobiles-level-fields { grid-row: auto; grid-template-rows: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 0 20px; border-inline-end: 0; border-bottom: 1px solid var(--color-border); }
+  .starmobiles-fields { grid-row: auto; grid-template-rows: auto; }
+}
+@container km-focused-editor (max-width: 520px) {
+  .starmobiles-traits { grid-template-columns: minmax(0, 1fr); }
+  .starmobiles-move-fields { grid-template-columns: minmax(0, 1fr); }
+  .starmobiles-selector { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .starmobiles-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .starmobiles-details dl { grid-template-columns: minmax(0, 1fr); }
+  .starmobiles-actions > button { flex: 1 1 auto; }
+}

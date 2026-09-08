@@ -1554,7 +1554,7 @@ function checkStaticWiringContract() {
   );
   assert.match(
     app,
-    /<CommonBottomDiagnosticsSection diagnostics=\{bottomDiagnostics\} \/>/u,
+    /<CommonBottomDiagnosticsSection\s+diagnostics=\{bottomDiagnostics\}\s+showProjectSetupConfirmations=\{activeSection === 'health'\}\s*\/>/u,
     'The shared bottom diagnostics panel must always receive the combined diagnostic set.'
   );
   assert.match(

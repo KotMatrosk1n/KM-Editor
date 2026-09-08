@@ -12,7 +12,8 @@ import './OutputHistoryPage.css';
 const transactionsPerPage = 10;
 const changesPerPage = 25;
 const filesOnly = 'history:files-only';
-type HistoryChange = NonNullable<OutputHistoryReceipt['historyDetails']>['changes'][number];
+export type HistoryChange = NonNullable<OutputHistoryReceipt['historyDetails']>['changes'][number];
+export type HistoryChangeFormatter = (change: HistoryChange) => string;
 
 function HistoryPagination({ page, lastPage, onChange }: { page: number; lastPage: number; onChange: (page: number) => void }) {
   const { t } = useLocalization();
@@ -23,7 +24,7 @@ function HistoryPagination({ page, lastPage, onChange }: { page: number; lastPag
   </div>;
 }
 
-function HistoryChangeGroup({ changes, label }: { changes: HistoryChange[]; label: string }) {
+function HistoryChangeGroup({ changes, label, formatChange }: { changes: HistoryChange[]; label: string; formatChange?: HistoryChangeFormatter }) {
   const { t, translateLiteral } = useLocalization();
   const [page, setPage] = useState(0);
   const lastPage = Math.max(0, Math.ceil(changes.length / changesPerPage) - 1);
@@ -31,14 +32,17 @@ function HistoryChangeGroup({ changes, label }: { changes: HistoryChange[]; labe
   return <section className="output-history-editor-group" aria-label={label}>
     <h4>{label} <small>{t('history.changeCount', { count: changes.length })}</small></h4>
     <ol className="output-history-changes" start={activePage * changesPerPage + 1}>
-      {changes.slice(activePage * changesPerPage, (activePage + 1) * changesPerPage).map((change, index) => <li key={activePage * changesPerPage + index}>
-        <strong>{translateLiteral(change.summary)}</strong>
+      {changes.slice(activePage * changesPerPage, (activePage + 1) * changesPerPage).map((change, index) => {
+        const summary = formatChange ? formatChange(change) : translateLiteral(change.summary);
+        return <li key={activePage * changesPerPage + index}>
+        <strong data-localization-ignore="true">{summary}</strong>
         <details><summary>{t('advancedEditor.technicalDetails')}</summary>
-          <dl><div><dt>{t('history.record')}</dt><dd data-localization-ignore="true">{change.recordId ?? change.domain}</dd></div>
+          <dl>{summary !== change.summary ? <div><dt>{translateLiteral('Summary')}</dt><dd data-localization-ignore="true">{change.summary}</dd></div> : null}
+            <div><dt>{t('history.record')}</dt><dd data-localization-ignore="true">{change.recordId ?? change.domain}</dd></div>
             {change.field ? <div><dt>{t('history.field')}</dt><dd data-localization-ignore="true">{change.field}</dd></div> : null}
             {change.newValue !== null ? <div><dt>{t('history.value')}</dt><dd data-localization-ignore="true">{change.newValue}</dd></div> : null}</dl>
         </details>
-      </li>)}
+      </li>; })}
     </ol>
     {lastPage > 0 ? <HistoryPagination page={activePage} lastPage={lastPage} onChange={setPage} /> : null}
   </section>;
@@ -49,7 +53,11 @@ export function localHistoryDay(value: string) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-export function OutputHistoryPage({ controller }: { controller: OutputSafetyController }) {
+export function OutputHistoryPage({ controller, formatChange, loadFormatter }: {
+  controller: OutputSafetyController;
+  formatChange?: HistoryChangeFormatter;
+  loadFormatter?: (domain: string) => Promise<HistoryChangeFormatter>;
+}) {
   const { t, formatLocale, translateLiteral } = useLocalization();
   const { history, isAvailable, busyAction, loadHistory } = controller;
   const attemptedLoad = useRef(false);
@@ -83,6 +91,22 @@ export function OutputHistoryPage({ controller }: { controller: OutputSafetyCont
     for (const change of changes) editors.set(change.domain, (editors.get(change.domain) ?? 0) + 1);
   }
   const activeEditor = selectedEditor && editors.has(selectedEditor) ? selectedEditor : editors.keys().next().value ?? null;
+  const [resolvedFormatter, setResolvedFormatter] = useState<{
+    domain: string; loader: typeof loadFormatter; format: HistoryChangeFormatter;
+  } | null>(null);
+  useEffect(() => {
+    if (!loadFormatter || !activeEditor || activeEditor === filesOnly) return;
+    let current = true;
+    void loadFormatter(activeEditor).then(format => {
+      if (current) setResolvedFormatter({ domain: activeEditor, loader: loadFormatter, format });
+    }).catch(() => {
+      // Labels are optional presentation data. Stored history remains available.
+      if (current) setResolvedFormatter(null);
+    });
+    return () => { current = false; };
+  }, [activeEditor, loadFormatter]);
+  const activeFormatter = resolvedFormatter?.domain === activeEditor && resolvedFormatter.loader === loadFormatter
+    ? resolvedFormatter.format : formatChange;
   const editorLabel = (domain: string) => {
     if (domain === filesOnly) return t('history.filesOnly');
     const registration = workbenchCapabilityRegistry.find(entry => entry.domain === domain || `workflow.${entry.id}` === domain);
@@ -140,7 +164,7 @@ export function OutputHistoryPage({ controller }: { controller: OutputSafetyCont
           <p>{t('history.outputSummary', { count: receipt.targetCount, mode: receipt.outputMode })}</p>
           {receipt.historyDetails ? <>
             <p>{t('history.changeCount', { count: receipt.historyDetails.totalChangeCount })}</p>
-            {[...groups].map(([domain, changes]) => <HistoryChangeGroup key={domain} changes={changes} label={editorLabel(domain)} />)}
+            {[...groups].map(([domain, changes]) => <HistoryChangeGroup key={domain} changes={changes} label={editorLabel(domain)} formatChange={activeFormatter} />)}
             {receipt.historyDetails.truncated ? <p>{t('history.limitedDetails')}</p> : null}
           </> : <p>{t('history.olderReceipt')}</p>}
           <details className="output-history-file-details"><summary>{t('history.files')}</summary><ul>{receipt.targets?.map(target =>

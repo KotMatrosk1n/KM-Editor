@@ -130,6 +130,7 @@ const editorSurfaceInventory = {
   shops: ['src/App.tsx', 'ShopsSection', 'raw-local-draft'],
   battleCafeRewards: ['src/features/battle-cafe-rewards/BattleCafeRewardsSection.tsx', 'BattleCafeRewardsSection', 'raw-local-draft'],
   tmMachineControls: ['src/features/tm-machine-controls/TmMachineControlsSection.tsx', 'TmMachineControlsSection', 'choice-local-draft'],
+  starmobiles: ['src/features/starmobiles/StarmobilesSection.tsx', 'StarmobilesSection', 'raw-local-draft'],
   habitatCoordinates: ['src/features/habitat-coordinates/HabitatCoordinatesSection.tsx', 'HabitatCoordinatesSection', 'choice-local-draft'],
   encounters: ['src/App.tsx', 'EncountersSection', 'raw-local-draft'],
   teraRaids: ['src/App.tsx', 'TeraRaidsSection', 'raw-local-draft'],
@@ -252,6 +253,7 @@ const editorDraftContractInventory = {
   battleCafeRewards: 'source-reconciled',
   tmMachineControls: 'immediate-choice',
   habitatCoordinates: 'keyed-exact-submit',
+  starmobiles: 'keyed-exact-submit',
   encounters: 'keyed-sparse-exact-submit',
   teraRaids: 'keyed-sparse-exact-submit',
   raidBattles: 'keyed-sparse-exact-submit',
@@ -1579,7 +1581,7 @@ assert.match(
 );
 assert.match(
   app,
-  /<CommonEditorDiagnosticsProvider>[\s\S]*?<main\b[\s\S]*?<CommonBottomDiagnosticsSection diagnostics=\{bottomDiagnostics\} \/>[\s\S]*?<\/main>[\s\S]*?<\/CommonEditorDiagnosticsProvider>/u,
+  /<CommonEditorDiagnosticsProvider>[\s\S]*?<main\b[\s\S]*?<CommonBottomDiagnosticsSection\s+diagnostics=\{bottomDiagnostics\}\s+showProjectSetupConfirmations=\{activeSection === 'health'\}\s*\/>[\s\S]*?<\/main>[\s\S]*?<\/CommonEditorDiagnosticsProvider>/u,
   'The app must keep one common diagnostics provider around the editor stack and its bottom diagnostics.'
 );
 assert.match(

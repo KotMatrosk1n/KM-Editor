@@ -30,6 +30,7 @@ using KM.SV.Text;
 using KM.SV.TmMachine;
 using KM.SV.Trainers;
 using KM.SV.Trades;
+using KM.SV.Starmobiles;
 using KM.SV.TypeChart;
 using System.Globalization;
 using System.Security.Cryptography;
@@ -57,6 +58,7 @@ public sealed class SvWorkflowService
     private readonly SvWorkflowFileSource fileSource;
     private readonly SvItemsWorkflowService itemsWorkflowService;
     private readonly SvMovesWorkflowService movesWorkflowService;
+    private readonly SvStarmobilesService starmobilesService;
     private readonly SvTextWorkflowService textWorkflowService;
     private readonly SvTmMachineControlsWorkflowService tmMachineControlsWorkflowService;
     private readonly SvHabitatCoordinatesWorkflowService habitatCoordinatesWorkflowService;
@@ -99,6 +101,7 @@ public sealed class SvWorkflowService
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.cacheManager = cacheManager ?? new SvCacheManager();
+        starmobilesService = new SvStarmobilesService(this.projectWorkspaceService);
         fileSource = new SvWorkflowFileSource(this.cacheManager);
         var habitatFileSource = new SvWorkflowFileSource(
             this.cacheManager,
@@ -1018,6 +1021,7 @@ public sealed class SvWorkflowService
             shopsWorkflowService.CreateSummary(project),
             tmMachineControlsWorkflowService.CreateSummary(project),
             habitatCoordinatesWorkflowService.CreateSummary(project),
+            starmobilesService.CreateSummary(project),
             giftPokemonWorkflowService.CreateSummary(project),
             tradePokemonWorkflowService.CreateSummary(project),
             placementWorkflowService.CreateSummary(project),
@@ -1108,6 +1112,13 @@ public sealed class SvWorkflowService
         var project = projectWorkspaceService.Open(paths);
         return tmMachineControlsWorkflowService.Load(project);
     }
+
+    public SvStarmobilesWorkflow LoadStarmobiles(ProjectPaths paths, EditSession? session = null)
+        => starmobilesService.Load(paths, session);
+
+    public SvStarmobilesEditResult StageStarmobiles(ProjectPaths paths, EditSession? session,
+        string revision, IReadOnlyList<SvStarmobileUpdate> updates)
+        => starmobilesService.Stage(paths, session, revision, updates);
 
     public SvHabitatCoordinatesWorkflow LoadHabitatCoordinates(
         ProjectPaths paths,
@@ -1636,6 +1647,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Shops => shopsEditSessionService.Validate(paths, session),
             SvEditSessionDomain.TmMachineControls => tmMachineControlsEditSessionService.Validate(paths, session),
             SvEditSessionDomain.HabitatCoordinates => habitatCoordinatesEditSessionService.Validate(paths, session),
+            SvEditSessionDomain.Starmobiles => starmobilesService.Validate(paths, session),
             SvEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.Validate(paths, session),
             SvEditSessionDomain.TradePokemon => tradePokemonEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Placement => placementEditSessionService.Validate(paths, session),
@@ -1667,6 +1679,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Shops => shopsEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.TmMachineControls => tmMachineControlsEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.HabitatCoordinates => habitatCoordinatesEditSessionService.CreateChangePlan(paths, session, outputMode),
+            SvEditSessionDomain.Starmobiles => starmobilesService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.TradePokemon => tradePokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Placement => placementEditSessionService.CreateChangePlan(paths, session, outputMode),
@@ -1699,6 +1712,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Shops => shopsEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.TmMachineControls => tmMachineControlsEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.HabitatCoordinates => habitatCoordinatesEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
+            SvEditSessionDomain.Starmobiles => starmobilesService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.TradePokemon => tradePokemonEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Placement => placementEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
@@ -2069,6 +2083,7 @@ public sealed class SvWorkflowService
             [SvEditSessionSupport.ShopsDomain] => SvEditSessionDomain.Shops,
             [SvTmMachineControlsEditSessionService.EditDomain] => SvEditSessionDomain.TmMachineControls,
             [SvHabitatCoordinatesEditSessionService.EditDomain] => SvEditSessionDomain.HabitatCoordinates,
+            [SvStarmobilesService.Domain] => SvEditSessionDomain.Starmobiles,
             [SvEditSessionSupport.GiftPokemonDomain] => SvEditSessionDomain.GiftPokemon,
             [SvEditSessionSupport.TradePokemonDomain] => SvEditSessionDomain.TradePokemon,
             [SvEditSessionSupport.PlacementDomain] => SvEditSessionDomain.Placement,
@@ -2124,6 +2139,7 @@ public sealed class SvWorkflowService
             SvEditSessionSupport.ShopsDomain => SvEditSessionDomain.Shops,
             SvTmMachineControlsEditSessionService.EditDomain => SvEditSessionDomain.TmMachineControls,
             SvHabitatCoordinatesEditSessionService.EditDomain => SvEditSessionDomain.HabitatCoordinates,
+            SvStarmobilesService.Domain => SvEditSessionDomain.Starmobiles,
             SvEditSessionSupport.GiftPokemonDomain => SvEditSessionDomain.GiftPokemon,
             SvEditSessionSupport.TradePokemonDomain => SvEditSessionDomain.TradePokemon,
             SvEditSessionSupport.PlacementDomain => SvEditSessionDomain.Placement,
@@ -2150,6 +2166,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Shops or
             SvEditSessionDomain.TmMachineControls or
             SvEditSessionDomain.HabitatCoordinates or
+            SvEditSessionDomain.Starmobiles or
             SvEditSessionDomain.GiftPokemon or
             SvEditSessionDomain.TradePokemon or
             SvEditSessionDomain.Placement;
@@ -2252,6 +2269,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Shops => SvEditSessionSupport.ShopsDomain,
             SvEditSessionDomain.TmMachineControls => SvTmMachineControlsEditSessionService.EditDomain,
             SvEditSessionDomain.HabitatCoordinates => SvHabitatCoordinatesEditSessionService.EditDomain,
+            SvEditSessionDomain.Starmobiles => SvStarmobilesService.Domain,
             SvEditSessionDomain.GiftPokemon => SvEditSessionSupport.GiftPokemonDomain,
             SvEditSessionDomain.TradePokemon => SvEditSessionSupport.TradePokemonDomain,
             SvEditSessionDomain.Placement => SvEditSessionSupport.PlacementDomain,
@@ -2420,6 +2438,7 @@ public sealed class SvWorkflowService
         Shops,
         TmMachineControls,
         HabitatCoordinates,
+        Starmobiles,
         GiftPokemon,
         TradePokemon,
         Placement,

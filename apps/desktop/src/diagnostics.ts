@@ -1,6 +1,23 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import type { ApiDiagnostic } from './bridge/contracts';
+import { projectBridgeErrorCodes } from './errorCodes';
+
+const projectSetupConfirmationCodes: ReadonlySet<string> = new Set([
+  projectBridgeErrorCodes.projectRomFsVerified,
+  projectBridgeErrorCodes.projectExeFsVerified,
+  projectBridgeErrorCodes.projectOutputVerified
+]);
+
+export function isProjectSetupConfirmation(diagnostic: ApiDiagnostic) {
+  if (diagnostic.domain !== 'project' || diagnostic.severity !== 'info') return false;
+  if (diagnostic.code) return projectSetupConfirmationCodes.has(diagnostic.code);
+
+  // Retained diagnostics from earlier versions have no semantic code.
+  return /^Base RomFS contains the Trinity archive required for .+\.$/u.test(diagnostic.message)
+    || /^Base ExeFS matches selected .+ title id 0x[0-9A-Fa-f]{16}\.$/u.test(diagnostic.message)
+    || /^Output root folder matches selected .+ title id 0x[0-9A-Fa-f]{16}\.$/u.test(diagnostic.message);
+}
 
 type DiagnosticTranslator = (literal: string) => string;
 type DiagnosticKeyTranslator = (key: string) => string;
