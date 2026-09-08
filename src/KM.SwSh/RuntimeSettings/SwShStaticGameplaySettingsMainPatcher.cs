@@ -489,6 +489,27 @@ public static class SwShStaticGameplaySettingsMainPatcher
         var baseText = baseNso.Text.DecompressedData;
         var currentText = currentNso.Text.DecompressedData;
         var text = currentText.ToArray();
+        var optionsDelta = expectedGame == ProjectGame.Shield ? 0x30 : 0;
+        var descriptorOffset = 0x020736A8 - baseNso.Ro.Header.MemoryOffset;
+        if (!currentNso.Ro.DecompressedData.AsSpan(descriptorOffset, 0x380)
+            .SequenceEqual(baseNso.Ro.DecompressedData.AsSpan(descriptorOffset, 0x380)))
+        {
+            throw new InvalidDataException(
+                "The native gameplay menu requires the original Sword/Shield Options row definitions.");
+        }
+        foreach (var (offset, length) in new[]
+        {
+            (0x014D7BD0 + optionsDelta, 0x014DEDD0 - 0x014D7BD0),
+            (0x013BF2A0 + optionsDelta, 0x11C),
+            (0x0067D5C0, 0xC0),
+        })
+        {
+            if (!currentText.AsSpan(offset, length).SequenceEqual(baseText.AsSpan(offset, length)))
+            {
+                throw new InvalidDataException(
+                    "The native gameplay menu requires the original Sword/Shield Options code. Another executable edit overlaps that menu.");
+            }
+        }
         int[] bridgeCaves =
         [
             RuntimeShareBridgeOffset,

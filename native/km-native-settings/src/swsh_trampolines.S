@@ -3,19 +3,6 @@
 .section .text,"ax",%progbits
 .align 2
 
-.global km_swsh_registration_original
-.hidden km_swsh_registration_original
-.type km_swsh_registration_original,%function
-km_swsh_registration_original:
-    str x19, [sp, #-0x20]!
-    stp x29, x30, [sp, #0x10]
-    add x29, sp, #0x10
-    mov x19, x0
-    adrp x17, km_swsh_registration_continue
-    ldr x17, [x17, #:lo12:km_swsh_registration_continue]
-    br x17
-.size km_swsh_registration_original, . - km_swsh_registration_original
-
 // Replaces the retail LDR W8, [SP] at the final battle/catch EXP scaling
 // point. Every register and NZCV bit except the intended W8 result is
 // preserved. The single acquire-load is also the readiness gate: zero is

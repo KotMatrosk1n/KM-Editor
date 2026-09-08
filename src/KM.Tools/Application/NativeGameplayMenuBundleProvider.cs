@@ -322,10 +322,6 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
             .Where(path => game != ProjectGame.ZA
                 || !string.Equals(path, "arc/data.trpfd", StringComparison.Ordinal))
             .ToHashSet(StringComparer.Ordinal);
-        if (game is ProjectGame.Sword or ProjectGame.Shield)
-        {
-            virtualPaths.Add("bin/script/param/script_id/script_id_record.bin");
-        }
         if (game == ProjectGame.ZA)
         {
             virtualPaths.Add(ZaNativeGameplayMenuRomFsMaterializer.GameSettingsUiPath["romfs/".Length..]);

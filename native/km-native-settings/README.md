@@ -8,7 +8,7 @@ The runtime supports only these exact game updates:
 
 | Game | Update | Game-owned menu location |
 | --- | --- | --- |
-| Pokemon Sword and Shield | 1.3.2 | KM settings entry in the stock Pokemon Center main list |
+| Pokemon Sword and Shield | 1.3.2 | Three rows at the bottom of X > Options |
 | Pokemon Scarlet and Violet | 4.0.0 | Three rows in the existing Options screen |
 | Pokemon Legends Z-A | 2.0.2 | Three rows in the existing Game Settings page |
 
@@ -26,7 +26,8 @@ worker retries journal loading without a timeout. Later menu changes commit and 
 then publish one atomic data snapshot. A missing, corrupt, foreign, or mismatched dependency leaves
 retail behavior active and never produces a partial live-code transition.
 
-The startup patch transaction validates all owned bytes, writes through bounded aliases, flushes
+The startup patch transaction validates all owned bytes, maps free ASLR pages outside the reserved
+IPC and heap regions, flushes
 and invalidates the required caches, verifies the committed bytes, and rolls back on verification
 failure. The derived `main.npdm` grants only SD access and the exact process-handle and memory-alias
 system calls needed by that transaction in both policy views. The journal uses alternating slots,

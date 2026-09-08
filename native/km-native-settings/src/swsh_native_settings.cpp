@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "km_swsh_native_settings.hpp"
+#include "km_swsh_options.hpp"
 
 extern "C" {
-__attribute__((visibility("hidden"))) uintptr_t km_swsh_registration_continue;
 __attribute__((visibility("hidden"))) uintptr_t km_swsh_level_cap_continue;
 __attribute__((visibility("hidden"))) volatile uint64_t km_swsh_effective_snapshot;
 }
@@ -25,8 +25,6 @@ constexpr uint64_t RequiredPresence =
     | km::PresenceLevelCap;
 constexpr uintptr_t ExpectedRoOffset = 0x01901000;
 constexpr uintptr_t ExpectedDataOffset = 0x024DB000;
-constexpr uintptr_t NativeArrayRegistrarOffset = 0x0066CBA0;
-constexpr uintptr_t NativeLowLevelRegistrarOffset = 0x0066D970;
 constexpr uintptr_t ExperienceAdditiveTransitionOffset = 0x007E4EA0;
 constexpr uintptr_t LevelCapGrowthThresholdOffset = 0x007EC4A0;
 constexpr uintptr_t ExperienceShareHookOffset = 0x007FB2C0;
@@ -51,19 +49,6 @@ constexpr uint32_t BranchRegisterX17 = 0xD61F0220;
 constexpr size_t JournalWorkerStackLength = 0x4000;
 constexpr int64_t JournalRetryNanoseconds = 1'000'000'000LL;
 
-constexpr uint8_t RegistrationHookPreimage[] = {
-    0xF3, 0x0F, 0x1E, 0xF8, 0xFD, 0x7B, 0x01, 0xA9,
-    0xFD, 0x43, 0x00, 0x91, 0xF3, 0x03, 0x00, 0xAA,
-    0x88, 0x31, 0x00, 0x94,
-};
-constexpr uint8_t NativeArrayRegistrarPreimage[] = {
-    0x00, 0x80, 0x01, 0x91, 0x02, 0x00, 0x80, 0x12,
-    0x72, 0x03, 0x00, 0x14,
-};
-constexpr uint8_t NativeLowLevelRegistrarPreimage[] = {
-    0xF8, 0x5F, 0xBC, 0xA9, 0xF6, 0x57, 0x01, 0xA9,
-    0xF4, 0x4F, 0x02, 0xA9, 0xFD, 0x7B, 0x03, 0xA9,
-};
 constexpr uint8_t ExperienceAdditiveTransitionPreimage[] = {
     0xF8, 0x5F, 0xBC, 0xA9, 0xF6, 0x57, 0x01, 0xA9,
     0xF4, 0x4F, 0x02, 0xA9, 0xFD, 0x7B, 0x03, 0xA9,
@@ -92,8 +77,6 @@ constexpr SwShNativeSettingsProfileView SwordProfile{
     "1.3.2",
     "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471000000000000000000000000",
     0x01901000,
-    0x01464FC0,
-    NativeArrayRegistrarOffset,
     "sd:/config/km-editor/gameplay-settings/0100ABF008968000/settings.bin",
 };
 constexpr SwShNativeSettingsProfileView ShieldProfile{
@@ -102,8 +85,6 @@ constexpr SwShNativeSettingsProfileView ShieldProfile{
     "1.3.2",
     "A16802625E7826BF83B6F9708E475B912A9AB7DF000000000000000000000000",
     0x01901000,
-    0x01464FF0,
-    NativeArrayRegistrarOffset,
     "sd:/config/km-editor/gameplay-settings/01008DB008C2C000/settings.bin",
 };
 
@@ -119,18 +100,6 @@ const SwShNativeSettingsProfileView* ProfileForEdition(
     }
 }
 
-struct AmxNativeSymbol {
-    const char* name;
-    uint64_t (*function)(void*, uint64_t*);
-};
-static_assert(sizeof(AmxNativeSymbol) == 0x10);
-
-struct FarBranch {
-    uint32_t load_target;
-    uint32_t branch_target;
-    uintptr_t target;
-};
-static_assert(sizeof(FarBranch) == 0x10);
 
 struct LiteralBridge {
     uint32_t load_target;
@@ -139,8 +108,6 @@ struct LiteralBridge {
 };
 static_assert(sizeof(LiteralBridge) == 0x0C);
 
-using NativeArrayRegistrar = void (*)(uint64_t, const AmxNativeSymbol*);
-using RegistrationOriginal = void (*)(uint64_t);
 
 enum ActivationState : uint32_t {
     ActivationIdle = 0,
@@ -159,19 +126,10 @@ volatile uint32_t g_journal_ready;
 volatile uint32_t g_journal_worker_state;
 alignas(km::PageSize) uint8_t g_journal_worker_stack[JournalWorkerStackLength]{};
 
-extern "C" uint64_t km_swsh_settings_read(void*, uint64_t* parameters);
-extern "C" uint64_t km_swsh_settings_write(void*, uint64_t* parameters);
-extern "C" void km_swsh_registration_callback(uint64_t owner);
-extern "C" void km_swsh_registration_original(uint64_t owner);
 extern "C" uint32_t km_swsh_share_callback();
 extern "C" void km_swsh_rate_bridge();
 extern "C" void km_swsh_level_cap_bridge();
 
-constexpr AmxNativeSymbol NativeSymbols[] = {
-    {"KmSettingsRead_", km_swsh_settings_read},
-    {"KmSettingsWrite_", km_swsh_settings_write},
-    {nullptr, nullptr},
-};
 
 bool IsInsideText(const ModuleRange& module, uintptr_t offset, size_t length) {
     return module.base != 0 && offset <= module.text_size
@@ -194,12 +152,6 @@ bool MatchesProfile(const ModuleRange& module,
     if (module.text_size != profile.text_size
         || module.ro_base != module.base + ExpectedRoOffset
         || module.data_base != module.base + ExpectedDataOffset
-        || !Matches(module, profile.registration_hook_offset,
-                    RegistrationHookPreimage, sizeof(RegistrationHookPreimage))
-        || !Matches(module, profile.native_array_registrar_offset,
-                    NativeArrayRegistrarPreimage, sizeof(NativeArrayRegistrarPreimage))
-        || !Matches(module, NativeLowLevelRegistrarOffset,
-                    NativeLowLevelRegistrarPreimage, sizeof(NativeLowLevelRegistrarPreimage))
         || !Matches(module, ExperienceAdditiveTransitionOffset,
                     ExperienceAdditiveTransitionPreimage,
                     sizeof(ExperienceAdditiveTransitionPreimage))
@@ -303,14 +255,6 @@ uint32_t EncodeLiteralLoadX17(uintptr_t source, uintptr_t literal) {
         | ((static_cast<uint32_t>(delta / 4) & 0x7FFFFU) << 5);
 }
 
-FarBranch MakeFarBranch(const void* target) {
-    return FarBranch{
-        0x58000051U, // LDR X17, #8
-        BranchRegisterX17,
-        reinterpret_cast<uintptr_t>(target),
-    };
-}
-
 LiteralBridge MakeLiteralBridge(uintptr_t bridge_offset,
                                 uintptr_t target_slot_offset) {
     return LiteralBridge{
@@ -322,8 +266,8 @@ LiteralBridge MakeLiteralBridge(uintptr_t bridge_offset,
 
 bool InstallImmutableHooks(const ModuleRange& main,
                            const SwShNativeSettingsProfileView& profile) {
-    const auto registration = MakeFarBranch(
-        reinterpret_cast<const void*>(km_swsh_registration_callback));
+    km::ExecutablePatch options[2]{};
+    if (!km::PrepareSwShOptions(main, profile.edition, options)) return false;
     const auto share_bridge = MakeLiteralBridge(
         ShareBridgeOffset, ShareTargetSlotOffset);
     const auto rate_bridge = MakeLiteralBridge(
@@ -348,8 +292,6 @@ bool InstallImmutableHooks(const ModuleRange& main,
         return false;
     }
 
-    km_swsh_registration_continue =
-        main.base + profile.registration_hook_offset + sizeof(FarBranch);
     km_swsh_level_cap_continue = main.base + LevelCapHookOffset + sizeof(uint32_t);
 
     // One transaction is the entire lifetime executable mutation surface for
@@ -373,8 +315,8 @@ bool InstallImmutableHooks(const ModuleRange& main,
          &rate_hook, sizeof(rate_hook)},
         {main.base + LevelCapHookOffset, &LevelCapRetailInstruction,
          &cap_hook, sizeof(cap_hook)},
-        {main.base + profile.registration_hook_offset,
-         RegistrationHookPreimage, &registration, sizeof(registration)},
+        options[0],
+        options[1],
     };
     return km::PatchExecutableTransaction(
         patches, sizeof(patches) / sizeof(patches[0]));
@@ -464,7 +406,7 @@ void EnsureJournalReadiness() {
     }
 
     // Thread creation can fail transiently during the loader-serialized entry.
-    // A later VM-registration or native callback gets one synchronous data-only
+    // A later Options callback gets one synchronous data-only
     // adoption attempt, even while the worker is between attempts, so a menu
     // selection cannot be discarded merely because the worker is sleeping.
     // Rearm the background retry if the journal is still unavailable.
@@ -562,8 +504,8 @@ bool CommitAndPublishSnapshot(uint64_t packed_snapshot) {
 
 } // namespace
 
-extern "C" uint64_t km_swsh_settings_read(void*, uint64_t* parameters) {
-    if (!IsActive() || parameters == nullptr || parameters[0] != 0) {
+extern "C" uint64_t km_swsh_read_settings() {
+    if (!IsActive()) {
         return 0;
     }
     EnsureJournalReadiness();
@@ -589,23 +531,9 @@ extern "C" uint64_t km_swsh_settings_read(void*, uint64_t* parameters) {
     return km::PackSettingsSnapshot(retail_view);
 }
 
-extern "C" uint64_t km_swsh_settings_write(void*, uint64_t* parameters) {
-    if (parameters == nullptr || parameters[0] != sizeof(uint64_t)) {
-        return 0;
-    }
+extern "C" bool km_swsh_write_settings(uint64_t snapshot) {
     EnsureJournalReadiness();
-    return CommitAndPublishSnapshot(parameters[1]) ? 1 : 0;
-}
-
-extern "C" void km_swsh_registration_callback(uint64_t owner) {
-    reinterpret_cast<RegistrationOriginal>(km_swsh_registration_original)(owner);
-    if (!IsActive() || g_profile == nullptr) {
-        return;
-    }
-    EnsureJournalReadiness();
-    const auto registrar = reinterpret_cast<NativeArrayRegistrar>(
-        g_main_base + g_profile->native_array_registrar_offset);
-    registrar(owner, NativeSymbols);
+    return CommitAndPublishSnapshot(snapshot);
 }
 
 extern "C" uint32_t km_swsh_share_callback() {
