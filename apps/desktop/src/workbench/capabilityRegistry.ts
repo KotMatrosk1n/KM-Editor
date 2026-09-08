@@ -26,6 +26,7 @@ import {
   MapPin,
   MapPinned,
   MessageSquareOff,
+  Music,
   Package,
   PackagePlus,
   Palette,
@@ -512,6 +513,16 @@ export const workbenchCapabilityRegistry = [
     id: 'modelViewer',
     label: '3D Model Editor',
     maturity: 'mixed',
+    showInWorkflowDashboard: false,
+    standalone: true
+  }),
+  workflow({
+    description: 'Browse game audio and listen in Sound Studio.',
+    games: allGames,
+    icon: Music,
+    id: 'soundStudio',
+    label: 'Sound Studio',
+    maturity: 'readOnly',
     showInWorkflowDashboard: false,
     standalone: true
   }),

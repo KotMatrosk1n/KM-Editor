@@ -74,7 +74,7 @@ Get-ChildItem -LiteralPath (Join-Path $runtimeRoot "src") -File | Sort-Object Na
 }
 
 $elf = Join-Path $outputRoot "km-native-settings.elf"
-& $linker "-shared" "--build-id=sha1" "--gc-sections" "--no-undefined" "-T" (Join-Path $runtimeRoot "linker.ld") @objects "-o" $elf
+& $linker "-shared" "--init=km_runtime_initialize" "--build-id=sha1" "--gc-sections" "--no-undefined" "-T" (Join-Path $runtimeRoot "linker.ld") @objects "-o" $elf
 if ($LASTEXITCODE -ne 0) { throw "Guest runtime link failed." }
 
 $repositoryRoot = Resolve-Path (Join-Path $runtimeRoot "..\..")

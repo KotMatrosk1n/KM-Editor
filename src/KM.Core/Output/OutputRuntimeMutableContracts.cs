@@ -247,7 +247,10 @@ public sealed record OutputRuntimeMutableDescriptor
                 $"atmosphere/contents/{TitleId:X16}/cheats/toggles.txt"),
             _ => throw new ArgumentOutOfRangeException(nameof(Kind)),
         };
-        if (path != expectedPath)
+        var matchesEmulatorJournal = Kind == OutputRuntimeMutableKind.GameplaySettingsJournalV1
+            && (path == new RelativeOutputPath("sdcard/" + expectedPath.Value)
+                || path == new RelativeOutputPath("sdmc/" + expectedPath.Value));
+        if (path != expectedPath && !matchesEmulatorJournal)
         {
             throw new ArgumentException(
                 "A runtime-mutable descriptor does not match its exact title-scoped output path.",

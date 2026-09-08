@@ -145,6 +145,14 @@ public static class BoundedParallel
     private const int MaximumIndexedFailureSlots = 1_000_000;
     private static readonly ProcessWideCoordinator Coordinator = new(BoundedConcurrencyHostBudget.Current);
 
+    /// <summary>Schedules one classified workload without blocking the request dispatcher.</summary>
+    public static Task RunAsync(BoundedConcurrencyPolicy policy, Action<CancellationToken> action, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        ArgumentNullException.ThrowIfNull(action);
+        return Task.Run(() => For(1, policy, (_, token) => action(token), cancellationToken), cancellationToken);
+    }
+
     public static BoundedConcurrencyPlan Plan(int itemCount, BoundedConcurrencyPolicy policy)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(itemCount);

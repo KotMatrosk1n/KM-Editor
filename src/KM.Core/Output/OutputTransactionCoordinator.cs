@@ -4176,6 +4176,34 @@ public sealed class OutputTransactionCoordinator
         }
     }
 
+    public async Task PruneRemovedDirectoriesAsync(
+        ProjectId projectId,
+        GameFamily gameFamily,
+        IReadOnlyList<RelativeOutputPath> removedTargets,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(removedTargets);
+        if (removedTargets.Count > OutputLimits.MaximumMutationsPerApply)
+        {
+            throw new ArgumentOutOfRangeException(nameof(removedTargets));
+        }
+
+        await ExecuteExclusiveOutputOperationAsync(async token =>
+        {
+            var missing = new List<RelativeOutputPath>();
+            foreach (var target in removedTargets)
+            {
+                if (!(await ComputeTargetStateAsync(target, token).ConfigureAwait(false)).Exists)
+                {
+                    missing.Add(target);
+                }
+            }
+            await PruneOwnedDirectoriesAsync(projectId, gameFamily, missing, token)
+                .ConfigureAwait(false);
+            return true;
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task PruneOwnedDirectoriesAsync(
         ProjectId projectId,
         GameFamily gameFamily,

@@ -795,6 +795,7 @@ import {
 const GameModulesRuntime = lazy(() => import('./features/game-modules/GameModulesRuntime'));
 const ResearchLabRuntime = lazy(() => import('./features/research-lab/ResearchLabRuntime'));
 const ModelViewerSection = lazy(() => import('./features/model-viewer/ModelViewerSection'));
+const SoundStudioSection = lazy(() => import('./features/sound-studio/SoundStudioSection'));
 
 const bundledAppVersion = tauriConfig.version;
 const legacyWorkspaceProjectIdPlaceholder = `km1_${'0'.repeat(64)}`;
@@ -4084,6 +4085,10 @@ export function App({
     ),
     [reportAnalysisPreparationProgress]
   );
+  const handleRememberGameplaySettingsDestination = useCallback(async (target: 'ryujinx' | 'eden', path: string) => {
+    const snapshot = await personalWorkspaceRegistry.setGameplaySettingsDestination(target, path);
+    setApplicationWorkspaceSnapshot(snapshot);
+  }, [personalWorkspaceRegistry]);
   const handleRememberGameDumpDestination = useCallback(
     async (game: ProjectGame, destination: string) => {
       try {
@@ -4574,12 +4579,11 @@ export function App({
       if (operation === 'apply') {
         await notifySemanticOutputFailure(error);
       }
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+
     },
     [
       gameplaySettingsScopeIsCurrent,
-      notifySemanticOutputFailure,
-      setBridgeDiagnostics
+      notifySemanticOutputFailure
     ]
   );
   const handleGameplaySettingsRecoveryRequired = useCallback(
@@ -20360,7 +20364,12 @@ export function App({
 
   const [welcomeGame, setWelcomeGame] = useState<ProjectGame>(readWelcomeGame);
   const showingWelcome = !selectedGame || isGamePickerOpen;
-  const welcomeCache = useWelcomeCacheSettings(unscopedBridge, welcomeGame, showingWelcome && !hasCriticalWriteOperation, error => setBridgeDiagnostics(toBridgeDiagnostics(error)));
+  const [welcomeDiagnostics, setWelcomeDiagnostics] = useState<ApiDiagnostic[]>([]);
+  useEffect(() => setWelcomeDiagnostics([]), [welcomeGame, showingWelcome]);
+  const welcomeCache = useWelcomeCacheSettings(unscopedBridge, welcomeGame, showingWelcome && !hasCriticalWriteOperation, error => setWelcomeDiagnostics(toBridgeDiagnostics(error)));
+  useEffect(() => {
+    if (!welcomeCache.error) setWelcomeDiagnostics([]);
+  }, [welcomeCache.error]);
   const settingsSection = (
     <SettingsSection
       analysisLoadingSettings={(
@@ -20431,7 +20440,7 @@ export function App({
 
   if (!selectedGame || isGamePickerOpen) {
     return (
-      <CommonEditorDiagnosticsProvider>
+      <CommonEditorDiagnosticsProvider key="welcome">
         <WelcomeHub
           games={visibleGameSelectionGames}
           definitions={gameDefinitions}
@@ -20456,8 +20465,7 @@ export function App({
           }}
           diagnostics={<>
             {cacheClearConfirmation}
-            <CommonBottomDiagnosticsSection diagnostics={bridgeDiagnostics} />
-            {personalWorkspaceError ? <p role="alert">{t('workbench.personalState.loadError')}</p> : null}
+            <CommonBottomDiagnosticsSection diagnostics={welcomeDiagnostics} />
           </>}
           settings={settingsSection}
         />
@@ -22234,6 +22242,8 @@ export function App({
           ) : null}
           {activeSection === 'gameplaySettings' ? (
             <GameplaySettingsSection
+              destinations={applicationWorkspaceSnapshot.document?.gameplaySettingsDestinations}
+              onRememberDestination={handleRememberGameplaySettingsDestination}
               armCriticalWriteGuard={armGameplaySettingsCriticalWriteGuard}
               bridge={bridge}
               canApply={outputSafety.canApply}
@@ -22245,6 +22255,11 @@ export function App({
               onRecoveryRequired={handleGameplaySettingsRecoveryRequired}
               scope={outputSafetyScope}
             />
+          ) : null}
+          {activeSection === 'soundStudio' ? (
+            <Suspense fallback={<section className="panel wide-panel" role="status">{t('soundStudio.loading')}</section>}>
+              <SoundStudioSection key={`${activeProjectId ?? 'unselected'}:${JSON.stringify(gameDumpPaths)}`} paths={gameDumpPaths} />
+            </Suspense>
           ) : null}
           {activeSection === 'modelViewer' ? (
             <Suspense fallback={<section className="panel wide-panel" role="status">{t('modelViewer.loading')}</section>}>

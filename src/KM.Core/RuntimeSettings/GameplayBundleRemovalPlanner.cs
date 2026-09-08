@@ -119,7 +119,7 @@ public static class GameplayBundleRemovalPlanner
             coordinator);
 
         var settingsPath = new RelativeOutputPath(
-            $"config/km-editor/gameplay-settings/{bundle.Manifest.TitleId:X16}/settings.bin");
+            bundle.SettingsPath);
         ValidateReviewedTargets(
             payloads,
             reviews,
@@ -192,12 +192,12 @@ public static class GameplayBundleRemovalPlanner
 
         AddPayload(
             result,
-            $"config/km-editor/gameplay-settings/{bundle.Manifest.TitleId:X16}/bundle.manifest",
+            bundle.ManifestPath,
             bundle.ManifestBytes,
             BundlePayloadKind.Immutable);
         AddPayload(
             result,
-            $"config/km-editor/gameplay-settings/{bundle.Manifest.TitleId:X16}/settings.bin",
+            bundle.SettingsPath,
             bundle.SettingsJournal,
             BundlePayloadKind.SettingsJournal);
         if (result.Count != bundle.Entries.Length

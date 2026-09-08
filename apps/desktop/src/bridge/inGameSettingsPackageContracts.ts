@@ -163,6 +163,7 @@ export const inGameSettingsPackageSnapshotSchema = z.strictObject({
 
 export const inspectInGameSettingsPackageRequestSchema = z.strictObject({
   installationTarget: inGameSettingsInstallationTargetSchema,
+  installationRootPath: z.string().min(1).max(32767).nullable().optional(),
   scope: outputSafetyScopeSchema
 });
 
@@ -173,6 +174,7 @@ export const inspectInGameSettingsPackageResponseSchema = z.strictObject({
 export const previewInGameSettingsPackageRequestSchema = z.strictObject({
   expectedRevision: sha256Schema,
   installationTarget: inGameSettingsInstallationTargetSchema,
+  installationRootPath: z.string().min(1).max(32767).nullable().optional(),
   operation: inGameSettingsPackageOperationSchema,
   scope: outputSafetyScopeSchema
 });
@@ -254,6 +256,7 @@ export const previewInGameSettingsPackageResponseSchema = z.strictObject({
 
 export const applyInGameSettingsPackageRequestSchema = z.strictObject({
   installationTarget: inGameSettingsInstallationTargetSchema,
+  installationRootPath: z.string().min(1).max(32767).nullable().optional(),
   reviewId: reviewIdSchema,
   scope: outputSafetyScopeSchema
 });

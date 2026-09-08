@@ -58,8 +58,10 @@ bool TryActivateNativeMenu() {
 
 } // namespace
 
-extern "C" void km_runtime_start(void*, uint64_t) {
-    // The subsdk entry is the one loader-serialized opportunity to inspect and
+extern "C" void km_runtime_initialize() {
+    // DT_INIT runs after the loader has cleared BSS and applied relocations.
+    // It must not use the raw module entry, which repeats that preparation.
+    // This is the one loader-serialized opportunity to inspect and
     // publish immutable hooks. Unsupported titles, missing exports, profile
     // mismatches, and patch rejection are terminal dormancy for this process;
     // retrying those permanent conditions on a live game thread is unsafe.

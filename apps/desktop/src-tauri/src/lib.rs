@@ -130,6 +130,7 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "angeFight.load",
     "angeFight.stage",
     "angeFight.uninstall.stage",
+    "audio.studio",
     "bagHook.install.stage",
     "bagHook.load",
     "bagHook.uninstall.stage",
@@ -2724,7 +2725,6 @@ fn project_bridge_command_concurrency(command: &str) -> Option<ProjectBridgeComm
         command,
         "editSession.start"
             | "gameplaySettings.get"
-            | "inGameSettingsPackage.inspect"
             | "output.recovery.status"
             | "output.history.list"
             | "output.checkpoint.list"
@@ -2746,6 +2746,8 @@ fn project_bridge_command_concurrency(command: &str) -> Option<ProjectBridgeComm
         None if project_bridge_command_requires_exclusive_barrier(command) => {
             ProjectBridgeCommandConcurrency::Exclusive
         }
+        // Package inspection prepares the same executable and RomFS payload as preview.
+        // Keep it on the owner, whose memory budget is not divided across read workers.
         None => ProjectBridgeCommandConcurrency::OwnerOrdered,
     })
 }

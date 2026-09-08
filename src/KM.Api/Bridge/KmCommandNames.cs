@@ -195,6 +195,7 @@ public static class KmCommandNames
     public const string QueryBalanceLab = "semantic.balance-lab";
     public const string ReadGameModuleCapabilities = "gameModules.capabilities";
     public const string QueryGameModule = "gameModules.query";
+    public const string SoundStudio = "audio.studio";
     public const string ModelCatalog = "models.catalog";
     public const string ModelPrepare = "models.prepare";
     public const string ModelTextures = "models.textures";

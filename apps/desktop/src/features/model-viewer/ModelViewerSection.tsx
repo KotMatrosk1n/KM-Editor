@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { kmCommandNames, projectPathsSchema, type EditSession, type ProjectPaths } from '../../bridge/contracts';
 import { sendProjectBridgeRequest } from '../../bridge/projectBridgeRequest';
 import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditorDiagnostics';
+import { LoadingProgress } from '../../components/LoadingProgress';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useModalDialog } from '../../components/useModalDialog';
 import { useLocalization } from '../../localization';
@@ -186,7 +187,7 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
           <input id="model-search" type="search" value={query} onChange={event => setQuery(event.target.value)} />
           <div className="model-viewer__catalog" aria-busy={loading}>
             <div className="model-viewer__catalog-content">
-            {loading ? <p role="status">{t('modelViewer.loading')}</p> : groups.length === 0 ? <p role="status">{t('modelViewer.empty')}</p> :
+            {loading ? <LoadingProgress label={t('modelViewer.loading')} /> : groups.length === 0 ? <p role="status">{t('modelViewer.empty')}</p> :
               groups.map(group => <details key={group[0].id} open={group.some(item => item.id === selected) || undefined}>
                 <summary data-localization-ignore="true">{group[0].species > 0 ? `#${group[0].species} ` : ''}{group[0].name} <span>({group.length})</span></summary>
                 {group.map(item => <button key={item.id} type="button" disabled={dirty || disabled} aria-pressed={item.id === selected} onClick={() => select(item.id)} title={item.id}>

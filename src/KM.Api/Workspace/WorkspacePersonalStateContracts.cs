@@ -69,6 +69,14 @@ public sealed record WorkspaceApplicationStateDocumentDto(
     IReadOnlyList<WorkspaceShortcutOverrideDto> ShortcutOverrides,
     IReadOnlyList<WorkspaceLocalePackDto> LocalePacks,
     IReadOnlyList<WorkspaceGameDumpDestinationDto> GameDumpDestinations,
+    DateTimeOffset UpdatedAtUtc)
+{
+    public IReadOnlyList<WorkspaceGameplaySettingsDestinationDto> GameplaySettingsDestinations { get; init; } = [];
+}
+
+public sealed record WorkspaceGameplaySettingsDestinationDto(
+    string Target,
+    string DestinationPath,
     DateTimeOffset UpdatedAtUtc);
 
 public sealed record WorkspaceRecentProjectProfileDto(

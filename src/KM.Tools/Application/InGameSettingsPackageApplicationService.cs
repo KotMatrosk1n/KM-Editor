@@ -92,6 +92,14 @@ public sealed record InGameSettingsExternalSourceDependency
 
 public interface IInGameSettingsBundleProvider
 {
+    Task<InGameSettingsBundleResolution> ResolveAsync(ProjectPaths paths, ProjectGame game,
+        InGameSettingsInstallationTargetDto installationTarget, bool installToEmulatorRoot,
+        CancellationToken cancellationToken = default)
+    {
+        if (installToEmulatorRoot) throw new NotSupportedException("This provider cannot install directly into an emulator data folder.");
+        return ResolveAsync(paths, game, installationTarget, cancellationToken);
+    }
+
     Task<InGameSettingsBundleResolution> ResolveAsync(
         ProjectPaths paths,
         ProjectGame game,
@@ -173,6 +181,47 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
         reviewPruneTimer = CreateReviewPruneTimer();
     }
 
+    private sealed record PackageScopeContext(OutputScopeContext Destination, OutputScopeContext Source,
+        string ControlPrefix)
+    {
+        public string ScopeKey => Source.ScopeKey + ":" + Destination.ScopeKey + ":" + ControlPrefix;
+        public ProjectId ProjectId => Destination.ProjectId;
+        public KM.Core.Semantics.GameFamily GameFamily => Destination.GameFamily;
+        public ProjectPaths Paths => Destination.Paths;
+        public OutputTransactionCoordinator Coordinator => Destination.Coordinator;
+        public bool IsExternal => Source.ScopeKey != Destination.ScopeKey;
+    }
+
+    private static PackageScopeContext ResolvePackageScope(OutputScopeDto scope,
+        InGameSettingsInstallationTargetDto target, string? installationRoot)
+    {
+        var source = OutputSafetyApplicationService.ResolveScope(scope);
+        if (string.IsNullOrWhiteSpace(installationRoot))
+        {
+            return new(source, source, "");
+        }
+        if (target == InGameSettingsInstallationTargetDto.Atmosphere)
+            throw new InGameSettingsPackageUnavailableException("The selected target does not use an emulator data folder.");
+        if (installationRoot.Length > 32767 || !Path.IsPathFullyQualified(installationRoot))
+            throw new InGameSettingsPackageUnavailableException("Choose an existing emulator data folder.");
+        var modFolder = target == InGameSettingsInstallationTargetDto.Ryujinx ? "mods" : "load";
+        var sdFolder = target == InGameSettingsInstallationTargetDto.Ryujinx ? "sdcard" : "sdmc";
+        if (!Directory.Exists(Path.Combine(installationRoot, modFolder))
+            || !Directory.Exists(Path.Combine(installationRoot, sdFolder)))
+            throw new InGameSettingsPackageUnavailableException("Choose the data folder shown by the emulator, containing its mods and SD folders.");
+        var paths = source.Paths with { OutputRootPath = installationRoot };
+        var destinationScope = scope with { ProjectId = ProjectIdentity.FromPaths(paths).Value,
+            Paths = scope.Paths with { OutputRootPath = installationRoot } };
+        var destination = OutputSafetyApplicationService.ResolveScope(destinationScope);
+        var a = Path.TrimEndingDirectorySeparator(Path.GetFullPath(source.Paths.OutputRootPath!));
+        var b = Path.TrimEndingDirectorySeparator(Path.GetFullPath(installationRoot));
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (a.Equals(b, comparison) || a.StartsWith(b + Path.DirectorySeparatorChar, comparison)
+            || b.StartsWith(a + Path.DirectorySeparatorChar, comparison))
+            throw new InGameSettingsPackageUnavailableException("Choose an emulator data folder separate from the project output folder.");
+        return new(destination, source, NativeGameplayMenuBundleFactory.GetControlPrefix(target));
+    }
+
     public async Task<InspectInGameSettingsPackageResponse> InspectAsync(
         InspectInGameSettingsPackageRequest request,
         CancellationToken cancellationToken = default)
@@ -180,7 +229,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(request);
         ValidateInstallationTarget(request.InstallationTarget);
-        var context = OutputSafetyApplicationService.ResolveScope(request.Scope);
+        var context = ResolvePackageScope(request.Scope, request.InstallationTarget, request.InstallationRootPath);
         var loaded = await LoadWithCoexistenceAsync(
                 request.Scope,
                 context,
@@ -202,7 +251,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
             throw new ArgumentOutOfRangeException(nameof(request.Operation));
         }
 
-        var context = OutputSafetyApplicationService.ResolveScope(request.Scope);
+        var context = ResolvePackageScope(request.Scope, request.InstallationTarget, request.InstallationRootPath);
         var loaded = await LoadWithCoexistenceAsync(
                 request.Scope,
                 context,
@@ -239,7 +288,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
         if (request.Operation is InGameSettingsPackageOperationDto.Install
             or InGameSettingsPackageOperationDto.Upgrade)
         {
-            foreach (var dependency in loaded.SourceDependencies)
+            foreach (var dependency in context.IsExternal ? [] : loaded.SourceDependencies)
             {
                 plan = BindReadDependency(plan, dependency);
             }
@@ -297,7 +346,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
                     _ => throw new ArgumentOutOfRangeException(nameof(mutation.Kind)),
                 }))
             .ToArray();
-        var readDependencies = plan.ReadDependencies
+        var readDependencies = (context.IsExternal ? loaded.SourceDependencies : plan.ReadDependencies)
             .OrderBy(dependency => dependency.Path.CanonicalKey, StringComparer.Ordinal)
             .Take(InGameSettingsPackageContract.MaximumReturnedReadDependencies)
             .Select(dependency => new InGameSettingsPackageReadDependencyDto(
@@ -353,7 +402,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
             throw new InGameSettingsPackageReviewExpiredException();
         }
 
-        var context = OutputSafetyApplicationService.ResolveScope(request.Scope);
+        var context = ResolvePackageScope(request.Scope, request.InstallationTarget, request.InstallationRootPath);
         CachedReview review;
         lock (syncRoot)
         {
@@ -410,9 +459,33 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
             throw new InGameSettingsPackageStateConflictException();
         }
 
-        var result = await context.Coordinator
-            .ApplyAsync(review.ApplyPlan, cancellationToken)
-            .ConfigureAwait(false);
+        var result = context.IsExternal
+            ? await context.Source.Coordinator.ExecuteExclusiveOutputOperationAsync(async token =>
+            {
+                foreach (var dependency in current.SourceDependencies)
+                {
+                    var observed = await ReviewTargetAsync(context.Source.Paths.OutputRootPath!, dependency.Path,
+                        MaximumTargetBytes, token).ConfigureAwait(false);
+                    if (observed.State != dependency.ExpectedState) throw new InGameSettingsPackageStateConflictException();
+                }
+                return await context.Coordinator.ApplyAsync(review.ApplyPlan, token).ConfigureAwait(false);
+            }, cancellationToken).ConfigureAwait(false)
+            : await context.Coordinator.ApplyAsync(review.ApplyPlan, cancellationToken).ConfigureAwait(false);
+        if (result.Outcome == OutputApplyOutcome.Committed
+            && review.Operation == InGameSettingsPackageOperationDto.Remove)
+        {
+            try
+            {
+                await context.Coordinator.PruneRemovedDirectoriesAsync(
+                    context.ProjectId, context.GameFamily,
+                    review.ApplyPlan.Mutations.Select(mutation => mutation.Path).ToArray(),
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (!IsFatal(exception))
+            {
+                // Empty folder cleanup cannot invalidate a committed removal receipt.
+            }
+        }
         InGameSettingsPackageSnapshotDto? snapshot = null;
         if (result.Outcome is OutputApplyOutcome.Committed or OutputApplyOutcome.RolledBack)
         {
@@ -445,7 +518,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
     }
 
     private static OutputApplyPlan CreateInstallPlan(
-        OutputScopeContext context,
+        PackageScopeContext context,
         LoadedPackageState loaded)
     {
         if (loaded.Snapshot.State != InGameSettingsPackageStateDto.NotInstalled
@@ -530,7 +603,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
     }
 
     private static OutputApplyPlan CreateUpgradePlan(
-        OutputScopeContext context,
+        PackageScopeContext context,
         LoadedPackageState loaded)
     {
         if (loaded.Snapshot.State != InGameSettingsPackageStateDto.UpgradeAvailable
@@ -565,7 +638,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
     }
 
     private static OutputApplyPlan CreateRemovalPlan(
-        OutputScopeContext context,
+        PackageScopeContext context,
         LoadedPackageState loaded)
     {
         if (loaded.Snapshot.State is not (
@@ -600,7 +673,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
 
     private async Task<LoadedPackageState> LoadWithCoexistenceAsync(
         OutputScopeDto scope,
-        OutputScopeContext context,
+        PackageScopeContext context,
         InGameSettingsInstallationTargetDto installationTarget,
         CancellationToken cancellationToken)
     {
@@ -680,7 +753,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
     }
 
     private async Task<LoadedPackageState> LoadAsync(
-        OutputScopeContext context,
+        PackageScopeContext context,
         InGameSettingsInstallationTargetDto installationTarget,
         CancellationToken cancellationToken)
     {
@@ -690,9 +763,10 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
         var resolution = bundleProvider is null
             ? new InGameSettingsBundleResolution(catalog, authority)
             : await bundleProvider.ResolveAsync(
-                    context.Paths,
+                    context.Source.Paths,
                     selectedGame,
                     installationTarget,
+                    context.IsExternal,
                     cancellationToken)
                 .ConfigureAwait(false);
         var authorizedEntries = resolution.Catalog
@@ -730,12 +804,15 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
         var ownership = await context.Coordinator
             .GetOwnershipInventorySnapshotAsync(cancellationToken)
             .ConfigureAwait(false);
+        var sourceOwnership = context.IsExternal
+            ? await context.Source.Coordinator.GetOwnershipInventorySnapshotAsync(cancellationToken).ConfigureAwait(false)
+            : ownership;
         var providerOfferedCompatiblePackage = !authorizedEntries.IsDefaultOrEmpty;
         var sourceOwnershipFailure = bundleProvider is not null
             && providerOfferedCompatiblePackage
             ? ValidateCompositionSourceOwnership(
                 context,
-                ownership,
+                sourceOwnership,
                 resolution,
                 sourceDependencies)
             : null;
@@ -766,7 +843,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
             ? null
             : ReadEntry(availableEntry);
         var manifestPath = new RelativeOutputPath(
-            $"config/km-editor/gameplay-settings/{titleId:X16}/bundle.manifest");
+            $"{context.ControlPrefix}config/km-editor/gameplay-settings/{titleId:X16}/bundle.manifest");
         var manifestReview = await ReviewTargetAsync(
                 context.Paths.OutputRootPath!,
                 manifestPath,
@@ -815,7 +892,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
             AddReviewTarget(
                 pathInventory,
                 reviewLimits,
-                $"config/km-editor/gameplay-settings/{titleId:X16}/settings.bin",
+                $"{context.ControlPrefix}config/km-editor/gameplay-settings/{titleId:X16}/settings.bin",
                 GameplaySettingsJournal.JournalSize);
         }
         if (manifestIsManagedGameplay)
@@ -835,7 +912,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
             AddReviewTarget(
                 pathInventory,
                 reviewLimits,
-                $"config/km-editor/gameplay-settings/{titleId:X16}/settings.bin",
+                $"{context.ControlPrefix}config/km-editor/gameplay-settings/{titleId:X16}/settings.bin",
                 GameplaySettingsJournal.JournalSize);
         }
 
@@ -1058,7 +1135,9 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
                 manifest,
                 components,
                 family,
-                bootstrap);
+                bootstrap,
+                targets.Values.Single(target => target.Path.Value.EndsWith("/bundle.manifest", StringComparison.Ordinal))
+                    .Path.Value.Split("config/km-editor/", StringSplitOptions.None)[0]);
             entry = new InGameSettingsBundleCatalogEntry(
                 gameFamily,
                 archive.Bytes,
@@ -1127,8 +1206,8 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
             }
         }
 
-        var settingsPath = new RelativeOutputPath(
-            $"config/km-editor/gameplay-settings/{titleId:X16}/settings.bin");
+        var settingsPath = targets.Values.Single(target => target.Path.Value.EndsWith(
+            $"config/km-editor/gameplay-settings/{titleId:X16}/settings.bin", StringComparison.Ordinal)).Path;
         if (!targets.TryGetValue(settingsPath.CanonicalKey, out var settings)
             || !settings.Exists)
         {
@@ -1222,15 +1301,15 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
     }
 
     private static PackageValidationFailure ValidateInstalledPackage(
-        OutputScopeContext context,
+        PackageScopeContext context,
         GameplayBundleArchiveReadResult bundle,
         IReadOnlyDictionary<string, ReviewedTarget> targets,
         OutputOwnershipInventorySnapshot ownership)
     {
         var settingsPath = new RelativeOutputPath(
-            $"config/km-editor/gameplay-settings/{bundle.Manifest.TitleId:X16}/settings.bin");
+            bundle.SettingsPath);
         var manifestPath = new RelativeOutputPath(
-            $"config/km-editor/gameplay-settings/{bundle.Manifest.TitleId:X16}/bundle.manifest");
+            bundle.ManifestPath);
         var expected = new Dictionary<string, ImmutableArray<byte>>(StringComparer.Ordinal);
         foreach (var component in bundle.ImmutableComponents)
         {
@@ -1397,7 +1476,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
     }
 
     private static CompositionSourceOwnershipFailure? ValidateCompositionSourceOwnership(
-        OutputScopeContext context,
+        PackageScopeContext context,
         OutputOwnershipInventorySnapshot ownership,
         InGameSettingsBundleResolution resolution,
         IReadOnlyList<OutputReadDependency> sourceDependencies)
@@ -1447,7 +1526,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
     }
 
     private static CompositionSourceOwnershipFailure? ValidateCompositionSourceOwnership(
-        OutputScopeContext context,
+        PackageScopeContext context,
         OutputOwnershipInventorySnapshot ownership,
         IReadOnlyList<OutputReadDependency> sourceDependencies,
         RelativeOutputPath path,
@@ -1461,7 +1540,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
             candidate.Path.CanonicalKey == path.CanonicalKey);
         if (record is not null
             && (dependency is null
-                || !context.Coordinator.ProjectScopeMatches(record.ProjectId, context.ProjectId)
+                || !context.Source.Coordinator.ProjectScopeMatches(record.ProjectId, context.Source.ProjectId)
                 || record.GameFamily != context.GameFamily
                 || record.CurrentState != dependency.ExpectedState
                 || record.RuntimeMutableDescriptor is not null))
@@ -1619,7 +1698,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
     }
 
     private static InGameSettingsExecutableCompositionDto CreateCompositionDto(
-        OutputScopeContext context,
+        PackageScopeContext context,
         LoadedPackageState loaded,
         InGameSettingsInstallationTargetDto installationTarget)
     {
@@ -1897,7 +1976,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
     }
 
     private static string ComputeRevision(
-        OutputScopeContext context,
+        PackageScopeContext context,
         InGameSettingsInstallationTargetDto installationTarget,
         OutputOwnershipInventorySnapshot ownership,
         InGameSettingsBundleCatalogEntry? availableEntry,

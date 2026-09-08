@@ -106,7 +106,7 @@ public static class GameplayBundleUpgradePlanner
             .ToImmutableArray();
         var reviews = ValidateReviews(reviewedTargets, expectedPaths);
         var settingsPath = new RelativeOutputPath(
-            $"config/km-editor/gameplay-settings/{next.Manifest.TitleId:X16}/settings.bin");
+            next.SettingsPath);
         ValidateReviewedBaseline(
             previousPayloads,
             nextPayloads,
@@ -205,9 +205,9 @@ public static class GameplayBundleUpgradePlanner
         }
 
         var manifestPath =
-            $"config/km-editor/gameplay-settings/{bundle.Manifest.TitleId:X16}/bundle.manifest";
+            bundle.ManifestPath;
         var settingsPath =
-            $"config/km-editor/gameplay-settings/{bundle.Manifest.TitleId:X16}/settings.bin";
+            bundle.SettingsPath;
         AddPayload(result, manifestPath, bundle.ManifestBytes, BundlePayloadKind.Immutable);
         AddPayload(result, settingsPath, bundle.SettingsJournal, BundlePayloadKind.SettingsJournal);
         return result;

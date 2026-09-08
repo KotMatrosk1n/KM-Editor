@@ -61,7 +61,7 @@ public static class GameplayBundleDeploymentPlanner
         }
 
         var manifestPath = new RelativeOutputPath(
-            $"config/km-editor/gameplay-settings/{bundle.Manifest.TitleId:X16}/bundle.manifest");
+            bundle.ManifestPath);
         mutations.Add(OutputMutation.Write(
             manifestPath,
             bundle.ManifestBytes.AsMemory(),
@@ -69,7 +69,7 @@ public static class GameplayBundleDeploymentPlanner
             [CreateWholeFileClaim(manifestPath, gameFamily)]));
 
         var settingsPath = new RelativeOutputPath(
-            $"config/km-editor/gameplay-settings/{bundle.Manifest.TitleId:X16}/settings.bin");
+            bundle.SettingsPath);
         mutations.Add(OutputMutation.WriteRuntimeMutableBootstrap(
             settingsPath,
             bundle.SettingsJournal.AsMemory(),

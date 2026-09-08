@@ -7,6 +7,7 @@ import {
   workspaceApplicationStateDocumentSchema,
   workspaceBookmarkSchema,
   workspaceGameDumpDestinationSchema,
+  workspaceGameplaySettingsDestinationSchema,
   workspaceLocalePackSchema,
   workspaceMaximumBookmarks,
   workspaceMaximumLocalePacks,
@@ -223,6 +224,20 @@ export class PersonalWorkspaceRegistry {
           }
         };
       }
+    );
+  }
+
+  public setGameplaySettingsDestination(
+    target: 'ryujinx' | 'eden', destinationPath: string
+  ): Promise<PersonalWorkspaceSnapshot<WorkspaceApplicationStateDocument>> {
+    const destination = workspaceGameplaySettingsDestinationSchema.parse({ target, destinationPath, updatedAtUtc: this.timestamp() });
+    return this.mutateApplicationState(
+      document => document.gameplaySettingsDestinations.find(item => item.target === target),
+      document => ({ changed: true, document: {
+        ...document,
+        gameplaySettingsDestinations: [...document.gameplaySettingsDestinations.filter(item => item.target !== target), destination],
+        updatedAtUtc: this.timestamp()
+      } })
     );
   }
 
@@ -936,6 +951,7 @@ function parseApplicationDocumentForRead(
 function createEmptyApplicationState(updatedAtUtc: string): WorkspaceApplicationStateDocument {
   return {
     gameDumpDestinations: [],
+    gameplaySettingsDestinations: [],
     localePacks: [],
     recentProjects: [],
     schemaVersion: workspacePersonalStateSchemaVersion,

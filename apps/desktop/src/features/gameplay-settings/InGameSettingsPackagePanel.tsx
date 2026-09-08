@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { Gamepad2, PackageCheck, ShieldCheck } from 'lucide-react';
+import { FolderOpen, Gamepad2, PackageCheck, ShieldCheck } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   InGameSettingsInstallationTarget,
@@ -10,7 +10,10 @@ import type {
 } from '../../bridge/inGameSettingsPackageContracts';
 import type { OutputSafetyScope } from '../../bridge/outputSafetyContracts';
 import type { ProjectBridge } from '../../bridge/projectBridge';
-import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditorDiagnostics';
+import { desktopServices } from '../../desktopServices';
+import { toProjectBridgeDiagnostics } from '../../uiErrorDiagnostics';
+import type { ApiDiagnostic } from '../../bridge/contracts';
 import { useLocalization } from '../../localization';
 import './InGameSettingsPackagePanel.css';
 
@@ -21,7 +24,12 @@ type InGameSettingsPackageBridge = Pick<
   | 'previewInGameSettingsPackage'
 >;
 
-type InGameSettingsPackagePanelProps = {
+export type GameplaySettingsDestinations = {
+  destinations?: readonly { target: 'ryujinx' | 'eden'; destinationPath: string }[];
+  onRememberDestination?: (target: 'ryujinx' | 'eden', path: string) => Promise<void>;
+};
+
+type InGameSettingsPackagePanelProps = GameplaySettingsDestinations & {
   armCriticalWriteGuard: () => Promise<boolean>;
   bridge: InGameSettingsPackageBridge;
   canApply: boolean;
@@ -41,6 +49,8 @@ type PackageBusyState = 'apply' | 'load' | 'preview' | null;
 
 export function InGameSettingsPackagePanel({
   armCriticalWriteGuard,
+  destinations = [],
+  onRememberDestination,
   bridge,
   canApply,
   onApplied,
@@ -60,11 +70,10 @@ export function InGameSettingsPackagePanel({
   const errorMessage = messageKey && !messageKey.endsWith('Committed')
     ? t(messageKey)
     : null;
-  usePublishCommonEditorError({
-    domain: 'workflow.gameplaySettings',
-    field: 'inGamePackage',
-    message: errorMessage
-  });
+  const [failureDiagnostics, setFailureDiagnostics] = useState<ApiDiagnostic[]>([]);
+  useEffect(() => { if (messageKey === null) setFailureDiagnostics([]); }, [messageKey]);
+  usePublishCommonEditorDiagnostics(failureDiagnostics.length ? failureDiagnostics : errorMessage
+    ? [{ domain: 'workflow.gameplaySettings', field: 'inGamePackage', message: errorMessage, severity: 'error' }] : []);
   const [installationTarget, setInstallationTarget] =
     useState<InGameSettingsInstallationTarget>('atmosphere');
   const requestGenerationRef = useRef(0);
@@ -76,7 +85,11 @@ export function InGameSettingsPackagePanel({
   const reviewRegionRef = useRef<HTMLDivElement | null>(null);
 
   const scopeKey = useMemo(() => JSON.stringify(scope), [scope]);
-  const requestContextKey = `${scopeKey}:${installationTarget}`;
+  const installationRootPath = installationTarget === 'atmosphere' ? undefined
+    : destinations.find(destination => destination.target === installationTarget)?.destinationPath;
+  const [isPickingDestination, setIsPickingDestination] = useState(false);
+  const needsDestination = installationTarget !== 'atmosphere' && !installationRootPath;
+  const requestContextKey = `${scopeKey}:${installationTarget}:${installationRootPath ?? ''}`;
   const requestContextKeyRef = useRef(requestContextKey);
   requestContextKeyRef.current = requestContextKey;
 
@@ -112,14 +125,15 @@ export function InGameSettingsPackagePanel({
 
   const reportError = useCallback(
     async (error: unknown, operation: 'apply' | 'load' | 'preview') => {
+      setFailureDiagnostics(toProjectBridgeDiagnostics(error, t('gameplaySettings.inGamePackage.error')));
       setMessageKey('gameplaySettings.inGamePackage.error');
       try {
-        await onError?.(error, operation, scope);
+        if (!installationRootPath) await onError?.(error, operation, scope);
       } catch {
         // The panel remains fail-closed even when a host notification fails.
       }
     },
-    [onError, scope]
+    [installationRootPath, onError, scope, t]
   );
 
   const selectInstallationTarget = useCallback(
@@ -150,6 +164,7 @@ export function InGameSettingsPackagePanel({
       ) {
         return null;
       }
+      if (needsDestination) { setBusy(null); return null; }
       const operation = {};
       requestOperationRef.current = operation;
       const generation = ++requestGenerationRef.current;
@@ -164,6 +179,7 @@ export function InGameSettingsPackagePanel({
       try {
         const response = await bridge.inspectInGameSettingsPackage({
           installationTarget,
+          installationRootPath,
           scope
         });
         if (
@@ -200,7 +216,7 @@ export function InGameSettingsPackagePanel({
         }
       }
     },
-    [bridge, installationTarget, reportError, requestContextKey, scope]
+    [bridge, installationTarget, installationRootPath, needsDestination, reportError, requestContextKey, scope]
   );
   const inspectRef = useRef(inspect);
   inspectRef.current = inspect;
@@ -279,6 +295,7 @@ export function InGameSettingsPackagePanel({
         const response = await bridge.previewInGameSettingsPackage({
           expectedRevision: snapshot.revision,
           installationTarget,
+          installationRootPath,
           operation,
           scope
         });
@@ -317,6 +334,7 @@ export function InGameSettingsPackagePanel({
       busy,
       canApply,
       installationTarget,
+      installationRootPath,
       recoveryRequired,
       reportError,
       requestContextKey,
@@ -370,6 +388,7 @@ export function InGameSettingsPackagePanel({
 
       const response = await bridge.applyInGameSettingsPackage({
         installationTarget,
+        installationRootPath,
         reviewId: preview.reviewId,
         scope
       });
@@ -401,7 +420,7 @@ export function InGameSettingsPackagePanel({
           `gameplaySettings.inGamePackage.${committedOperation}Committed`
         );
         try {
-          await onApplied?.(scope);
+          if (!installationRootPath) await onApplied?.(scope);
         } catch (error) {
           try {
             await onError?.(error, 'load', scope);
@@ -426,7 +445,7 @@ export function InGameSettingsPackagePanel({
         setRecoveryRequired(true);
         setMessageKey('gameplaySettings.inGamePackage.recoveryRequired');
         try {
-          await onRecoveryRequired?.(scope);
+          if (!installationRootPath) await onRecoveryRequired?.(scope);
         } catch (error) {
           try {
             await onError?.(error, 'apply', scope);
@@ -476,6 +495,7 @@ export function InGameSettingsPackagePanel({
     busy,
     canApply,
     installationTarget,
+    installationRootPath,
     inspect,
     onApplied,
     onRecoveryRequired,
@@ -488,7 +508,7 @@ export function InGameSettingsPackagePanel({
     scope
   ]);
 
-  const actionsDisabled = busy !== null || !canApply || recoveryRequired;
+  const actionsDisabled = busy !== null || isPickingDestination || !canApply || recoveryRequired;
   const compatibilityPackage = snapshot?.availablePackage ?? snapshot?.installedPackage ?? null;
   const titleId = compatibilityPackage?.titleId ?? '<TITLE_ID>';
   const generatedTitleRoots: Record<InGameSettingsInstallationTarget, string> = {
@@ -497,46 +517,20 @@ export function InGameSettingsPackagePanel({
     eden: `load/${titleId}/KM-Gameplay-Settings`
   };
   const generatedTitleRoot = generatedTitleRoots[installationTarget];
-  const generatedTitleSourcePaths = [
-    `<Output Root>/${generatedTitleRoot}/exefs`,
-    `<Output Root>/${generatedTitleRoot}/romfs`
-  ];
-  const settingsJournalPath = `config/km-editor/gameplay-settings/${titleId}/settings.bin`;
-  const generatedSettingsSourcePath = `<Output Root>/${settingsJournalPath}`;
-  const installationPaths: Record<
-    InGameSettingsInstallationTarget,
-    {
-      defaultSettingsDestination?: string;
-      settingsDestination: string;
-      titleDestinations: readonly [string, string];
-    }
-  > = {
-    atmosphere: {
-      settingsDestination: `<Console SD card root>/${settingsJournalPath}`,
-      titleDestinations: [
-        `<Console SD card root>/atmosphere/contents/${titleId}/exefs`,
-        `<Console SD card root>/atmosphere/contents/${titleId}/romfs`
-      ]
-    },
-    ryujinx: {
-      settingsDestination: `<Emulated SD root>/${settingsJournalPath}`,
-      defaultSettingsDestination:
-        `<Emulator data folder>/sdcard/${settingsJournalPath}`,
-      titleDestinations: [
-        `<Emulator data folder>/mods/contents/${titleId}/KM-Gameplay-Settings/exefs`,
-        `<Emulator data folder>/mods/contents/${titleId}/KM-Gameplay-Settings/romfs`
-      ]
-    },
-    eden: {
-      settingsDestination: `<Configured emulated SD root>/${settingsJournalPath}`,
-      defaultSettingsDestination: `<Eden data folder>/sdmc/${settingsJournalPath}`,
-      titleDestinations: [
-        `<Eden data folder>/load/${titleId}/KM-Gameplay-Settings/exefs`,
-        `<Eden data folder>/load/${titleId}/KM-Gameplay-Settings/romfs`
-      ]
-    }
-  };
-  const selectedInstallationPaths = installationPaths[installationTarget];
+  const settingsJournalPath = `${installationTarget === 'ryujinx' ? 'sdcard/' : installationTarget === 'eden' ? 'sdmc/' : ''}config/km-editor/gameplay-settings/${titleId}/settings.bin`;
+  async function chooseDestination() {
+    if (busy || isPickingDestination || installationTarget === 'atmosphere' || !onRememberDestination) return;
+    const requestedTarget = installationTarget;
+    const requestedContext = requestContextKey;
+    setIsPickingDestination(true);
+    try {
+      const selected = await desktopServices.pickFolder({ title: t('gameplaySettings.destination.title'), defaultPath: installationRootPath });
+      if (!selected || !isMountedRef.current || requestContextKeyRef.current !== requestedContext) return;
+      await onRememberDestination(requestedTarget, selected);
+    } catch (error) {
+      if (isMountedRef.current && requestContextKeyRef.current === requestedContext) await reportError(error, 'load');
+    } finally { if (isMountedRef.current) setIsPickingDestination(false); }
+  }
   const stateTitleKey = snapshot ? packageStateTitleMessageKey(snapshot) : null;
   const stateDescriptionKey = snapshot
     ? packageStateDescriptionMessageKey(snapshot)
@@ -550,7 +544,7 @@ export function InGameSettingsPackagePanel({
       (snapshot.executableInput.source === 'standaloneOutput' ||
         snapshot.executableInput.compatibility !== 'absent')
   );
-  const installationTargetSelectionBusy = busy !== null;
+  const installationTargetSelectionBusy = busy !== null || isPickingDestination;
 
   return (
     <section
@@ -566,16 +560,14 @@ export function InGameSettingsPackagePanel({
               <h3 id="in-game-settings-package-title">
                 {t('gameplaySettings.inGamePackage.title')}
               </h3>
-              <span className="gameplay-settings__beta-badge">
-                {t('gameplaySettings.betaBadge')}
-              </span>
+
             </div>
-            <p>{t('gameplaySettings.inGamePackage.description')}</p>
+            <p>{t('gameplaySettings.destination.controls')}</p>
           </div>
         </div>
         <button
           className="secondary-button"
-          disabled={busy !== null || preview !== null}
+          disabled={busy !== null || preview !== null || needsDestination || isPickingDestination}
           onClick={() => void inspect()}
           type="button"
         >
@@ -585,17 +577,6 @@ export function InGameSettingsPackagePanel({
         </button>
       </header>
 
-      <div className="in-game-settings-package__instructions" role="note">
-        <ShieldCheck aria-hidden="true" size={20} />
-        <div>
-          <strong>{t('gameplaySettings.inGamePackage.howToTitle')}</strong>
-          <p>{t('gameplaySettings.inGamePackage.howToDescription')}</p>
-          <p>{t('gameplaySettings.inGamePackage.availableControls')}</p>
-          <p>{t('gameplaySettings.inGamePackage.sharedToggleWarning')}</p>
-          <p>{t('gameplaySettings.inGamePackage.hardwareValidationPending')}</p>
-        </div>
-      </div>
-
       <section
         aria-labelledby="in-game-settings-installation-title"
         className="in-game-settings-package__installation"
@@ -604,7 +585,7 @@ export function InGameSettingsPackagePanel({
           <h4 id="in-game-settings-installation-title">
             {t('gameplaySettings.inGamePackage.installationTitle')}
           </h4>
-          <p>{t('gameplaySettings.inGamePackage.installationDescription')}</p>
+
         </div>
         <div
           aria-busy={installationTargetSelectionBusy || undefined}
@@ -623,11 +604,7 @@ export function InGameSettingsPackagePanel({
               type="button"
             >
               <span>{t(`gameplaySettings.inGamePackage.target.${target}`)}</span>
-              <small
-                className={`in-game-settings-package__support in-game-settings-package__support--${target === 'atmosphere' ? 'supported' : 'manual'}`}
-              >
-                {t(`gameplaySettings.inGamePackage.target.${target}Status`)}
-              </small>
+
             </button>
           ))}
         </div>
@@ -637,46 +614,38 @@ export function InGameSettingsPackagePanel({
           id="in-game-settings-installation-detail"
           role="region"
         >
-          <p>
-            {t(`gameplaySettings.inGamePackage.target.${installationTarget}Description`)}
-          </p>
-          <div className="in-game-settings-package__path">
-            <span>{t('gameplaySettings.inGamePackage.target.sourcePathLabel')}</span>
-            {generatedTitleSourcePaths.map((path) => (
-              <code key={path}>{path}</code>
-            ))}
-            <span>{t('gameplaySettings.inGamePackage.target.settingsPathLabel')}</span>
-            <code>{generatedSettingsSourcePath}</code>
-            <span>{t('gameplaySettings.inGamePackage.target.destinationPathLabel')}</span>
-            {selectedInstallationPaths.titleDestinations.map((path) => (
-              <code key={path}>{path}</code>
-            ))}
-            <span>
-              {t('gameplaySettings.inGamePackage.target.destinationSettingsPathLabel')}
-            </span>
-            <code>{selectedInstallationPaths.settingsDestination}</code>
-            {selectedInstallationPaths.defaultSettingsDestination ? (
-              <>
-                <span>
-                  {t('gameplaySettings.inGamePackage.target.defaultSettingsPathLabel')}
-                </span>
-                <code>{selectedInstallationPaths.defaultSettingsDestination}</code>
-              </>
-            ) : null}
-          </div>
+          {installationTarget === 'atmosphere' ? <p>{t('gameplaySettings.destination.console')}</p> : <>
+            <div className="in-game-settings-package__destination">
+              <div><strong>{t('gameplaySettings.destination.title')}</strong>
+                <p><code>{installationRootPath ?? t('gameplaySettings.destination.choose')}</code></p></div>
+              <button type="button" className="secondary-button" disabled={installationTargetSelectionBusy || !onRememberDestination}
+                onClick={() => void chooseDestination()}><FolderOpen size={18} aria-hidden="true" />{t('gameplaySettings.destination.browse')}</button>
+            </div>
+            <p>{t('gameplaySettings.destination.help')}</p>
+          </>}
         </div>
       </section>
 
-      <details className="in-game-settings-package__contents">
-        <summary>{t('gameplaySettings.inGamePackage.contentsTitle')}</summary>
-        <div>
-          <p>{t('gameplaySettings.inGamePackage.contentsRuntime')}</p>
-          <p>{t('gameplaySettings.inGamePackage.contentsToggles')}</p>
-          <p>{t('gameplaySettings.inGamePackage.contentsMetadata')}</p>
-          <p>{t('gameplaySettings.inGamePackage.contentsNoDll')}</p>
+      {snapshot ? (
+        <div
+          className={`in-game-settings-package__state in-game-settings-package__state--${isPackageStateActionable(snapshot) ? 'ready' : 'blocked'}`}
+          role="status"
+        >
+          <PackageCheck aria-hidden="true" size={20} />
+          <div>
+            <strong>
+              {t(stateTitleKey!)}
+            </strong>
+            <p>{t(stateDescriptionKey!)}</p>
+            {snapshot.detail ? <p>{snapshot.detail}</p> : null}
+          </div>
         </div>
-      </details>
+      ) : null}
 
+      {snapshot ? <details className="in-game-settings-package__contents">
+        <summary>{t('gameplaySettings.destination.details')}</summary>
+        <div className="in-game-settings-package__technical">
+          <p><code>{generatedTitleRoot}</code></p><p><code>{settingsJournalPath}</code></p>
       <div className="in-game-settings-package__status" aria-live="polite">
         <div>
           <span>{t('gameplaySettings.inGamePackage.statusLabel')}</span>
@@ -720,22 +689,6 @@ export function InGameSettingsPackagePanel({
           </>
         ) : null}
       </div>
-
-      {snapshot ? (
-        <div
-          className={`in-game-settings-package__state in-game-settings-package__state--${isPackageStateActionable(snapshot) ? 'ready' : 'blocked'}`}
-          role="status"
-        >
-          <PackageCheck aria-hidden="true" size={20} />
-          <div>
-            <strong>
-              {t(stateTitleKey!)}
-            </strong>
-            <p>{t(stateDescriptionKey!)}</p>
-            {snapshot.detail ? <p>{snapshot.detail}</p> : null}
-          </div>
-        </div>
-      ) : null}
 
       {snapshot && showExecutableInputAssessment ? (
         <div
@@ -783,7 +736,10 @@ export function InGameSettingsPackagePanel({
         </div>
       ) : null}
 
-      {messageKey ? (
+        </div>
+      </details> : null}
+
+      {messageKey && !errorMessage ? (
         <p className="in-game-settings-package__message" role="status">
           {t(messageKey)}
         </p>
@@ -857,6 +813,9 @@ export function InGameSettingsPackagePanel({
               )}
             </p>
           </div>
+          <p className="in-game-settings-package__review-destination"><strong>{t('gameplaySettings.destination.title')}</strong><br />
+            <code>{installationRootPath ?? scope.paths.outputRootPath}</code></p>
+          <details className="in-game-settings-package__contents"><summary>{t('gameplaySettings.destination.reviewDetails', { count: preview.targets.length })}</summary>
           {preview.composition ? (
             <section className="in-game-settings-package__composition">
               <h5>{t('gameplaySettings.inGamePackage.review.compositionTitle')}</h5>
@@ -954,6 +913,7 @@ export function InGameSettingsPackagePanel({
           {preview.targetsTruncated ? (
             <p>{t('gameplaySettings.inGamePackage.targetsTruncated')}</p>
           ) : null}
+          </details>
           <label className="in-game-settings-package__confirmation">
             <input
               checked={reviewAcknowledged}
@@ -987,6 +947,7 @@ export function InGameSettingsPackagePanel({
               className={preview.operation === 'remove' ? 'danger-button' : 'primary-button'}
               disabled={
                 busy !== null ||
+                isPickingDestination ||
                 !canApply ||
                 !reviewAcknowledged ||
                 recoveryRequired ||

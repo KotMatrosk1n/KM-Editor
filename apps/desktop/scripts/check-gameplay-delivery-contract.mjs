@@ -37,29 +37,17 @@ assert.match(
 );
 assert.match(
   panel,
-  /const installationTargetSelectionBusy = busy !== null;[\s\S]*?aria-busy=\{installationTargetSelectionBusy \|\| undefined\}[\s\S]*?aria-controls="in-game-settings-installation-detail"[\s\S]*?disabled=\{installationTargetSelectionBusy\}/,
+  /const installationTargetSelectionBusy = busy !== null \|\| isPickingDestination;[\s\S]*?aria-busy=\{installationTargetSelectionBusy \|\| undefined\}[\s\S]*?aria-controls="in-game-settings-installation-detail"[\s\S]*?disabled=\{installationTargetSelectionBusy\}/,
   'Installation targets must be natively disabled and expose busy state while their request context is changing.'
 );
-assert.match(
-  panel,
-  /generatedTitleSourcePaths[\s\S]*?atmosphere\/contents\/\$\{titleId\}\/exefs[\s\S]*?atmosphere\/contents\/\$\{titleId\}\/romfs[\s\S]*?generatedSettingsSourcePath/,
-  'Native-menu installation guidance must show the two generated title-layer source directories without shell brace shorthand.'
-);
-assert.match(
-  panel,
-  /<Emulator data folder>\/mods\/contents\/\$\{titleId\}\/KM-Gameplay-Settings\/exefs[\s\S]*?<Emulator data folder>\/mods\/contents\/\$\{titleId\}\/KM-Gameplay-Settings\/romfs[\s\S]*?<Eden data folder>\/load\/\$\{titleId\}\/KM-Gameplay-Settings\/exefs[\s\S]*?<Eden data folder>\/load\/\$\{titleId\}\/KM-Gameplay-Settings\/romfs/,
-  'Native-menu installation guidance must distinguish generated sources from exact emulator title-layer destinations.'
-);
+
+
 assert.doesNotMatch(
   panel,
   /\{exefs,romfs\}/,
   'Copy instructions must use literal directories instead of shell brace shorthand.'
 );
-assert.match(
-  panel,
-  /<Emulated SD root>\/\$\{settingsJournalPath\}[\s\S]*?<Emulator data folder>\/sdcard\/\$\{settingsJournalPath\}[\s\S]*?<Configured emulated SD root>\/\$\{settingsJournalPath\}[\s\S]*?<Eden data folder>\/sdmc\/\$\{settingsJournalPath\}/,
-  'Native-menu installation guidance must show configured and default writable journal destinations for each emulator.'
-);
+
 assert.doesNotMatch(
   panel,
   /cheatFileName|atmosphereCheatPath|ryujinxCheatPath|openFixedMode/,
@@ -152,6 +140,7 @@ assert.match(
 
 const resourcesDirectory = new URL('../src/localization/resources/', import.meta.url);
 const requiredKeys = [
+  ...['title', 'choose', 'browse', 'help', 'details', 'reviewDetails', 'controls', 'beta', 'console'].map(key => `gameplaySettings.destination.${key}`),
   'gameplaySettings.inGamePackage.availableControls',
   'gameplaySettings.inGamePackage.installationTitle',
   'gameplaySettings.inGamePackage.installationDescription',
@@ -204,16 +193,6 @@ for (const fileName of readdirSync(resourcesDirectory).filter((name) => name.end
 }
 
 const english = JSON.parse(read('../src/localization/resources/en.json')).keys;
-assert.equal(
-  english['gameplaySettings.inGamePackage.target.ryujinxStatus'],
-  'Manual copy',
-  'Ryujinx must not be described as a managed KM installation.'
-);
-assert.equal(
-  english['gameplaySettings.inGamePackage.target.edenStatus'],
-  'Manual copy',
-  'Eden must expose the verified native ExeFS and RomFS installation path.'
-);
 for (const key of Object.keys(english).filter((key) =>
   key.startsWith('gameplaySettings.inGamePackage.')
   || key.startsWith('gameplaySettings.delivery.runtime')

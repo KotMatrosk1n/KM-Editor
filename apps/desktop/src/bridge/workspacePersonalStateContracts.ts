@@ -277,8 +277,15 @@ export const workspaceLocalePackSchema = z
     }
   });
 
+export const workspaceGameplaySettingsDestinationSchema = z.strictObject({
+  target: z.enum(['ryujinx', 'eden']),
+  destinationPath: fullyQualifiedPathSchema,
+  updatedAtUtc: dateTimeOffsetSchema
+});
+
 export const workspaceApplicationStateDocumentSchema = z
   .strictObject({
+    gameplaySettingsDestinations: z.array(workspaceGameplaySettingsDestinationSchema).max(2).default([]),
     gameDumpDestinations: z
       .array(workspaceGameDumpDestinationSchema)
       .max(workspaceMaximumGameDumpDestinations),
@@ -293,6 +300,7 @@ export const workspaceApplicationStateDocumentSchema = z
     updatedAtUtc: dateTimeOffsetSchema
   })
   .superRefine((document, context) => {
+    requireUnique(document.gameplaySettingsDestinations, (destination) => destination.target, context, ['gameplaySettingsDestinations']);
     requireUnique(document.recentProjects, (profile) => profile.projectId, context, ['recentProjects']);
     requireUnique(
       document.gameDumpDestinations,

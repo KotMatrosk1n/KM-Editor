@@ -123,6 +123,7 @@ const registrations = {
   gameDump: operationScoped('gameDump'),
   gameplaySettings: operationScoped('gameplaySettings'),
   modelViewer: operationScoped('modelViewer'),
+  soundStudio: operationScoped('soundStudio'),
   changes: notRecordScoped('changes'),
   history: notRecordScoped('history'),
   settings: operationScoped('settings')
