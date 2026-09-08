@@ -185,7 +185,7 @@ export function AppSidebar({
                           const section = getWorkbenchCapabilityRegistration(sectionId);
                           const Icon = section.icon;
                           const isActive = activeSection === section.id;
-                          const sectionLabel = section.id === 'gameplaySettings' || section.id === 'modelViewer'
+                          const sectionLabel = section.id === 'gameplaySettings' || section.id === 'modelViewer' || section.id === 'soundStudio'
                             ? t(getWorkbenchSectionLabelKey(section.id))
                             : translateLiteral(section.label);
 

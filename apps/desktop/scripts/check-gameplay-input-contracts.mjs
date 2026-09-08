@@ -183,7 +183,7 @@ const inGameSettingsPackage = read(
 );
 assert.match(
   inGameSettingsPackage,
-  /const installationTargetSelectionBusy = busy !== null;[\s\S]*?aria-busy=\{installationTargetSelectionBusy \|\| undefined\}[\s\S]*?disabled=\{installationTargetSelectionBusy\}/,
+  /const installationTargetSelectionBusy = busy !== null \|\| isPickingDestination;[\s\S]*?aria-busy=\{installationTargetSelectionBusy \|\| undefined\}[\s\S]*?disabled=\{installationTargetSelectionBusy\}/,
   'Gameplay Settings installation targets must expose and honor request-busy state.'
 );
 assert.match(

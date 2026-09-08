@@ -125,7 +125,8 @@ public static class NativeGameplayMenuBundleFactory
         ReadOnlySpan<byte> runtimeNso,
         IReadOnlyDictionary<string, byte[]> transformedRomFsComponents,
         InGameSettingsInstallationTargetDto installationTarget =
-            InGameSettingsInstallationTargetDto.Atmosphere)
+            InGameSettingsInstallationTargetDto.Atmosphere,
+        bool installToEmulatorRoot = false)
     {
         return CreateEntry(
             game,
@@ -135,7 +136,7 @@ public static class NativeGameplayMenuBundleFactory
             retailMainNpdm,
             runtimeNso,
             transformedRomFsComponents,
-            installationTarget);
+            installationTarget, installToEmulatorRoot);
     }
 
     /// <summary>
@@ -153,7 +154,8 @@ public static class NativeGameplayMenuBundleFactory
         ReadOnlySpan<byte> runtimeNso,
         IReadOnlyDictionary<string, byte[]> transformedRomFsComponents,
         InGameSettingsInstallationTargetDto installationTarget =
-            InGameSettingsInstallationTargetDto.Atmosphere)
+            InGameSettingsInstallationTargetDto.Atmosphere,
+        bool installToEmulatorRoot = false)
     {
         ArgumentNullException.ThrowIfNull(transformedRomFsComponents);
         ValidateInstallationTarget(installationTarget);
@@ -295,12 +297,21 @@ public static class NativeGameplayMenuBundleFactory
             manifest,
             components,
             settingsFamily,
-            journal);
+            journal,
+            installToEmulatorRoot ? GetControlPrefix(installationTarget) : "");
         return new InGameSettingsBundleCatalogEntry(
             family,
             archive.Bytes,
             isCurrent: true);
     }
+
+    public static string GetControlPrefix(InGameSettingsInstallationTargetDto target) => target switch
+    {
+        InGameSettingsInstallationTargetDto.Atmosphere => "",
+        InGameSettingsInstallationTargetDto.Ryujinx => "sdcard/",
+        InGameSettingsInstallationTargetDto.Eden => "sdmc/",
+        _ => throw new ArgumentOutOfRangeException(nameof(target)),
+    };
 
     private static InitialExecutableSettings ReadInitialSettings(
         ProjectGame game,

@@ -16,7 +16,8 @@ Each menu exposes Experience Share On or Off, Experience Rate from 0 through 500
 10 percent steps, and Supported EXP Level Cap Off or 1 through 100. The controls retain the fixed
 editor's verified gameplay scopes and do not claim control over unlisted EXP sources.
 
-The runtime is deliberately fail closed. During the loader-serialized `subsdk9` entry, it resolves
+The runtime is deliberately fail closed. Its registered `DT_INIT` function runs after the loader
+prepares module memory and relocations. During this initialization, it resolves
 the required guest filesystem APIs, recognizes one exact supported executable profile, verifies
 every patch preimage, and installs that title's complete immutable hook set in one transaction.
 Executable code is never patched again during that process. If the KM-owned dual-slot settings

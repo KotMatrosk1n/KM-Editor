@@ -113,7 +113,8 @@ public sealed record InGameSettingsPackageSnapshotDto(
 public sealed record InspectInGameSettingsPackageRequest(
     OutputScopeDto Scope,
     InGameSettingsInstallationTargetDto InstallationTarget =
-        InGameSettingsInstallationTargetDto.Atmosphere);
+        InGameSettingsInstallationTargetDto.Atmosphere,
+    string? InstallationRootPath = null);
 
 public sealed record InspectInGameSettingsPackageResponse(
     InGameSettingsPackageSnapshotDto Snapshot);
@@ -123,7 +124,8 @@ public sealed record PreviewInGameSettingsPackageRequest(
     string ExpectedRevision,
     InGameSettingsPackageOperationDto Operation,
     InGameSettingsInstallationTargetDto InstallationTarget =
-        InGameSettingsInstallationTargetDto.Atmosphere);
+        InGameSettingsInstallationTargetDto.Atmosphere,
+    string? InstallationRootPath = null);
 
 public sealed record InGameSettingsPackageTargetDto(
     string RelativePath,
@@ -159,7 +161,8 @@ public sealed record ApplyInGameSettingsPackageRequest(
     OutputScopeDto Scope,
     string ReviewId,
     InGameSettingsInstallationTargetDto InstallationTarget =
-        InGameSettingsInstallationTargetDto.Atmosphere);
+        InGameSettingsInstallationTargetDto.Atmosphere,
+    string? InstallationRootPath = null);
 
 public enum InGameSettingsPackageApplyOutcomeDto
 {

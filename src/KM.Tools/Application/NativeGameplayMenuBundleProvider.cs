@@ -55,6 +55,12 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
         ProjectPaths paths,
         ProjectGame game,
         InGameSettingsInstallationTargetDto installationTarget,
+        CancellationToken cancellationToken = default) =>
+        ResolveAsync(paths, game, installationTarget, false, cancellationToken);
+
+    public Task<InGameSettingsBundleResolution> ResolveAsync(
+        ProjectPaths paths, ProjectGame game,
+        InGameSettingsInstallationTargetDto installationTarget, bool installToEmulatorRoot,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -190,7 +196,7 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
                 executableSourceNpdm,
                 runtime,
                 romFs,
-                installationTarget);
+                installationTarget, installToEmulatorRoot);
             return Task.FromResult(new InGameSettingsBundleResolution(
                 InGameSettingsBundleCatalog.Create([entry]),
                 GameplaySettingsBundleAuthority.AllowOnly([entry.AuthorityKey]),
@@ -207,6 +213,11 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (BoundedConcurrencyResourceException)
+        {
+            return Task.FromResult(Unavailable(
+                "There is not enough working memory to prepare this package. Close other active editors and refresh the package status."));
         }
         catch (Exception exception) when (IsExpectedUnavailable(exception))
         {

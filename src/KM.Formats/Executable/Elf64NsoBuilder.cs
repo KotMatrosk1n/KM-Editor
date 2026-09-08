@@ -44,6 +44,7 @@ public static class Elf64NsoBuilder
     private const long DynamicRelaEntrySize = 9;
     private const long DynamicStringTableSize = 10;
     private const long DynamicSymbolEntrySize = 11;
+    private const long DynamicInit = 12;
     private const long DynamicRel = 17;
     private const long DynamicRelSize = 18;
     private const long DynamicRelEntrySize = 19;
@@ -319,6 +320,15 @@ public static class Elf64NsoBuilder
         ElfProgramSegment dynamic)
     {
         var tags = ReadDynamicTags(elf, dynamic);
+        var initializer = GetRequiredDynamicValue(tags, DynamicInit, "DT_INIT");
+        if (initializer == 0
+            || initializer % sizeof(uint) != 0
+            || !ContainsRange(loads[0].VirtualAddress, loads[0].FileSize, initializer, sizeof(uint)))
+        {
+            throw new InvalidDataException(
+                "The guest module ELF must register an aligned DT_INIT function inside its executable segment.");
+        }
+
         if (tags.ContainsKey(DynamicNeeded))
         {
             throw new InvalidDataException("The guest module ELF must not contain DT_NEEDED dependencies.");

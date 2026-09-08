@@ -98,7 +98,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
     label: 'Economy',
     sectionIds: ['shops', 'battleCafeRewards', 'tmMachineControls', 'raidRewards', 'raidBonusRewards']
   },
-  { id: 'tools', label: 'Tools', sectionIds: ['modelViewer', 'fashionCatalog', 'fpsPatch', 'profanityFilter', 'randomizer', 'gameDump', 'spreadsheetImport', 'modMerger'] },
+  { id: 'tools', label: 'Tools', sectionIds: ['modelViewer', 'soundStudio', 'fashionCatalog', 'fpsPatch', 'profanityFilter', 'randomizer', 'gameDump', 'spreadsheetImport', 'modMerger'] },
   { id: 'hooks', label: 'Hooks', sectionIds: ['bagHook'] },
   {
     id: 'advancedEditors',
@@ -355,6 +355,7 @@ export function getLoadedWorkflowStateForSection(
       return state.giftPokemonWorkflow !== null;
     case 'gameplaySettings':
     case 'modelViewer':
+    case 'soundStudio':
       return true;
     case 'gymUniformRemoval':
       return state.gymUniformRemovalWorkflow !== null;

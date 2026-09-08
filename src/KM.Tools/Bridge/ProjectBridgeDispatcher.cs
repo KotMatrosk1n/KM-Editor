@@ -757,6 +757,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.QueryBalanceLab => DispatchQueryBalanceLab(requestJson),
                 KmCommandNames.ReadGameModuleCapabilities => DispatchReadGameModuleCapabilities(requestJson),
                 KmCommandNames.QueryGameModule => DispatchQueryGameModule(requestJson),
+                KmCommandNames.SoundStudio => DispatchSoundStudio(requestJson),
                 KmCommandNames.ModelCatalog => DispatchModelPreview(requestJson, prepare: false),
                 KmCommandNames.ModelPrepare => DispatchModelPreview(requestJson, prepare: true),
                 KmCommandNames.ModelTextures => DispatchModelTextures(requestJson, stage: false),
@@ -1372,6 +1373,14 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             throw new BridgeRequestException("Model properties could not be prepared. Reload the model and check its source files.",
                 exception, BridgeErrorCodes.ModelAssetEditInvalid);
         }
+    }
+
+    private string DispatchSoundStudio(string requestJson)
+    {
+        var request = DeserializeRequest<KM.Api.Audio.SoundStudioRequest>(requestJson);
+        try { return SerializeSuccess(SoundStudioBridge.Dispatch(request.Payload), request.RequestId); }
+        catch (Exception exception) when (exception is IOException or ArgumentException or InvalidOperationException or UnauthorizedAccessException)
+        { throw new BridgeRequestException("Audio sources are unavailable or changed. Reload Sound Studio and check the project sources.", exception, BridgeErrorCodes.AudioSourceUnavailable); }
     }
 
     private string DispatchModelPreview(string requestJson, bool prepare)
@@ -8140,6 +8149,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.QueryBalanceLab or
             KmCommandNames.ReadGameModuleCapabilities or
             KmCommandNames.QueryGameModule or
+            KmCommandNames.SoundStudio or
             KmCommandNames.ModelCatalog or
             KmCommandNames.ModelPrepare or
             KmCommandNames.ModelTextures or

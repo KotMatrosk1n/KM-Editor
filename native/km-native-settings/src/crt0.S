@@ -4,7 +4,7 @@
 .global __module_start
 .hidden __module_start
 .type __module_start,%function
-.hidden km_runtime_start
+.hidden km_runtime_initialize
 .hidden km_relocate_self
 
 __module_start:
@@ -35,7 +35,7 @@ __module_start:
     bl km_relocate_self
 
     ldp x0, x1, [sp, #0x10]
-    bl km_runtime_start
+    bl km_runtime_initialize
     ldp x29, x30, [sp], #0x30
     ret
 

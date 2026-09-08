@@ -90,8 +90,6 @@ export default function WelcomeHub({ games, definitions, logo, version, configur
         }}>{t('welcome.choose')}</button>
       </header>
       <div className="welcome-feed">
-        {actionError ? <p role="alert" className="welcome-error">{actionError}</p> : null}
-        {diagnostics}
         <section className="welcome-content">
           <div className="welcome-tabs" role="tablist" aria-label={t('welcome.updates')}>
             {tabs.map(({ id, icon: Icon }, index) => <button type="button" key={id} role="tab" id={`welcome-tab-${id}`} aria-controls={`welcome-panel-${id}`}
@@ -127,6 +125,7 @@ export default function WelcomeHub({ games, definitions, logo, version, configur
             </div>}
         </section>
         {featured && !showSettings ? <aside className="welcome-featured"><img src={logo} alt="" /><div><span className="welcome-eyebrow">{t('welcome.developer')}</span><div data-localization-ignore="true"><h3>{text(featured.title)}</h3><p>{text(featured.body)}</p>{links(featured.links)}</div></div></aside> : null}
+        {diagnostics}
       </div>
     </div>
   </main>;

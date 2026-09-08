@@ -11,6 +11,35 @@
   width: 100%;
 }
 
+.in-game-settings-package__destination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.in-game-settings-package__destination > div {
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+
+.in-game-settings-package__destination code,
+.in-game-settings-package__review-destination code,
+.in-game-settings-package__technical code {
+  overflow-wrap: anywhere;
+}
+
+.in-game-settings-package__technical {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.in-game-settings-package__contents > summary {
+  cursor: pointer;
+}
+
 .in-game-settings-package__header,
 .in-game-settings-package__actions,
 .in-game-settings-package__heading,

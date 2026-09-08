@@ -312,6 +312,19 @@ public sealed class WorkspacePersonalStateApplicationService
             }
         }
 
+        RequireList(document.GameplaySettingsDestinations, "gameplay settings destinations");
+        if (document.GameplaySettingsDestinations.Count > 2)
+            throw Invalid("Too many gameplay settings destinations.");
+        var installationTargets = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var destination in document.GameplaySettingsDestinations)
+        {
+            if (destination is null || destination.Target is not ("ryujinx" or "eden")
+                || !installationTargets.Add(destination.Target))
+                throw Invalid("A gameplay settings destination has an invalid or duplicate target.");
+            ValidateFullyQualifiedPath(destination.DestinationPath, "Emulator data folder", required: true);
+            RequireTimestamp(destination.UpdatedAtUtc, "gameplay settings destination");
+        }
+
         var destinationGames = new HashSet<ProjectGameDto>();
         foreach (var destination in document.GameDumpDestinations)
         {

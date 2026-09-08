@@ -41,6 +41,10 @@ public sealed class GameplayBundleArchiveReadResult
 
     public ImmutableArray<byte> ManifestBytes { get; }
 
+    public string SettingsPath => ManifestPath[..^"bundle.manifest".Length] + "settings.bin";
+
+    public string ManifestPath => Entries.Single(path => path.EndsWith("/bundle.manifest", StringComparison.Ordinal));
+
     public string Sha256 { get; }
 
     public ImmutableArray<string> Entries { get; }
@@ -57,7 +61,8 @@ public static class GameplayBundleArchive
         GameplayBundleManifest manifest,
         IReadOnlyDictionary<string, byte[]> immutableComponents,
         GameplaySettingsFamily family,
-        byte[] settingsJournal)
+        byte[] settingsJournal,
+        string controlPrefix = "")
     {
         ArgumentNullException.ThrowIfNull(manifest);
         ArgumentNullException.ThrowIfNull(immutableComponents);
@@ -68,8 +73,9 @@ public static class GameplayBundleArchive
         ValidateTitleLayerPaths(reparsedManifest);
         ValidateBootstrapJournal(reparsedManifest, family, settingsJournal);
 
-        var settingsPath = GetSettingsPath(manifest.TitleId);
-        var manifestPath = GetManifestPath(manifest.TitleId);
+        ValidateControlPrefix(manifest, controlPrefix);
+        var settingsPath = controlPrefix + GetSettingsPath(manifest.TitleId);
+        var manifestPath = controlPrefix + GetManifestPath(manifest.TitleId);
         var entries = reparsedManifest.Components
             .Select(component => (component.Path, Bytes: immutableComponents[component.Path]))
             .Append((Path: settingsPath, Bytes: settingsJournal))
@@ -173,8 +179,13 @@ public static class GameplayBundleArchive
         }
 
         var manifest = GameplayBundleIdentity.ParseManifest(manifestCandidates[0].Value);
-        var expectedManifestPath = GetManifestPath(manifest.TitleId);
-        var expectedSettingsPath = GetSettingsPath(manifest.TitleId);
+        var canonicalManifestPath = GetManifestPath(manifest.TitleId);
+        var actualManifestPath = manifestCandidates[0].Key;
+        var controlPrefix = actualManifestPath.EndsWith(canonicalManifestPath, StringComparison.Ordinal)
+            ? actualManifestPath[..^canonicalManifestPath.Length] : "invalid";
+        ValidateControlPrefix(manifest, controlPrefix);
+        var expectedManifestPath = controlPrefix + canonicalManifestPath;
+        var expectedSettingsPath = controlPrefix + GetSettingsPath(manifest.TitleId);
         if (!string.Equals(manifestCandidates[0].Key, expectedManifestPath, StringComparison.Ordinal)
             || !entries.TryGetValue(expectedSettingsPath, out var settingsJournal))
         {
@@ -234,7 +245,8 @@ public static class GameplayBundleArchive
     private static void ValidateBootstrapJournal(
         GameplayBundleManifest manifest,
         GameplaySettingsFamily family,
-        byte[] settingsJournal)
+        byte[] settingsJournal,
+        string controlPrefix = "")
     {
         if (manifest.PackageVersion.Major > ushort.MaxValue
             || manifest.PackageVersion.Minor > ushort.MaxValue
@@ -341,6 +353,19 @@ public static class GameplayBundleArchive
         }
 
         return output.ToArray();
+    }
+
+    private static void ValidateControlPrefix(GameplayBundleManifest manifest, string prefix)
+    {
+        if (prefix.Length == 0) return;
+        var titleRoot = prefix switch
+        {
+            "sdcard/" => $"mods/contents/{manifest.TitleId:X16}/KM-Gameplay-Settings/",
+            "sdmc/" => $"load/{manifest.TitleId:X16}/KM-Gameplay-Settings/",
+            _ => throw new InvalidDataException("The gameplay settings destination is not supported."),
+        };
+        if (!manifest.Components.All(component => component.Path.StartsWith(titleRoot, StringComparison.Ordinal)))
+            throw new InvalidDataException("The gameplay settings SD folder does not match its mod destination.");
     }
 
     private static string GetSettingsPath(ulong titleId) =>

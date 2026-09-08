@@ -6,7 +6,7 @@ import type { OutputSafetyScope } from '../../bridge/outputSafetyContracts';
 import type { ProjectBridge } from '../../bridge/projectBridge';
 import { useLocalization } from '../../localization';
 import './GameplaySettingsSection.css';
-import { InGameSettingsPackagePanel } from './InGameSettingsPackagePanel';
+import { InGameSettingsPackagePanel, type GameplaySettingsDestinations } from './InGameSettingsPackagePanel';
 
 type GameplaySettingsBridge = Pick<
   ProjectBridge,
@@ -15,7 +15,7 @@ type GameplaySettingsBridge = Pick<
   | 'previewInGameSettingsPackage'
 >;
 
-type GameplaySettingsSectionProps = {
+type GameplaySettingsSectionProps = GameplaySettingsDestinations & {
   armCriticalWriteGuard: () => Promise<boolean>;
   bridge: GameplaySettingsBridge;
   canApply?: boolean;
@@ -34,6 +34,8 @@ type GameplaySettingsSectionProps = {
 
 export function GameplaySettingsSection({
   armCriticalWriteGuard,
+  destinations,
+  onRememberDestination,
   bridge,
   canApply = true,
   onApplied,
@@ -73,7 +75,7 @@ export function GameplaySettingsSection({
               <h2 id="gameplay-settings-title">{t('gameplaySettings.title')}</h2>
               <span className="gameplay-settings__beta-badge">{t('gameplaySettings.betaBadge')}</span>
             </div>
-            <p>{t('gameplaySettings.inGamePackage.description')}</p>
+
           </div>
         </div>
       </header>
@@ -81,8 +83,7 @@ export function GameplaySettingsSection({
       <div className="gameplay-settings__beta-notice" role="note">
         <ShieldAlert aria-hidden="true" size={20} />
         <div>
-          <strong>{t('gameplaySettings.betaNoticeTitle')}</strong>
-          <p>{t('gameplaySettings.inGamePackage.hardwareValidationPending')}</p>
+          <p>{t('gameplaySettings.destination.beta')}</p>
         </div>
       </div>
 
@@ -99,6 +100,8 @@ export function GameplaySettingsSection({
       ) : (
         <InGameSettingsPackagePanel
           armCriticalWriteGuard={armCriticalWriteGuard}
+          destinations={destinations}
+          onRememberDestination={onRememberDestination}
           bridge={bridge}
           canApply={canApply}
           onApplied={onApplied}

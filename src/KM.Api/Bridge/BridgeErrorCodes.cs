@@ -4,6 +4,9 @@ namespace KM.Api.Bridge;
 
 public static class BridgeErrorCodes
 {
+    public const string AudioSourceUnavailable = "KM-AUDIO-SOURCE-UNAVAILABLE";
+    public const string AudioDecodeUnsupported = "KM-AUDIO-DECODE-UNSUPPORTED";
+    public const string AudioPlaybackFailed = "KM-AUDIO-PLAYBACK-FAILED";
     public const string ModelUnsupported = "KM-MODEL-UNSUPPORTED";
     public const string ModelTextureEditInvalid = "KM-MODEL-TEXTURE-EDIT-INVALID";
     public const string ModelAssetEditInvalid = "KM-MODEL-ASSET-EDIT-INVALID";

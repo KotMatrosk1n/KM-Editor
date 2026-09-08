@@ -16,6 +16,9 @@ export const kmErrorCodeSchema = z
   );
 
 export const projectBridgeErrorCodes = {
+  audioSourceUnavailable: "KM-AUDIO-SOURCE-UNAVAILABLE",
+  audioDecodeUnsupported: "KM-AUDIO-DECODE-UNSUPPORTED",
+  audioPlaybackFailed: "KM-AUDIO-PLAYBACK-FAILED",
   modelUnsupported: "KM-MODEL-UNSUPPORTED",
   modelTextureEditInvalid: "KM-MODEL-TEXTURE-EDIT-INVALID",
   modelAssetEditInvalid: "KM-MODEL-ASSET-EDIT-INVALID",
