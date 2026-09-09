@@ -8712,7 +8712,14 @@ export function App({
             return;
           }
 
-          if (workflowLoadGenerationRef.current.getActiveSections().length > 0) {
+          if (
+            workflowLoadGenerationRef.current.getActiveSections().length > 0 ||
+            editSessionReviewOperationRef.current !== null ||
+            editSessionApplyInFlightRef.current ||
+            pendingEditSessionMutationTokensRef.current.size > 0 ||
+            criticalWriteOperationRef.current !== null ||
+            projectScopeTransitionRef.current !== null
+          ) {
             await delay(50);
             continue;
           }
