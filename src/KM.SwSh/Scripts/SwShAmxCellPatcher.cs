@@ -116,6 +116,23 @@ internal static class SwShAmxCellPatcher
             decoded.CellSize));
     }
 
+    public static byte[] ReplaceSignedCodeCell(byte[] data, int cell, long expected, long value)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        var decoded = Decode(data);
+        var originalExpanded = decoded.Expanded.ToArray();
+        var cells = ReadCells(decoded.Expanded, decoded.Header.Cod, decoded.Header.Dat - decoded.Header.Cod, decoded.CellSize);
+        if ((uint)cell >= (uint)cells.Length || unchecked((long)cells[cell]) != expected)
+        {
+            throw new InvalidDataException("The AMX code operand does not match its verified preimage.");
+        }
+
+        if (expected == value) return data.ToArray();
+        cells[cell] = unchecked((ulong)value);
+        WriteCells(decoded.Expanded, decoded.Header.Cod, cells, decoded.CellSize);
+        return WritePatchedAmx(data, decoded, originalExpanded);
+    }
+
     public static byte[] ApplyDataCellPatches(
         byte[] data,
         IReadOnlyList<SwShAmxDataCellPatch> patches)

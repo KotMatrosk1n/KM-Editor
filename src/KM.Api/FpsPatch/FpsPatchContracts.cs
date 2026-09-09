@@ -53,7 +53,11 @@ public sealed record FpsPatchStatusDto(
     IReadOnlyList<string> ConflictingRomFsFiles,
     IReadOnlyList<FpsPatchRomFsCategoryStatusDto> RomFsCategories,
     IReadOnlyList<FpsPatchAnimationTimingComponentStatusDto> AnimationTimingComponents,
-    IReadOnlyList<ApiDiagnostic> Diagnostics);
+    IReadOnlyList<ApiDiagnostic> Diagnostics)
+{
+    public int LegacyCleanupFileCount { get; init; }
+    public IReadOnlyList<string> LegacyCleanupFiles { get; init; } = [];
+}
 
 public sealed record LoadFpsPatchResponse(
     FpsPatchStatusDto Status);

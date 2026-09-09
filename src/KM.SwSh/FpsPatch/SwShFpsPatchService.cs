@@ -42,7 +42,7 @@ public sealed class SwShFpsPatchService
     private const string LegacyTrainerBattleArchiveRootInsideRomFs = "bin/archive/chara/data/tr/anm";
     private const string LegacyCharaTrainerRootInsideRomFs = "bin/chara/data/tr";
     private const string OpeningDemoBseqRelativePath = "romfs/bin/demo/sequence/d010.bseq";
-    private const string ExcludedTitleDemoBseqRelativePath = "romfs/bin/demo/sequence/sd9010_title.bseq";
+    private const string EggDemoBseqRelativePath = "romfs/bin/demo/sequence/sd9120_egg.bseq";
     private const int ExpectedManagedBseqFileCount = 1010;
     private const int MaximumReportedRomFsPaths = 25;
 
@@ -83,9 +83,10 @@ public sealed class SwShFpsPatchService
         "battle_target_select_00",
         "battle_top_00",
     ];
-    private static readonly string[] ExcludedDemoSequenceBseqRelativePaths =
+    private static readonly string[] LegacyJumpTimelinePaths =
     [
-        ExcludedTitleDemoBseqRelativePath,
+        EggDemoBseqRelativePath,
+        "romfs/bin/demo/sequence/sd9010_title.bseq",
         "romfs/bin/demo/sequence/sd9110_evolution.bseq",
         "romfs/bin/demo/sequence/sd9111_evolution_after.bseq",
     ];
@@ -214,7 +215,8 @@ public sealed class SwShFpsPatchService
 
         try
         {
-            var generated = ConvertManagedRomFsFile(normalized, File.ReadAllBytes(sourcePath));
+            var source = File.ReadAllBytes(sourcePath);
+            var generated = ConvertManagedRomFsFile(normalized, source);
             var output = File.ReadAllBytes(outputPath);
             if (output.SequenceEqual(generated))
             {
@@ -222,7 +224,8 @@ public sealed class SwShFpsPatchService
             }
 
             var manifestHashes = ReadManifestOwnedFileHashes(paths);
-            return MatchesManifestOwnedOutput(normalized, output, manifestHashes);
+            return MatchesManifestOwnedOutput(normalized, output, manifestHashes)
+                || MatchesLegacyJumpTimelineOutput(normalized, source, output);
         }
         catch (IOException)
         {
@@ -269,7 +272,8 @@ public sealed class SwShFpsPatchService
             globalRestoreBlocked,
             restorePreflight.HasRemovableKmState,
             restorePreflight.Diagnostics,
-            diagnostics);
+            diagnostics,
+            restorePreflight.LegacyCleanupFiles ?? []);
     }
 
     public SwShFpsPatchApplyResult Apply(
@@ -648,7 +652,8 @@ public sealed class SwShFpsPatchService
         var hasErrors = diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         return new FullRestorePreflight(
             diagnostics,
-            HasRemovableKmState: !hasErrors && preparedPaths.Count > 0);
+            HasRemovableKmState: !hasErrors && preparedPaths.Count > 0,
+            LegacyCleanupFiles: preparedLegacyDeletes.Select(file => file.RelativePath).ToArray());
     }
 
     private static void ValidatePreparedFullRestoreMutationSet(
@@ -866,7 +871,8 @@ public sealed class SwShFpsPatchService
                 }
 
                 if (!existing.SequenceEqual(sourceBytes)
-                    && !MatchesManifestOwnedOutput(sourceFile.RelativePath, existing, manifestHashes))
+                    && !MatchesManifestOwnedOutput(sourceFile.RelativePath, existing, manifestHashes)
+                    && !MatchesLegacyJumpTimelineOutput(sourceFile.RelativePath, sourceBytes, existing))
                 {
                     diagnostics.Add(CreateDiagnostic(
                         DiagnosticSeverity.Error,
@@ -1129,7 +1135,8 @@ public sealed class SwShFpsPatchService
                 {
                     var sourceBytes = File.ReadAllBytes(sourceFile.SourcePath);
                     var generated = ConvertManagedRomFsFile(relativePath, sourceBytes);
-                    if (outputBytes.SequenceEqual(generated))
+                    if (outputBytes.SequenceEqual(generated)
+                        || MatchesLegacyJumpTimelineOutput(relativePath, sourceBytes, outputBytes))
                     {
                         preparedDeletes.Add(new PreparedRomFsDelete(relativePath, ToOutputFileState(outputBytes)));
                         continue;
@@ -1190,23 +1197,6 @@ public sealed class SwShFpsPatchService
                 sourceFile,
                 SwShFpsTrainerThrowPatcher.ConvertAnimationToHalfSpeed,
                 "legacy trainer ball throw",
-                preparedDeletes,
-                diagnostics);
-        }
-
-        foreach (var relativePath in ExcludedDemoSequenceBseqRelativePaths)
-        {
-            var sourcePath = ResolveBaseRomFsPath(paths.BaseRomFsPath, relativePath);
-            if (sourcePath is null || !File.Exists(sourcePath))
-            {
-                continue;
-            }
-
-            PrepareLegacyGeneratedDelete(
-                paths,
-                new ManagedRomFsFile(sourcePath, relativePath),
-                sourceBytes => ConvertBseq(sourceBytes, SwShFpsBseqPatcher.OpeningDemoTimelineScale),
-                "legacy excluded demo",
                 preparedDeletes,
                 diagnostics);
         }
@@ -1520,6 +1510,7 @@ public sealed class SwShFpsPatchService
                 : outputBytes.SequenceEqual(preparedSource.SourceBytes)
                     ? ManagedRomFsFileState.NotInstalled
                     : MatchesManifestOwnedOutput(sourceFile.RelativePath, outputBytes, manifestHashes)
+                        || MatchesLegacyJumpTimelineOutput(sourceFile.RelativePath, preparedSource.SourceBytes, outputBytes)
                         ? ManagedRomFsFileState.StaleOwned
                         : ManagedRomFsFileState.Conflict;
             inspectedFiles.Add(new InspectedRomFsFile(sourceFile.RelativePath, componentId, state));
@@ -1723,7 +1714,8 @@ public sealed class SwShFpsPatchService
         bool globalRestoreBlocked,
         bool hasRemovableKmState,
         IReadOnlyList<ValidationDiagnostic> restoreDiagnostics,
-        IReadOnlyList<ValidationDiagnostic> diagnostics)
+        IReadOnlyList<ValidationDiagnostic> diagnostics,
+        IReadOnlyList<string> legacyCleanupFiles)
     {
         var hasErrors = diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         string status;
@@ -1741,6 +1733,11 @@ public sealed class SwShFpsPatchService
         {
             status = "unsupported";
             message = "60FPS Patch is not available for this exefs/main build.";
+        }
+        else if (legacyCleanupFiles.Count > 0)
+        {
+            status = "updateAvailable";
+            message = "60FPS Patch has earlier generated files to remove. Apply to update the output.";
         }
         else if (mainStatus.PatchedSiteCount == mainStatus.SiteCount
             && mainStatus.SiteCount > 0
@@ -1796,7 +1793,11 @@ public sealed class SwShFpsPatchService
             romFsStatus.ConflictingFiles,
             romFsStatus.Categories,
             romFsStatus.AnimationTimingComponents,
-            diagnostics);
+            diagnostics)
+        {
+            LegacyCleanupFileCount = legacyCleanupFiles.Count,
+            LegacyCleanupFiles = legacyCleanupFiles.Take(MaximumReportedRomFsPaths).ToArray(),
+        };
     }
 
     private SwShFpsPatchApplyResult CreateApplyResult(
@@ -2123,7 +2124,6 @@ public sealed class SwShFpsPatchService
         {
             return Directory
                 .EnumerateFiles(sequenceRoot, "*.bseq", SearchOption.TopDirectoryOnly)
-                .Where(path => !IsExcludedDemoSequenceBseqFileName(Path.GetFileName(path)))
                 .Select(path => new ManagedRomFsFile(
                     Path.GetFullPath(path),
                     $"{DemoSequenceRootRelativePath}/{Path.GetFileName(path).Replace('\\', '/')}"))
@@ -2405,6 +2405,14 @@ public sealed class SwShFpsPatchService
         throw new InvalidDataException("60FPS Patch does not manage this ROMFS path.");
     }
 
+    private static bool MatchesLegacyJumpTimelineOutput(string relativePath, byte[] source, byte[] output)
+    {
+        // Recognize only exact earlier output for the verified demo sequences.
+        return LegacyJumpTimelinePaths.Contains(relativePath, StringComparer.OrdinalIgnoreCase)
+            && output.AsSpan().SequenceEqual(SwShFpsBseqPatcher.ConvertLegacyTimeline(
+                source, SwShFpsBseqPatcher.OpeningDemoTimelineScale));
+    }
+
     private static byte[] ConvertBseq(byte[] sourceBytes, double scale)
     {
         return SwShFpsBseqPatcher.Convert(
@@ -2473,14 +2481,7 @@ public sealed class SwShFpsPatchService
     private static bool IsManagedDemoSequenceBseqPath(string normalizedRelativePath)
     {
         return normalizedRelativePath.StartsWith(DemoSequenceRootRelativePath + "/", StringComparison.OrdinalIgnoreCase)
-            && !ExcludedDemoSequenceBseqRelativePaths.Contains(normalizedRelativePath, StringComparer.OrdinalIgnoreCase)
             && normalizedRelativePath.EndsWith(".bseq", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsExcludedDemoSequenceBseqFileName(string fileName)
-    {
-        return ExcludedDemoSequenceBseqRelativePaths.Any(
-            relativePath => string.Equals(fileName, Path.GetFileName(relativePath), StringComparison.OrdinalIgnoreCase));
     }
 
     private static void ValidateEditableProject(
@@ -3022,7 +3023,8 @@ public sealed class SwShFpsPatchService
 
     private sealed record FullRestorePreflight(
         IReadOnlyList<ValidationDiagnostic> Diagnostics,
-        bool HasRemovableKmState);
+        bool HasRemovableKmState,
+        IReadOnlyList<string>? LegacyCleanupFiles = null);
 
     private sealed record FpsPatchManifestSnapshot(
         IReadOnlyDictionary<string, string> OwnedFileHashes,

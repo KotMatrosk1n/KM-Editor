@@ -18,8 +18,20 @@ internal static class SwShFpsBseqPatcher
 
     private const int OpeningDemoNooneLifetimeCommandIndex = 21;
     private const uint OpeningDemoNooneScaledEndFrame = 346;
+    private const ulong AbsoluteFrameJumpCommand = 0x4FFDD33C6628F5F9;
 
     public static byte[] Convert(byte[] source, double scale, out SwShFpsBseqConversionStats stats)
+        => ConvertTimeline(source, scale, scaleJumpDestinations: true, out stats);
+
+    // Reproduce earlier output exactly for ownership migration and restoration.
+    internal static byte[] ConvertLegacyTimeline(byte[] source, double scale)
+        => ConvertTimeline(source, scale, scaleJumpDestinations: false, out _);
+
+    private static byte[] ConvertTimeline(
+        byte[] source,
+        double scale,
+        bool scaleJumpDestinations,
+        out SwShFpsBseqConversionStats stats)
     {
         ArgumentNullException.ThrowIfNull(source);
         var data = source.ToArray();
@@ -39,6 +51,33 @@ internal static class SwShFpsBseqPatcher
             {
                 WriteU32(data, command.EndFrameOffset, ScaleU32(command.EndFrame, scale));
                 fieldsChanged++;
+            }
+
+            if (scaleJumpDestinations && command.Hash == AbsoluteFrameJumpCommand)
+            {
+                if (command.PayloadLength != 8)
+                {
+                    throw new InvalidDataException("BSEQ frame jump has an unsupported payload layout.");
+                }
+
+                var mode = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(command.PayloadOffset, 4));
+                var target = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(command.PayloadOffset + 4, 4));
+                if (mode > 4 || target < 0 || target > file.FrameCount)
+                {
+                    throw new InvalidDataException("BSEQ frame jump has an unsupported condition or destination.");
+                }
+
+                var scaledTarget = ScaleU32((uint)target, scale);
+                if (scaledTarget > int.MaxValue)
+                {
+                    throw new InvalidDataException("BSEQ frame jump exceeds the supported signed frame range.");
+                }
+
+                WriteU32(data, command.PayloadOffset + 4, scaledTarget);
+                if (scaledTarget != target)
+                {
+                    fieldsChanged++;
+                }
             }
         }
 
@@ -68,7 +107,7 @@ internal static class SwShFpsBseqPatcher
 
     private static uint ScaleU32(uint value, double scale)
     {
-        if (scale <= 0)
+        if (!double.IsFinite(scale) || scale <= 0)
         {
             throw new InvalidDataException("BSEQ timeline scale must be positive.");
         }

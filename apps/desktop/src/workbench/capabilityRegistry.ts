@@ -480,6 +480,11 @@ export const workbenchCapabilityRegistry = [
     standalone: true
   }),
   workflow({
+    description: 'Disable or restore interaction with raid dens.',
+    games: swordShieldGames, icon: Shield, id: 'raidDens', label: 'Raid Dens',
+    showInWorkflowDashboard: false, standalone: true
+  }),
+  workflow({
     description: 'Build deterministic reviewed randomizer output.',
     games: swordShieldGames,
     icon: Shuffle,

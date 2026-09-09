@@ -468,6 +468,8 @@ import {
   FashionCatalogSection,
   type FashionCatalogFieldEditInput
 } from './features/fashion-catalog/FashionCatalogSection';
+import { RaidDensSection } from './features/raid-dens/RaidDensSection';
+import { type RaidDensWorkflow } from './bridge/raidDensContracts';
 import { StarmobilesSection } from './features/starmobiles/StarmobilesSection';
 import { type StarmobileUpdate, type StarmobilesWorkflow } from './bridge/starmobilesContracts';
 import { pokemonTypeOptions } from './pokemonTypeOptions';
@@ -3279,10 +3281,15 @@ export function App({
   const [isFashionCatalogLoading, setIsFashionCatalogLoading] = useState(false);
   const [isFashionCatalogStaging, setIsFashionCatalogStaging] = useState(false);
   const starmobilesWorkflow = useWorkbenchStore(state => state.starmobilesWorkflow);
+  const raidDensWorkflow = useWorkbenchStore(state => state.raidDensWorkflow);
   const setStarmobilesWorkflow = useWorkbenchStore(state => state.setStarmobilesWorkflow);
+  const setRaidDensWorkflow = useWorkbenchStore(state => state.setRaidDensWorkflow);
   const [isStarmobilesLoading, setIsStarmobilesLoading] = useState(false);
+  const [isRaidDensLoading, setIsRaidDensLoading] = useState(false);
   const [isStarmobilesStaging, setIsStarmobilesStaging] = useState(false);
+  const [isRaidDensStaging, setIsRaidDensStaging] = useState(false);
   const starmobilesGenerationRef = useRef(0);
+  const raidDensGenerationRef = useRef(0);
   const [isHabitatCoordinatesLoading, setIsHabitatCoordinatesLoading] = useState(false);
   const [isHabitatCoordinateStaging, setIsHabitatCoordinateStaging] = useState(false);
   const [isGiftPokemonLoading, setIsGiftPokemonLoading] = useState(false);
@@ -4277,6 +4284,7 @@ export function App({
           fashionCatalogWorkflow,
           habitatCoordinatesWorkflow,
           starmobilesWorkflow,
+          raidDensWorkflow,
           fashionUnlockWorkflow,
           flagworkSaveWorkflow,
           giftPokemonWorkflow,
@@ -4323,6 +4331,7 @@ export function App({
       fashionCatalogWorkflow,
       habitatCoordinatesWorkflow,
       starmobilesWorkflow,
+      raidDensWorkflow,
       fashionUnlockWorkflow,
       flagworkSaveWorkflow,
       giftPokemonWorkflow,
@@ -4434,6 +4443,7 @@ export function App({
     encountersWorkflow, exeFsPatchWorkflow, fairyGymBoostsWorkflow, fashionCatalogWorkflow,
     habitatCoordinatesWorkflow,
     starmobilesWorkflow,
+    raidDensWorkflow,
     fashionUnlockWorkflow,
     flagworkSaveWorkflow, giftPokemonWorkflow, gymUniformRemovalWorkflow, hyperTrainingWorkflow,
     hyperspaceBypassWorkflow,
@@ -4557,6 +4567,8 @@ export function App({
     (isDirty: boolean) => registerEditorDraftDirty('fashionCatalog', isDirty),
     [registerEditorDraftDirty]
   );
+  const handleRaidDensDirtyChange = useCallback(
+    (dirty: boolean) => registerEditorDraftDirty('raidDens', dirty), [registerEditorDraftDirty]);
   const handleStarmobilesDirtyChange = useCallback(
     (dirty: boolean) => registerEditorDraftDirty('starmobiles', dirty), [registerEditorDraftDirty]);
   const handleHabitatCoordinatesDirtyChange = useCallback(
@@ -10921,6 +10933,48 @@ export function App({
     );
   };
 
+  const handleOpenRaidDensWorkflow = async () => {
+    const generation = raidDensGenerationRef.current;
+    await runRetainedWorkflowLoad('raidDens', setIsRaidDensLoading,
+      () => bridge.loadRaidDens({ paths: createProjectPaths(draftPaths) }),
+      response => setRaidDensWorkflow(response.workflow),
+      () => generation === raidDensGenerationRef.current);
+  };
+
+  const handleStageRaidDens = async (disabled: boolean) => {
+    const activeSession = getEditSessionForSection('raidDens');
+    if (!activeSession) return false;
+    let accepted = false;
+    raidDensGenerationRef.current += 1;
+    setIsRaidDensStaging(true);
+    prepareScopedEditorPanelAction('raidDens');
+    try {
+      await runEditSessionMutation(async session => {
+        const response = await bridge.stageRaidDens({ paths: createProjectPaths(draftPaths), session, disabled });
+        const edits = response.session.pendingEdits.filter(edit => edit.domain === 'workflow.raidDens');
+        const acknowledged = edits.length === 0 ? response.workflow.disabled === disabled :
+          edits.length === 1 && edits[0].recordId === 'den-interaction' &&
+          edits[0].field === 'disabled' && edits[0].newValue === String(disabled);
+        const matches = response.workflow.canEdit && response.workflow.detectedGame === draftPaths.selectedGame &&
+          response.session.sessionId === activeSession.sessionId && acknowledged;
+        const diagnostics = [...response.diagnostics, ...response.workflow.diagnostics];
+        if (!matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error'))
+          diagnostics.push({ severity: 'error', domain: 'workflow.raidDens', code: 'KM-SWSH-RAID-DENS-INVALID', message: t('raidDens.failed') });
+        const didSucceed = matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error');
+        return { ...response, diagnostics, didSucceed, session: didSucceed ? response.session : session };
+      }, response => {
+        setScopedEditorPanelDiagnostics('raidDens', response.diagnostics);
+        if (response.didSucceed) {
+          accepted = true;
+          setRaidDensWorkflow(response.workflow);
+          setEditSessionSection('raidDens');
+        }
+      }, activeSession);
+    } catch (error) { setScopedEditorPanelDiagnostics('raidDens', toBridgeDiagnostics(error)); }
+    finally { setIsRaidDensStaging(false); }
+    return accepted;
+  };
+
   const handleOpenStarmobilesWorkflow = async () => {
     const session = getEditSessionForSection('starmobiles');
     const signature = getEditSessionSignature(session);
@@ -12736,6 +12790,9 @@ export function App({
         case 'fashionCatalog':
           if (!currentState.fashionCatalogWorkflow) await handleOpenFashionCatalogWorkflow();
           break;
+        case 'raidDens':
+          if (!currentState.raidDensWorkflow) await handleOpenRaidDensWorkflow();
+          break;
         case 'starmobiles':
           if (!currentState.starmobilesWorkflow) await handleOpenStarmobilesWorkflow();
           break;
@@ -13109,6 +13166,9 @@ export function App({
           void handleOpenFashionCatalogWorkflow();
         }
         break;
+      case 'raidDens':
+        if (!raidDensWorkflow && !isRaidDensLoading) { markLazyLoadStarted(); void handleOpenRaidDensWorkflow(); }
+        break;
       case 'starmobiles':
         if (!starmobilesWorkflow && !isStarmobilesLoading) { markLazyLoadStarted(); void handleOpenStarmobilesWorkflow(); }
         break;
@@ -13363,6 +13423,7 @@ export function App({
     fashionCatalogWorkflow,
     habitatCoordinatesWorkflow,
     starmobilesWorkflow,
+    raidDensWorkflow,
     fashionUnlockWorkflow,
     flagworkSaveWorkflow,
     giftPokemonWorkflow,
@@ -13390,6 +13451,7 @@ export function App({
     isFashionCatalogLoading,
     isHabitatCoordinatesLoading,
     isStarmobilesLoading,
+    isRaidDensLoading,
     isFashionUnlockLoading,
     isGymUniformRemovalLoading,
     isHyperTrainingLoading,
@@ -19417,6 +19479,7 @@ export function App({
       'fashionCatalog',
       'habitatCoordinates',
       'starmobiles',
+      'raidDens',
       'giftPokemon',
       'tradePokemon',
       'staticEncounters',
@@ -19466,6 +19529,7 @@ export function App({
       fashionCatalog: setIsFashionCatalogLoading,
       habitatCoordinates: setIsHabitatCoordinatesLoading,
       starmobiles: setIsStarmobilesLoading,
+      raidDens: setIsRaidDensLoading,
       fashionUnlock: setIsFashionUnlockLoading,
       flagworkSave: setIsFlagworkSaveLoading,
       giftPokemon: setIsGiftPokemonLoading,
@@ -19667,6 +19731,12 @@ export function App({
           }
         }
       );
+    }
+    if (raidDensWorkflow && refreshSections.has('raidDens')) {
+      reloadTasks.push(async () => {
+        const response = await bridge.loadRaidDens({ paths });
+        if (canCommitRefresh()) setRaidDensWorkflow(response.workflow);
+      });
     }
     if (starmobilesWorkflow && refreshSections.has('starmobiles')) {
       reloadTasks.push(async () => {
@@ -22232,6 +22302,16 @@ export function App({
               status={fpsPatchStatus}
             />
           ) : null}
+          {activeSection === 'raidDens' ? (
+            isRaidDensLoading && !raidDensWorkflow ? <WorkflowLoadingPanel label={t('raidDens.title')} /> :
+              <RaidDensSection workflow={raidDensWorkflow} session={getEditSessionForSection('raidDens')}
+                key={getEditSessionForSection('raidDens')?.sessionId ?? 'viewing'}
+                isStaging={isRaidDensStaging} isEditing={getEditSessionForSection('raidDens') !== null}
+                isEditStarting={isEditStarting} onStartEditSession={handleStartEditSession}
+                onCancelEditSession={requestCancelEditSession} onStage={handleStageRaidDens}
+                onDirtyStateChange={handleRaidDensDirtyChange} onRefresh={handleOpenRaidDensWorkflow}
+                isLoading={isRaidDensLoading} panelOutput={getOutputSafeScopedEditorPanelOutput('raidDens')} />
+          ) : null}
           {activeSection === 'profanityFilter' ? (
             <ProfanityFilterSection
               canApply={Boolean(health?.canOpenEditableWorkflows && outputSafety.canApply)}
@@ -22428,6 +22508,7 @@ export function App({
               editSession={editSession}
               pendingEditContext={{
                 starmobilesWorkflow,
+                raidDensWorkflow,
                 angeFightWorkflow,
                 bagHookWorkflow,
                 catchCapWorkflow,
@@ -36065,6 +36146,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.fairyGymBoosts': 'Fairy Gym Boosts',
     'workflow.fashionCatalog': 'Fashion Catalog',
     'workflow.habitatCoordinates': 'Habitat Coordinates',
+    'workflow.raidDens': 'Raid Dens',
     'workflow.starmobiles': 'Starmobiles',
     'workflow.fashionUnlock': 'Fashion Unlock',
     'workflow.giftPokemon': 'Gift Pokemon',
@@ -36124,6 +36206,7 @@ function getPendingEditSection(edit: PendingEdit): WorkbenchSection | null {
     'workflow.fairyGymBoosts': 'fairyGymBoosts',
     'workflow.fashionCatalog': 'fashionCatalog',
     'workflow.habitatCoordinates': 'habitatCoordinates',
+    'workflow.raidDens': 'raidDens',
     'workflow.starmobiles': 'starmobiles',
     'workflow.fashionUnlock': 'fashionUnlock',
     'workflow.giftPokemon': 'giftPokemon',
@@ -36506,6 +36589,11 @@ function getPendingEditDisplayDetails(
         fieldLabel: edit.field === 'gifts' ? 'NPC gifts' : undefined,
         newValueLabel: formatNpcItemGiftPendingValue(edit.newValue),
         recordLabel: 'One NPC'
+      });
+    case 'workflow.raidDens':
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel, recordLocalizationKey: 'raidDens.title', fieldLocalizationKey: 'raidDens.interaction',
+        newValueLocalizationKey: edit.newValue === 'true' ? 'raidDens.disabled' : 'raidDens.enabled'
       });
     case 'workflow.modelTextures': {
       let kind = 'texture';
@@ -56652,6 +56740,7 @@ function FpsPatchSection({
   const executableCoreNeedsApply = Boolean(
     status && status.patchedMainSiteCount !== status.mainSiteCount
   );
+  const hasLegacyCleanup = (status?.legacyCleanupFileCount ?? 0) > 0;
   const notInstalledRomFsFileCount = status
     ? Math.max(
         0,
@@ -56664,7 +56753,7 @@ function FpsPatchSection({
     canApply &&
       status &&
       !hasInstallBlock &&
-      (executableCoreNeedsApply || hasAnimationTimingConfigurationChanges)
+      (executableCoreNeedsApply || hasAnimationTimingConfigurationChanges || hasLegacyCleanup)
   );
   const canUninstall = Boolean(
     canApply &&
@@ -56682,7 +56771,7 @@ function FpsPatchSection({
           ? t('fpsPatch.disabled.selectedInputUnavailable')
           : hasDesiredComponentConflict
             ? t('fpsPatch.disabled.resolveBlockers')
-            : !executableCoreNeedsApply && !hasAnimationTimingConfigurationChanges
+            : !executableCoreNeedsApply && !hasAnimationTimingConfigurationChanges && !hasLegacyCleanup
               ? t('fpsPatch.disabled.alreadyInstalled')
               : null;
   const uninstallDisabledReason = !status
@@ -56971,6 +57060,26 @@ function FpsPatchSection({
             </ul>
             {status.staleOwnedRomFsFileCount > status.staleOwnedRomFsFiles.length ? (
               <p>{t('fpsPatch.paths.more', { count: status.staleOwnedRomFsFileCount - status.staleOwnedRomFsFiles.length })}</p>
+            ) : null}
+          </section>
+        ) : null}
+
+        {status && hasLegacyCleanup ? (
+          <section className="technical-tool-notice technical-tool-notice-info" aria-labelledby="fps-patch-cleanup-heading">
+            <div className="technical-tool-notice-heading">
+              <RefreshCw aria-hidden="true" size={18} />
+              <div>
+                <h3 id="fps-patch-cleanup-heading">{t('fpsPatch.cleanup.title')}</h3>
+                <p>{t('fpsPatch.cleanup.description', { count: status.legacyCleanupFileCount })}</p>
+              </div>
+            </div>
+            <ul className="technical-tool-path-list">
+              {status.legacyCleanupFiles.map(relativePath => (
+                <li key={relativePath}><code data-localization-ignore="true">{relativePath}</code></li>
+              ))}
+            </ul>
+            {status.legacyCleanupFileCount > status.legacyCleanupFiles.length ? (
+              <p>{t('fpsPatch.paths.more', { count: status.legacyCleanupFileCount - status.legacyCleanupFiles.length })}</p>
             ) : null}
           </section>
         ) : null}
@@ -58700,6 +58809,7 @@ function SelectedSpreadsheetImportPanel({
 type PendingEdit = EditSession['pendingEdits'][number];
 
 export type PendingEditContext = {
+  raidDensWorkflow?: RaidDensWorkflow | null;
   starmobilesWorkflow?: StarmobilesWorkflow | null;
   angeFightWorkflow: AngeFightWorkflow | null;
   bagHookWorkflow: BagHookWorkflow | null;
