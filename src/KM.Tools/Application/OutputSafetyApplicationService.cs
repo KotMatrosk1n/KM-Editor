@@ -870,7 +870,7 @@ public sealed class OutputSafetyApplicationService
             throw new OutputScopeMismatchException();
         }
 
-        if (!TryNormalizeSafeExistingDirectory(paths.OutputRootPath, out var outputRoot)
+        if (!TryNormalizeSafeDirectory(paths.OutputRootPath, out var outputRoot, allowMissing: true)
             || !TryNormalizeSafeOptionalExistingDirectory(paths.BaseRomFsPath, out var baseRomFsRoot)
             || !TryNormalizeSafeOptionalExistingDirectory(paths.BaseExeFsPath, out var baseExeFsRoot)
             || (baseRomFsRoot is not null && PathsOverlap(outputRoot, baseRomFsRoot))
@@ -915,7 +915,7 @@ public sealed class OutputSafetyApplicationService
             || (value.Length <= maximumLength && !value.Any(char.IsControl));
     }
 
-    private static bool TryNormalizeSafeExistingDirectory(string? path, out string normalizedPath)
+    private static bool TryNormalizeSafeDirectory(string? path, out string normalizedPath, bool allowMissing = false)
     {
         normalizedPath = string.Empty;
         if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
@@ -931,13 +931,12 @@ public sealed class OutputSafetyApplicationService
             while (entry is not null)
             {
                 entry.Refresh();
-                if (!entry.Exists)
+                if (!entry.Exists && (!allowMissing || File.Exists(entry.FullName)))
                 {
                     return false;
                 }
 
-                if (entry.Attributes.HasFlag(FileAttributes.ReparsePoint)
-                    && !string.IsNullOrEmpty(entry.LinkTarget))
+                if (!string.IsNullOrEmpty(entry.LinkTarget))
                 {
                     return false;
                 }
@@ -974,7 +973,7 @@ public sealed class OutputSafetyApplicationService
             return true;
         }
 
-        if (!TryNormalizeSafeExistingDirectory(path, out var normalizedExistingPath))
+        if (!TryNormalizeSafeDirectory(path, out var normalizedExistingPath))
         {
             return false;
         }

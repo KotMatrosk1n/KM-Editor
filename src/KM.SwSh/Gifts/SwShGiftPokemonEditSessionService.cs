@@ -73,6 +73,7 @@ public sealed class SwShGiftPokemonEditSessionService
         var originalSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
         var workflow = giftPokemonWorkflowService.Load(project);
+        originalSession = RebindDeletedOutputEdits(project, workflow, originalSession);
         var originalWorkflow = OverlayPendingEdits(workflow, originalSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -182,6 +183,7 @@ public sealed class SwShGiftPokemonEditSessionService
         projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = giftPokemonWorkflowService.Load(project);
+        session = RebindDeletedOutputEdits(project, workflow, session);
         var diagnostics = new List<ValidationDiagnostic>();
         if (CanEditGiftPokemon(project, workflow, diagnostics))
         {
@@ -263,6 +265,8 @@ public sealed class SwShGiftPokemonEditSessionService
     {
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
+        var currentProject = projectWorkspaceService.Open(paths);
+        session = RebindDeletedOutputEdits(currentProject, giftPokemonWorkflowService.Load(currentProject), session);
         var currentPlan = CreateChangePlan(paths, session);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
@@ -522,6 +526,7 @@ public sealed class SwShGiftPokemonEditSessionService
         ICollection<ValidationDiagnostic> diagnostics,
         bool addSuccessDiagnostic)
     {
+        session = RebindDeletedOutputEdits(project, workflow, session);
         var giftEdits = GetGiftEdits(session).ToArray();
         var effectiveWorkflow = workflow;
         var seenFields = new HashSet<(int GiftIndex, string Field)>();
@@ -602,6 +607,27 @@ public sealed class SwShGiftPokemonEditSessionService
                 DiagnosticSeverity.Info,
                 "Pending Gift Pokemon change is valid."));
         }
+    }
+
+    private static EditSession RebindDeletedOutputEdits(
+        OpenedProject project, SwShGiftPokemonWorkflow workflow, EditSession session)
+    {
+        return session with { PendingEdits = session.PendingEdits.Select(edit =>
+        {
+            if (!IsGiftEdit(edit) || !SwShDeletedOutputSource.Any(project.Paths, edit)
+                || !SwShGiftPokemonWorkflowService.IsEditableField(edit.Field)
+                || !SwShGiftPokemonWorkflowService.TryParseGiftRecordId(edit.RecordId, out var index, out var identity)) return edit;
+            var gift = workflow.Gifts.SingleOrDefault(candidate => candidate.GiftIndex == index);
+            if (gift is null || (identity is not null
+                && !string.Equals(identity, gift.SourceIdentity, StringComparison.OrdinalIgnoreCase)
+                && !(gift.Provenance.SourceLayer == ProjectFileLayer.Base
+                    && SwShDeletedOutputSource.Contains(project.Paths, edit, gift.Provenance.SourceFile)))) return edit;
+            return edit with
+            {
+                RecordId = SwShGiftPokemonWorkflowService.CreateGiftRecordId(index, gift.SourceIdentity),
+                Sources = CreateExpectedSources(project, gift, edit.Field!),
+            };
+        }).ToArray() };
     }
 
     private static SwShGiftPokemonEntry? ValidatePendingEdit(

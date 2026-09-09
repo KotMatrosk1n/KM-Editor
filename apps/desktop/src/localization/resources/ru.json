@@ -2147,7 +2147,7 @@
     "outputSafety.diagnostic.limitExceeded": "Операция превысила ограниченный предел безопасности и была остановлена.",
     "outputSafety.diagnostic.outputChanged": "Проверенный файл изменился, поэтому восстановление остановлено без перезаписи.",
     "outputSafety.diagnostic.outputRootNotConfigured": "Корень вывода не настроен. Анализ только для чтения остается доступен; настройте корень в разделе настройки проекта перед использованием действий редактирования или вывода.",
-    "outputSafety.diagnostic.outputRootMissing": "Настроенный корень вывода отсутствует или недоступен. Проверьте его в разделе настройки проекта и повторите попытку.",
+    "outputSafety.diagnostic.outputRootMissing": "Папка вывода будет создана при применении изменений.",
     "outputSafety.diagnostic.ownershipUnproven": "KM не удалось доказать владение всеми выбранными записями вывода.",
     "outputSafety.diagnostic.recoveryFinalized": "Прерванная транзакция вывода была безопасно завершена при активации проекта.",
     "outputSafety.diagnostic.recoveryManual": "Требуется ручное восстановление: состояние некоторых целей невозможно доказать.",

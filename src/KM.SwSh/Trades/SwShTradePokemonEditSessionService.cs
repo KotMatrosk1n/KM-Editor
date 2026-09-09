@@ -73,6 +73,7 @@ public sealed class SwShTradePokemonEditSessionService
         var originalSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
         var workflow = tradePokemonWorkflowService.Load(project);
+        originalSession = RebindDeletedOutputEdits(project, workflow, originalSession);
         var originalWorkflow = OverlayPendingEdits(workflow, originalSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -188,6 +189,7 @@ public sealed class SwShTradePokemonEditSessionService
         projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = tradePokemonWorkflowService.Load(project);
+        session = RebindDeletedOutputEdits(project, workflow, session);
         var diagnostics = new List<ValidationDiagnostic>();
         if (CanEditTradePokemon(project, workflow, diagnostics))
         {
@@ -269,6 +271,8 @@ public sealed class SwShTradePokemonEditSessionService
     {
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
+        var currentProject = projectWorkspaceService.Open(paths);
+        session = RebindDeletedOutputEdits(currentProject, tradePokemonWorkflowService.Load(currentProject), session);
         var currentPlan = CreateChangePlan(paths, session);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
@@ -530,6 +534,7 @@ public sealed class SwShTradePokemonEditSessionService
         ICollection<ValidationDiagnostic> diagnostics,
         bool addSuccessDiagnostic)
     {
+        session = RebindDeletedOutputEdits(project, workflow, session);
         var tradeEdits = GetTradeEdits(session).ToArray();
         var effectiveWorkflow = workflow;
         var seenFields = new HashSet<(int TradeIndex, string Field)>();
@@ -610,6 +615,27 @@ public sealed class SwShTradePokemonEditSessionService
                 DiagnosticSeverity.Info,
                 "Pending Trade Pokemon change is valid."));
         }
+    }
+
+    private static EditSession RebindDeletedOutputEdits(
+        OpenedProject project, SwShTradePokemonWorkflow workflow, EditSession session)
+    {
+        return session with { PendingEdits = session.PendingEdits.Select(edit =>
+        {
+            if (!IsTradeEdit(edit) || !SwShDeletedOutputSource.Any(project.Paths, edit)
+                || !SwShTradePokemonWorkflowService.IsEditableField(edit.Field)
+                || !SwShTradePokemonWorkflowService.TryParseTradeRecordId(edit.RecordId, out var index, out var identity)) return edit;
+            var trade = workflow.Trades.SingleOrDefault(candidate => candidate.TradeIndex == index);
+            if (trade is null || (identity is not null
+                && !string.Equals(identity, trade.SourceIdentity, StringComparison.OrdinalIgnoreCase)
+                && !(trade.Provenance.SourceLayer == ProjectFileLayer.Base
+                    && SwShDeletedOutputSource.Contains(project.Paths, edit, trade.Provenance.SourceFile)))) return edit;
+            return edit with
+            {
+                RecordId = SwShTradePokemonWorkflowService.CreateTradeRecordId(index, trade.SourceIdentity),
+                Sources = CreateExpectedSources(project, trade, edit.Field!),
+            };
+        }).ToArray() };
     }
 
     private static SwShTradePokemonEntry? ValidatePendingEdit(

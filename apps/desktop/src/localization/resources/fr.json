@@ -2147,7 +2147,7 @@
     "outputSafety.diagnostic.limitExceeded": "L’opération a dépassé une limite de sécurité bornée et a été arrêtée.",
     "outputSafety.diagnostic.outputChanged": "Un fichier vérifié a changé ; la récupération s’est arrêtée sans l’écraser.",
     "outputSafety.diagnostic.outputRootNotConfigured": "La racine de sortie n'est pas configurée. L'analyse en lecture seule reste disponible ; configurez-la dans Configuration du projet avant d'utiliser les actions de modification ou de sortie.",
-    "outputSafety.diagnostic.outputRootMissing": "La racine de sortie configurée est absente ou indisponible. Vérifiez-la dans Configuration du projet, puis réessayez.",
+    "outputSafety.diagnostic.outputRootMissing": "Le dossier de sortie sera créé lors de l’application des modifications.",
     "outputSafety.diagnostic.ownershipUnproven": "KM n’a pas pu prouver la propriété de toutes les entrées sélectionnées.",
     "outputSafety.diagnostic.recoveryFinalized": "Une transaction de sortie interrompue a été finalisée en toute sécurité lors de l’activation du projet.",
     "outputSafety.diagnostic.recoveryManual": "Une récupération manuelle est requise car certains états cibles sont indémontrables.",

@@ -83,6 +83,7 @@ public sealed class SwShRentalPokemonEditSessionService
         var originalSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
         var workflow = rentalPokemonWorkflowService.Load(project);
+        originalSession = RebindDeletedOutputEdits(project, workflow, originalSession);
         var originalWorkflow = OverlayPendingEdits(workflow, originalSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -206,6 +207,7 @@ public sealed class SwShRentalPokemonEditSessionService
         projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = rentalPokemonWorkflowService.Load(project);
+        session = RebindDeletedOutputEdits(project, workflow, session);
         var diagnostics = new List<ValidationDiagnostic>();
         if (CanEditRentalPokemon(project, workflow, diagnostics))
         {
@@ -286,6 +288,8 @@ public sealed class SwShRentalPokemonEditSessionService
     {
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
+        var currentProject = projectWorkspaceService.Open(paths);
+        session = RebindDeletedOutputEdits(currentProject, rentalPokemonWorkflowService.Load(currentProject), session);
         var currentPlan = CreateChangePlan(paths, session);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
@@ -535,6 +539,7 @@ public sealed class SwShRentalPokemonEditSessionService
         ICollection<ValidationDiagnostic> diagnostics,
         bool addSuccessDiagnostic)
     {
+        session = RebindDeletedOutputEdits(project, workflow, session);
         var rentalEdits = GetRentalEdits(session).ToArray();
         var effectiveWorkflow = workflow;
         var seenFields = new HashSet<(int RentalIndex, string Field)>();
@@ -616,6 +621,30 @@ public sealed class SwShRentalPokemonEditSessionService
                 DiagnosticSeverity.Info,
                 "Pending Rental Pokemon change is valid."));
         }
+    }
+
+    private static EditSession RebindDeletedOutputEdits(
+        OpenedProject project, SwShRentalPokemonWorkflow workflow, EditSession session)
+    {
+        return session with { PendingEdits = session.PendingEdits.Select(edit =>
+        {
+            if (!IsRentalEdit(edit) || !SwShDeletedOutputSource.Any(project.Paths, edit)
+                || !SwShRentalPokemonWorkflowService.IsEditableField(edit.Field)
+                || !SwShRentalPokemonWorkflowService.TryParseRentalRecordId(edit.RecordId, out var index, out var identity)) return edit;
+            var rental = workflow.Rentals.SingleOrDefault(candidate => candidate.RentalIndex == index);
+            if (rental is null || (identity is not null
+                && !string.Equals(identity, rental.SourceIdentity, StringComparison.OrdinalIgnoreCase)
+                && !(rental.Provenance.SourceLayer == ProjectFileLayer.Base
+                    && SwShDeletedOutputSource.Contains(project.Paths, edit, rental.Provenance.SourceFile)))) return edit;
+            var field = SwShRentalPokemonWorkflowService.GetEditableField(edit.Field)!;
+            var value = TryParseFieldValue(field, edit.NewValue, GetRentalFieldValue(rental, field.Field), []);
+            if (value is null) return edit;
+            return edit with
+            {
+                RecordId = SwShRentalPokemonWorkflowService.CreateRentalRecordId(index, rental.SourceIdentity),
+                Sources = CreateExpectedSources(project, workflow, rental, field.Field, value.Value),
+            };
+        }).ToArray() };
     }
 
     private static SwShRentalPokemonEntry? ValidatePendingEdit(

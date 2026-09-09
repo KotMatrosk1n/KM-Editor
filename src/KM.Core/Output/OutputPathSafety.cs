@@ -52,7 +52,7 @@ internal sealed class OutputPathSafety
         }
 
         OutputRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(outputRoot));
-        ValidateExistingAncestorChain(OutputRoot);
+        ValidateExistingAncestorChain(OutputRoot, allowMissing: true);
         if (OperatingSystem.IsWindows())
         {
             currentUserSid = GetCurrentWindowsUserSid();
@@ -134,7 +134,7 @@ internal sealed class OutputPathSafety
 
     public bool MetadataLayoutExists()
     {
-        ValidateExistingAncestorChain(OutputRoot);
+        ValidateExistingAncestorChain(OutputRoot, allowMissing: true);
         if (!FileSystemPathBoundary.HasSafeExistingAncestorChain(MetadataRoot)) throw new OutputPathSecurityException();
         ValidatePortableChildIdentity(Path.GetDirectoryName(MetadataRoot)!, Path.GetFileName(MetadataRoot));
 
@@ -156,7 +156,7 @@ internal sealed class OutputPathSafety
 
     public void EnsureMetadataLayout()
     {
-        ValidateExistingAncestorChain(OutputRoot);
+        ValidateExistingAncestorChain(OutputRoot, createMissing: true);
         if (!FileSystemPathBoundary.HasSafeExistingAncestorChain(MetadataRoot)) throw new OutputPathSecurityException();
         ValidatePortableChildIdentity(Path.GetDirectoryName(MetadataRoot)!, Path.GetFileName(MetadataRoot));
         EnsureMetadataRootClaimed();
@@ -1108,7 +1108,7 @@ internal sealed class OutputPathSafety
         }
     }
 
-    private static void ValidateExistingAncestorChain(string path)
+    private static void ValidateExistingAncestorChain(string path, bool allowMissing = false, bool createMissing = false)
     {
         var fullPath = Path.GetFullPath(path);
         var root = Path.GetPathRoot(fullPath);
@@ -1136,6 +1136,22 @@ internal sealed class OutputPathSafety
         foreach (var segment in segments)
         {
             current = Path.Combine(current, segment);
+            if (!Directory.Exists(current))
+            {
+                if (File.Exists(current) || HasLinkTarget(new DirectoryInfo(current)))
+                {
+                    throw new OutputPathSecurityException();
+                }
+
+                if (createMissing)
+                {
+                    Directory.CreateDirectory(current);
+                }
+                else if (allowMissing)
+                {
+                    continue;
+                }
+            }
             ValidateDirectory(current);
         }
     }

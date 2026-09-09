@@ -177,7 +177,9 @@ public sealed class ProjectValidator
             return;
         }
 
-        if (FileSystemPathBoundary.HasSafeExistingChain(path.Path, isDirectory))
+        if (path.Role == ProjectPathRole.OutputRoot
+            ? FileSystemPathBoundary.HasSafeExistingAncestorChain(path.Path)
+            : FileSystemPathBoundary.HasSafeExistingChain(path.Path, isDirectory))
         {
             return;
         }
@@ -296,11 +298,11 @@ public sealed class ProjectValidator
 
         if (!Directory.Exists(path))
         {
-            draft.Status = ProjectPathStatus.Missing;
+            draft.Status = ProjectPathStatus.Valid;
             draft.AddDiagnostic(
-                DiagnosticSeverity.Warning,
-                "Output root does not exist; write actions are disabled until it is created or changed.",
-                expected: "Existing directory before applying output",
+                DiagnosticSeverity.Info,
+                "Output root will be created when changes are applied.",
+                expected: "Writable output directory",
                 field: "outputRootPath",
                 code: OutputRootMissingDiagnosticCode);
             return draft;

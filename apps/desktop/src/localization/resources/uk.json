@@ -2147,7 +2147,7 @@
     "outputSafety.diagnostic.limitExceeded": "Операція перевищила обмежену межу безпеки й була зупинена.",
     "outputSafety.diagnostic.outputChanged": "Перевірений файл змінився, тому відновлення зупинено без перезапису.",
     "outputSafety.diagnostic.outputRootNotConfigured": "Корінь виводу не налаштовано. Аналіз лише для читання залишається доступним; налаштуйте корінь у розділі налаштування проєкту перед використанням дій редагування або виводу.",
-    "outputSafety.diagnostic.outputRootMissing": "Налаштований корінь виводу відсутній або недоступний. Перевірте його в розділі налаштування проєкту та повторіть спробу.",
+    "outputSafety.diagnostic.outputRootMissing": "Папку виводу буде створено під час застосування змін.",
     "outputSafety.diagnostic.ownershipUnproven": "KM не вдалося довести володіння всіма вибраними записами виводу.",
     "outputSafety.diagnostic.recoveryFinalized": "Перервану транзакцію виведення безпечно завершено під час активації проєкту.",
     "outputSafety.diagnostic.recoveryManual": "Потрібне ручне відновлення: стан деяких цілей неможливо довести.",

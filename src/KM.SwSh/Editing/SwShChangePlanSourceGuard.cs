@@ -1074,27 +1074,16 @@ public static class SwShChangePlanSourceGuard
                     IReadOnlyCollection<OwnedTarget> ownershipClaims = [ownership];
                     if (isComposedExeFsMain
                         && ownershipByPath is not null
-                        && ownershipByPath.TryGetValue(path.CanonicalKey, out existingOwnership))
+                        && ownershipByPath.TryGetValue(path.CanonicalKey, out var recordedOwnership)
+                        && recordedOwnership.CurrentState == expectedPreimage)
                     {
-                        if (existingOwnership.ProjectId != projectId
-                            || existingOwnership.GameFamily != GameFamily.SwordShield
+                        existingOwnership = recordedOwnership;
+                        if (!outputCoordinator.OwnershipScopeMatches(existingOwnership, projectId, GameFamily.SwordShield)
                             || !string.Equals(existingOwnership.OutputMode, OutputMode, StringComparison.Ordinal))
                         {
                             diagnostics.Add(CreateReadDiagnostic(
                                 relativePath,
                                 "Verified exefs/main composition found ownership from a different project or output scope."));
-                            return result with
-                            {
-                                WrittenFiles = Array.Empty<ProjectFileReference>(),
-                                Diagnostics = diagnostics,
-                            };
-                        }
-
-                        if (existingOwnership.CurrentState != expectedPreimage)
-                        {
-                            diagnostics.Add(CreateStaleDiagnostic(
-                                relativePath,
-                                "Verified exefs/main ownership no longer matches the exact effective preimage."));
                             return result with
                             {
                                 WrittenFiles = Array.Empty<ProjectFileReference>(),
