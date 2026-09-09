@@ -2015,7 +2015,8 @@ internal sealed class ZaWorkflowFileSource
                 new OwnedTargetAddress(relativePath),
                 mutation.ApplyContext?.OwnerId ?? defaultOwnerId,
                 preservationRule);
-            var ownedRecord = inventory.Files.FirstOrDefault(record => record.Path == relativePath);
+            var ownedRecord = inventory.Files.FirstOrDefault(record =>
+                record.Path == relativePath && record.CurrentState == expectedPreimage);
             var isComposedExecutable = IsComposedExecutablePath(relativePath);
             var ownershipClaims = new[] { ownership };
             if (isComposedExecutable && ownedRecord is not null)

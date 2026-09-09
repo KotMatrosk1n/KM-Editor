@@ -74,6 +74,7 @@ public sealed class SwShShopsEditSessionService
         var originalSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
         var loadedWorkflow = shopsWorkflowService.Load(project);
+        originalSession = RebindDeletedOutputEdits(project, loadedWorkflow, originalSession);
         var originalWorkflow = OverlayPendingEdits(loadedWorkflow, originalSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -249,6 +250,7 @@ public sealed class SwShShopsEditSessionService
         projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = shopsWorkflowService.Load(project);
+        session = RebindDeletedOutputEdits(project, workflow, session);
         var diagnostics = new List<ValidationDiagnostic>();
         if (CanEditShops(project, workflow, diagnostics))
         {
@@ -332,6 +334,8 @@ public sealed class SwShShopsEditSessionService
     {
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
+        var currentProject = projectWorkspaceService.Open(paths);
+        session = RebindDeletedOutputEdits(currentProject, shopsWorkflowService.Load(currentProject), session);
         var currentPlan = CreateChangePlan(paths, session);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
@@ -487,6 +491,7 @@ public sealed class SwShShopsEditSessionService
         ICollection<ValidationDiagnostic> diagnostics,
         bool addSuccessDiagnostic)
     {
+        session = RebindDeletedOutputEdits(project, workflow, session);
         var shopEdits = GetShopEdits(session).ToArray();
         var effectiveWorkflow = workflow;
         var touchedShopIds = new HashSet<string>(StringComparer.Ordinal);
@@ -567,6 +572,32 @@ public sealed class SwShShopsEditSessionService
         }
 
         return effectiveWorkflow;
+    }
+
+    private static EditSession RebindDeletedOutputEdits(
+        OpenedProject project, SwShShopsWorkflow workflow, EditSession session)
+    {
+        return session with { PendingEdits = session.PendingEdits.Select(edit =>
+        {
+            if (!IsShopEdit(edit) || !SwShDeletedOutputSource.Any(project.Paths, edit)
+                || !SwShShopsWorkflowService.IsEditableField(edit.Field)
+                || !SwShShopsWorkflowService.TryParseInventoryRecordId(edit.RecordId, out var shopId, out var slot)
+                || !SwShShopsWorkflowService.TryParseShopId(shopId, out var kind, out var index, out var hash,
+                    out var inventoryIndex, out var identity, out var legacy)) return edit;
+            var candidates = workflow.Shops.Where(shop => shop.Kind == (kind == SwShShopKind.Single ? "Single" : "Multi")
+                && string.Equals(shop.SourceHash, $"0x{hash:X16}", StringComparison.OrdinalIgnoreCase)
+                && shop.InventoryIndex == inventoryIndex + 1 && (legacy || shop.SourceIndex == index)).ToArray();
+            if (candidates.Length != 1) return edit;
+            var shop = candidates[0];
+            if (!legacy && !string.Equals(identity, shop.SourceIdentity, StringComparison.OrdinalIgnoreCase)
+                && !(shop.Provenance.SourceLayer == ProjectFileLayer.Base
+                    && SwShDeletedOutputSource.Contains(project.Paths, edit, shop.Provenance.SourceFile))) return edit;
+            return edit with
+            {
+                RecordId = SwShShopsWorkflowService.CreateInventoryRecordId(shop.ShopId, slot),
+                Sources = CreateExpectedSources(workflow, shop, edit.Field!, edit.NewValue, slot),
+            };
+        }).ToArray() };
     }
 
     private static SwShShopRecord? ValidatePendingEdit(

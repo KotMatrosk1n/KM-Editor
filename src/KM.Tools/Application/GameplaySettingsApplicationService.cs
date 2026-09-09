@@ -647,13 +647,11 @@ public sealed class GameplaySettingsApplicationService
             .GetOwnershipInventorySnapshotAsync(cancellationToken)
             .ConfigureAwait(false);
         var inventory = inventorySnapshot.Inventory;
-        var ownership = inventory.Files.FirstOrDefault(record => record.Path == MainPath);
+        var ownership = inventory.Files.FirstOrDefault(record =>
+            record.Path == MainPath && record.CurrentState == targetState);
         if (ownership is not null
-            && (ownership.ProjectId != context.ProjectId
-                || ownership.GameFamily != context.GameFamily
-                || ownership.RuntimeMutableDescriptor is not null
-                || !outputExists
-                || ownership.CurrentState != targetState))
+            && (!context.Coordinator.OwnershipScopeMatches(ownership, context.ProjectId, context.GameFamily)
+                || ownership.RuntimeMutableDescriptor is not null))
         {
             return LoadedState.UnavailableAfterExecutableReview(
                 game,

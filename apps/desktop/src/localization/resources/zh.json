@@ -2147,7 +2147,7 @@
     "outputSafety.diagnostic.limitExceeded": "操作超出有界安全限制，已停止。",
     "outputSafety.diagnostic.outputChanged": "已审查的输出文件发生更改，因此恢复在未覆盖该文件的情况下停止。",
     "outputSafety.diagnostic.outputRootNotConfigured": "尚未配置输出根目录。只读分析仍然可用；使用编辑或输出操作前，请在项目设置中完成配置。",
-    "outputSafety.diagnostic.outputRootMissing": "已配置的输出根目录不存在或不可用。请在项目设置中检查后重试。",
+    "outputSafety.diagnostic.outputRootMissing": "应用更改时将创建输出文件夹。",
     "outputSafety.diagnostic.ownershipUnproven": "KM 无法证明所有选定输出条目的所有权。",
     "outputSafety.diagnostic.recoveryFinalized": "项目激活时，已安全完成一个曾中断的输出事务。",
     "outputSafety.diagnostic.recoveryManual": "部分目标状态无法证明，需要手动恢复。",

@@ -1319,7 +1319,8 @@ internal sealed class SvWorkflowFileSource
                     ? new PreservationRuleDescriptor(
                         "sv.trinity-descriptor-rebuild", 1, preservesUnownedData: true, requiresPreimage: true)
                     : context?.PreservationRule ?? defaultPreservationRule);
-            var ownedRecord = inventory.Files.FirstOrDefault(record => record.Path == relativePath);
+            var ownedRecord = inventory.Files.FirstOrDefault(record =>
+                record.Path == relativePath && record.CurrentState == expectedPreimage);
             var isComposedExecutable = IsComposedExecutablePath(relativePath);
             // Older combined batches claimed ordinary data under a different owner.
             // Retain that verified claim so existing output remains editable without
@@ -1357,11 +1358,10 @@ internal sealed class SvWorkflowFileSource
             var bytes = mutation.Bytes;
             if (bytes is null && expectedPreimage.Exists)
             {
-                var owned = isComposedExecutable
+                var owned = ownedRecord is not null
+                    && coordinator.OwnershipScopeMatches(ownedRecord, projectId, GameFamily.ScarletViolet)
                     ? ownedRecord
-                    : inventory.Files.FirstOrDefault(record =>
-                        record.Path == relativePath
-                        && coordinator.OwnershipScopeMatches(record, projectId, GameFamily.ScarletViolet));
+                    : null;
                 var remainingClaims = isComposedExecutable && owned is not null
                     ? owned.Claims.Where(claim => claim.OwnerId != ownership.OwnerId).ToArray()
                     : [];

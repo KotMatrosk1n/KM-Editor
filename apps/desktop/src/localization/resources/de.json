@@ -2147,7 +2147,7 @@
     "outputSafety.diagnostic.limitExceeded": "Der Vorgang hat eine begrenzte Sicherheitsgrenze überschritten und wurde gestoppt.",
     "outputSafety.diagnostic.outputChanged": "Eine geprüfte Ausgabedatei wurde geändert; die Wiederherstellung hat sie nicht überschrieben.",
     "outputSafety.diagnostic.outputRootNotConfigured": "Das Ausgabeverzeichnis ist nicht konfiguriert. Schreibgeschützte Analysen bleiben verfügbar; konfigurieren Sie es in der Projekteinrichtung, bevor Sie Bearbeitungs- oder Ausgabeaktionen verwenden.",
-    "outputSafety.diagnostic.outputRootMissing": "Das konfigurierte Ausgabeverzeichnis fehlt oder ist nicht verfügbar. Prüfen Sie es in der Projekteinrichtung und versuchen Sie es erneut.",
+    "outputSafety.diagnostic.outputRootMissing": "Der Ausgabeordner wird beim Anwenden der Änderungen erstellt.",
     "outputSafety.diagnostic.ownershipUnproven": "KM konnte den Besitz nicht für alle ausgewählten Ausgabeeinträge nachweisen.",
     "outputSafety.diagnostic.recoveryFinalized": "Eine unterbrochene Ausgabetransaktion wurde beim Aktivieren des Projekts sicher abgeschlossen.",
     "outputSafety.diagnostic.recoveryManual": "Eine manuelle Wiederherstellung ist nötig, da einige Zielzustände nicht nachweisbar sind.",

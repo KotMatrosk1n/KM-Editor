@@ -14,6 +14,7 @@ public sealed class ProjectWorkspaceService
     private readonly object memoryCacheSyncRoot = new();
     private ProjectPaths? cachedPaths;
     private OpenedProject? cachedProject;
+    private string? cachedFileSystemStamp;
 
     public ProjectWorkspaceService(
         ProjectValidator? validator = null,
@@ -33,13 +34,16 @@ public sealed class ProjectWorkspaceService
         {
             lock (memoryCacheSyncRoot)
             {
-                if (cachedProject is not null && Equals(cachedPaths, paths))
+                if (cachedProject is not null && Equals(cachedPaths, paths)
+                    && cachedFileSystemStamp is not null
+                    && cachedFileSystemStamp == ProjectFileSystemStamp.Capture(paths))
                 {
                     return cachedProject;
                 }
             }
         }
 
+        var fileSystemStamp = ProjectFileSystemStamp.Capture(paths);
         var (health, fileGraph) = ValidateAndBuildFileGraph(paths);
         var project = new OpenedProject(
             projectIdentityFactory(paths),
@@ -53,6 +57,7 @@ public sealed class ProjectWorkspaceService
             {
                 cachedPaths = paths;
                 cachedProject = project;
+                cachedFileSystemStamp = fileSystemStamp;
             }
         }
 
@@ -100,6 +105,8 @@ public sealed class ProjectWorkspaceService
         {
             cachedPaths = paths;
             cachedProject = project;
+            // Explicit refreshes must not bind an earlier graph to later filesystem state.
+            cachedFileSystemStamp = null;
         }
 
         return project;
@@ -111,6 +118,7 @@ public sealed class ProjectWorkspaceService
         {
             cachedPaths = null;
             cachedProject = null;
+            cachedFileSystemStamp = null;
         }
     }
 

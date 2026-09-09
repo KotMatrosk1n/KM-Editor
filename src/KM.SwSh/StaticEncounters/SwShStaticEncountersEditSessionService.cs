@@ -443,7 +443,8 @@ public sealed class SwShStaticEncountersEditSessionService
         }
 
         if (edit.Sources.Count != currentSources.Count
-            || currentSources.Any(source => !edit.Sources.Contains(source)))
+            || currentSources.Any(source => !edit.Sources.Contains(source)
+                && !IsDeletedOutputSource(project.Paths, edit.Sources, source)))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -460,6 +461,21 @@ public sealed class SwShStaticEncountersEditSessionService
         }
 
         AddAdvancedFieldWarnings(edit.Field, diagnostics);
+    }
+
+    private static bool IsDeletedOutputSource(
+        ProjectPaths paths,
+        IReadOnlyList<ProjectFileReference> stagedSources,
+        ProjectFileReference currentSource)
+    {
+        if (currentSource.Layer != ProjectFileLayer.Base
+            || !stagedSources.Contains(currentSource with { Layer = ProjectFileLayer.Layered }))
+        {
+            return false;
+        }
+
+        var outputPath = SwShStaticEncountersWorkflowService.ResolveOutputPath(paths, currentSource.RelativePath);
+        return outputPath is not null && !Path.Exists(outputPath);
     }
 
     private static int? TryParseFieldValue(

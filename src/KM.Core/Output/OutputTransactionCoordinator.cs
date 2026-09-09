@@ -1827,6 +1827,21 @@ public sealed class OutputTransactionCoordinator
                 throw new OutputOwnershipConflictException(mutation.Path);
             }
 
+            // Ownership describes the last committed output, not a requirement
+            // that users keep those files unchanged. A prepared write can recreate
+            // a missing target or replace a newly reviewed static file. Admission
+            // and publication still verify the actual expected preimage.
+            if (hasOwnedRecord
+                && mutation.Kind == OutputMutationKind.Write
+                && (!mutation.ExpectedPreimage.Exists
+                    || owned!.RuntimeMutableDescriptor is null
+                    && mutation.RuntimeMutableDescriptor is null
+                    && owned.CurrentState != mutation.ExpectedPreimage))
+            {
+                hasOwnedRecord = false;
+                owned = null;
+            }
+
             var legacyAdoptionAuthorized = false;
             if (mutation.LegacyAdoptionDeleteAuthority is { } legacyAdoption)
             {
@@ -2740,6 +2755,8 @@ public sealed class OutputTransactionCoordinator
     {
         return entry.RestoredFileDeleteEligibility
                ?? (previous?.FileDeleteEligible == true
+                   && (previous.CurrentState == entry.Preimage
+                       || previous.RuntimeMutableDescriptor is not null && entry.RuntimeMutableDescriptor is not null)
                    || !entry.Preimage.Exists && HasWholeFileOwnership(entry.OwnershipClaims));
     }
 

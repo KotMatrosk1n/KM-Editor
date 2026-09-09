@@ -2134,7 +2134,7 @@
     "outputSafety.diagnostic.limitExceeded": "The operation exceeded a bounded safety limit and was stopped.",
     "outputSafety.diagnostic.outputChanged": "A reviewed output file changed, so recovery stopped without overwriting it.",
     "outputSafety.diagnostic.outputRootNotConfigured": "Output Root is not configured. Read-only analysis remains available; configure it in Project Setup before using edit or output actions.",
-    "outputSafety.diagnostic.outputRootMissing": "The configured output root is missing or unavailable. Review it in Project Setup, then retry.",
+    "outputSafety.diagnostic.outputRootMissing": "The output folder will be created when changes are applied.",
     "outputSafety.diagnostic.ownershipUnproven": "KM could not prove ownership of every selected output entry.",
     "outputSafety.diagnostic.recoveryFinalized": "An interrupted output transaction was safely finalized during project activation.",
     "outputSafety.diagnostic.recoveryManual": "Manual recovery is required because some target states cannot be proven.",

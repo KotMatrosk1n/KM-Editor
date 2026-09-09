@@ -265,23 +265,16 @@ internal static class SwShOutputTransactionWriter
                 IReadOnlyCollection<OwnedTarget> ownershipClaims = [ownership];
                 if (requested.ComposesEffectivePreimage
                     && ownershipByPath is not null
-                    && ownershipByPath.TryGetValue(relativePath.CanonicalKey, out existingOwnership))
+                    && ownershipByPath.TryGetValue(relativePath.CanonicalKey, out var recordedOwnership)
+                    && recordedOwnership.CurrentState == expectedPreimage)
                 {
-                    if (existingOwnership.ProjectId != projectId
-                        || existingOwnership.GameFamily != GameFamily.SwordShield
+                    existingOwnership = recordedOwnership;
+                    if (!coordinator.OwnershipScopeMatches(existingOwnership, projectId, GameFamily.SwordShield)
                         || !string.Equals(existingOwnership.OutputMode, OutputMode, StringComparison.Ordinal))
                     {
                         failure = new SwShOutputTransactionFailure(
                             relativePath.Value,
                             "The composed output target is owned by a different project or output scope.");
-                        return false;
-                    }
-
-                    if (existingOwnership.CurrentState != expectedPreimage)
-                    {
-                        failure = new SwShOutputTransactionFailure(
-                            relativePath.Value,
-                            "The composed output ownership record does not match the reviewed effective preimage.");
                         return false;
                     }
 

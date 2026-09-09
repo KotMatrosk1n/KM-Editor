@@ -2147,7 +2147,7 @@
     "outputSafety.diagnostic.limitExceeded": "La operación superó un límite de seguridad acotado y se detuvo.",
     "outputSafety.diagnostic.outputChanged": "Un archivo revisado cambió, por lo que la recuperación se detuvo sin sobrescribirlo.",
     "outputSafety.diagnostic.outputRootNotConfigured": "La raíz de salida no está configurada. El análisis de solo lectura sigue disponible; configúrala en Configuración del proyecto antes de usar acciones de edición o salida.",
-    "outputSafety.diagnostic.outputRootMissing": "La raíz de salida configurada no existe o no está disponible. Revísala en Configuración del proyecto y vuelve a intentarlo.",
+    "outputSafety.diagnostic.outputRootMissing": "La carpeta de salida se creará al aplicar los cambios.",
     "outputSafety.diagnostic.ownershipUnproven": "KM no pudo demostrar la propiedad de todas las entradas seleccionadas.",
     "outputSafety.diagnostic.recoveryFinalized": "Una transacción de salida interrumpida se finalizó de forma segura al activar el proyecto.",
     "outputSafety.diagnostic.recoveryManual": "Se requiere recuperación manual porque no se puede demostrar el estado de algunos destinos.",
