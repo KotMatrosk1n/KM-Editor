@@ -16,6 +16,7 @@ export const kmErrorCodeSchema = z
   );
 
 export const projectBridgeErrorCodes = {
+  raidDensInvalid: "KM-SWSH-RAID-DENS-INVALID",
   starmobilesSourceStale: "KM-SV-STARMOBILES-SOURCE-STALE",
   starmobilesSourceUnavailable: "KM-SV-STARMOBILES-SOURCE-UNAVAILABLE",
   starmobilesOutputFailed: "KM-SV-STARMOBILES-OUTPUT-FAILED",

@@ -117,6 +117,9 @@ export function resolveDiagnosticNavigationAction(
 }
 
 function resolveDestination(diagnostic: ApiDiagnostic): WorkbenchSection | null {
+  if (diagnostic.code === projectBridgeErrorCodes.raidDensInvalid || diagnostic.domain === 'workflow.raidDens') {
+    return 'raidDens';
+  }
   if (diagnostic.field === 'changePlanSourceFingerprint' &&
     diagnostic.code === projectBridgeErrorCodes.dataInvalid && diagnostic.domain) {
     const normalizedDomain = diagnostic.domain

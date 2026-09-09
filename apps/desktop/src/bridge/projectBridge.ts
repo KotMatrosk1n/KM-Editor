@@ -2,6 +2,8 @@
 
 import { type LoadStarmobilesRequest, type LoadStarmobilesResponse, type StageStarmobilesRequest, type StageStarmobilesResponse,
   loadStarmobilesRequestSchema, loadStarmobilesResponseSchema, stageStarmobilesRequestSchema, stageStarmobilesResponseSchema } from './starmobilesContracts';
+import { type LoadRaidDensRequest, type LoadRaidDensResponse, type StageRaidDensRequest, type StageRaidDensResponse,
+  loadRaidDensRequestSchema, loadRaidDensResponseSchema, stageRaidDensRequestSchema, stageRaidDensResponseSchema } from './raidDensContracts';
 import { invoke } from "@tauri-apps/api/core";
 import {
   type ApplyChangePlanRequest,
@@ -826,7 +828,9 @@ export type ProjectBridge = {
     request: StageTmMaterialVisibilityRequest,
   ) => Promise<StageTmMaterialVisibilityResponse>;
   loadStarmobiles: (request: LoadStarmobilesRequest) => Promise<LoadStarmobilesResponse>;
+  loadRaidDens: (request: LoadRaidDensRequest) => Promise<LoadRaidDensResponse>;
   stageStarmobiles: (request: StageStarmobilesRequest) => Promise<StageStarmobilesResponse>;
+  stageRaidDens: (request: StageRaidDensRequest) => Promise<StageRaidDensResponse>;
   loadHabitatCoordinates: (
     request: LoadHabitatCoordinatesRequest,
   ) => Promise<LoadHabitatCoordinatesResponse>;
@@ -1650,8 +1654,12 @@ export function createProjectBridge(
     },
     loadStarmobiles: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadStarmobiles,
       loadStarmobilesRequestSchema.parse(request), loadStarmobilesResponseSchema),
+    loadRaidDens: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadRaidDens,
+      loadRaidDensRequestSchema.parse(request), loadRaidDensResponseSchema),
     stageStarmobiles: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageStarmobiles,
       stageStarmobilesRequestSchema.parse(request), stageStarmobilesResponseSchema),
+    stageRaidDens: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageRaidDens,
+      stageRaidDensRequestSchema.parse(request), stageRaidDensResponseSchema),
     loadHabitatCoordinates: (request) => {
       const validatedRequest =
         loadHabitatCoordinatesRequestSchema.parse(request);

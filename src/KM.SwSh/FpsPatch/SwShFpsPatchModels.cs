@@ -63,7 +63,11 @@ public sealed record SwShFpsPatchStatus(
     IReadOnlyList<string> ConflictingRomFsFiles,
     IReadOnlyList<SwShFpsPatchRomFsCategoryStatus> RomFsCategories,
     IReadOnlyList<SwShFpsPatchAnimationTimingComponentStatus> AnimationTimingComponents,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    public int LegacyCleanupFileCount { get; init; }
+    public IReadOnlyList<string> LegacyCleanupFiles { get; init; } = [];
+}
 
 public sealed record SwShFpsPatchApplyResult(
     SwShFpsPatchStatus Status,

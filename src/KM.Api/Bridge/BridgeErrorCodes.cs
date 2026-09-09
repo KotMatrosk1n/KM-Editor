@@ -4,6 +4,7 @@ namespace KM.Api.Bridge;
 
 public static class BridgeErrorCodes
 {
+    public const string RaidDensInvalid = "KM-SWSH-RAID-DENS-INVALID";
     public const string AudioSourceUnavailable = "KM-AUDIO-SOURCE-UNAVAILABLE";
     public const string AudioDecodeUnsupported = "KM-AUDIO-DECODE-UNSUPPORTED";
     public const string AudioPlaybackFailed = "KM-AUDIO-PLAYBACK-FAILED";

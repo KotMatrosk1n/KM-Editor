@@ -45,6 +45,7 @@ import { type FashionUnlockWorkflow } from './bridge/fashionUnlockContracts';
 import { type FashionCatalogWorkflow } from './bridge/fashionCatalogContracts';
 import { type GymUniformRemovalWorkflow } from './bridge/gymUniformRemovalContracts';
 import { type StarmobilesWorkflow } from './bridge/starmobilesContracts';
+import { type RaidDensWorkflow } from './bridge/raidDensContracts';
 import { type HabitatCoordinatesWorkflow } from './bridge/habitatCoordinatesContracts';
 import { type FairyGymBoostsWorkflow } from './bridge/fairyGymBoostsContracts';
 import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContracts';
@@ -180,6 +181,7 @@ type WorkbenchState = {
   tmMachineControlsWorkflow: TmMachineControlsWorkflow | null;
   habitatCoordinatesWorkflow: HabitatCoordinatesWorkflow | null;
   starmobilesWorkflow: StarmobilesWorkflow | null;
+  raidDensWorkflow: RaidDensWorkflow | null;
   textSearchText: string;
   textWorkflow: TextWorkflow | null;
   selectedTrainerCategoryId: TrainerCategoryId;
@@ -299,6 +301,7 @@ type WorkbenchState = {
   setShopsWorkflow: (shopsWorkflow: ShopsWorkflow) => void;
   setTmMachineControlsWorkflow: (tmMachineControlsWorkflow: TmMachineControlsWorkflow) => void;
   setStarmobilesWorkflow: (starmobilesWorkflow: StarmobilesWorkflow) => void;
+  setRaidDensWorkflow: (raidDensWorkflow: RaidDensWorkflow) => void;
   setHabitatCoordinatesWorkflow: (habitatCoordinatesWorkflow: HabitatCoordinatesWorkflow) => void;
   setTextSearchText: (textSearchText: string) => void;
   setTextWorkflow: (textWorkflow: TextWorkflow) => void;
@@ -492,6 +495,7 @@ function createLoadedWorkflowResetState(): Partial<WorkbenchState> {
     tmMachineControlsWorkflow: null,
     habitatCoordinatesWorkflow: null,
     starmobilesWorkflow: null,
+    raidDensWorkflow: null,
     textSearchText: '',
     textWorkflow: null,
     trainerSearchText: '',
@@ -610,6 +614,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   tmMachineControlsWorkflow: null,
   habitatCoordinatesWorkflow: null,
   starmobilesWorkflow: null,
+  raidDensWorkflow: null,
   textSearchText: '',
   textWorkflow: null,
   selectedTrainerCategoryId: 'all',
@@ -971,6 +976,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     })),
   setStarmobilesWorkflow: (starmobilesWorkflow) => set((state) => ({
     activeSection: resolveWorkflowLoadSection(state.activeSection, 'starmobiles'), starmobilesWorkflow
+  })),
+  setRaidDensWorkflow: (raidDensWorkflow) => set((state) => ({
+    activeSection: resolveWorkflowLoadSection(state.activeSection, 'raidDens'), raidDensWorkflow
   })),
   setHabitatCoordinatesWorkflow: (habitatCoordinatesWorkflow) =>
     set((state) => ({

@@ -35,6 +35,8 @@ using KM.Api.Output;
 using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.ProfanityFilter;
+using KM.Api.RaidDens;
+using KM.SwSh.RaidDens;
 using KM.Api.Projects;
 using KM.Api.Research;
 using KM.Api.Raids;
@@ -193,6 +195,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private readonly SwShSpreadsheetImportExecutionService spreadsheetImportExecutionService;
     private readonly SwShModMergerWorkflowService modMergerWorkflowService;
     private readonly SwShFpsPatchService fpsPatchService;
+    private readonly SwShRaidDensService raidDensService;
     private readonly SwShProfanityFilterService profanityFilterService;
     private readonly SwShRandomizerService randomizerService;
     private readonly SwShGameDumpService swShGameDumpService;
@@ -316,6 +319,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         this.spreadsheetImportExecutionService = spreadsheetImportExecutionService ?? new SwShSpreadsheetImportExecutionService(this.projectWorkspaceService);
         this.modMergerWorkflowService = modMergerWorkflowService ?? new SwShModMergerWorkflowService(this.projectWorkspaceService);
         this.fpsPatchService = fpsPatchService ?? new SwShFpsPatchService(this.projectWorkspaceService);
+        raidDensService = new SwShRaidDensService(this.projectWorkspaceService);
         this.profanityFilterService = profanityFilterService ?? new SwShProfanityFilterService(this.projectWorkspaceService);
         this.randomizerService = randomizerService ?? new SwShRandomizerService(this.projectWorkspaceService);
         this.staticEncountersEditSessionService = staticEncountersEditSessionService ?? new SwShStaticEncountersEditSessionService(this.projectWorkspaceService);
@@ -730,6 +734,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.LoadFpsPatch => DispatchLoadFpsPatch(requestJson),
                 KmCommandNames.ApplyFpsPatch => DispatchApplyFpsPatch(requestJson),
                 KmCommandNames.RestoreFpsPatch => DispatchRestoreFpsPatch(requestJson),
+                KmCommandNames.LoadRaidDens => DispatchLoadRaidDens(requestJson),
+                KmCommandNames.StageRaidDens => DispatchStageRaidDens(requestJson),
                 KmCommandNames.LoadProfanityFilter => DispatchLoadProfanityFilter(requestJson),
                 KmCommandNames.ApplyProfanityFilter => DispatchApplyProfanityFilter(requestJson),
                 KmCommandNames.RestoreProfanityFilter => DispatchRestoreProfanityFilter(requestJson),
@@ -5363,6 +5369,27 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchLoadRaidDens(string requestJson)
+    {
+        var request = DeserializeRequest<LoadRaidDensRequest>(requestJson);
+        return SerializeSuccess(new LoadRaidDensResponse(ToDto(raidDensService.Load(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths)))), request.RequestId);
+    }
+
+    private string DispatchStageRaidDens(string requestJson)
+    {
+        var request = DeserializeRequest<StageRaidDensRequest>(requestJson);
+        var result = raidDensService.Stage(ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.Disabled, request.Payload.Session is null ? null : EditSessionBridgeMapper.ToCore(request.Payload.Session));
+        return SerializeSuccess(new StageRaidDensResponse(ToDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session), result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray()), request.RequestId);
+    }
+
+    private static RaidDensWorkflowDto ToDto(SwShRaidDensWorkflow workflow) => new(
+        workflow.CanEdit, workflow.Disabled, workflow.SourceLayer,
+        workflow.DetectedGame is null ? null : ProjectBridgeMapper.ToDto(workflow.DetectedGame.Value),
+        workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+
     private string DispatchLoadProfanityFilter(string requestJson)
     {
         var request = DeserializeRequest<LoadProfanityFilterRequest>(requestJson);
@@ -5977,6 +6004,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             EditSessionDomain.ShinyRate => shinyRateEditSessionService.Validate(paths, session),
             EditSessionDomain.TypeChart => typeChartEditSessionService.Validate(paths, session),
             EditSessionDomain.FairyGymBoosts => fairyGymBoostsEditSessionService.Validate(paths, session),
+            EditSessionDomain.RaidDens => raidDensService.Validate(paths, session),
             EditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.Validate(paths, session),
             EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.Validate(paths, session),
             EditSessionDomain.IvScreen => ivScreenEditSessionService.Validate(paths, session),
@@ -6022,6 +6050,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             EditSessionDomain.ShinyRate => shinyRateEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.TypeChart => typeChartEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.FairyGymBoosts => fairyGymBoostsEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.RaidDens => raidDensService.CreateChangePlan(paths, session),
             EditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.IvScreen => ivScreenEditSessionService.CreateChangePlan(paths, session),
@@ -6068,6 +6097,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             EditSessionDomain.ShinyRate => shinyRateEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.TypeChart => typeChartEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.FairyGymBoosts => fairyGymBoostsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.RaidDens => raidDensService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.IvScreen => ivScreenEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
@@ -6364,6 +6394,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             "workflow.hyperTraining" => EditSessionDomain.HyperTraining,
             "workflow.shinyRate" => EditSessionDomain.ShinyRate,
             "workflow.typeChart" => EditSessionDomain.TypeChart,
+            "workflow.raidDens" => EditSessionDomain.RaidDens,
             "workflow.fairyGymBoosts" => EditSessionDomain.FairyGymBoosts,
             "workflow.fashionUnlock" => EditSessionDomain.FashionUnlock,
             "workflow.gymUniformRemoval" => EditSessionDomain.GymUniformRemoval,
@@ -6390,6 +6421,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private static bool IsNormalSwShDomain(EditSessionDomain domain)
     {
         return domain is
+            EditSessionDomain.RaidDens or
             EditSessionDomain.ModelTextures or
             EditSessionDomain.Items or
             EditSessionDomain.Moves or
@@ -6438,6 +6470,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             EditSessionDomain.HyperTraining => "workflow.hyperTraining",
             EditSessionDomain.ShinyRate => "workflow.shinyRate",
             EditSessionDomain.TypeChart => "workflow.typeChart",
+            EditSessionDomain.RaidDens => "workflow.raidDens",
             EditSessionDomain.FairyGymBoosts => "workflow.fairyGymBoosts",
             EditSessionDomain.FashionUnlock => "workflow.fashionUnlock",
             EditSessionDomain.GymUniformRemoval => "workflow.gymUniformRemoval",
@@ -6520,6 +6553,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             ["workflow.hyperTraining"] => EditSessionDomain.HyperTraining,
             ["workflow.shinyRate"] => EditSessionDomain.ShinyRate,
             ["workflow.typeChart"] => EditSessionDomain.TypeChart,
+            ["workflow.raidDens"] => EditSessionDomain.RaidDens,
             ["workflow.fairyGymBoosts"] => EditSessionDomain.FairyGymBoosts,
             ["workflow.fashionUnlock"] => EditSessionDomain.FashionUnlock,
             ["workflow.gymUniformRemoval"] => EditSessionDomain.GymUniformRemoval,
@@ -8006,6 +8040,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.StageHyperTraining or
             KmCommandNames.LoadShinyRateWorkflow or
             KmCommandNames.StageShinyRate or
+            KmCommandNames.LoadRaidDens or
+            KmCommandNames.StageRaidDens or
             KmCommandNames.LoadFairyGymBoostsWorkflow or
             KmCommandNames.StageFairyGymBoosts or
             KmCommandNames.LoadGymUniformRemovalWorkflow or
@@ -8279,7 +8315,11 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                     component.StaleOwnedFileCount,
                     component.ConflictingFileCount))
                 .ToArray(),
-            status.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+            status.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray())
+        {
+            LegacyCleanupFileCount = status.LegacyCleanupFileCount,
+            LegacyCleanupFiles = status.LegacyCleanupFiles,
+        };
     }
 
     private static ProfanityFilterStatusDto ToDto(SwShProfanityFilterStatus status)
@@ -8574,6 +8614,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         HyperTraining,
         ShinyRate,
         TypeChart,
+        RaidDens,
         FairyGymBoosts,
         FashionUnlock,
         GymUniformRemoval,
@@ -8595,4 +8636,3 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         Mixed,
     }
 }
-

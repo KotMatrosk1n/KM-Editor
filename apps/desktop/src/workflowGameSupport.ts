@@ -39,6 +39,7 @@ import { type FashionUnlockWorkflow } from './bridge/fashionUnlockContracts';
 import { type FashionCatalogWorkflow } from './bridge/fashionCatalogContracts';
 import { type GymUniformRemovalWorkflow } from './bridge/gymUniformRemovalContracts';
 import { type StarmobilesWorkflow } from './bridge/starmobilesContracts';
+import { type RaidDensWorkflow } from './bridge/raidDensContracts';
 import { type HabitatCoordinatesWorkflow } from './bridge/habitatCoordinatesContracts';
 import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContracts';
 import { type FairyGymBoostsWorkflow } from './bridge/fairyGymBoostsContracts';
@@ -99,7 +100,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
     label: 'Economy',
     sectionIds: ['shops', 'battleCafeRewards', 'tmMachineControls', 'raidRewards', 'raidBonusRewards']
   },
-  { id: 'tools', label: 'Tools', sectionIds: ['modelViewer', 'soundStudio', 'fashionCatalog', 'fpsPatch', 'profanityFilter', 'randomizer', 'gameDump', 'spreadsheetImport', 'modMerger'] },
+  { id: 'tools', label: 'Tools', sectionIds: ['modelViewer', 'soundStudio', 'fashionCatalog', 'fpsPatch', 'profanityFilter', 'raidDens', 'randomizer', 'gameDump', 'spreadsheetImport', 'modMerger'] },
   { id: 'hooks', label: 'Hooks', sectionIds: ['bagHook'] },
   {
     id: 'advancedEditors',
@@ -171,6 +172,7 @@ export const sharedStagedEditorSectionIds = new Set<WorkbenchSection>([
   'pokemon',
   'trainers',
   'starmobiles',
+  'raidDens',
   'moves',
   'items',
   'placement',
@@ -194,6 +196,7 @@ export const sharedStagedEditorDomains = new Set([
   'workflow.pokemon',
   'workflow.trainers',
   'workflow.starmobiles',
+  'workflow.raidDens',
   'workflow.moves',
   'workflow.items',
   'workflow.placement',
@@ -276,6 +279,7 @@ export type LoadedWorkflowStateBySection = {
   tmMachineControlsWorkflow: TmMachineControlsWorkflow | null;
   habitatCoordinatesWorkflow: HabitatCoordinatesWorkflow | null;
   starmobilesWorkflow: StarmobilesWorkflow | null;
+  raidDensWorkflow: RaidDensWorkflow | null;
   spreadsheetImportWorkflow: SpreadsheetImportWorkflow | null;
   startingItemsWorkflow: StartingItemsWorkflow | null;
   staticEncountersWorkflow: StaticEncountersWorkflow | null;
@@ -405,6 +409,8 @@ export function getLoadedWorkflowStateForSection(
       return state.tmMachineControlsWorkflow !== null;
     case 'starmobiles':
       return state.starmobilesWorkflow !== null;
+    case 'raidDens':
+      return state.raidDensWorkflow !== null;
     case 'habitatCoordinates':
       return state.habitatCoordinatesWorkflow !== null;
     case 'spreadsheetImport':

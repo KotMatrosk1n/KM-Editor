@@ -60,6 +60,8 @@ export const fpsPatchStatusSchema = z.strictObject({
   globalApplyBlocked: z.boolean(),
   globalRestoreBlocked: z.boolean(),
   hasRemovableKmState: z.boolean(),
+  legacyCleanupFileCount: z.number().int().nonnegative().default(0),
+  legacyCleanupFiles: z.array(z.string()).default([]),
   mainSiteCount: z.number(),
   managedRomFsFileCount: z.number(),
   message: z.string(),

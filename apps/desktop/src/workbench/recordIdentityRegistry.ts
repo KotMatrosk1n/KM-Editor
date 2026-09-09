@@ -120,6 +120,7 @@ const registrations = {
   modMerger: operationScoped('modMerger'),
   fpsPatch: operationScoped('fpsPatch'),
   profanityFilter: operationScoped('profanityFilter'),
+  raidDens: fixedSchemaSlot('raidDens', 'den interaction dispatch'),
   randomizer: operationScoped('randomizer'),
   gameDump: operationScoped('gameDump'),
   gameplaySettings: operationScoped('gameplaySettings'),

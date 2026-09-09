@@ -102,6 +102,9 @@ public sealed class SwShWorkflowService
     private ProjectId? activeCacheWarmupProjectId;
     private OpenedProject? cacheWarmupSourceProject;
     private OpenedProject? cacheWarmupBaseProject;
+    private OpenedProject? cacheWarmupTextTargetsProject;
+    private SwShCacheMode cacheWarmupTextTargetsMode;
+    private IReadOnlyList<CacheWarmupTarget>? cacheWarmupTextTargets;
 
     public SwShWorkflowService(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -899,6 +902,8 @@ public sealed class SwShWorkflowService
         {
             cacheWarmupSourceProject = null;
             cacheWarmupBaseProject = null;
+            cacheWarmupTextTargetsProject = null;
+            cacheWarmupTextTargets = null;
         }
     }
 
@@ -982,11 +987,26 @@ public sealed class SwShWorkflowService
                 TextTarget: null));
         }
 
-        targets.AddRange(textWorkflowService
-            .CreateCacheWarmupTargets(project, mode)
-            .Select(target => new CacheWarmupTarget(
-                CreateTextWarmupKey(project, target, textWorkflowService.GetCacheWarmupSourceIdentity(project, target)),
-                target)));
+        lock (cacheWarmupSyncRoot)
+        {
+            // Reuse verified text identities for this source snapshot. Rebuilding every
+            // category before and after each item makes preparation scale quadratically.
+            if (!ReferenceEquals(cacheWarmupTextTargetsProject, project)
+                || cacheWarmupTextTargetsMode != mode
+                || cacheWarmupTextTargets is null)
+            {
+                cacheWarmupTextTargets = textWorkflowService
+                    .CreateCacheWarmupTargets(project, mode)
+                    .Select(target => new CacheWarmupTarget(
+                        CreateTextWarmupKey(project, target, textWorkflowService.GetCacheWarmupSourceIdentity(project, target)),
+                        target))
+                    .ToArray();
+                cacheWarmupTextTargetsProject = project;
+                cacheWarmupTextTargetsMode = mode;
+            }
+
+            targets.AddRange(cacheWarmupTextTargets);
+        }
         return targets;
     }
 
@@ -1004,6 +1024,8 @@ public sealed class SwShWorkflowService
         {
             warmedCacheKeys.Clear();
             activeCacheWarmupProjectId = null;
+            cacheWarmupTextTargetsProject = null;
+            cacheWarmupTextTargets = null;
         }
     }
 

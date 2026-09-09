@@ -49,6 +49,7 @@ export const workbenchSections = [
   'modMerger',
   'fpsPatch',
   'profanityFilter',
+  'raidDens',
   'randomizer',
   'gameDump',
   'gameplaySettings',
