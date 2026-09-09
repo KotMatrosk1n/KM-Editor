@@ -372,6 +372,20 @@ public sealed class SwShTextWorkflowService
         return false;
     }
 
+    internal SwShCacheSourceIdentity GetCacheWarmupSourceIdentity(
+        OpenedProject project,
+        SwShTextCacheWarmupTarget target)
+    {
+        var sources = ResolveMessageSources(GetSourceInventory(project), target.Language, requireBaseSource: true)
+            .Where(source => string.Equals(source.CategoryId, target.CategoryId, StringComparison.Ordinal))
+            .ToArray();
+        return cacheStore.GetBaseCategorySourceIdentity(
+            project.Paths.SelectedGame!.Value,
+            target.Language,
+            target.CategoryId,
+            CreateBaseSources(project, sources));
+    }
+
     public void ClearMemoryCache()
     {
         cacheStore.ClearMemoryCache();

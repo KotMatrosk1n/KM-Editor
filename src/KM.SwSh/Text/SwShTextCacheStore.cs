@@ -117,7 +117,6 @@ internal sealed class SwShTextCacheStore
                         language,
                         categoryId,
                         sources,
-                        groupKey,
                         out identity);
                 }
                 catch (Exception exception) when (exception is IOException
@@ -164,11 +163,31 @@ internal sealed class SwShTextCacheStore
         string language,
         string categoryId,
         IReadOnlyList<SwShTextBaseSource> sources,
-        string groupKey,
         out SwShCacheSourceIdentity identity)
     {
-        if (!sourceIdentities.TryGetValue(groupKey, out var retainedIdentity))
+        identity = GetBaseCategorySourceIdentity(selectedGame, language, categoryId, sources);
+
+        var artifact = CreateArtifact(language, categoryId);
+        return cacheManager!.GetOrCreateArtifact(
+            identity,
+            artifact,
+            () => ParseSources(sources));
+    }
+
+    public SwShCacheSourceIdentity GetBaseCategorySourceIdentity(
+        ProjectGame selectedGame,
+        string language,
+        string categoryId,
+        IReadOnlyList<SwShTextBaseSource> sources)
+    {
+        var groupKey = CreateGroupKey(selectedGame, language, categoryId, sources);
+        lock (syncRoot)
         {
+            if (sourceIdentities.TryGetValue(groupKey, out var retainedIdentity))
+            {
+                return retainedIdentity;
+            }
+
             var cacheSources = sources
                 .SelectMany(source => EnumerateCacheSources(source))
                 .ToArray();
@@ -177,15 +196,8 @@ internal sealed class SwShTextCacheStore
                 cacheSources,
                 $"{ParserVersion};language={language};category={categoryId}");
             sourceIdentities.Add(groupKey, retainedIdentity);
+            return retainedIdentity;
         }
-
-        identity = retainedIdentity;
-
-        var artifact = CreateArtifact(language, categoryId);
-        return cacheManager!.GetOrCreateArtifact(
-            identity,
-            artifact,
-            () => ParseSources(sources));
     }
 
     private static SwShCacheArtifactDescriptor CreateArtifact(

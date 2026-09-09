@@ -96,9 +96,12 @@ public sealed class SwShWorkflowService
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShParsedDataCache parsedDataCache;
     private readonly SwShCacheManager cacheManager;
+    private readonly SwShPlacementWorkflowService cachePlacementWorkflowService;
     private readonly object cacheWarmupSyncRoot = new();
     private readonly HashSet<string> warmedCacheKeys = new(StringComparer.Ordinal);
     private ProjectId? activeCacheWarmupProjectId;
+    private OpenedProject? cacheWarmupSourceProject;
+    private OpenedProject? cacheWarmupBaseProject;
 
     public SwShWorkflowService(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -162,6 +165,7 @@ public sealed class SwShWorkflowService
         this.rentalPokemonWorkflowService = rentalPokemonWorkflowService ?? new SwShRentalPokemonWorkflowService();
         this.dynamaxAdventuresWorkflowService = dynamaxAdventuresWorkflowService ?? new SwShDynamaxAdventuresWorkflowService();
         this.placementWorkflowService = placementWorkflowService ?? new SwShPlacementWorkflowService(this.cacheManager);
+        cachePlacementWorkflowService = new SwShPlacementWorkflowService(this.cacheManager);
         this.behaviorWorkflowService = behaviorWorkflowService ?? new SwShBehaviorWorkflowService();
         this.raidBattlesWorkflowService = raidBattlesWorkflowService ?? new SwShRaidBattlesWorkflowService();
         this.raidRewardsWorkflowService = raidRewardsWorkflowService ?? new SwShRaidRewardsWorkflowService();
@@ -780,7 +784,7 @@ public sealed class SwShWorkflowService
 
     public SwShCacheStatus GetCacheStatus(ProjectPaths? paths = null)
     {
-        var project = paths is null ? null : projectWorkspaceService.Open(paths);
+        var project = paths is null ? null : CreateCacheWarmupProject(projectWorkspaceService.Open(paths));
         var activeSource = CapturePlacementCacheSourceIdentity(project);
         return AddCacheWarmupStatus(cacheManager.GetStatus(activeSource), project, activeSource);
     }
@@ -790,13 +794,14 @@ public sealed class SwShWorkflowService
         long maxCacheSizeBytes,
         ProjectPaths? activePaths = null)
     {
-        var project = activePaths is null ? null : projectWorkspaceService.Open(activePaths);
+        var project = activePaths is null ? null : CreateCacheWarmupProject(projectWorkspaceService.Open(activePaths));
         var activeSource = CapturePlacementCacheSourceIdentity(project);
         var previousSettings = cacheManager.GetSettings();
         var status = cacheManager.UpdateSettings(mode, maxCacheSizeBytes, activeSource);
         if (previousSettings.Mode != status.Settings.Mode)
         {
             ClearMemoryCaches(clearReusableDataCaches: true);
+            ClearCacheWarmupState();
         }
         else if (previousSettings.MaxCacheSizeBytes != status.Settings.MaxCacheSizeBytes)
         {
@@ -808,10 +813,11 @@ public sealed class SwShWorkflowService
 
     public SwShCacheStatus ClearCache(ProjectPaths? activePaths = null)
     {
-        var project = activePaths is null ? null : projectWorkspaceService.Open(activePaths);
+        var project = activePaths is null ? null : CreateCacheWarmupProject(projectWorkspaceService.Open(activePaths));
         var activeSource = CapturePlacementCacheSourceIdentity(project);
         var status = cacheManager.Clear(activeSource);
         ClearMemoryCaches(clearReusableDataCaches: true);
+        ClearCacheWarmupState();
         return AddCacheWarmupStatus(status, project, activeSource);
     }
 
@@ -824,9 +830,9 @@ public sealed class SwShWorkflowService
             return AddCacheWarmupStatus(status, project: null, activeSource: null);
         }
 
-        var project = projectWorkspaceService.Open(paths);
+        var project = CreateCacheWarmupProject(projectWorkspaceService.Open(paths));
         EnsureCacheWarmupProject(project);
-        var activeSource = placementWorkflowService.CaptureCatalogCacheSourceIdentity(project);
+        var activeSource = cachePlacementWorkflowService.CaptureCatalogCacheSourceIdentity(project);
         var targets = CreateCacheWarmupTargets(project, activeSource, status.Settings.Mode);
         if (stepIndex < 0 || stepIndex >= targets.Count)
         {
@@ -854,7 +860,8 @@ public sealed class SwShWorkflowService
         {
             if (selectedTarget.TextTarget is null)
             {
-                OpenPlacementCatalog(project);
+                cachePlacementWorkflowService.OpenCatalog(project);
+                MarkCacheTargetWarmed(selectedTarget.Key);
             }
             else
             {
@@ -871,16 +878,7 @@ public sealed class SwShWorkflowService
     public SwShPlacementCatalog OpenPlacementCatalog(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
-        EnsureCacheWarmupProject(project);
-
-        var catalog = placementWorkflowService.OpenCatalog(project);
-        var activeSource = placementWorkflowService.CaptureCatalogCacheSourceIdentity(project);
-        if (activeSource is not null)
-        {
-            MarkCacheTargetWarmed(CreatePlacementWarmupKey(project, activeSource));
-        }
-
-        return catalog;
+        return placementWorkflowService.OpenCatalog(project);
     }
 
     public void ClearMemoryCaches(bool clearReusableDataCaches = true)
@@ -888,18 +886,46 @@ public sealed class SwShWorkflowService
         projectWorkspaceService.ClearMemoryCache();
         pokemonWorkflowService.ClearMemoryCache();
         placementWorkflowService.ClearMemoryCache(clearReusableDataCaches);
+        cachePlacementWorkflowService.ClearMemoryCache(clearReusableDataCaches);
         textWorkflowService.ClearMemoryCache();
         if (clearReusableDataCaches)
         {
             parsedDataCache.Clear();
         }
 
-        ClearCacheWarmupState();
+        // Editor snapshots are disposable independently of completed cache preparation.
+        // Review, apply and project refresh must not restart an active warmup run.
+        lock (cacheWarmupSyncRoot)
+        {
+            cacheWarmupSourceProject = null;
+            cacheWarmupBaseProject = null;
+        }
     }
 
     private SwShCacheSourceIdentity? CapturePlacementCacheSourceIdentity(OpenedProject? project)
     {
-        return project is null ? null : placementWorkflowService.CaptureCatalogCacheSourceIdentity(project);
+        return project is null ? null : cachePlacementWorkflowService.CaptureCatalogCacheSourceIdentity(project);
+    }
+
+    private OpenedProject CreateCacheWarmupProject(OpenedProject project)
+    {
+        // Persistent preparation is derived from vanilla sources. Output overrides stay
+        // live in editor workflows and do not replace the background cache work plan.
+        lock (cacheWarmupSyncRoot)
+        {
+            if (ReferenceEquals(cacheWarmupSourceProject, project) && cacheWarmupBaseProject is not null)
+            {
+                return cacheWarmupBaseProject;
+            }
+
+            var entries = project.FileGraph.Entries
+                .Where(entry => entry.BaseFile is not null)
+                .Select(entry => entry with { LayeredFile = null, State = ProjectFileGraphEntryState.BaseOnly })
+                .ToArray();
+            cacheWarmupSourceProject = project;
+            cacheWarmupBaseProject = project with { FileGraph = new ProjectFileGraph(entries) };
+            return cacheWarmupBaseProject;
+        }
     }
 
     private SwShCacheStatus AddCacheWarmupStatus(
@@ -922,6 +948,7 @@ public sealed class SwShWorkflowService
         int completed;
         lock (cacheWarmupSyncRoot)
         {
+            warmedCacheKeys.IntersectWith(targets.Select(target => target.Key));
             completed = targets.Count(target => warmedCacheKeys.Contains(target.Key));
         }
 
@@ -958,7 +985,7 @@ public sealed class SwShWorkflowService
         targets.AddRange(textWorkflowService
             .CreateCacheWarmupTargets(project, mode)
             .Select(target => new CacheWarmupTarget(
-                CreateTextWarmupKey(project, target),
+                CreateTextWarmupKey(project, target, textWorkflowService.GetCacheWarmupSourceIdentity(project, target)),
                 target)));
         return targets;
     }
@@ -1003,9 +1030,10 @@ public sealed class SwShWorkflowService
 
     private static string CreateTextWarmupKey(
         OpenedProject project,
-        SwShTextWorkflowService.SwShTextCacheWarmupTarget target)
+        SwShTextWorkflowService.SwShTextCacheWarmupTarget target,
+        SwShCacheSourceIdentity source)
     {
-        return $"{project.Id}:text:{target.Language}:{target.CategoryId}";
+        return $"{project.Id}:text:{target.Language}:{target.CategoryId}:{CreateCacheIdentityKey(source)}";
     }
 
     private sealed record CacheWarmupTarget(
