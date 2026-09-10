@@ -224,22 +224,13 @@ internal static class ZaTechnicalMachineCatalog
             return false;
         }
 
-        var extensionAssignments = assignments
-            .Where(assignment => IsOwnedExtensionItemId(assignment.ItemId))
-            .ToArray();
-        if (extensionAssignments.Any(assignment =>
-                !TryGetOwnedExtensionSlot(assignment.ItemId, out var slot)
-                || assignment.SortNum != slot
-                || assignment.MachineIndex != slot - 1))
-        {
-            return false;
-        }
-
-        var baseAssignments = assignments
-            .Where(assignment => !IsOwnedExtensionItemId(assignment.ItemId))
-            .ToArray();
-        return baseAssignments.Length == BaseTechnicalMachineCount
-            && HasCompleteNumbering(baseAssignments);
+        return assignments.Count(assignment => !IsOwnedExtensionItemId(assignment.ItemId))
+                == BaseTechnicalMachineCount
+            && assignments.All(assignment =>
+                assignment.SortNum is >= 1 and <= LastOwnedExtensionSlot
+                && assignment.MachineIndex == assignment.SortNum - 1)
+            && assignments.Select(assignment => assignment.SortNum).Distinct().Count()
+                == assignments.Count;
     }
 
     public static bool IsOwnedExtensionSlot(int slot) =>
@@ -286,8 +277,8 @@ internal static class ZaTechnicalMachineCatalog
             && itemType == 5
             && string.Equals(internalName, GetOwnedExtensionInternalName(slot), StringComparison.Ordinal)
             && pocket == 6
-            && sortNum == slot
-            && machineIndex == slot - 1;
+            && sortNum is >= 1 and <= LastOwnedExtensionSlot
+            && machineIndex == sortNum - 1;
     }
 
     public static bool IsOwnedTechnicalMachineExtensionRow(ZaItemData item)

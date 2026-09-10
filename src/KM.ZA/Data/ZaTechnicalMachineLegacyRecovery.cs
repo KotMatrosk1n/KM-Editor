@@ -116,7 +116,9 @@ internal static class ZaTechnicalMachineLegacyRecoveryDetector
 
         var assignments = CreateAssignments(activeMachines);
         ZaTechnicalMachineNumberRepair? repair = null;
-        if (!ZaTechnicalMachineCatalog.HasCompleteNumbering(assignments))
+        if (!ZaTechnicalMachineCatalog.HasCompleteNumbering(assignments)
+            && (removeSyntheticRow
+                || !ZaTechnicalMachineCatalog.HasCompleteNumberingWithOwnedExtensions(assignments)))
         {
             var missingNumber = removeSyntheticRow
                 ? syntheticRows[0].SortNum

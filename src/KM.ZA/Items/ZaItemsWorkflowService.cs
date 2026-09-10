@@ -1062,7 +1062,9 @@ internal sealed class ZaItemsWorkflowService
                 },
                 TechnicalMachineNumberField => field with
                 {
-                    MaximumValue = Math.Max(technicalMachineMaximum, 1),
+                    MaximumValue = items.Any(item => item.Metadata.IsOwnedTechnicalMachineSlot)
+                        ? ZaTechnicalMachineCatalog.LastOwnedExtensionSlot
+                        : Math.Max(technicalMachineMaximum, 1),
                 },
                 _ => field,
             })
