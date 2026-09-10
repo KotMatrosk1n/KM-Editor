@@ -3,8 +3,9 @@ import { z } from 'zod';
 import { apiDiagnosticSchema, applyResultSchema, projectPathsSchema } from './contracts';
 
 export const trainerDynamaxOverrideSchema = z.strictObject({ trainerId: z.number().int().min(1).max(436),
-  player: z.number().int().min(0).max(2), opponent: z.number().int().min(0).max(2) });
+  player: z.number().int().min(0).max(3), opponent: z.number().int().min(0).max(3) });
 export const trainerDynamaxSettingsSchema = z.strictObject({ disablePlayer: z.boolean(), disableOpponents: z.boolean(),
+  enablePlayer: z.boolean().optional(), enableOpponents: z.boolean().optional(),
   trainers: z.array(trainerDynamaxOverrideSchema).max(436).optional() });
 export const loadTrainerDynamaxRequestSchema = z.strictObject({ paths: projectPathsSchema });
 export const reviewTrainerDynamaxRequestSchema = z.strictObject({ paths: projectPathsSchema, settings: trainerDynamaxSettingsSchema });
@@ -12,7 +13,8 @@ export const applyTrainerDynamaxRequestSchema = reviewTrainerDynamaxRequestSchem
 export const trainerDynamaxStatusSchema = z.strictObject({
   canEdit: z.boolean(), settings: trainerDynamaxSettingsSchema, partial: z.boolean(), buildId: z.string().nullable(),
   sourceLayer: z.string(), diagnostics: z.array(apiDiagnosticSchema),
-  trainers: z.array(z.strictObject({ trainerId: z.number().int().min(1).max(436), name: z.string() })).optional()
+  trainers: z.array(z.strictObject({ trainerId: z.number().int().min(1).max(436), name: z.string(),
+    vanillaPlayer: z.boolean().nullable().optional(), vanillaOpponent: z.boolean().nullable().optional() })).optional()
 });
 export const trainerDynamaxReviewSchema = z.strictObject({ reviewToken: z.string().nullable(), settings: trainerDynamaxSettingsSchema,
   outputAction: z.enum(['none', 'create', 'write', 'delete']), diagnostics: z.array(apiDiagnosticSchema) });

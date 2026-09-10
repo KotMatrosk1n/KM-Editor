@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { EditSession, ProjectPaths } from '../../bridge/contracts';
 import { useLocalization } from '../../localization';
 import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditorDiagnostics';
@@ -15,6 +16,8 @@ type Props = {
   onInspect?: (texture: ModelTexture, changes: TextureRule[]) => void;
   selectedMaterial?: string;
   selectionRevision?: number;
+  actionsTarget?: HTMLElement | null;
+  actionsVisible?: boolean;
 };
 function TextureImage({ texture, onColor, disabled }: { texture: ModelTexture; onColor: (color: string) => void; disabled: boolean }) {
   const { t } = useLocalization(); const canvas = useRef<HTMLCanvasElement>(null);
@@ -33,7 +36,7 @@ function TextureImage({ texture, onColor, disabled }: { texture: ModelTexture; o
       if (rgba && rgba[3]) onColor(`#${[...rgba.slice(0, 3)].map(value => value.toString(16).padStart(2, '0')).join('')}`);
     }} />;
 }
-export function ModelTextureEditor({ paths, model, session, disabled, onPreview, onStage, onDirtyChange, onInspect, selectedMaterial, selectionRevision }: Props) {
+export function ModelTextureEditor({ paths, model, session, disabled, onPreview, onStage, onDirtyChange, onInspect, selectedMaterial, selectionRevision, actionsTarget, actionsVisible = true }: Props) {
   const { t } = useLocalization();
   const [textures, setTextures] = useState<ModelTexture[]>([]);
   const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false); const [error, setError] = useState(false);
@@ -100,6 +103,12 @@ export function ModelTextureEditor({ paths, model, session, disabled, onPreview,
     } catch { setError(true); }
     finally { setBusy(false); history?.lock(false); }
   };
+  const actions = <div className="model-viewer__toolbar">
+    <button type="button" disabled={colorLocked || from.toLowerCase() === to.toLowerCase()} onClick={keep}>{t('modelViewer.texture.keep')}</button>
+    <button type="button" disabled={colorLocked} onClick={() => editState(old => ({ ...old, drafts: { ...old.drafts, [selected]: [] }, to: from }), t('modelViewer.texture.reset'), 'texture-reset')}>{t('modelViewer.texture.reset')}</button>
+    <button type="button" disabled={locked || !selectedDirty} onClick={() => void stage()}>{t(busy ? 'modelViewer.texture.encoding' : 'modelViewer.texture.stage')}</button>
+    <button type="button" disabled={locked || !dirty} onClick={() => editState(old => ({ ...old, drafts: {}, to: from }), t('modelViewer.texture.discard'), 'texture-discard')}>{t('modelViewer.texture.discard')}</button>
+  </div>;
   return <section className="model-textures" aria-labelledby="model-textures-title" aria-busy={loading || busy}>
     <h3 id="model-textures-title">{t('modelViewer.texture.title')}</h3>
     <p>{t('modelViewer.texture.shared')}</p>
@@ -131,12 +140,7 @@ export function ModelTextureEditor({ paths, model, session, disabled, onPreview,
             <p>{t('modelViewer.texture.preview')}</p>
           </fieldset>
         </div>
-        <div className="model-viewer__toolbar">
-          <button type="button" disabled={colorLocked || from.toLowerCase() === to.toLowerCase()} onClick={keep}>{t('modelViewer.texture.keep')}</button>
-          <button type="button" disabled={colorLocked} onClick={() => editState(old => ({ ...old, drafts: { ...old.drafts, [selected]: [] }, to: from }), t('modelViewer.texture.reset'), 'texture-reset')}>{t('modelViewer.texture.reset')}</button>
-          <button type="button" disabled={locked || !selectedDirty} onClick={() => void stage()}>{t(busy ? 'modelViewer.texture.encoding' : 'modelViewer.texture.stage')}</button>
-          <button type="button" disabled={locked || !dirty} onClick={() => editState(old => ({ ...old, drafts: {}, to: from }), t('modelViewer.texture.discard'), 'texture-discard')}>{t('modelViewer.texture.discard')}</button>
-        </div>
+        {actionsVisible ? actionsTarget ? createPortal(actions, actionsTarget) : actionsTarget === undefined ? actions : null : null}
       </> : null}
     </>}
     {error ? <p role="alert">{t('modelViewer.texture.error')} <code>KM-MODEL-TEXTURE-EDIT-INVALID</code></p> : null}

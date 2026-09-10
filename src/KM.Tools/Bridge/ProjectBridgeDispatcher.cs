@@ -5455,12 +5455,12 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private static TrainerDynamaxStatusDto ToDto(SwShTrainerDynamaxStatus status) => new(status.CanEdit,
         ToDto(status.Settings), status.Partial, status.BuildId,
         status.SourceLayer, status.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray(),
-        status.Trainers?.Select(row => new TrainerDynamaxTrainerDto(row.TrainerId, row.Name)).ToArray() ?? []);
+        status.Trainers?.Select(row => new TrainerDynamaxTrainerDto(row.TrainerId, row.Name, row.VanillaPlayer, row.VanillaOpponent)).ToArray() ?? []);
 
     private static SwShTrainerDynamaxSettings ToCore(TrainerDynamaxSettingsDto settings) => new(settings.DisablePlayer,
-        settings.DisableOpponents, settings.Trainers?.Select(row => row is null ? null! : new SwShTrainerDynamaxOverride(row.TrainerId, row.Player, row.Opponent)).ToArray());
+        settings.DisableOpponents, settings.Trainers?.Select(row => row is null ? null! : new SwShTrainerDynamaxOverride(row.TrainerId, row.Player, row.Opponent)).ToArray(), settings.EnablePlayer, settings.EnableOpponents);
     private static TrainerDynamaxSettingsDto ToDto(SwShTrainerDynamaxSettings settings) => new(settings.DisablePlayer,
-        settings.DisableOpponents, settings.Trainers?.Select(row => new TrainerDynamaxOverrideDto(row.TrainerId, row.Player, row.Opponent)).ToArray() ?? []);
+        settings.DisableOpponents, settings.Trainers?.Select(row => new TrainerDynamaxOverrideDto(row.TrainerId, row.Player, row.Opponent)).ToArray() ?? [], settings.EnablePlayer, settings.EnableOpponents);
 
     private string DispatchLoadProfanityFilter(string requestJson)
     {

@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { EditSession, ProjectPaths } from '../../bridge/contracts';
 import { useLocalization } from '../../localization';
 import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditorDiagnostics';
@@ -16,8 +17,10 @@ type Props = {
   selectedMaterial?: string;
   selectionRevision?: number;
   onSelectMaterial: (material: string) => void;
+  actionsTarget?: HTMLElement | null;
+  actionsVisible?: boolean;
 };
-export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyChange, onPreview, onStage, selectedMaterial, selectionRevision, onSelectMaterial }: Props) {
+export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyChange, onPreview, onStage, selectedMaterial, selectionRevision, onSelectMaterial, actionsTarget, actionsVisible = true }: Props) {
   const { t } = useLocalization();
   const [properties, setProperties] = useState<ModelProperties | null>(null);
   const [selection, setSelection] = useState(''); const [search, setSearch] = useState('');
@@ -86,6 +89,10 @@ export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyCh
     const selectedAsset = properties?.materials.find(a => value.startsWith(a.id + '|'));
     if (selectedAsset) onSelectMaterial(value.slice(selectedAsset.id.length + 1));
   };
+  const actions = <div className="model-viewer__toolbar">
+    <button type="button" disabled={locked || invalid || !asset || !Object.keys(drafts).some(k => k.startsWith(asset.id + '|'))} onClick={() => void save()}>{t('modelEditor.stageMaterial')}</button>
+    <button type="button" disabled={locked || !dirty} onClick={() => editDrafts({}, t('modelViewer.texture.discard'), 'discard-materials')}>{t('modelViewer.texture.discard')}</button>
+  </div>;
   return <section className="model-materials" aria-labelledby="model-materials-title" aria-busy={busy || !properties}>
     <h3 id="model-materials-title">{t('modelEditor.materials')}</h3>
     <details className="model-workspace__help"><summary>{t('modelWorkspace.help')}</summary><p>{t('modelEditor.materialHelp')}</p><p>{t('modelEditor.studioPreview')}</p></details>
@@ -131,10 +138,7 @@ export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyCh
         </details>)}
       </fieldset>
       {invalid ? <p role="alert">{t('modelEditor.invalid')}</p> : null}
-      <div className="model-viewer__toolbar">
-        <button type="button" disabled={locked || invalid || !asset || !Object.keys(drafts).some(k => k.startsWith(asset.id + '|'))} onClick={() => void save()}>{t('modelEditor.stageMaterial')}</button>
-        <button type="button" disabled={locked || !dirty} onClick={() => editDrafts({}, t('modelViewer.texture.discard'), 'discard-materials')}>{t('modelViewer.texture.discard')}</button>
-      </div>
+      {actionsVisible ? actionsTarget ? createPortal(actions, actionsTarget) : actionsTarget === undefined ? actions : null : null}
       <details><summary>{t('modelEditor.assets', { count: properties.assets.length })}</summary>
         <ul className="model-materials__assets">{properties.assets.map(a => <li key={a.id} data-localization-ignore="true" title={a.id}>{a.id.split('/').at(-1)} ({a.size.toLocaleString()} B)</li>)}</ul>
       </details>

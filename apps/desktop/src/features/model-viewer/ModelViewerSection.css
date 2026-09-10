@@ -85,6 +85,11 @@
 .model-viewer--editing > .model-viewer__header { flex: 0 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr); }
 .model-viewer--editing .model-viewer__heading { text-align: center; }
 .model-viewer--editing > .model-viewer__header > button { justify-self: end; }
+.model-workspace__actions { grid-column: 1 / -1; min-width: 0; }
+.model-workspace__actions:empty { display: none; }
+.model-workspace__actions .model-viewer__toolbar { justify-content: flex-end; }
+.model-workspace__actions button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.model-workspace__close-prompt { z-index: 210; }
 .model-viewer--editing > .model-viewer__note, .model-viewer--editing .model-viewer__browser { display: none; }
 .model-viewer--editing .model-viewer__workspace { display: flex; flex: 1; min-height: 0; }
 .model-viewer--editing .model-viewer__stage { display: grid; flex: 1; min-height: 0; grid-template-columns: minmax(0, 1fr) clamp(20rem, 30vw, 32rem); grid-template-rows: auto minmax(0, 1fr) auto; gap: 1rem; }
