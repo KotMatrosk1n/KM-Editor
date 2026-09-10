@@ -708,7 +708,8 @@ internal sealed class ZaItemsEditSessionService
                 var provisioning = ZaOwnedTechnicalMachineProvisioner.ProvisionSlot(
                     rows,
                     extension.Slot,
-                    extension.MoveId);
+                    extension.MoveId,
+                    extension.Number);
                 if (!provisioning.IsAvailable)
                 {
                     diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -2160,7 +2161,10 @@ internal sealed class ZaItemsEditSessionService
                 && candidate.Metadata.MachineSlot == previousNumber);
             var technicalMachineCount = workflow.Items.Count(
                 ZaItemsWorkflowService.IsTechnicalMachineRecord);
-            if (previousNumberOwners <= 1 && previousNumber <= technicalMachineCount)
+            var supportsSparseNumbering = workflow.Items.Any(candidate =>
+                candidate.Metadata.IsOwnedTechnicalMachineSlot);
+            if (!supportsSparseNumbering
+                && previousNumberOwners <= 1 && previousNumber <= technicalMachineCount)
             {
                 diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                     DiagnosticSeverity.Error,
@@ -2193,17 +2197,6 @@ internal sealed class ZaItemsEditSessionService
         }
 
         var target = targetOwners[0];
-        if (target.IsOwnedTechnicalMachineExtension)
-        {
-            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"TM{target.Metadata.MachineSlot!.Value.ToString(CultureInfo.InvariantCulture)} is a KM-owned unused-TM slot and cannot participate in a TM number swap.",
-                ZaEditSessionSupport.ItemsDomain,
-                field: ZaItemsWorkflowService.TechnicalMachineNumberField,
-                expected: "Another occupied physical TM number"));
-            return false;
-        }
-
         var reciprocalEdit = ZaEditSessionSupport.CreatePendingEdit(
             ZaEditSessionSupport.ItemsDomain,
             $"Swap {target.Name} TM number to {previousNumber}.",
@@ -3201,28 +3194,24 @@ internal sealed class ZaItemsEditSessionService
                 item.Metadata.SortIndex,
                 item.Metadata.GroupIndex))
             .ToArray();
-        var hasOwnedExtension = effectiveMachines.Any(item =>
-            item.IsOwnedTechnicalMachineExtension);
         if (effectiveMachines.Any(item =>
                 item.FieldValues.GetValueOrDefault(
                     ZaItemsWorkflowService.TechnicalMachineNumberField) is null)
-            || !HasValidTechnicalMachineNumbering(assignments, hasOwnedExtension))
+            || !HasValidTechnicalMachineNumbering(assignments))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Items output requires either the complete physical TM permutation or structurally owned unused-TM extensions.",
+                "Items output requires consistent, unique TM numbers within the supported range.",
                 ZaEditSessionSupport.ItemsDomain,
                 field: ZaItemsWorkflowService.TechnicalMachineNumberField,
-                expected: "Unique one-to-one TM number assignments with only KM-owned TM162 through TM201 extensions"));
+                expected: "Unique paired TM numbers from 1 through 201 with supported physical item identities"));
         }
     }
 
     private static bool HasValidTechnicalMachineNumbering(
-        IReadOnlyList<ZaTechnicalMachineNumberAssignment> assignments,
-        bool allowsOwnedTechnicalMachineExtensions) =>
+        IReadOnlyList<ZaTechnicalMachineNumberAssignment> assignments) =>
         ZaTechnicalMachineCatalog.HasCompleteNumbering(assignments)
-        || allowsOwnedTechnicalMachineExtensions
-        && ZaTechnicalMachineCatalog.HasCompleteNumberingWithOwnedExtensions(assignments);
+        || ZaTechnicalMachineCatalog.HasCompleteNumberingWithOwnedExtensions(assignments);
 
     private static IReadOnlyList<ProjectedTechnicalMachineTarget> GetTargetedProjectedTechnicalMachines(
         ZaItemsWorkflow workflow,
@@ -3250,8 +3239,10 @@ internal sealed class ZaItemsEditSessionService
             .Select(item => effectiveItemsById[item.ItemId])
             .Where(item => item.Metadata.MachineMoveId is > 0)
             .Select(item => new ProjectedTechnicalMachineTarget(
-                item.Metadata.MachineSlot ?? 0,
-                item.Metadata.MachineMoveId!.Value))
+                ZaTechnicalMachineCatalog.FirstOwnedExtensionSlot
+                    + item.ItemId - ZaTechnicalMachineCatalog.FirstOwnedExtensionItemId,
+                item.Metadata.MachineMoveId!.Value,
+                item.Metadata.MachineSlot ?? 0))
             .ToArray();
     }
 
@@ -3279,7 +3270,7 @@ internal sealed class ZaItemsEditSessionService
         );
     }
 
-    private readonly record struct ProjectedTechnicalMachineTarget(int Slot, int MoveId);
+    private readonly record struct ProjectedTechnicalMachineTarget(int Slot, int MoveId, int Number);
 
     private static bool CanEditTechnicalMachineField(
         ZaItemRecord item,
@@ -3342,18 +3333,17 @@ internal sealed class ZaItemsEditSessionService
             || field.Field is not (
                 ZaItemsWorkflowService.ItemTypeField
                 or ZaItemsWorkflowService.PocketField
-                or ZaItemsWorkflowService.SortOrderField
-                or ZaItemsWorkflowService.TechnicalMachineNumberField))
+                or ZaItemsWorkflowService.SortOrderField))
         {
             return true;
         }
 
         diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
             DiagnosticSeverity.Error,
-            "KM-owned unused-TM item, pocket, and number identity fields are fixed so the slot remains safe and discoverable across Items, Pokemon, and Shops.",
+            "Added TM item type and pocket are fixed. Use TM number to change the paired numbering fields.",
             ZaEditSessionSupport.ItemsDomain,
             field: field.Field,
-            expected: "Edit the TM move, or edit ordinary item behavior after the slot is materialized"));
+            expected: "Edit the TM number, move, or ordinary item behavior after the slot is materialized"));
         return false;
     }
 
@@ -4365,7 +4355,7 @@ internal sealed class ZaItemsEditSessionService
         var hasOwnedExtensions = ownedExtensionRows.Length > 0;
         var valid = rows.Select(row => row.Id).Distinct().Count() == rows.Count
             && actualMachineItemIds.SequenceEqual(expectedMachineItemIds)
-            && HasValidTechnicalMachineNumbering(assignments, hasOwnedExtensions)
+            && HasValidTechnicalMachineNumbering(assignments)
             && (!hasOwnedExtensions
                 || ownedExtensionRows.All(
                     ZaOwnedTechnicalMachineProvisioner.IsOwnedTechnicalMachineExtensionRow)

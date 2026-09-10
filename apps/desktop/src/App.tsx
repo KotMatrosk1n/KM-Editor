@@ -38664,19 +38664,6 @@ function getItemFieldDisabledReason(
   }
 
   if (
-    editorFamily === 'za' &&
-    item?.metadata.isOwnedTechnicalMachineSlot === true &&
-    [
-      itemTypeFieldName,
-      itemPocketFieldName,
-      itemSortOrderFieldName,
-      itemTechnicalMachineNumberFieldName
-    ].includes(fieldName)
-  ) {
-    return 'KM Editor owned TM item, pocket, sort order, and number fields are fixed so the slot stays safe across Items, Pokemon, and Shops.';
-  }
-
-  if (
     isZaProjectedOwnedTechnicalMachine &&
     item?.metadata.baseMachineMoveId === null &&
     fieldName !== itemMachineMoveIdFieldName

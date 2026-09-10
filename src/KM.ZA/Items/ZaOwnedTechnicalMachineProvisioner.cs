@@ -38,17 +38,27 @@ internal static class ZaOwnedTechnicalMachineProvisioner
             }
 
             var internalName = ZaTechnicalMachineCatalog.GetOwnedExtensionInternalName(slot);
-            if (rows.Any(row => string.Equals(row.InternalName, internalName, StringComparison.Ordinal))
-                || rows.Any(row => IsTechnicalMachine(row) && row.SortNum == slot))
+            if (rows.Any(row => string.Equals(row.InternalName, internalName, StringComparison.Ordinal)))
             {
                 continue;
             }
 
+            var occupiedNumbers = rows
+                .Where(row => IsTechnicalMachine(row) || IsOwnedTechnicalMachineProjectionRow(row))
+                .Select(row => (int)row.SortNum)
+                .ToHashSet();
+            var number = !occupiedNumbers.Contains(slot)
+                ? slot
+                : Enumerable.Range(1, ZaTechnicalMachineCatalog.LastOwnedExtensionSlot)
+                    .First(candidate => !occupiedNumbers.Contains(candidate));
+            var projected = ZaItemsEditSessionService.ItemRow.CreateOwnedTechnicalMachineExtension(
+                slot,
+                moveId: 0);
+            projected.SortNum = checked((ushort)number);
+            projected.MachineIndex = checked((ushort)(number - 1));
             InsertInIdOrder(
                 rows,
-                ZaItemsEditSessionService.ItemRow.CreateOwnedTechnicalMachineExtension(
-                    slot,
-                    moveId: 0));
+                projected);
             added = true;
         }
 
@@ -58,12 +68,14 @@ internal static class ZaOwnedTechnicalMachineProvisioner
     public static ZaOwnedTechnicalMachineProvisioningResult ProvisionSlot(
         IList<ZaItemsEditSessionService.ItemRow> rows,
         int slot,
-        int moveId)
+        int moveId,
+        int number)
     {
         ArgumentNullException.ThrowIfNull(rows);
 
         if (!ZaTechnicalMachineCatalog.IsOwnedExtensionSlot(slot)
-            || moveId is <= 0 or > ushort.MaxValue)
+            || moveId is <= 0 or > ushort.MaxValue
+            || number is < 1 or > ZaTechnicalMachineCatalog.LastOwnedExtensionSlot)
         {
             return new ZaOwnedTechnicalMachineProvisioningResult(
                 false,
@@ -102,7 +114,7 @@ internal static class ZaOwnedTechnicalMachineProvisioner
 
         var internalName = ZaTechnicalMachineCatalog.GetOwnedExtensionInternalName(slot);
         if (rows.Any(row => string.Equals(row.InternalName, internalName, StringComparison.Ordinal))
-            || rows.Any(row => IsTechnicalMachine(row) && row.SortNum == slot)
+            || rows.Any(row => IsTechnicalMachine(row) && row.SortNum == number)
             || rows.Any(row => IsTechnicalMachine(row) && row.MachineWaza == moveId))
         {
             return new ZaOwnedTechnicalMachineProvisioningResult(
@@ -111,11 +123,12 @@ internal static class ZaOwnedTechnicalMachineProvisioner
                 $"TM{slot.ToString(CultureInfo.InvariantCulture)} cannot be materialized because its item ID, internal token, TM number, or selected move is already owned.");
         }
 
-        InsertInIdOrder(
-            rows,
-            ZaItemsEditSessionService.ItemRow.CreateOwnedTechnicalMachineExtension(
-                slot,
-                checked((ushort)moveId)));
+        var materialized = ZaItemsEditSessionService.ItemRow.CreateOwnedTechnicalMachineExtension(
+            slot,
+            checked((ushort)moveId));
+        materialized.SortNum = checked((ushort)number);
+        materialized.MachineIndex = checked((ushort)(number - 1));
+        InsertInIdOrder(rows, materialized);
         EnsureValidOwnedExtensions(rows);
         return new ZaOwnedTechnicalMachineProvisioningResult(true, true);
     }
