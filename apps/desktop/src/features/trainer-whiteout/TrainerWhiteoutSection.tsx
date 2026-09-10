@@ -99,9 +99,10 @@ export function TrainerWhiteoutSection({ workflow, session, isEditing, isEditSta
       <div className="trainer-whiteout-columns">
         <div className="trainer-whiteout-table-scroll" tabIndex={0} role="region" aria-label={t('trainerWhiteout.trainers')}>
           <table className="data-table trainer-whiteout-table"><thead><tr><th scope="col">ID</th><th scope="col">{t('trainerWhiteout.trainer')}</th><th scope="col">{t('trainerWhiteout.enabled')}</th></tr></thead>
-            <tbody>{visible.map(row => <tr key={row.trainerId} className={selected?.trainerId === row.trainerId ? 'selected-row' : undefined}>
+            <tbody>{visible.map(row => <tr key={row.trainerId} className={selected?.trainerId === row.trainerId ? 'selected-row' : undefined}
+              onClick={() => setSelectedId(row.trainerId)}>
               <td>{row.trainerId}</td><td><button type="button" className="trainer-whiteout-row-button" aria-pressed={selected?.trainerId === row.trainerId}
-                onClick={() => setSelectedId(row.trainerId)} data-localization-ignore="true">{row.name}</button></td>
+                data-localization-ignore="true">{row.name}</button></td>
               <td><span>{stateLabel(value(row))}</span>{row.mixed && !pending.has(row.trainerId) && !(row.trainerId in drafts) ? <span className="status-pill status-pill-info">{t('trainerWhiteout.mixed')}</span> : null}{changed(row) ? <span className="status-pill status-pill-info">{t('trainerWhiteout.draft')}</span> : pending.has(row.trainerId) ? <span className="status-pill status-pill-info">{t('trainerWhiteout.staged')}</span> : null}</td>
             </tr>)}</tbody>
           </table>

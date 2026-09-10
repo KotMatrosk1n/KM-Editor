@@ -17,6 +17,8 @@
 .trainer-whiteout-table th { position: sticky; top: 0; background: var(--color-surface); z-index: 1; }
 .trainer-whiteout-table td, .trainer-whiteout-table th { padding: 0.7rem 0.85rem; text-align: start; }
 .trainer-whiteout-table td .status-pill { margin-inline-start: 0.5rem; }
+.trainer-whiteout-table tbody tr { cursor: pointer; }
+.trainer-whiteout-table tbody tr:hover, .trainer-whiteout-table tbody tr:focus-within { background: color-mix(in srgb, var(--color-accent) 8%, transparent); }
 .trainer-whiteout-table .selected-row { background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
 .trainer-whiteout-row-button { color: inherit; font: inherit; text-align: start; inline-size: 100%; background: transparent; border: 0; padding: 0.25rem 0; cursor: pointer; overflow-wrap: anywhere; }
 .trainer-whiteout-detail { display: flex; flex-direction: column; gap: 1.5rem; min-inline-size: 0; padding: 1.5rem; border: 1px solid var(--color-border); border-radius: 0.6rem; background: var(--color-surface); }

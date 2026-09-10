@@ -1,0 +1,24 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+.trainer-dynamax-editor { align-self: stretch; }
+.trainer-dynamax-panel { display: flex; flex-direction: column; gap: 1.5rem; min-inline-size: 0; }
+.trainer-dynamax-heading, .trainer-dynamax-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; }
+.trainer-dynamax-actions { justify-content: flex-start; }
+.trainer-dynamax-title, .trainer-dynamax-card-heading { display: flex; align-items: center; gap: 0.8rem; min-inline-size: 0; }
+.trainer-dynamax-title svg, .trainer-dynamax-card-heading svg { color: var(--color-accent); flex: none; }
+.trainer-dynamax-panel h2, .trainer-dynamax-panel h3, .trainer-dynamax-panel p { margin: 0; overflow-wrap: anywhere; }
+.trainer-dynamax-panel p { color: var(--color-text-muted); line-height: 1.65; }
+.trainer-dynamax-title p { margin-block-start: 0.5rem; }
+.trainer-dynamax-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; }
+.trainer-dynamax-card { display: flex; flex-direction: column; gap: 1.2rem; min-inline-size: 0; padding: clamp(1rem, 2.5cqi, 2rem); border: 1px solid var(--color-border); border-radius: 0.75rem; background: var(--color-surface); }
+.trainer-dynamax-card > p { flex: 1; }
+.trainer-dynamax-field { display: grid; gap: 0.6rem; }
+.trainer-dynamax-field .searchable-option-input { inline-size: 100%; min-inline-size: 0; }
+.trainer-dynamax-current { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.75rem; border-top: 1px solid var(--color-border); padding-block-start: 1rem; }
+.trainer-dynamax-current > span, .trainer-dynamax-review-values dt { color: var(--color-text-muted); }
+.trainer-dynamax-scope { border-inline-start: 3px solid var(--color-accent); padding-inline-start: 1rem; }
+.trainer-dynamax-review { display: flex; flex-direction: column; gap: 1.2rem; padding: clamp(1rem, 2.5cqi, 2rem); border: 1px solid var(--color-border); border-radius: 0.75rem; background: var(--color-surface); }
+.trainer-dynamax-review > button { align-self: flex-start; }
+.trainer-dynamax-review-values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin: 0; }
+.trainer-dynamax-review-values dd { margin: 0.5rem 0 0; font-weight: 600; overflow-wrap: anywhere; }
+@container (max-width: 46rem) { .trainer-dynamax-controls, .trainer-dynamax-review-values { grid-template-columns: minmax(0, 1fr); } }
+@container (max-width: 30rem) { .trainer-dynamax-actions > button, .trainer-dynamax-review > button { inline-size: 100%; } }

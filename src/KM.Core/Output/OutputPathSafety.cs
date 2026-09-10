@@ -271,7 +271,7 @@ internal sealed class OutputPathSafety
     {
         ValidatePortablePathIdentity(path);
         var targetPath = ResolveTarget(path);
-        ValidateDirectoryChain(Path.GetDirectoryName(targetPath)!, OutputRoot);
+        ValidateDirectoryChain(Path.GetDirectoryName(targetPath)!, OutputRoot, allowMissingBoundary: true);
         ValidateFileDestination(targetPath);
     }
 
@@ -1050,10 +1050,13 @@ internal sealed class OutputPathSafety
         return complete;
     }
 
-    private void ValidateDirectoryChain(string targetDirectory, string boundary)
+    private void ValidateDirectoryChain(string targetDirectory, string boundary, bool allowMissingBoundary = false)
     {
         EnsureContained(targetDirectory, boundary, allowRoot: true);
-        ValidateDirectory(boundary);
+        if (allowMissingBoundary && !Directory.Exists(boundary))
+            ValidateExistingAncestorChain(boundary, allowMissing: true);
+        else
+            ValidateDirectory(boundary);
         var relative = Path.GetRelativePath(boundary, targetDirectory);
         if (relative == ".")
         {

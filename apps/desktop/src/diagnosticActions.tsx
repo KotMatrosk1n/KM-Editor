@@ -117,6 +117,8 @@ export function resolveDiagnosticNavigationAction(
 }
 
 function resolveDestination(diagnostic: ApiDiagnostic): WorkbenchSection | null {
+  if (diagnostic.domain === 'tool.trainerDynamax' || diagnostic.code === projectBridgeErrorCodes.trainerDynamaxInvalid
+    || diagnostic.code === projectBridgeErrorCodes.trainerDynamaxReviewStale) return 'trainerDynamax';
   if (diagnostic.code === projectBridgeErrorCodes.raidDensInvalid || diagnostic.domain === 'workflow.raidDens') {
     return 'raidDens';
   }

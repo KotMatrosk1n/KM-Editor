@@ -128,7 +128,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
     id: 'betaEditors',
     label: 'Beta Editors',
     labelKey: 'workbench.navigation.betaEditors',
-    sectionIds: ['gameplaySettings', 'trainerWhiteout']
+    sectionIds: ['gameplaySettings', 'trainerWhiteout', 'trainerDynamax']
   }
 ];
 
@@ -366,6 +366,7 @@ export function getLoadedWorkflowStateForSection(
     case 'giftPokemon':
       return state.giftPokemonWorkflow !== null;
     case 'gameplaySettings':
+    case 'trainerDynamax':
     case 'modelViewer':
     case 'soundStudio':
       return true;
