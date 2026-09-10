@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCw, RotateCcw, Save, Search, UsersRound, X } from 'lucide-react';
+import { RefreshCw, RotateCcw, Save, Search, Skull, X } from 'lucide-react';
 import { type EditSession } from '../../bridge/contracts';
 import { type TrainerWhiteoutChange, type TrainerWhiteoutWorkflow } from '../../bridge/trainerWhiteoutContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
@@ -72,7 +72,7 @@ export function TrainerWhiteoutSection({ workflow, session, isEditing, isEditSta
   return <FocusedEditorWorkspace className="trainer-whiteout-editor">
     <section className="panel wide-panel trainer-whiteout-panel" aria-labelledby="trainer-whiteout-title">
       <div className="panel-heading trainer-whiteout-heading">
-        <div className="trainer-whiteout-title"><UsersRound size={22} aria-hidden="true" /><div>
+        <div className="trainer-whiteout-title"><Skull size={22} aria-hidden="true" /><div>
           <h2 id="trainer-whiteout-title">{t('trainerWhiteout.title')} <span className="status-pill status-pill-info">Beta</span></h2>
           <p>{t('trainerWhiteout.subtitle')}</p></div></div>
         <button type="button" className="secondary-button compact-button" onClick={onRefresh} disabled={isLoading || isStaging}>

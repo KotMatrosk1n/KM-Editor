@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { useEffect, useRef, useState } from 'react';
-import { Gem, HandCoins, RefreshCw, Save, Shield, X } from 'lucide-react';
+import { Gem, HandCoins, Mountain, RefreshCw, Save, X } from 'lucide-react';
 import { type EditSession } from '../../bridge/contracts';
 import { type RaidDensWorkflow } from '../../bridge/raidDensContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
@@ -60,7 +60,7 @@ export function RaidDensSection({ workflow, session, isEditing, isEditStarting, 
   return <FocusedEditorWorkspace className="raid-dens-editor">
     <section className="panel wide-panel raid-dens-panel" aria-labelledby="raid-dens-heading">
       <div className="panel-heading raid-dens-heading">
-        <div className="raid-dens-title"><Shield size={22} aria-hidden="true" />
+        <div className="raid-dens-title"><Mountain size={22} aria-hidden="true" />
           <div><h2 id="raid-dens-heading">{t('raidDens.title')}</h2><p>{t('raidDens.subtitle')}</p></div>
         </div>
         <button className="secondary-button compact-button" type="button" onClick={onRefresh}
@@ -101,7 +101,7 @@ export function RaidDensSection({ workflow, session, isEditing, isEditStarting, 
         <div className="raid-dens-effects-region">
           <h3>{t('raidDens.effects')}</h3>
           <div className="raid-dens-effects">
-          <article><Shield size={24} aria-hidden="true" /><h3>{t('raidDens.raids')}</h3><p>{t('raidDens.raidsHelp')}</p></article>
+          <article><Mountain size={24} aria-hidden="true" /><h3>{t('raidDens.raids')}</h3><p>{t('raidDens.raidsHelp')}</p></article>
           <article><HandCoins size={24} aria-hidden="true" /><h3>{t('raidDens.watts')}</h3><p>{t('raidDens.wattsHelp')}</p></article>
           <article><Gem size={24} aria-hidden="true" /><h3>{t('raidDens.pieces')}</h3><p>{t('raidDens.piecesHelp')}</p></article>
           </div>

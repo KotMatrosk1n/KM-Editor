@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 import { useEffect, useRef, useState } from 'react';
-import { ClipboardCheck, RefreshCw, RotateCcw, Save, Shield, UserRound, UsersRound } from 'lucide-react';
+import { ClipboardCheck, Expand, RefreshCw, RotateCcw, Save, UserRound, UsersRound } from 'lucide-react';
 import type { ApiDiagnostic, ProjectPaths } from '../../bridge/contracts';
 import type { ProjectBridge } from '../../bridge/projectBridge';
 import type { ApplyTrainerDynamaxRequest, ApplyTrainerDynamaxResponse, TrainerDynamaxReview,
@@ -10,7 +10,7 @@ import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditor
 import { LoadingProgress } from '../../components/LoadingProgress';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useLocalization } from '../../localization';
-import { TrainerDynamaxRoster, TrainerDynamaxRowReview, dynamaxSettingsKey } from './TrainerDynamaxRoster';
+import { TrainerDynamaxRoster, TrainerDynamaxRowReview, dynamaxSettingsKey, dynamaxPermission, dynamaxAll } from './TrainerDynamaxRoster';
 import './TrainerDynamaxSection.css';
 
 type Props = {
@@ -76,10 +76,15 @@ export function TrainerDynamaxSection({ bridge, paths, canApply, onApply, onDirt
     } catch { if (alive.current) { setReview(null); failed(); } }
     finally { lock.current = false; if (alive.current) setBusy(null); }
   };
-  const label = (disabled: boolean) => t(disabled ? 'trainerDynamax.disabled' : 'trainerDynamax.normal');
+  const label = (enabled: boolean | null) => t(enabled === null ? 'trainerDynamax.mixed' : enabled ? 'trainerDynamax.enabled' : 'trainerDynamax.disabled');
+  const allPermission = (value: TrainerDynamaxSettings, side: 'player' | 'opponent') => {
+    const values = (status?.trainers ?? []).map(row => dynamaxPermission(value, row, side));
+    if (!values.length) return (side === 'player' ? value.disablePlayer : value.disableOpponents) ? false : (side === 'player' ? value.enablePlayer : value.enableOpponents) ? true : null;
+    return values.length && values.every(item => item === true) ? true : values.length && values.every(item => item === false) ? false : null;
+  };
   return <FocusedEditorWorkspace className="trainer-dynamax-editor">
     <section className="panel wide-panel trainer-dynamax-panel" aria-labelledby="trainer-dynamax-title">
-      <div className="trainer-dynamax-heading"><div className="trainer-dynamax-title"><Shield size={24} aria-hidden="true" /><div>
+      <div className="trainer-dynamax-heading"><div className="trainer-dynamax-title"><Expand size={24} aria-hidden="true" /><div>
         <h2 id="trainer-dynamax-title">{t('trainerDynamax.title')} <span className="status-pill status-pill-info">{translateLiteral('Beta')}</span></h2>
         <p>{t('trainerDynamax.subtitle')}</p></div></div>
         <button type="button" className="secondary-button" disabled={busy !== null || dirty} onClick={() => void load()}>
@@ -90,15 +95,18 @@ export function TrainerDynamaxSection({ bridge, paths, canApply, onApply, onDirt
         {(['disablePlayer', 'disableOpponents'] as const).map((field, index) => {
           const Icon = index === 0 ? UserRound : UsersRound;
           const key = index === 0 ? 'player' : 'opponents';
+          const side = index === 0 ? 'player' : 'opponent';
+          const permission = allPermission(settings, side);
+          const setAll = (value: string) => { if (value === 'true' || value === 'false') change(dynamaxAll(settings, status?.trainers ?? [], side, value === 'true')); };
           return <section className="trainer-dynamax-card" key={field} aria-labelledby={`dynamax-${key}`}>
             <div className="trainer-dynamax-card-heading"><Icon size={22} aria-hidden="true" /><h3 id={`dynamax-${key}`}>{t(`trainerDynamax.${key}`)}</h3></div>
             <p>{t(`trainerDynamax.${key}Help`)}</p>
             <div className="trainer-dynamax-field"><span>{t('trainerDynamax.permission')}</span>
-              <SearchableOptionInput ariaLabel={t(`trainerDynamax.${key}`)} value={String(settings[field])} disabled={busy === 'load' || busy === 'apply' || !status?.canEdit}
-                isFiniteCatalog localizeOptions={false} options={[{ value: 'false', label: label(false) }, { value: 'true', label: label(true) }]}
-                onChange={value => change({ ...settings, [field]: value === 'true' })} />
+              <SearchableOptionInput ariaLabel={t(`trainerDynamax.${key}`)} value={permission === null ? t('trainerDynamax.mixed') : String(permission)} disabled={busy === 'load' || busy === 'apply' || !status?.canEdit}
+                isFiniteCatalog localizeOptions={false} options={[{ value: 'true', label: label(true) }, { value: 'false', label: label(false) }]}
+                onChange={setAll} onReselect={setAll} />
             </div>
-            <div className="trainer-dynamax-current"><span>{t('trainerDynamax.current')}</span><strong>{status ? label(status.settings[field]) : t('trainerDynamax.unavailable')}</strong></div>
+            <div className="trainer-dynamax-current"><span>{t('trainerDynamax.current')}</span><strong>{status ? label(allPermission(status.settings, side)) : t('trainerDynamax.unavailable')}</strong></div>
           </section>;
         })}
       </div>
@@ -117,8 +125,8 @@ export function TrainerDynamaxSection({ bridge, paths, canApply, onApply, onDirt
       {review?.reviewToken ? <section className="trainer-dynamax-review" aria-labelledby="trainer-dynamax-review-title">
         <div className="trainer-dynamax-heading"><h3 id="trainer-dynamax-review-title">{t('trainerDynamax.reviewTitle')}</h3>
           <span className="status-pill status-pill-info">{t(`trainerDynamax.action.${review.outputAction}`)}</span></div>
-        <dl className="trainer-dynamax-review-values"><div><dt>{t('trainerDynamax.player')}</dt><dd>{label(review.settings.disablePlayer)}</dd></div>
-          <div><dt>{t('trainerDynamax.opponents')}</dt><dd>{label(review.settings.disableOpponents)}</dd></div>
+        <dl className="trainer-dynamax-review-values"><div><dt>{t('trainerDynamax.player')}</dt><dd>{label(allPermission(review.settings, 'player'))}</dd></div>
+          <div><dt>{t('trainerDynamax.opponents')}</dt><dd>{label(allPermission(review.settings, 'opponent'))}</dd></div>
           <div><dt>{t('trainerDynamax.target')}</dt><dd data-localization-ignore="true">exefs/main</dd></div></dl>
         <TrainerDynamaxRowReview before={status?.settings ?? normal} settings={review.settings} trainers={status?.trainers} />
         <p>{t('trainerDynamax.reviewHelp')}</p>

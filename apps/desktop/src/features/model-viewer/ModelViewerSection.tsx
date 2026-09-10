@@ -57,6 +57,8 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
   const [textureDirty, setTextureDirty] = useState(false);
   const [materialDirty, setMaterialDirty] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [closePrompt, setClosePrompt] = useState(false);
+  const [actionsTarget, setActionsTarget] = useState<HTMLDivElement | null>(null);
   const [assetChanges, setAssetChanges] = useState<AssetChange[] | null>(null);
   const [restoreRevision, setRestoreRevision] = useState(0);
   const [restoring, setRestoring] = useState(false);
@@ -83,7 +85,20 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
   const pendingRestore = stagedAssetChanges(session, selected).some(change => change.restore);
   const dirtyChange = useCallback((value: boolean) => setTextureDirty(value), []);
   const materialDirtyChange = useCallback((value: boolean) => setMaterialDirty(value), []);
-  const dialog = useModalDialog<HTMLElement>({ enabled: editing, canClose: !dirty && !restoring, onClose: () => setEditing(false) });
+  const closeEditor = () => {
+    setClosePrompt(false);
+    if (dirty) {
+      setTextureChanges([]); setAssetChanges(null);
+      setTextureDirty(false); setMaterialDirty(false);
+      setRestoreRevision(value => value + 1);
+    }
+    setEditing(false);
+  };
+  const requestClose = () => {
+    if (dirty || restoring || history.locked || (session?.pendingEdits.length ?? 0) > 0) setClosePrompt(true);
+    else closeEditor();
+  };
+  const dialog = useModalDialog<HTMLElement>({ enabled: editing, onClose: requestClose });
   useEffect(() => { onDirtyChange('modelViewer', dirty); }, [dirty, onDirtyChange]);
   useEffect(() => () => onDirtyChange('modelViewer', false), [onDirtyChange]);
   useEffect(() => {
@@ -176,7 +191,8 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
     <header className="model-viewer__header">
       <div className="model-viewer__header-status"><Box aria-hidden="true" size={22} />{editing ? <HeaderMemoryUsage /> : null}</div>
       <div className="model-viewer__heading"><h2 id="model-viewer-title">{t(editing ? 'modelEditor.title' : 'modelViewer.title')}</h2><p>{editing ? entry?.name : t('modelViewer.description')}</p></div>
-      {editing ? <button type="button" disabled={dirty || restoring} onClick={() => setEditing(false)}>{t('modelEditor.close')}</button> : null}
+      {editing ? <button type="button" onClick={requestClose}>{t('modelEditor.close')}</button> : null}
+      {editing ? <div className="model-workspace__actions" ref={setActionsTarget} /> : null}
     </header>
     <p className="model-viewer__note">{t('modelViewer.scope')}</p>
     {!supported ? <p role="status">{t('modelViewer.unsupportedGame')}</p> : !isTauri() ? <p role="status">{t('modelViewer.desktopRequired')}</p> :
@@ -296,12 +312,14 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
               {dirty ? <p role="status">{t('modelEditor.dirty')}</p> : null}
               {pendingRestore ? <p role="status">{t('modelEditor.pendingRestore')}</p> : null}
               <div hidden={tab !== 'materials'}><ModelMaterialEditor key={`${selected}/${restoreRevision}`} paths={paths} model={selected} session={session} disabled={disabled || restoring || pendingRestore || original}
+                actionsTarget={actionsTarget} actionsVisible={tab === 'materials'}
                 selectedMaterial={viewer.info?.parts.find(p => p.id === options.selected)?.material}
                 selectionRevision={selectionRevision}
                 onSelectMaterial={material => selectPart(viewer.info?.parts.find(p => p.material === material)?.id ?? null)}
                 onDirtyChange={materialDirtyChange} onStage={onStageAsset} onPreview={setAssetChanges} /></div>
             </> : null}
             <div hidden={editing && tab !== 'textures'}><ModelTextureEditor key={`${selected}/${restoreRevision}`} paths={paths} model={selected} session={session} disabled={disabled || restoring || pendingRestore || original}
+              actionsTarget={editing ? actionsTarget : undefined} actionsVisible={!editing || tab === 'textures'}
               selectedMaterial={viewer.info?.parts.find(p => p.id === options.selected)?.material} onInspect={(texture, changes) => void inspectTexture(texture, changes)}
               selectionRevision={selectionRevision}
               onPreview={setTextureChanges} onStage={onStage} onDirtyChange={dirtyChange} /></div>
@@ -310,5 +328,21 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
         </div>
       </div>}
     {error ? <p className="model-viewer__error" role="alert">{t(message)} <code>{error}</code></p> : null}
+    {closePrompt ? <ModelClosePrompt onStay={() => setClosePrompt(false)} onClose={closeEditor} /> : null}
   </section></ModelHistoryContext.Provider>;
+}
+
+function ModelClosePrompt({ onStay, onClose }: { onStay: () => void; onClose: () => void }) {
+  const { t, translateLiteral } = useLocalization();
+  const dialog = useModalDialog({ onClose: onStay });
+  return <div className="modal-backdrop model-workspace__close-prompt" role="presentation">
+    <section className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="model-close-title" aria-describedby="model-close-description" ref={dialog} tabIndex={-1}>
+      <h2 id="model-close-title">{t('modelEditor.closeTitle')}</h2>
+      <p className="modal-copy" id="model-close-description">{t('modelEditor.closeDescription')}</p>
+      <div className="modal-actions">
+        <button type="button" className="secondary-button" onClick={onStay}>{translateLiteral('Stay Here')}</button>
+        <button type="button" className="danger-button" onClick={onClose}>{t('modelEditor.close')}</button>
+      </div>
+    </section>
+  </div>;
 }

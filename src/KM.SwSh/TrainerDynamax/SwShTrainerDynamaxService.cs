@@ -35,8 +35,8 @@ public sealed class SwShTrainerDynamaxService(ProjectWorkspaceService? workspace
             var state = SwShTrainerDynamaxMainPatcher.Inspect(snapshot.Source, paths.SelectedGame);
             var roster = new SwShTrainersWorkflowService().Load(workspace.Open(paths));
             var trainers = roster.Trainers.Where(row => row.TrainerId is >= 1 and <= 436)
-                .Select(row => new SwShTrainerDynamaxTrainer(row.TrainerId, row.Name)).ToArray();
-            return new(true, new((state.DisabledSides & 1) != 0, (state.DisabledSides & 2) != 0, state.Trainers),
+                .Select(row => new SwShTrainerDynamaxTrainer(row.TrainerId, row.Name, SwShTrainerDynamaxVanilla.Player(row.TrainerId), SwShTrainerDynamaxVanilla.Opponent(row.TrainerId))).ToArray();
+            return new(true, new((state.DisabledSides & 1) != 0, (state.DisabledSides & 2) != 0, state.Trainers, (state.DisabledSides & 4) != 0, (state.DisabledSides & 8) != 0),
                 state.Partial, state.BuildId, snapshot.Preimage.Exists ? "layered" : "base", roster.Diagnostics, trainers);
         }
         catch (Exception exception) when (IsInputFailure(exception))

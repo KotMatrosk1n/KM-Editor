@@ -13,6 +13,7 @@ import {
   Dna,
   Download,
   Dumbbell,
+  Expand,
   Flower2,
   FlaskConical,
   Gem,
@@ -26,6 +27,7 @@ import {
   MapPin,
   MapPinned,
   MessageSquareOff,
+  Mountain,
   Music,
   Package,
   PackagePlus,
@@ -36,6 +38,7 @@ import {
   Shield,
   ShieldCheck,
   Shirt,
+  Skull,
   Shuffle,
   Sparkle,
   Sparkles,
@@ -53,6 +56,7 @@ import {
 import type { ProjectGame } from '../bridge/contracts';
 import type { CapabilityKind } from './semanticContracts';
 import { workbenchSections, type WorkbenchSection } from './workbenchSections';
+import { workbenchSectionLocalization } from './sectionLocalization';
 
 export type CapabilityPresentationMaturityViewModel =
   | 'editable'
@@ -481,17 +485,17 @@ export const workbenchCapabilityRegistry = [
   }),
   workflow({
     description: 'Disable or restore interaction with raid dens.',
-    games: swordShieldGames, icon: Shield, id: 'raidDens', label: 'Raid Dens',
+    games: swordShieldGames, icon: Mountain, id: 'raidDens', label: 'Raid Dens',
     showInWorkflowDashboard: false, standalone: true
   }),
   workflow({
     description: 'Control trainer whiteout behavior.',
-    games: swordShieldGames, icon: Shield, id: 'trainerWhiteout', label: 'Trainer Whiteout',
+    games: swordShieldGames, icon: Skull, id: 'trainerWhiteout', label: 'Trainer Whiteout',
     showInWorkflowDashboard: false, standalone: true
   }),
   workflow({
     description: 'Control Dynamax permissions in trainer battles.',
-    games: swordShieldGames, icon: Shield, id: 'trainerDynamax', label: 'Trainer Dynamax',
+    games: swordShieldGames, icon: Expand, id: 'trainerDynamax', label: 'Trainer Dynamax',
     showInWorkflowDashboard: false, standalone: true
   }),
   workflow({
@@ -649,11 +653,11 @@ export function getWorkbenchCapabilitiesByNavigationKind(
 }
 
 export function getWorkbenchSectionLabelKey(section: WorkbenchSection) {
-  return `workbench.section.${toContractSegment(section)}.label`;
+  return workbenchSectionLocalization[section].label;
 }
 
 export function getWorkbenchSectionDescriptionKey(section: WorkbenchSection) {
-  return `workbench.section.${toContractSegment(section)}.description`;
+  return workbenchSectionLocalization[section].description;
 }
 
 export function isCapabilityRegisteredForGame(
