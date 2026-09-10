@@ -14,6 +14,7 @@ public sealed class SwShAmxAssembler
     private readonly ReadOnlyCollection<SwShAmxInstruction> readOnlyInstructions;
     private readonly List<uint> nativeHashes;
     private readonly ReadOnlyCollection<uint> readOnlyNativeHashes;
+    private readonly List<ulong> dataCells;
 
     internal SwShAmxAssembler(SwShAmxDocument source)
     {
@@ -30,6 +31,7 @@ public sealed class SwShAmxAssembler
         }
 
         nativeHashes = source.NativeHashes.ToList();
+        dataCells = source.RawDataCells.ToList();
         readOnlyInstructions = instructions.AsReadOnly();
         readOnlyNativeHashes = nativeHashes.AsReadOnly();
     }
@@ -37,6 +39,17 @@ public sealed class SwShAmxAssembler
     public IReadOnlyList<SwShAmxInstruction> Instructions => readOnlyInstructions;
 
     public IReadOnlyList<uint> NativeHashes => readOnlyNativeHashes;
+
+    /// <summary>Appends initialized data without changing existing data addresses.</summary>
+    /// <returns>The data-relative byte address of the first appended cell.</returns>
+    public int AppendDataCells(params long[] values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        var address = checked(dataCells.Count * CellSize);
+        _ = checked(address + (values.Length * CellSize));
+        dataCells.AddRange(values.Select(value => unchecked((ulong)value)));
+        return address;
+    }
 
     public SwShAmxInstruction GetInstructionAtOriginalCell(int cell)
     {
@@ -73,6 +86,37 @@ public sealed class SwShAmxAssembler
         params SwShAmxInstruction[] newInstructions)
     {
         Insert(anchor, newInstructions, after: true);
+    }
+
+    /// <summary>Replaces an instruction and directs existing incoming branches to the first replacement.</summary>
+    public SwShAmxInstruction ReplaceWith(
+        SwShAmxInstruction instruction,
+        params SwShAmxInstruction[] replacements)
+    {
+        RequireOwnedInstruction(instruction, nameof(instruction));
+        ArgumentNullException.ThrowIfNull(replacements);
+        if (replacements.Length == 0
+            || replacements.Any(replacement => replacement is null || instructions.Contains(replacement))
+            || replacements.Distinct(ReferenceEqualityComparer.Instance).Count() != replacements.Length)
+        {
+            throw new ArgumentException("Replacement instructions must be non-empty, non-null, distinct and not already in the program.", nameof(replacements));
+        }
+
+        var first = replacements[0].CloneWithOriginalCell(instruction.OriginalCell);
+        first.Retarget(replacements[0], first);
+        foreach (var replacement in replacements.Skip(1))
+        {
+            replacement.Retarget(replacements[0], first);
+            replacement.Retarget(instruction, first);
+        }
+        foreach (var existing in instructions)
+        {
+            existing.Retarget(replacements[0], first);
+        }
+
+        ReplaceInstruction(instruction, first);
+        InsertAfter(first, replacements.Skip(1).ToArray());
+        return first;
     }
 
     public SwShAmxInstruction ReplaceLiteralOperand(
@@ -127,7 +171,7 @@ public sealed class SwShAmxAssembler
         var codeOffset = prefix.Length;
         var codeByteLength = checked(codeCells.Count * CellSize);
         var dataOffset = checked(codeOffset + codeByteLength);
-        var dataByteLength = checked(source.RawDataCells.Length * CellSize);
+        var dataByteLength = checked(dataCells.Count * CellSize);
         var heapOffset = checked(dataOffset + dataByteLength);
         var stackSize = checked(source.Header.StackTop - source.Header.HeapOffset);
         var stackTop = checked(heapOffset + stackSize);
@@ -149,9 +193,9 @@ public sealed class SwShAmxAssembler
             checked(source.Header.TagsOffset + definitionOffsetDelta),
             checked(source.Header.NameTableOffset + definitionOffsetDelta));
 
-        var bodyCells = new List<ulong>(checked(codeCells.Count + source.RawDataCells.Length));
+        var bodyCells = new List<ulong>(checked(codeCells.Count + dataCells.Count));
         bodyCells.AddRange(codeCells);
-        bodyCells.AddRange(source.RawDataCells);
+        bodyCells.AddRange(dataCells);
         var body = source.Header.IsCompact ? Compact(bodyCells) : Expand(bodyCells);
         var result = new byte[checked(prefix.Length + body.Length)];
         prefix.CopyTo(result, 0);
@@ -160,7 +204,7 @@ public sealed class SwShAmxAssembler
 
         var verification = SwShAmxDocument.Parse(result);
         if (!verification.NativeHashes.SequenceEqual(nativeHashes)
-            || !verification.DataCells.SequenceEqual(source.DataCells))
+            || !verification.RawDataCells.SequenceEqual(dataCells))
         {
             throw new InvalidDataException("Sword/Shield AMX assembly failed its semantic round-trip check.");
         }

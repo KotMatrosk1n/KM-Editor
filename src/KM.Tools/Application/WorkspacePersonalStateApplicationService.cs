@@ -59,7 +59,7 @@ public sealed class WorkspacePersonalStateApplicationService
         "raidRewards", "raidBonusRewards", "behavior", "flagworkSave", "bagHook",
         "royalCandy", "startingItems", "npcItemGift", "catchCap", "ivScreen",
         "hyperTraining", "shinyRate", "fairyGymBoosts", "fashionUnlock",
-        "gymUniformRemoval", "exefsPatches", "fpsPatch", "profanityFilter", "raidDens", "randomizer",
+        "gymUniformRemoval", "exefsPatches", "fpsPatch", "profanityFilter", "raidDens", "trainerWhiteout", "randomizer",
     ];
     private static readonly HashSet<string> ScarletVioletSections =
     [

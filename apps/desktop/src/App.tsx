@@ -469,7 +469,9 @@ import {
   type FashionCatalogFieldEditInput
 } from './features/fashion-catalog/FashionCatalogSection';
 import { RaidDensSection } from './features/raid-dens/RaidDensSection';
+import { TrainerWhiteoutSection } from './features/trainer-whiteout/TrainerWhiteoutSection';
 import { type RaidDensWorkflow } from './bridge/raidDensContracts';
+import { type TrainerWhiteoutWorkflow, type TrainerWhiteoutChange } from './bridge/trainerWhiteoutContracts';
 import { StarmobilesSection } from './features/starmobiles/StarmobilesSection';
 import { type StarmobileUpdate, type StarmobilesWorkflow } from './bridge/starmobilesContracts';
 import { pokemonTypeOptions } from './pokemonTypeOptions';
@@ -3282,14 +3284,19 @@ export function App({
   const [isFashionCatalogStaging, setIsFashionCatalogStaging] = useState(false);
   const starmobilesWorkflow = useWorkbenchStore(state => state.starmobilesWorkflow);
   const raidDensWorkflow = useWorkbenchStore(state => state.raidDensWorkflow);
+  const trainerWhiteoutWorkflow = useWorkbenchStore(state => state.trainerWhiteoutWorkflow);
   const setStarmobilesWorkflow = useWorkbenchStore(state => state.setStarmobilesWorkflow);
   const setRaidDensWorkflow = useWorkbenchStore(state => state.setRaidDensWorkflow);
+  const setTrainerWhiteoutWorkflow = useWorkbenchStore(state => state.setTrainerWhiteoutWorkflow);
   const [isStarmobilesLoading, setIsStarmobilesLoading] = useState(false);
   const [isRaidDensLoading, setIsRaidDensLoading] = useState(false);
+  const [isTrainerWhiteoutLoading, setIsTrainerWhiteoutLoading] = useState(false);
   const [isStarmobilesStaging, setIsStarmobilesStaging] = useState(false);
   const [isRaidDensStaging, setIsRaidDensStaging] = useState(false);
+  const [isTrainerWhiteoutStaging, setIsTrainerWhiteoutStaging] = useState(false);
   const starmobilesGenerationRef = useRef(0);
   const raidDensGenerationRef = useRef(0);
+  const trainerWhiteoutGenerationRef = useRef(0);
   const [isHabitatCoordinatesLoading, setIsHabitatCoordinatesLoading] = useState(false);
   const [isHabitatCoordinateStaging, setIsHabitatCoordinateStaging] = useState(false);
   const [isGiftPokemonLoading, setIsGiftPokemonLoading] = useState(false);
@@ -4285,6 +4292,7 @@ export function App({
           habitatCoordinatesWorkflow,
           starmobilesWorkflow,
           raidDensWorkflow,
+          trainerWhiteoutWorkflow,
           fashionUnlockWorkflow,
           flagworkSaveWorkflow,
           giftPokemonWorkflow,
@@ -4332,6 +4340,7 @@ export function App({
       habitatCoordinatesWorkflow,
       starmobilesWorkflow,
       raidDensWorkflow,
+      trainerWhiteoutWorkflow,
       fashionUnlockWorkflow,
       flagworkSaveWorkflow,
       giftPokemonWorkflow,
@@ -4444,6 +4453,7 @@ export function App({
     habitatCoordinatesWorkflow,
     starmobilesWorkflow,
     raidDensWorkflow,
+    trainerWhiteoutWorkflow,
     fashionUnlockWorkflow,
     flagworkSaveWorkflow, giftPokemonWorkflow, gymUniformRemovalWorkflow, hyperTrainingWorkflow,
     hyperspaceBypassWorkflow,
@@ -4569,6 +4579,8 @@ export function App({
   );
   const handleRaidDensDirtyChange = useCallback(
     (dirty: boolean) => registerEditorDraftDirty('raidDens', dirty), [registerEditorDraftDirty]);
+  const handleTrainerWhiteoutDirtyChange = useCallback(
+    (dirty: boolean) => registerEditorDraftDirty('trainerWhiteout', dirty), [registerEditorDraftDirty]);
   const handleStarmobilesDirtyChange = useCallback(
     (dirty: boolean) => registerEditorDraftDirty('starmobiles', dirty), [registerEditorDraftDirty]);
   const handleHabitatCoordinatesDirtyChange = useCallback(
@@ -10975,6 +10987,50 @@ export function App({
     return accepted;
   };
 
+  const handleOpenTrainerWhiteoutWorkflow = async () => {
+    const generation = trainerWhiteoutGenerationRef.current;
+    await runRetainedWorkflowLoad('trainerWhiteout', setIsTrainerWhiteoutLoading,
+      () => bridge.loadTrainerWhiteout({ paths: createProjectPaths(draftPaths) }),
+      response => setTrainerWhiteoutWorkflow(response.workflow),
+      () => generation === trainerWhiteoutGenerationRef.current);
+  };
+
+  const handleStageTrainerWhiteout = async (changes: TrainerWhiteoutChange[]) => {
+    const activeSession = getEditSessionForSection('trainerWhiteout');
+    if (!activeSession) return false;
+    let accepted = false;
+    trainerWhiteoutGenerationRef.current += 1;
+    setIsTrainerWhiteoutStaging(true);
+    prepareScopedEditorPanelAction('trainerWhiteout');
+    try {
+      await runEditSessionMutation(async session => {
+        const response = await bridge.stageTrainerWhiteout({ paths: createProjectPaths(draftPaths), session, changes });
+        const edits = response.session.pendingEdits.filter(edit => edit.domain === 'workflow.trainerWhiteout');
+        const acknowledged = changes.every(change => {
+          const edit = edits.find(edit => edit.recordId === String(change.trainerId));
+          return edit ? edit.field === 'enabled' && edit.newValue === (change.enabled === null ? 'vanilla' : String(change.enabled)) :
+            response.workflow.trainers.some(row => row.trainerId === change.trainerId && !row.mixed && row.override === change.enabled);
+        });
+        const matches = response.workflow.canEdit && response.workflow.detectedGame === draftPaths.selectedGame &&
+          response.session.sessionId === activeSession.sessionId && acknowledged;
+        const diagnostics = [...response.diagnostics, ...response.workflow.diagnostics];
+        if (!matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error'))
+          diagnostics.push({ severity: 'error', domain: 'workflow.trainerWhiteout', code: 'KM-SWSH-TRAINER-WHITEOUT-INVALID', message: t('trainerWhiteout.failed') });
+        const didSucceed = matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error');
+        return { ...response, diagnostics, didSucceed, session: didSucceed ? response.session : session };
+      }, response => {
+        setScopedEditorPanelDiagnostics('trainerWhiteout', response.diagnostics);
+        if (response.didSucceed) {
+          accepted = true;
+          setTrainerWhiteoutWorkflow(response.workflow);
+          setEditSessionSection('trainerWhiteout');
+        }
+      }, activeSession);
+    } catch (error) { setScopedEditorPanelDiagnostics('trainerWhiteout', toBridgeDiagnostics(error)); }
+    finally { setIsTrainerWhiteoutStaging(false); }
+    return accepted;
+  };
+
   const handleOpenStarmobilesWorkflow = async () => {
     const session = getEditSessionForSection('starmobiles');
     const signature = getEditSessionSignature(session);
@@ -12793,6 +12849,9 @@ export function App({
         case 'raidDens':
           if (!currentState.raidDensWorkflow) await handleOpenRaidDensWorkflow();
           break;
+        case 'trainerWhiteout':
+          if (!currentState.trainerWhiteoutWorkflow) await handleOpenTrainerWhiteoutWorkflow();
+          break;
         case 'starmobiles':
           if (!currentState.starmobilesWorkflow) await handleOpenStarmobilesWorkflow();
           break;
@@ -13169,6 +13228,9 @@ export function App({
       case 'raidDens':
         if (!raidDensWorkflow && !isRaidDensLoading) { markLazyLoadStarted(); void handleOpenRaidDensWorkflow(); }
         break;
+      case 'trainerWhiteout':
+        if (!trainerWhiteoutWorkflow && !isTrainerWhiteoutLoading) { markLazyLoadStarted(); void handleOpenTrainerWhiteoutWorkflow(); }
+        break;
       case 'starmobiles':
         if (!starmobilesWorkflow && !isStarmobilesLoading) { markLazyLoadStarted(); void handleOpenStarmobilesWorkflow(); }
         break;
@@ -13424,6 +13486,7 @@ export function App({
     habitatCoordinatesWorkflow,
     starmobilesWorkflow,
     raidDensWorkflow,
+    trainerWhiteoutWorkflow,
     fashionUnlockWorkflow,
     flagworkSaveWorkflow,
     giftPokemonWorkflow,
@@ -13452,6 +13515,7 @@ export function App({
     isHabitatCoordinatesLoading,
     isStarmobilesLoading,
     isRaidDensLoading,
+    isTrainerWhiteoutLoading,
     isFashionUnlockLoading,
     isGymUniformRemovalLoading,
     isHyperTrainingLoading,
@@ -19480,6 +19544,7 @@ export function App({
       'habitatCoordinates',
       'starmobiles',
       'raidDens',
+      'trainerWhiteout',
       'giftPokemon',
       'tradePokemon',
       'staticEncounters',
@@ -19530,6 +19595,7 @@ export function App({
       habitatCoordinates: setIsHabitatCoordinatesLoading,
       starmobiles: setIsStarmobilesLoading,
       raidDens: setIsRaidDensLoading,
+      trainerWhiteout: setIsTrainerWhiteoutLoading,
       fashionUnlock: setIsFashionUnlockLoading,
       flagworkSave: setIsFlagworkSaveLoading,
       giftPokemon: setIsGiftPokemonLoading,
@@ -19736,6 +19802,12 @@ export function App({
       reloadTasks.push(async () => {
         const response = await bridge.loadRaidDens({ paths });
         if (canCommitRefresh()) setRaidDensWorkflow(response.workflow);
+      });
+    }
+    if (trainerWhiteoutWorkflow && refreshSections.has('trainerWhiteout')) {
+      reloadTasks.push(async () => {
+        const response = await bridge.loadTrainerWhiteout({ paths });
+        if (canCommitRefresh()) setTrainerWhiteoutWorkflow(response.workflow);
       });
     }
     if (starmobilesWorkflow && refreshSections.has('starmobiles')) {
@@ -22312,6 +22384,16 @@ export function App({
                 onDirtyStateChange={handleRaidDensDirtyChange} onRefresh={handleOpenRaidDensWorkflow}
                 isLoading={isRaidDensLoading} panelOutput={getOutputSafeScopedEditorPanelOutput('raidDens')} />
           ) : null}
+          {activeSection === 'trainerWhiteout' ? (
+            isTrainerWhiteoutLoading && !trainerWhiteoutWorkflow ? <WorkflowLoadingPanel label={t('trainerWhiteout.title')} /> :
+              <TrainerWhiteoutSection workflow={trainerWhiteoutWorkflow} session={getEditSessionForSection('trainerWhiteout')}
+                key={getEditSessionForSection('trainerWhiteout')?.sessionId ?? 'viewing'}
+                isStaging={isTrainerWhiteoutStaging} isEditing={getEditSessionForSection('trainerWhiteout') !== null}
+                isEditStarting={isEditStarting} onStartEditSession={handleStartEditSession}
+                onCancelEditSession={requestCancelEditSession} onStage={handleStageTrainerWhiteout}
+                onDirtyStateChange={handleTrainerWhiteoutDirtyChange} onRefresh={handleOpenTrainerWhiteoutWorkflow}
+                isLoading={isTrainerWhiteoutLoading} panelOutput={getOutputSafeScopedEditorPanelOutput('trainerWhiteout')} />
+          ) : null}
           {activeSection === 'profanityFilter' ? (
             <ProfanityFilterSection
               canApply={Boolean(health?.canOpenEditableWorkflows && outputSafety.canApply)}
@@ -22509,6 +22591,7 @@ export function App({
               pendingEditContext={{
                 starmobilesWorkflow,
                 raidDensWorkflow,
+                trainerWhiteoutWorkflow,
                 angeFightWorkflow,
                 bagHookWorkflow,
                 catchCapWorkflow,
@@ -36147,6 +36230,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.fashionCatalog': 'Fashion Catalog',
     'workflow.habitatCoordinates': 'Habitat Coordinates',
     'workflow.raidDens': 'Raid Dens',
+    'workflow.trainerWhiteout': 'Trainer Whiteout',
     'workflow.starmobiles': 'Starmobiles',
     'workflow.fashionUnlock': 'Fashion Unlock',
     'workflow.giftPokemon': 'Gift Pokemon',
@@ -36207,6 +36291,7 @@ function getPendingEditSection(edit: PendingEdit): WorkbenchSection | null {
     'workflow.fashionCatalog': 'fashionCatalog',
     'workflow.habitatCoordinates': 'habitatCoordinates',
     'workflow.raidDens': 'raidDens',
+    'workflow.trainerWhiteout': 'trainerWhiteout',
     'workflow.starmobiles': 'starmobiles',
     'workflow.fashionUnlock': 'fashionUnlock',
     'workflow.giftPokemon': 'giftPokemon',
@@ -36594,6 +36679,13 @@ function getPendingEditDisplayDetails(
       return createPendingEditDisplayDetails(edit, {
         editorLabel, recordLocalizationKey: 'raidDens.title', fieldLocalizationKey: 'raidDens.interaction',
         newValueLocalizationKey: edit.newValue === 'true' ? 'raidDens.disabled' : 'raidDens.enabled'
+      });
+    case 'workflow.trainerWhiteout':
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel, recordLabel: context.trainerWhiteoutWorkflow?.trainers.find(row => String(row.trainerId) === edit.recordId)?.name ?? edit.recordId ?? '',
+        fieldLocalizationKey: 'trainerWhiteout.enabled',
+        newValueLocalizationKey: edit.newValue === 'vanilla' ? 'trainerWhiteout.restoreValue' : undefined,
+        newValueLabel: edit.newValue === 'vanilla' ? undefined : edit.newValue === 'true' ? 'Yes' : 'No'
       });
     case 'workflow.modelTextures': {
       let kind = 'texture';
@@ -58810,6 +58902,7 @@ type PendingEdit = EditSession['pendingEdits'][number];
 
 export type PendingEditContext = {
   raidDensWorkflow?: RaidDensWorkflow | null;
+  trainerWhiteoutWorkflow?: TrainerWhiteoutWorkflow | null;
   starmobilesWorkflow?: StarmobilesWorkflow | null;
   angeFightWorkflow: AngeFightWorkflow | null;
   bagHookWorkflow: BagHookWorkflow | null;

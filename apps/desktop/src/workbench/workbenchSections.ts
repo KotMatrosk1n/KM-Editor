@@ -50,6 +50,7 @@ export const workbenchSections = [
   'fpsPatch',
   'profanityFilter',
   'raidDens',
+  'trainerWhiteout',
   'randomizer',
   'gameDump',
   'gameplaySettings',

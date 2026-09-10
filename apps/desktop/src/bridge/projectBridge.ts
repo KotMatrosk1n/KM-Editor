@@ -4,6 +4,8 @@ import { type LoadStarmobilesRequest, type LoadStarmobilesResponse, type StageSt
   loadStarmobilesRequestSchema, loadStarmobilesResponseSchema, stageStarmobilesRequestSchema, stageStarmobilesResponseSchema } from './starmobilesContracts';
 import { type LoadRaidDensRequest, type LoadRaidDensResponse, type StageRaidDensRequest, type StageRaidDensResponse,
   loadRaidDensRequestSchema, loadRaidDensResponseSchema, stageRaidDensRequestSchema, stageRaidDensResponseSchema } from './raidDensContracts';
+import { type LoadTrainerWhiteoutRequest, type LoadTrainerWhiteoutResponse, type StageTrainerWhiteoutRequest, type StageTrainerWhiteoutResponse,
+  loadTrainerWhiteoutRequestSchema, loadTrainerWhiteoutResponseSchema, stageTrainerWhiteoutRequestSchema, stageTrainerWhiteoutResponseSchema } from './trainerWhiteoutContracts';
 import { invoke } from "@tauri-apps/api/core";
 import {
   type ApplyChangePlanRequest,
@@ -829,8 +831,10 @@ export type ProjectBridge = {
   ) => Promise<StageTmMaterialVisibilityResponse>;
   loadStarmobiles: (request: LoadStarmobilesRequest) => Promise<LoadStarmobilesResponse>;
   loadRaidDens: (request: LoadRaidDensRequest) => Promise<LoadRaidDensResponse>;
+  loadTrainerWhiteout: (request: LoadTrainerWhiteoutRequest) => Promise<LoadTrainerWhiteoutResponse>;
   stageStarmobiles: (request: StageStarmobilesRequest) => Promise<StageStarmobilesResponse>;
   stageRaidDens: (request: StageRaidDensRequest) => Promise<StageRaidDensResponse>;
+  stageTrainerWhiteout: (request: StageTrainerWhiteoutRequest) => Promise<StageTrainerWhiteoutResponse>;
   loadHabitatCoordinates: (
     request: LoadHabitatCoordinatesRequest,
   ) => Promise<LoadHabitatCoordinatesResponse>;
@@ -1656,10 +1660,14 @@ export function createProjectBridge(
       loadStarmobilesRequestSchema.parse(request), loadStarmobilesResponseSchema),
     loadRaidDens: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadRaidDens,
       loadRaidDensRequestSchema.parse(request), loadRaidDensResponseSchema),
+    loadTrainerWhiteout: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadTrainerWhiteout,
+      loadTrainerWhiteoutRequestSchema.parse(request), loadTrainerWhiteoutResponseSchema),
     stageStarmobiles: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageStarmobiles,
       stageStarmobilesRequestSchema.parse(request), stageStarmobilesResponseSchema),
     stageRaidDens: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageRaidDens,
       stageRaidDensRequestSchema.parse(request), stageRaidDensResponseSchema),
+    stageTrainerWhiteout: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageTrainerWhiteout,
+      stageTrainerWhiteoutRequestSchema.parse(request), stageTrainerWhiteoutResponseSchema),
     loadHabitatCoordinates: (request) => {
       const validatedRequest =
         loadHabitatCoordinatesRequestSchema.parse(request);

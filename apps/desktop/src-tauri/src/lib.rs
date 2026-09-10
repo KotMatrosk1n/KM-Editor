@@ -260,7 +260,9 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "profanityFilter.apply",
     "profanityFilter.load",
     "raidDens.load",
+    "trainerWhiteout.load",
     "raidDens.stage",
+    "trainerWhiteout.stage",
     "profanityFilter.restore",
     "project.fileGraph.refresh",
     "project.open",
@@ -2817,6 +2819,7 @@ fn is_project_bridge_workflow_load_command(command: &str) -> bool {
             | "pokemon.load"
             | "profanityFilter.load"
             | "raidDens.load"
+            | "trainerWhiteout.load"
             | "raidBattles.load"
             | "raidBonusRewards.load"
             | "raidRewards.load"
@@ -2963,6 +2966,7 @@ fn is_replay_safe_edit_session_command(command: &str) -> bool {
             | "habitatCoordinates.coordinate.stage"
             | "starmobiles.fields.stage"
             | "raidDens.stage"
+            | "trainerWhiteout.stage"
             | "hyperTraining.stage"
             | "hyperspaceBypass.install.stage"
             | "hyperspaceBypass.uninstall.stage"

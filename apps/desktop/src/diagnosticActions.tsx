@@ -120,6 +120,9 @@ function resolveDestination(diagnostic: ApiDiagnostic): WorkbenchSection | null 
   if (diagnostic.code === projectBridgeErrorCodes.raidDensInvalid || diagnostic.domain === 'workflow.raidDens') {
     return 'raidDens';
   }
+  if (diagnostic.code === projectBridgeErrorCodes.trainerWhiteoutInvalid || diagnostic.domain === 'workflow.trainerWhiteout') {
+    return 'trainerWhiteout';
+  }
   if (diagnostic.field === 'changePlanSourceFingerprint' &&
     diagnostic.code === projectBridgeErrorCodes.dataInvalid && diagnostic.domain) {
     const normalizedDomain = diagnostic.domain

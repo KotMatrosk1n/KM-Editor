@@ -39,6 +39,7 @@ internal static class SwShExeFsReservedRegionLedger
     public const string OwnerDynamaxAdventures = "Dynamax Adventures";
     public const string OwnerFashionUnlock = "Fashion Unlock";
     public const string OwnerFpsPatch = "60FPS Patch";
+    public const string OwnerTrainerWhiteout = "Trainer Whiteout";
     public const string OwnerGymUniformRemoval = "Gym Uniform Removal";
     public const string OwnerHyperTraining = "Hyper Training";
     public const string OwnerIvScreen = "IV Screen";
@@ -56,6 +57,7 @@ internal static class SwShExeFsReservedRegionLedger
 
     private static readonly SwShExeFsReservedRegion[] regions =
     [
+        .. KM.SwSh.TrainerWhiteout.SwShTrainerWhiteoutMainPatcher.CreateReservations(),
         new(OwnerBagHook, "bag-hook-v2", BagEventScriptPath, "whole-file", null, null, "Bag-event AMX grant route", "owns-file"),
         new(OwnerStartingItems, "starting-items-bag-hook-slots", BagEventScriptPath, "bag-hook-slots", null, null, "Bag Hook slots 2-20 startup grants", "payload-only"),
 

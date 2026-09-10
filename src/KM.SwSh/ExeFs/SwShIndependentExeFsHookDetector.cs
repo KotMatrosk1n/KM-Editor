@@ -7,6 +7,7 @@ using KM.SwSh.GymUniformRemoval;
 using KM.SwSh.HyperTraining;
 using KM.SwSh.IvScreen;
 using KM.SwSh.RoyalCandy;
+using KM.SwSh.TrainerWhiteout;
 
 namespace KM.SwSh.ExeFs;
 
@@ -22,6 +23,7 @@ internal static class SwShIndependentExeFsHookDetector
             || SwShFashionUnlockMainPatcher.HasInstalledHook(mainBytes)
             || SwShGymUniformRemovalMainPatcher.HasInstalledHook(mainBytes)
             || SwShHyperTrainingMainPatcher.HasInstalledHook(mainBytes)
+            || SwShTrainerWhiteoutMainPatcher.HasInstalledHook(mainBytes)
             || ivScreenKind is SwShIvScreenInstallKind.InstalledV1 or SwShIvScreenInstallKind.InstalledLegacyV1
             || fpsPatchKind is SwShFpsPatchMainKind.Installed or SwShFpsPatchMainKind.Partial
             || SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(mainBytes).Kind
