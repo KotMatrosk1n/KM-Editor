@@ -1,4 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { type LoadTrainerDynamaxRequest, type LoadTrainerDynamaxResponse,
+  type ReviewTrainerDynamaxRequest, type ReviewTrainerDynamaxResponse,
+  type ApplyTrainerDynamaxRequest, type ApplyTrainerDynamaxResponse,
+  loadTrainerDynamaxResponseSchema, reviewTrainerDynamaxResponseSchema, applyTrainerDynamaxResponseSchema
+} from './trainerDynamaxContracts';
 
 import { type LoadStarmobilesRequest, type LoadStarmobilesResponse, type StageStarmobilesRequest, type StageStarmobilesResponse,
   loadStarmobilesRequestSchema, loadStarmobilesResponseSchema, stageStarmobilesRequestSchema, stageStarmobilesResponseSchema } from './starmobilesContracts';
@@ -802,6 +807,9 @@ export type ProjectBridge = {
   loadProfanityFilter: (
     request: LoadProfanityFilterRequest,
   ) => Promise<LoadProfanityFilterResponse>;
+  loadTrainerDynamax: (request: LoadTrainerDynamaxRequest) => Promise<LoadTrainerDynamaxResponse>;
+  reviewTrainerDynamax: (request: ReviewTrainerDynamaxRequest) => Promise<ReviewTrainerDynamaxResponse>;
+  applyTrainerDynamax: (request: ApplyTrainerDynamaxRequest) => Promise<ApplyTrainerDynamaxResponse>;
   applyProfanityFilter: (
     request: ApplyProfanityFilterRequest,
   ) => Promise<ApplyProfanityFilterResponse>;
@@ -1577,6 +1585,9 @@ export function createProjectBridge(
         request,
         restoreFpsPatchResponseSchema,
       ),
+    loadTrainerDynamax: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadTrainerDynamax, request, loadTrainerDynamaxResponseSchema),
+    reviewTrainerDynamax: (request) => sendProjectBridgeRequest(transport, kmCommandNames.reviewTrainerDynamax, request, reviewTrainerDynamaxResponseSchema),
+    applyTrainerDynamax: (request) => sendProjectBridgeRequest(transport, kmCommandNames.applyTrainerDynamax, request, applyTrainerDynamaxResponseSchema),
     loadProfanityFilter: (request) =>
       sendProjectBridgeRequest(
         transport,

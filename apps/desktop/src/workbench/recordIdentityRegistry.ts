@@ -120,6 +120,7 @@ const registrations = {
   modMerger: operationScoped('modMerger'),
   fpsPatch: operationScoped('fpsPatch'),
   profanityFilter: operationScoped('profanityFilter'),
+  trainerDynamax: operationScoped('trainerDynamax'),
   raidDens: fixedSchemaSlot('raidDens', 'den interaction dispatch'),
   trainerWhiteout: intrinsic('trainerWhiteout', 'stored trainer ID'),
   randomizer: operationScoped('randomizer'),

@@ -40,6 +40,7 @@ internal static class SwShExeFsReservedRegionLedger
     public const string OwnerFashionUnlock = "Fashion Unlock";
     public const string OwnerFpsPatch = "60FPS Patch";
     public const string OwnerTrainerWhiteout = "Trainer Whiteout";
+    public const string OwnerTrainerDynamax = "Trainer Dynamax";
     public const string OwnerGymUniformRemoval = "Gym Uniform Removal";
     public const string OwnerHyperTraining = "Hyper Training";
     public const string OwnerIvScreen = "IV Screen";
@@ -58,6 +59,7 @@ internal static class SwShExeFsReservedRegionLedger
     private static readonly SwShExeFsReservedRegion[] regions =
     [
         .. KM.SwSh.TrainerWhiteout.SwShTrainerWhiteoutMainPatcher.CreateReservations(),
+        .. KM.SwSh.TrainerDynamax.SwShTrainerDynamaxMainPatcher.CreateReservations(),
         new(OwnerBagHook, "bag-hook-v2", BagEventScriptPath, "whole-file", null, null, "Bag-event AMX grant route", "owns-file"),
         new(OwnerStartingItems, "starting-items-bag-hook-slots", BagEventScriptPath, "bag-hook-slots", null, null, "Bag Hook slots 2-20 startup grants", "payload-only"),
 
@@ -399,7 +401,8 @@ internal static class SwShExeFsReservedRegionLedger
         var ownerRegions = MainTextRegionsForOwner(owner);
         if ((string.Equals(owner, OwnerHyperTraining, StringComparison.Ordinal)
                 || string.Equals(owner, OwnerShinyRate, StringComparison.Ordinal)
-                || string.Equals(owner, OwnerDynamaxAdventures, StringComparison.Ordinal))
+                || string.Equals(owner, OwnerDynamaxAdventures, StringComparison.Ordinal)
+                || string.Equals(owner, OwnerTrainerDynamax, StringComparison.Ordinal))
             && game is ProjectGame.Sword or ProjectGame.Shield)
         {
             var inactiveGameToken = game == ProjectGame.Sword ? "-shield-" : "-sword-";
@@ -476,7 +479,8 @@ internal static class SwShExeFsReservedRegionLedger
         {
             var inactiveDynamaxGameToken = game == ProjectGame.Sword ? "-shield-" : "-sword-";
             reservations = reservations
-                .Where(region => !string.Equals(region.Owner, OwnerDynamaxAdventures, StringComparison.Ordinal)
+                .Where(region => (!string.Equals(region.Owner, OwnerDynamaxAdventures, StringComparison.Ordinal)
+                        && !string.Equals(region.Owner, OwnerTrainerDynamax, StringComparison.Ordinal))
                     || !region.FeatureId.Contains(inactiveDynamaxGameToken, StringComparison.Ordinal))
                 .ToArray();
         }

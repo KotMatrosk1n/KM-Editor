@@ -259,6 +259,9 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "pokemon.load",
     "profanityFilter.apply",
     "profanityFilter.load",
+    "trainerDynamax.load",
+    "trainerDynamax.review",
+    "trainerDynamax.apply",
     "raidDens.load",
     "trainerWhiteout.load",
     "raidDens.stage",
@@ -2818,6 +2821,7 @@ fn is_project_bridge_workflow_load_command(command: &str) -> bool {
             | "placement.object.load"
             | "pokemon.load"
             | "profanityFilter.load"
+            | "trainerDynamax.load"
             | "raidDens.load"
             | "trainerWhiteout.load"
             | "raidBattles.load"
@@ -2863,6 +2867,7 @@ fn project_bridge_command_requires_exclusive_barrier(command: &str) -> bool {
             | "output.cleanup.apply"
             | "output.recovery.reconcile"
             | "profanityFilter.apply"
+            | "trainerDynamax.apply"
             | "profanityFilter.restore"
             | "project.fileGraph.refresh"
             | "project.open"
@@ -2909,6 +2914,7 @@ fn project_bridge_command_recycles_read_workers(command: &str) -> bool {
             | "output.cleanup.apply"
             | "output.recovery.reconcile"
             | "profanityFilter.apply"
+            | "trainerDynamax.apply"
             | "profanityFilter.restore"
             | "project.fileGraph.refresh"
             | "project.open"

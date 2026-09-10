@@ -172,6 +172,9 @@ public static class KmCommandNames
     public const string StageRaidDens = "raidDens.stage";
     public const string StageTrainerWhiteout = "trainerWhiteout.stage";
     public const string LoadProfanityFilter = "profanityFilter.load";
+    public const string LoadTrainerDynamax = "trainerDynamax.load";
+    public const string ReviewTrainerDynamax = "trainerDynamax.review";
+    public const string ApplyTrainerDynamax = "trainerDynamax.apply";
     public const string ApplyProfanityFilter = "profanityFilter.apply";
     public const string RestoreProfanityFilter = "profanityFilter.restore";
     public const string ImportRandomizerSeed = "randomizer.seed.import";

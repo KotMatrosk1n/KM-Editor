@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Collections.Concurrent;
 using KM.Formats.SwSh;
 using KM.SwSh.Scripts;
+using KM.SwSh.RaidDens;
 using I = KM.Formats.SwSh.SwShAmxInstruction;
 
 namespace KM.SwSh.TrainerWhiteout;
@@ -21,6 +22,12 @@ internal static class SwShTrainerWhiteoutAmxPatcher
     public static IReadOnlyList<byte> ReadSettings(byte[] vanilla, byte[] source, string fileName)
     {
         return Inspect(vanilla, source, fileName).Settings;
+    }
+
+    public static (IReadOnlyList<byte> Settings, bool VanillaRouting) ReadConfiguration(byte[] vanilla, byte[] source, string fileName)
+    {
+        var state = Inspect(vanilla, source, fileName);
+        return (state.Settings, state.VanillaRouting);
     }
 
     public static byte[] ApplySettings(byte[] vanilla, byte[] source, string fileName, IReadOnlyDictionary<int, bool?> changes)
@@ -60,7 +67,7 @@ internal static class SwShTrainerWhiteoutAmxPatcher
         if (current.DataCells.Count < 6 || current.DataCells[^1] != EndMarker || current.DataCells[^6] != Marker)
         {
             ValidateOriginal(baseline, current, fileName);
-            return new(false, current.DataCells.Count, new byte[TrainerCount]);
+            return new(false, current.DataCells.Count, new byte[TrainerCount], RoutingMatches(baseline, current, baseline.DataCells.Count, vanilla, source, fileName));
         }
 
         if (current.DataCells[^5] != FormatVersion)
@@ -112,8 +119,30 @@ internal static class SwShTrainerWhiteoutAmxPatcher
             }
         }
 
-        return new(true, originalData, settings.Select(value => (byte)value).ToArray());
+        return new(true, originalData, settings.Select(value => (byte)value).ToArray(),
+            originalData == baseline.DataCells.Count && originalCode == CodeCells(baseline)
+            && RoutingMatches(expected, current, originalData, vanilla, source, fileName));
     }
+
+    private static bool RoutingMatches(SwShAmxDocument expected, SwShAmxDocument current, int originalDataCells,
+        byte[] vanilla, byte[] source, string fileName)
+    {
+        if (ReferenceEquals(vanilla, source) || vanilla.AsSpan().SequenceEqual(source)) return true;
+        if (fileName == "wide_road.amx")
+        {
+            try { current = SwShAmxDocument.Parse(SwShRaidDensPatcher.Apply(vanilla, source, false)); }
+            catch (InvalidDataException) { return false; }
+        }
+        return current.Header.PublicsOffset == current.Header.NativesOffset
+            && current.EntryPoint?.OriginalCell == expected.EntryPoint?.OriginalCell
+            && current.NativeHashes.SequenceEqual(expected.NativeHashes)
+            && current.DataCells.Count == expected.DataCells.Count
+            && current.DataCells.Take(originalDataCells).SequenceEqual(expected.DataCells.Take(originalDataCells))
+            && current.Instructions.Select(RoutingSignature).SequenceEqual(expected.Instructions.Select(RoutingSignature));
+    }
+
+    private static string RoutingSignature(I instruction) =>
+        $"{Signature(instruction)}:{instruction.DefaultDestination?.Target.OriginalCell}:{string.Join(',', instruction.SwitchCases.Select(entry => $"{entry.Value}:{entry.Destination.Target.OriginalCell}"))}";
 
     private static readonly string[] OwnedNativeNames = ["CallTrainerBattleCore", "StartLoadTrainerBattleSeamless_", "StartLoadTrainerBattleSeamlessDebugAging_", "StartLoadTornamentTrainerBattleSeamless_", "StartLoadKumiteBattleSeamless_", "GetTrainerBattleResult_", "CallBattleLose_", "EndKumiteWork", "StartKumiteWork", "CallRaidBattleMatchingEvent_"];
     private static readonly HashSet<uint> OwnedNativeHashes = OwnedNativeNames.Select(name => SwShAmxNativeNameHash.Compute(name)).ToHashSet();
@@ -155,7 +184,7 @@ internal static class SwShTrainerWhiteoutAmxPatcher
     }
 
     private static string Signature(I instruction) => $"{instruction.OriginalCell}:{instruction.Opcode}:{string.Join(',', instruction.Operands.Select(operand => operand.Kind == SwShAmxOperandKind.Literal ? $"v{operand.LiteralValue}" : $"t{operand.Target.OriginalCell}"))}";
-    private sealed record State(bool Installed, int OriginalDataCells, IReadOnlyList<byte> Settings);
+    private sealed record State(bool Installed, int OriginalDataCells, IReadOnlyList<byte> Settings, bool VanillaRouting);
     private static byte[] Build(SwShAmxDocument doc, string fileName)
     {
         var names = new[]

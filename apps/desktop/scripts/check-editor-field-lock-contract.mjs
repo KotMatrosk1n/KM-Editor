@@ -45,12 +45,12 @@ const auditedTsxSourceFiles = auditedSourceFiles.filter((sourceFile) =>
 // failure rather than silently shrinking the audit.
 assert.equal(
   auditedSourceFiles.length,
-  304,
+  306,
   'Update the field-lock source count only after reviewing every added or removed application file.'
 );
 assert.equal(
   auditedTsxSourceFiles.length,
-  105,
+  106,
   'Update the field-lock TSX count only after reviewing every added or removed editor surface.'
 );
 
@@ -118,6 +118,10 @@ const knownFieldComponents = new Set([
  * detected value control exactly; stale permits fail the gate.
  */
 const permittedTransientFieldLocks = new Map([
+  [
+    'src/features/trainer-dynamax/TrainerDynamaxSection.tsx#SearchableOptionInput[1]=>src/components/SearchableOptionInput.tsx#input:id={inputId}[disabled]',
+    'Trainer Dynamax freezes its exact settings during source loading, review and direct apply. Failed operations release the controls for repair and a new review.'
+  ],
   [
     'src/features/starmobiles/StarmobilesSection.tsx#SearchableOptionInput[2]=>src/components/SearchableOptionInput.tsx#input:id={inputId}[disabled]',
     'Starmobile signature moves and missing source slots are fixed fields. Move selection requires an active editing session, an available source and loaded catalog; invalid drafts and staging never lock editable slots.'

@@ -51,6 +51,7 @@ export const workbenchSections = [
   'profanityFilter',
   'raidDens',
   'trainerWhiteout',
+  'trainerDynamax',
   'randomizer',
   'gameDump',
   'gameplaySettings',

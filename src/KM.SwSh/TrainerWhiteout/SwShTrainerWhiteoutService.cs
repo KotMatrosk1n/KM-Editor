@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Globalization;
+using System.Security.Cryptography;
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
@@ -45,7 +46,7 @@ public sealed class SwShTrainerWhiteoutService(ProjectWorkspaceService? workspac
         {
             var id = trainer.TrainerId;
             var vanilla = SwShTrainerWhiteoutCatalog.VanillaEnabled(id);
-            var values = state.Scripts.Select(script => script.Settings[id]).Distinct().ToArray();
+            var values = state.Scripts.Where(script => AppliesTo(script, id)).Select(script => script.Settings[id]).Distinct().ToArray();
             var value = values[0];
             return new SwShTrainerWhiteoutRecord(id, trainer.Name, value == 0 ? vanilla : value == 2,
                 vanilla, value == 0 ? null : value == 2, values.Length > 1);
@@ -67,7 +68,7 @@ public sealed class SwShTrainerWhiteoutService(ProjectWorkspaceService? workspac
             var retained = current.PendingEdits.Where(edit => edit.Domain != Domain
                 || !changes.Any(change => edit.RecordId == change.TrainerId.ToString(CultureInfo.InvariantCulture))).ToList();
             foreach (var change in changes)
-                if (state.Scripts.Any(script => script.Settings[change.TrainerId] != Encode(change.Enabled)))
+                if (state.Scripts.Any(script => script.Settings[change.TrainerId] != Encode(AppliesTo(script, change.TrainerId) ? change.Enabled : null)))
                     retained.Add(CreateEdit(change.TrainerId, change.Enabled));
             current = current with { PendingEdits = retained.ToArray() };
         }
@@ -90,10 +91,11 @@ public sealed class SwShTrainerWhiteoutService(ProjectWorkspaceService? workspac
         RequireEditable(state, diagnostics);
         var changes = ReadChanges(session, diagnostics);
         if (state is null || HasErrors(diagnostics)) return new(session.Id, [], diagnostics);
+        var pendingSource = CreatePendingSource(changes);
         var writes = SelectWrites(state, changes).Select(file => new PlannedFileWrite(file.RelativePath,
             new ProjectFileReference[] { new(ProjectFileLayer.Base, file.RelativePath) }
                 .Concat(file.Layer == ProjectFileLayer.Layered ? [new ProjectFileReference(ProjectFileLayer.Layered, file.RelativePath)] : [])
-                .Concat(session.PendingEdits.SelectMany(edit => edit.Sources)).Distinct().ToArray(),
+                .Append(pendingSource).Distinct().ToArray(),
             File.Exists(file.Target), "Apply pending trainer whiteout settings while preserving other edits.")).ToArray();
         // Every table participates in deciding whether facility callbacks are required.
         var allSources = state.Scripts.SelectMany(script => new[] { new ProjectFileReference(ProjectFileLayer.Base, script.File.RelativePath) }
@@ -126,7 +128,8 @@ public sealed class SwShTrainerWhiteoutService(ProjectWorkspaceService? workspac
             {
                 var bytes = file.RelativePath == MainPath
                     ? SwShTrainerWhiteoutMainPatcher.Apply(file.Vanilla, file.Source, NeedsBridge(state, changes), paths.SelectedGame!.Value)
-                    : SwShTrainerWhiteoutAmxPatcher.ApplySettings(file.Vanilla, file.Source, Path.GetFileName(file.RelativePath), changes);
+                    : SwShTrainerWhiteoutAmxPatcher.ApplySettings(file.Vanilla, file.Source, Path.GetFileName(file.RelativePath),
+                        ScriptChanges(state.Scripts.Single(script => script.File.RelativePath == file.RelativePath), changes));
                 outputs.Add((file, bytes));
             }
             foreach (var (file, bytes) in outputs)
@@ -158,7 +161,8 @@ public sealed class SwShTrainerWhiteoutService(ProjectWorkspaceService? workspac
             var scripts = SwShTrainerWhiteoutCatalog.ScriptHashes.Keys.Select(name =>
             {
                 var file = ReadFile(paths, ScriptRoot + name);
-                return new Script(file, SwShTrainerWhiteoutAmxPatcher.ReadSettings(file.Vanilla, file.Source, name));
+                var configuration = SwShTrainerWhiteoutAmxPatcher.ReadConfiguration(file.Vanilla, file.Source, name);
+                return new Script(file, configuration.Settings, configuration.VanillaRouting);
             }).ToArray();
             var main = ReadFile(paths, MainPath);
             if (SwShTrainerWhiteoutMainPatcher.Inspect(main.Vanilla, paths.SelectedGame).HasAny)
@@ -188,14 +192,32 @@ public sealed class SwShTrainerWhiteoutService(ProjectWorkspaceService? workspac
     private static IEnumerable<SourceFile> SelectWrites(State state, IReadOnlyDictionary<int, bool?> changes)
     {
         foreach (var script in state.Scripts)
-            if (changes.Any(change => script.Settings[change.Key] != Encode(change.Value))) yield return script.File;
+            if (ScriptChanges(script, changes).Any(change => script.Settings[change.Key] != Encode(change.Value))) yield return script.File;
         var bridge = NeedsBridge(state, changes);
         if (bridge ? !state.MainState.Installed : state.MainState.HasAny) yield return state.Main;
     }
 
     private static bool NeedsBridge(State state, IReadOnlyDictionary<int, bool?> changes) => state.Scripts
         .Where(script => Path.GetFileName(script.File.RelativePath) is "tournament.amx" or "shibari_dojo.amx")
-        .Any(script => script.Settings.Select((value, id) => changes.TryGetValue(id, out var change) ? Encode(change) : value).Any(value => value != 0));
+        .Any(script => script.Settings.Select((value, id) => AppliesTo(script, id)
+            ? changes.TryGetValue(id, out var change) ? Encode(change) : value : (byte)0).Any(value => value != 0));
+
+    private static bool AppliesTo(Script script, int trainerId) =>
+        !script.VanillaRouting || SwShTrainerWhiteoutRoutes.Contains(Path.GetFileName(script.File.RelativePath), trainerId);
+
+    // Clear obsolete copies from older output only for trainers in this edit.
+    private static IReadOnlyDictionary<int, bool?> ScriptChanges(Script script, IReadOnlyDictionary<int, bool?> changes) =>
+        changes.Where(change => AppliesTo(script, change.Key) || script.Settings[change.Key] != 0)
+            .ToDictionary(change => change.Key, change => AppliesTo(script, change.Key) ? change.Value : null);
+
+    private static ProjectFileReference CreatePendingSource(IReadOnlyDictionary<int, bool?> changes)
+    {
+        // Bind the complete edit without repeating hundreds of source paths per output file.
+        var settings = new byte[SwShTrainerWhiteoutAmxPatcher.TrainerCount];
+        Array.Fill(settings, byte.MaxValue);
+        foreach (var change in changes) settings[change.Key] = Encode(change.Value);
+        return new(ProjectFileLayer.Pending, $"pending/trainer-whiteout/changes/{Convert.ToHexString(SHA256.HashData(settings))}");
+    }
 
     private static Dictionary<int, bool?> ReadChanges(EditSession session, List<ValidationDiagnostic> diagnostics)
     {
@@ -239,6 +261,6 @@ public sealed class SwShTrainerWhiteoutService(ProjectWorkspaceService? workspac
         return new(id, now, written, new WriteManifest(id, now, plan.Writes), diagnostics);
     }
     private sealed record SourceFile(string RelativePath, byte[] Vanilla, byte[] Source, string Target, ProjectFileLayer Layer);
-    private sealed record Script(SourceFile File, IReadOnlyList<byte> Settings);
+    private sealed record Script(SourceFile File, IReadOnlyList<byte> Settings, bool VanillaRouting);
     private sealed record State(IReadOnlyList<Script> Scripts, SourceFile Main, SwShTrainerWhiteoutMainState MainState, bool CanEdit);
 }

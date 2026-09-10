@@ -264,6 +264,8 @@ import {
   type FpsPatchStatus
 } from './bridge/fpsPatchContracts';
 import { type ProfanityFilterStatus } from './bridge/profanityFilterContracts';
+import { TrainerDynamaxSection } from './features/trainer-dynamax/TrainerDynamaxSection';
+import type { ApplyTrainerDynamaxRequest } from './bridge/trainerDynamaxContracts';
 import {
   ProjectBridgeError,
   projectBridge as defaultProjectBridge,
@@ -3431,6 +3433,7 @@ export function App({
   const [isProfanityFilterLoading, setIsProfanityFilterLoading] = useState(false);
   const profanityFilterLoadOperationRef = useRef<object | null>(null);
   const [isProfanityFilterApplying, setIsProfanityFilterApplying] = useState(false);
+  const [isTrainerDynamaxApplying, setIsTrainerDynamaxApplying] = useState(false);
   const [isRandomizerApplying, setIsRandomizerApplying] = useState(false);
   const [isGameDumpWriting, setIsGameDumpWriting] = useState(false);
   const [isOutputRootCreating, setIsOutputRootCreating] = useState(false);
@@ -3658,6 +3661,7 @@ export function App({
     isModMergerApplying ||
     isFpsPatchApplying ||
     isProfanityFilterApplying ||
+    isTrainerDynamaxApplying ||
     isRandomizerApplying ||
     isGameDumpWriting ||
     isProjectRelocationApplying ||
@@ -4581,6 +4585,8 @@ export function App({
     (dirty: boolean) => registerEditorDraftDirty('raidDens', dirty), [registerEditorDraftDirty]);
   const handleTrainerWhiteoutDirtyChange = useCallback(
     (dirty: boolean) => registerEditorDraftDirty('trainerWhiteout', dirty), [registerEditorDraftDirty]);
+  const handleTrainerDynamaxDirtyChange = useCallback(
+    (dirty: boolean) => registerEditorDraftDirty('trainerDynamax', dirty), [registerEditorDraftDirty]);
   const handleStarmobilesDirtyChange = useCallback(
     (dirty: boolean) => registerEditorDraftDirty('starmobiles', dirty), [registerEditorDraftDirty]);
   const handleHabitatCoordinatesDirtyChange = useCallback(
@@ -14660,6 +14666,29 @@ export function App({
     }
   };
 
+  const handleApplyTrainerDynamax = async (request: ApplyTrainerDynamaxRequest) => {
+    if (!outputSafety.canApply) return null;
+    const token = beginCriticalWriteOperation();
+    if (!token) return null;
+    setIsTrainerDynamaxApplying(true);
+    setBridgeDiagnostics([]);
+    try {
+      const response = await bridge.applyTrainerDynamax(request);
+      setApplyResult(response.applyResult);
+      await notifySemanticOutputMutation();
+      if (!response.applyResult.diagnostics.some(item => item.severity === 'error') && response.applyResult.writtenFiles.length > 0)
+        await refreshLoadedWorkflowsAfterApply(createProjectPaths(draftPaths));
+      return response;
+    } catch (error) {
+      await notifySemanticOutputFailure(error);
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      throw error;
+    } finally {
+      setIsTrainerDynamaxApplying(false);
+      finishCriticalWriteOperation(token);
+    }
+  };
+
   const handleLoadProfanityFilter = async () => {
     if (profanityFilterLoadOperationRef.current !== null) return;
     const operation = {};
@@ -22405,6 +22434,11 @@ export function App({
               outputRootPath={draftPaths.outputRootPath}
               status={profanityFilterStatus}
             />
+          ) : null}
+          {activeSection === 'trainerDynamax' ? (
+            <TrainerDynamaxSection key={JSON.stringify(createProjectPaths(draftPaths))} bridge={bridge} paths={createProjectPaths(draftPaths)}
+              canApply={Boolean(health?.canOpenEditableWorkflows && outputSafety.canApply)} onApply={handleApplyTrainerDynamax}
+              onDirtyStateChange={handleTrainerDynamaxDirtyChange} />
           ) : null}
           {activeSection === 'randomizer' ? (
             <RandomizerSection

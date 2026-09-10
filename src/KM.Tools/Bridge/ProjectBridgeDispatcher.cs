@@ -35,6 +35,8 @@ using KM.Api.Output;
 using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.ProfanityFilter;
+using KM.Api.TrainerDynamax;
+using KM.SwSh.TrainerDynamax;
 using KM.Api.RaidDens;
 using KM.Api.TrainerWhiteout;
 using KM.SwSh.RaidDens;
@@ -200,6 +202,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private readonly SwShRaidDensService raidDensService;
     private readonly SwShTrainerWhiteoutService trainerWhiteoutService;
     private readonly SwShProfanityFilterService profanityFilterService;
+    private readonly SwShTrainerDynamaxService trainerDynamaxService;
     private readonly SwShRandomizerService randomizerService;
     private readonly SwShGameDumpService swShGameDumpService;
     private readonly SvGameDumpService svGameDumpService;
@@ -325,6 +328,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         raidDensService = new SwShRaidDensService(this.projectWorkspaceService);
         trainerWhiteoutService = new SwShTrainerWhiteoutService(this.projectWorkspaceService);
         this.profanityFilterService = profanityFilterService ?? new SwShProfanityFilterService(this.projectWorkspaceService);
+        this.trainerDynamaxService = new SwShTrainerDynamaxService(this.projectWorkspaceService);
         this.randomizerService = randomizerService ?? new SwShRandomizerService(this.projectWorkspaceService);
         this.staticEncountersEditSessionService = staticEncountersEditSessionService ?? new SwShStaticEncountersEditSessionService(this.projectWorkspaceService);
         this.trainersEditSessionService = trainersEditSessionService ?? new SwShTrainersEditSessionService(this.projectWorkspaceService);
@@ -743,6 +747,9 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.StageRaidDens => DispatchStageRaidDens(requestJson),
                 KmCommandNames.StageTrainerWhiteout => DispatchStageTrainerWhiteout(requestJson),
                 KmCommandNames.LoadProfanityFilter => DispatchLoadProfanityFilter(requestJson),
+                KmCommandNames.LoadTrainerDynamax => DispatchLoadTrainerDynamax(requestJson),
+                KmCommandNames.ReviewTrainerDynamax => DispatchReviewTrainerDynamax(requestJson),
+                KmCommandNames.ApplyTrainerDynamax => DispatchApplyTrainerDynamax(requestJson),
                 KmCommandNames.ApplyProfanityFilter => DispatchApplyProfanityFilter(requestJson),
                 KmCommandNames.RestoreProfanityFilter => DispatchRestoreProfanityFilter(requestJson),
                 KmCommandNames.ImportRandomizerSeed => DispatchImportRandomizerSeed(requestJson),
@@ -5417,6 +5424,38 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         workflow.DetectedGame is null ? null : ProjectBridgeMapper.ToDto(workflow.DetectedGame.Value),
         workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
 
+    private string DispatchLoadTrainerDynamax(string requestJson)
+    {
+        var request = DeserializeRequest<LoadTrainerDynamaxRequest>(requestJson);
+        var status = trainerDynamaxService.Load(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        return SerializeSuccess(new LoadTrainerDynamaxResponse(ToDto(status)), request.RequestId);
+    }
+
+    private string DispatchReviewTrainerDynamax(string requestJson)
+    {
+        var request = DeserializeRequest<ReviewTrainerDynamaxRequest>(requestJson);
+        var settings = request.Payload.Settings;
+        var result = trainerDynamaxService.Review(ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            new(settings.DisablePlayer, settings.DisableOpponents));
+        return SerializeSuccess(new ReviewTrainerDynamaxResponse(new(result.ReviewToken,
+            new(result.Settings.DisablePlayer, result.Settings.DisableOpponents), result.OutputAction,
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray())), request.RequestId);
+    }
+
+    private string DispatchApplyTrainerDynamax(string requestJson)
+    {
+        var request = DeserializeRequest<ApplyTrainerDynamaxRequest>(requestJson);
+        var settings = request.Payload.Settings;
+        var result = ExecuteSerializedSwShOutputOperation(() => trainerDynamaxService.Apply(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths), new(settings.DisablePlayer, settings.DisableOpponents), request.Payload.ReviewToken));
+        return SerializeSuccess(new ApplyTrainerDynamaxResponse(ToDto(result.Status),
+            EditSessionBridgeMapper.ToDto(result.ApplyResult)), request.RequestId);
+    }
+
+    private static TrainerDynamaxStatusDto ToDto(SwShTrainerDynamaxStatus status) => new(status.CanEdit,
+        new(status.Settings.DisablePlayer, status.Settings.DisableOpponents), status.Partial, status.BuildId,
+        status.SourceLayer, status.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+
     private string DispatchLoadProfanityFilter(string requestJson)
     {
         var request = DeserializeRequest<LoadProfanityFilterRequest>(requestJson);
@@ -7982,6 +8021,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.ApplyFpsPatch or
             KmCommandNames.RestoreFpsPatch or
             KmCommandNames.ApplyProfanityFilter or
+            KmCommandNames.ApplyTrainerDynamax or
             KmCommandNames.RestoreProfanityFilter or
             KmCommandNames.ApplyRandomizer or
             KmCommandNames.RestoreRandomizer or
@@ -8103,6 +8143,9 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.ApplyFpsPatch or
             KmCommandNames.RestoreFpsPatch or
             KmCommandNames.LoadProfanityFilter or
+            KmCommandNames.LoadTrainerDynamax or
+            KmCommandNames.ReviewTrainerDynamax or
+            KmCommandNames.ApplyTrainerDynamax or
             KmCommandNames.ApplyProfanityFilter or
             KmCommandNames.RestoreProfanityFilter or
             KmCommandNames.ImportRandomizerSeed or

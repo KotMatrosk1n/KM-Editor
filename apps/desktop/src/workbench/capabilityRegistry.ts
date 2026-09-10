@@ -490,6 +490,11 @@ export const workbenchCapabilityRegistry = [
     showInWorkflowDashboard: false, standalone: true
   }),
   workflow({
+    description: 'Control Dynamax permissions in trainer battles.',
+    games: swordShieldGames, icon: Shield, id: 'trainerDynamax', label: 'Trainer Dynamax',
+    showInWorkflowDashboard: false, standalone: true
+  }),
+  workflow({
     description: 'Build deterministic reviewed randomizer output.',
     games: swordShieldGames,
     icon: Shuffle,
