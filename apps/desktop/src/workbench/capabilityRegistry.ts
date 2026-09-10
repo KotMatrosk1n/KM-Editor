@@ -485,6 +485,11 @@ export const workbenchCapabilityRegistry = [
     showInWorkflowDashboard: false, standalone: true
   }),
   workflow({
+    description: 'Control trainer whiteout behavior.',
+    games: swordShieldGames, icon: Shield, id: 'trainerWhiteout', label: 'Trainer Whiteout',
+    showInWorkflowDashboard: false, standalone: true
+  }),
+  workflow({
     description: 'Build deterministic reviewed randomizer output.',
     games: swordShieldGames,
     icon: Shuffle,

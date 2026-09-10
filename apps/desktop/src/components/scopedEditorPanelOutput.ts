@@ -23,6 +23,7 @@ export const scopedEditorPanelSectionIds = new Set<WorkbenchSection>([
   'habitatCoordinates',
   'starmobiles',
   'raidDens',
+  'trainerWhiteout',
   'typeChart',
   'fairyGymBoosts',
   'fashionUnlock',

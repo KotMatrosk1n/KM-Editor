@@ -347,6 +347,16 @@ public sealed class SwShAmxInstruction
         return new SwShAmxInstruction(definition, replacements, null, [], OriginalCell);
     }
 
+    internal SwShAmxInstruction CloneWithOriginalCell(int? originalCell)
+    {
+        return new SwShAmxInstruction(
+            definition,
+            operands.Select(operand => operand.CloneResolved()).ToArray(),
+            DefaultDestination?.CloneResolved(),
+            switchCases.Select(@case => new SwShAmxSwitchCase(@case.Value, @case.Destination.CloneResolved())).ToArray(),
+            originalCell);
+    }
+
     internal SwShAmxInstruction CloneAddingSwitchCase(long value, SwShAmxInstruction target)
     {
         if (!IsSwitchTable)

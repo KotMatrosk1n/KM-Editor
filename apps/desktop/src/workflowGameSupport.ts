@@ -40,6 +40,7 @@ import { type FashionCatalogWorkflow } from './bridge/fashionCatalogContracts';
 import { type GymUniformRemovalWorkflow } from './bridge/gymUniformRemovalContracts';
 import { type StarmobilesWorkflow } from './bridge/starmobilesContracts';
 import { type RaidDensWorkflow } from './bridge/raidDensContracts';
+import { type TrainerWhiteoutWorkflow } from './bridge/trainerWhiteoutContracts';
 import { type HabitatCoordinatesWorkflow } from './bridge/habitatCoordinatesContracts';
 import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContracts';
 import { type FairyGymBoostsWorkflow } from './bridge/fairyGymBoostsContracts';
@@ -127,7 +128,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
     id: 'betaEditors',
     label: 'Beta Editors',
     labelKey: 'workbench.navigation.betaEditors',
-    sectionIds: ['gameplaySettings']
+    sectionIds: ['gameplaySettings', 'trainerWhiteout']
   }
 ];
 
@@ -173,6 +174,7 @@ export const sharedStagedEditorSectionIds = new Set<WorkbenchSection>([
   'trainers',
   'starmobiles',
   'raidDens',
+  'trainerWhiteout',
   'moves',
   'items',
   'placement',
@@ -197,6 +199,7 @@ export const sharedStagedEditorDomains = new Set([
   'workflow.trainers',
   'workflow.starmobiles',
   'workflow.raidDens',
+  'workflow.trainerWhiteout',
   'workflow.moves',
   'workflow.items',
   'workflow.placement',
@@ -280,6 +283,7 @@ export type LoadedWorkflowStateBySection = {
   habitatCoordinatesWorkflow: HabitatCoordinatesWorkflow | null;
   starmobilesWorkflow: StarmobilesWorkflow | null;
   raidDensWorkflow: RaidDensWorkflow | null;
+  trainerWhiteoutWorkflow: TrainerWhiteoutWorkflow | null;
   spreadsheetImportWorkflow: SpreadsheetImportWorkflow | null;
   startingItemsWorkflow: StartingItemsWorkflow | null;
   staticEncountersWorkflow: StaticEncountersWorkflow | null;
@@ -411,6 +415,8 @@ export function getLoadedWorkflowStateForSection(
       return state.starmobilesWorkflow !== null;
     case 'raidDens':
       return state.raidDensWorkflow !== null;
+    case 'trainerWhiteout':
+      return state.trainerWhiteoutWorkflow !== null;
     case 'habitatCoordinates':
       return state.habitatCoordinatesWorkflow !== null;
     case 'spreadsheetImport':
