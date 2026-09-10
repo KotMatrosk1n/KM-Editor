@@ -45,12 +45,12 @@ const auditedTsxSourceFiles = auditedSourceFiles.filter((sourceFile) =>
 // failure rather than silently shrinking the audit.
 assert.equal(
   auditedSourceFiles.length,
-  306,
+  307,
   'Update the field-lock source count only after reviewing every added or removed application file.'
 );
 assert.equal(
   auditedTsxSourceFiles.length,
-  106,
+  107,
   'Update the field-lock TSX count only after reviewing every added or removed editor surface.'
 );
 
@@ -119,8 +119,12 @@ const knownFieldComponents = new Set([
  */
 const permittedTransientFieldLocks = new Map([
   [
+    'src/features/trainer-dynamax/TrainerDynamaxSection.tsx#TrainerDynamaxRoster[1]=>src/features/trainer-dynamax/TrainerDynamaxRoster.tsx#SearchableOptionInput[1][disabled]=>src/components/SearchableOptionInput.tsx#input:id={inputId}[disabled]',
+    'Trainer overrides require a readable source and freeze during initial loading or the direct output transaction. Review permits newer drafts and rejects its obsolete response; failed operations release controls.'
+  ],
+  [
     'src/features/trainer-dynamax/TrainerDynamaxSection.tsx#SearchableOptionInput[1]=>src/components/SearchableOptionInput.tsx#input:id={inputId}[disabled]',
-    'Trainer Dynamax freezes its exact settings during source loading, review and direct apply. Failed operations release the controls for repair and a new review.'
+    'Trainer Dynamax freezes its exact settings during source loading and direct apply; review allows newer drafts. Failed operations release the controls for repair and a new review.'
   ],
   [
     'src/features/starmobiles/StarmobilesSection.tsx#SearchableOptionInput[2]=>src/components/SearchableOptionInput.tsx#input:id={inputId}[disabled]',

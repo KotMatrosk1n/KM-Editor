@@ -10,6 +10,7 @@ import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditor
 import { LoadingProgress } from '../../components/LoadingProgress';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useLocalization } from '../../localization';
+import { TrainerDynamaxRoster, TrainerDynamaxRowReview, dynamaxSettingsKey } from './TrainerDynamaxRoster';
 import './TrainerDynamaxSection.css';
 
 type Props = {
@@ -23,13 +24,14 @@ export function TrainerDynamaxSection({ bridge, paths, canApply, onApply, onDirt
   const { t, translateLiteral } = useLocalization();
   const [status, setStatus] = useState<TrainerDynamaxStatus | null>(null);
   const [settings, setSettings] = useState(normal);
+  const settingsRef = useRef(settings); settingsRef.current = settings;
   const [review, setReview] = useState<TrainerDynamaxReview | null>(null);
   const [busy, setBusy] = useState<'load' | 'review' | 'apply' | null>(null);
   const [diagnostics, setDiagnostics] = useState<ApiDiagnostic[]>([]);
   const [saved, setSaved] = useState(false);
   const alive = useRef(true);
   const lock = useRef(false);
-  const dirty = status !== null && (settings.disablePlayer !== status.settings.disablePlayer || settings.disableOpponents !== status.settings.disableOpponents);
+  const dirty = status !== null && dynamaxSettingsKey(settings) !== dynamaxSettingsKey(status.settings);
   usePublishCommonEditorDiagnostics(diagnostics);
   useEffect(() => { onDirtyStateChange(dirty); }, [dirty, onDirtyStateChange]);
   useEffect(() => () => onDirtyStateChange(false), [onDirtyStateChange]);
@@ -41,18 +43,21 @@ export function TrainerDynamaxSection({ bridge, paths, canApply, onApply, onDirt
     try {
       const response = await bridge.loadTrainerDynamax({ paths });
       if (!alive.current) return;
-      setStatus(response.status); setSettings(response.status.settings); setDiagnostics(response.status.diagnostics);
+      setStatus(response.status); settingsRef.current = response.status.settings; setSettings(response.status.settings); setDiagnostics(response.status.diagnostics);
     } catch { if (alive.current) { setStatus(null); failed(); } }
     finally { lock.current = false; if (alive.current) setBusy(null); }
   };
   useEffect(() => { alive.current = true; void load(); return () => { alive.current = false; }; }, [bridge]);
-  const change = (next: TrainerDynamaxSettings) => { setSettings(next); setReview(null); setSaved(false); };
+  const change = (next: TrainerDynamaxSettings) => { settingsRef.current = next; setSettings(next); setReview(null); setSaved(false); };
   const prepare = async () => {
     if (lock.current || !status?.canEdit || !canApply) return;
     lock.current = true; setBusy('review'); setReview(null); setSaved(false); setDiagnostics([]);
     try {
-      const response = await bridge.reviewTrainerDynamax({ paths, settings });
-      if (alive.current) { setReview(response.review); setDiagnostics(response.review.diagnostics); }
+      const submitted = settingsRef.current;
+      const response = await bridge.reviewTrainerDynamax({ paths, settings: submitted });
+      if (alive.current && dynamaxSettingsKey(settingsRef.current) === dynamaxSettingsKey(submitted)) {
+        setReview(response.review); setDiagnostics(response.review.diagnostics);
+      }
     } catch { if (alive.current) failed(); }
     finally { lock.current = false; if (alive.current) setBusy(null); }
   };
@@ -67,7 +72,7 @@ export function TrainerDynamaxSection({ bridge, paths, canApply, onApply, onDirt
       setStatus(response.status);
       const errors = response.applyResult.diagnostics.some(item => item.severity === 'error');
       setDiagnostics([...response.applyResult.diagnostics, ...response.status.diagnostics]);
-      if (!errors) { setSettings(response.status.settings); setSaved(true); }
+      if (!errors && dynamaxSettingsKey(settingsRef.current) === dynamaxSettingsKey(review.settings)) { settingsRef.current = response.status.settings; setSettings(response.status.settings); setSaved(true); }
     } catch { if (alive.current) { setReview(null); failed(); } }
     finally { lock.current = false; if (alive.current) setBusy(null); }
   };
@@ -80,6 +85,7 @@ export function TrainerDynamaxSection({ bridge, paths, canApply, onApply, onDirt
         <button type="button" className="secondary-button" disabled={busy !== null || dirty} onClick={() => void load()}>
           <RefreshCw size={16} aria-hidden="true" />{translateLiteral('Refresh')}</button></div>
       {busy ? <LoadingProgress label={t(`trainerDynamax.progress.${busy}`)} /> : null}
+      <h3>{t('trainerDynamax.global')}</h3>
       <div className="trainer-dynamax-controls">
         {(['disablePlayer', 'disableOpponents'] as const).map((field, index) => {
           const Icon = index === 0 ? UserRound : UsersRound;
@@ -88,7 +94,7 @@ export function TrainerDynamaxSection({ bridge, paths, canApply, onApply, onDirt
             <div className="trainer-dynamax-card-heading"><Icon size={22} aria-hidden="true" /><h3 id={`dynamax-${key}`}>{t(`trainerDynamax.${key}`)}</h3></div>
             <p>{t(`trainerDynamax.${key}Help`)}</p>
             <div className="trainer-dynamax-field"><span>{t('trainerDynamax.permission')}</span>
-              <SearchableOptionInput ariaLabel={t(`trainerDynamax.${key}`)} value={String(settings[field])} disabled={busy !== null || !status?.canEdit}
+              <SearchableOptionInput ariaLabel={t(`trainerDynamax.${key}`)} value={String(settings[field])} disabled={busy === 'load' || busy === 'apply' || !status?.canEdit}
                 isFiniteCatalog localizeOptions={false} options={[{ value: 'false', label: label(false) }, { value: 'true', label: label(true) }]}
                 onChange={value => change({ ...settings, [field]: value === 'true' })} />
             </div>
@@ -97,6 +103,8 @@ export function TrainerDynamaxSection({ bridge, paths, canApply, onApply, onDirt
         })}
       </div>
       <p className="trainer-dynamax-scope">{t('trainerDynamax.scope')}</p>
+      {status && (status.trainers?.length ?? 0) > 0 ? <TrainerDynamaxRoster status={status} settings={settings}
+        disabled={!status.canEdit || busy === 'load' || busy === 'apply'} onChange={change} /> : null}
       {status?.partial ? <p role="status">{t('trainerDynamax.partial')}</p> : null}
       <div className="trainer-dynamax-actions">
         <button type="button" className="primary-button" disabled={busy !== null || !status?.canEdit || !canApply} onClick={() => void prepare()}>
@@ -112,6 +120,7 @@ export function TrainerDynamaxSection({ bridge, paths, canApply, onApply, onDirt
         <dl className="trainer-dynamax-review-values"><div><dt>{t('trainerDynamax.player')}</dt><dd>{label(review.settings.disablePlayer)}</dd></div>
           <div><dt>{t('trainerDynamax.opponents')}</dt><dd>{label(review.settings.disableOpponents)}</dd></div>
           <div><dt>{t('trainerDynamax.target')}</dt><dd data-localization-ignore="true">exefs/main</dd></div></dl>
+        <TrainerDynamaxRowReview before={status?.settings ?? normal} settings={review.settings} trainers={status?.trainers} />
         <p>{t('trainerDynamax.reviewHelp')}</p>
         <button type="button" className="primary-button" disabled={busy !== null || !canApply || review.outputAction === 'none'} onClick={() => void apply()}>
           <Save size={17} aria-hidden="true" />{t('trainerDynamax.apply')}</button>

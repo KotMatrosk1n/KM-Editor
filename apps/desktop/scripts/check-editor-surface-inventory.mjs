@@ -179,6 +179,7 @@ const editorSurfaceInventory = {
  * makes an unclassified input-bearing TSX file a test failure.
  */
 const embeddedEditableSurfaceInventory = {
+  trainerDynamaxRoster: ['src/features/trainer-dynamax/TrainerDynamaxRoster.tsx', 'TrainerDynamaxRoster', 'choice-local-draft'],
   modelViewerPalette: ['src/features/model-viewer/ViewerColorPicker.tsx', 'ViewerColorPicker', 'utility-input'],
   modelViewerLight: ['src/features/model-viewer/ModelLightControls.tsx', 'ModelLightControls', 'utility-input'],
   modelWorkspaceTools: ['src/features/model-viewer/ModelWorkspaceTools.tsx', 'ModelWorkspaceTools', 'utility-input'],
@@ -237,6 +238,7 @@ const allowedPolicies = new Set([
  * cannot be added under a generic policy without choosing its state contract.
  */
 const editorDraftContractInventory = {
+  trainerDynamaxRoster: 'captured-review',
   modelTextureEditor: 'keyed-exact-submit',
   modelMaterialEditor: 'keyed-exact-submit',
   items: 'ordinary-session-local',

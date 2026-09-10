@@ -16,10 +16,8 @@ type Props = {
   selectedMaterial?: string;
   selectionRevision?: number;
   onSelectMaterial: (material: string) => void;
-  onInspectedMaterial: (material: string) => void;
-  onTextureHost: (host: HTMLDivElement | null) => void;
 };
-export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyChange, onPreview, onStage, selectedMaterial, selectionRevision, onSelectMaterial, onInspectedMaterial, onTextureHost }: Props) {
+export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyChange, onPreview, onStage, selectedMaterial, selectionRevision, onSelectMaterial }: Props) {
   const { t } = useLocalization();
   const [properties, setProperties] = useState<ModelProperties | null>(null);
   const [selection, setSelection] = useState(''); const [search, setSearch] = useState('');
@@ -42,7 +40,6 @@ export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyCh
   const staged = useMemo(() => stagedAssetChanges(session, model), [session, model]);
   const asset = properties?.materials.find(a => selection.startsWith(a.id + '|'));
   const material = asset ? selection.slice(asset.id.length + 1) : '';
-  useEffect(() => { onInspectedMaterial(material); }, [material, onInspectedMaterial]);
   const key = (id: string, field: MaterialField) => `${id}|${field.key}`;
   const baseline = (id: string, field: MaterialField): Draft => {
     const saved = staged.find(a => a.asset === id)?.changes.find(c => c.key === field.key);
@@ -102,9 +99,9 @@ export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyCh
       <label htmlFor="model-property-search">{t('modelEditor.search')}</label>
       <input id="model-property-search" type="search" value={search} onChange={event => setSearch(event.target.value)} />
       <fieldset disabled={locked}>
-        {[...new Set(['colors', ...fields.map(f => f.group)])].map(group => <details key={group} open={group === 'colors' || !!search}>
+        {[...new Set(fields.map(f => f.group))].map(group => <details key={group} open={group === 'colors' || !!search}>
           <summary>{t(`modelEditor.group.${group}`)} ({fields.filter(f => f.group === group).length})</summary>
-          {group === 'colors' ? <><p>{t('modelEditor.colorHelp')}</p><div ref={onTextureHost} /></> : null}
+          {group === 'colors' ? <p>{t('modelEditor.colorHelp')}</p> : null}
           {fields.filter(f => f.group === group).map(field => {
             const value = current(asset!.id, field);
             const selectedRestore = staged.some(a => a.asset === asset?.id && a.restore);
