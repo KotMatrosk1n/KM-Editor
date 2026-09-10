@@ -22,3 +22,22 @@
 .trainer-dynamax-review-values dd { margin: 0.5rem 0 0; font-weight: 600; overflow-wrap: anywhere; }
 @container (max-width: 46rem) { .trainer-dynamax-controls, .trainer-dynamax-review-values { grid-template-columns: minmax(0, 1fr); } }
 @container (max-width: 30rem) { .trainer-dynamax-actions > button, .trainer-dynamax-review > button { inline-size: 100%; } }
+
+.trainer-dynamax-roster { display: grid; gap: 1.25rem; min-inline-size: 0; }
+.trainer-dynamax-roster-layout { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(18rem, 1fr); align-items: start; gap: 1.5rem; }
+.trainer-dynamax-list { display: grid; gap: 1rem; min-inline-size: 0; }
+.trainer-dynamax-search { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.8rem; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 0.75rem; }
+.trainer-dynamax-search input { width: 100%; min-width: 0; border: 0; background-color: transparent; color: var(--color-text); font: inherit; padding: 0.5rem; }
+.trainer-dynamax-table-scroll { max-block-size: min(36rem, 60dvh); overflow: auto; border: 1px solid var(--color-border); border-radius: 0.75rem; }
+.trainer-dynamax-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.trainer-dynamax-table th { position: sticky; inset-block-start: 0; z-index: 1; background: var(--color-surface); text-align: start; }
+.trainer-dynamax-table th, .trainer-dynamax-table td { padding: 0.85rem; overflow-wrap: anywhere; }
+.trainer-dynamax-table tbody tr { cursor: pointer; border-top: 1px solid var(--color-border); }
+.trainer-dynamax-table tbody tr:hover, .trainer-dynamax-table tbody tr[aria-selected="true"] { background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
+.trainer-dynamax-table tbody tr:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.trainer-dynamax-table td .status-pill { display: inline-flex; margin: 0.3rem; }
+.trainer-dynamax-empty { padding: 1rem; }
+.trainer-dynamax-effective { color: var(--color-text-muted); font-size: 0.9rem; overflow-wrap: anywhere; }
+.trainer-dynamax-row-review { display: grid; gap: 0.6rem; padding: 0; list-style: none; max-block-size: 20rem; overflow: auto; }
+.trainer-dynamax-row-review li { display: flex; flex-wrap: wrap; gap: 0.75rem; padding: 0.75rem; border: 1px solid var(--color-border); border-radius: 0.5rem; }
+@container (max-width: 65rem) { .trainer-dynamax-roster-layout { grid-template-columns: minmax(0, 1fr); } }

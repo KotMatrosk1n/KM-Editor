@@ -10,16 +10,12 @@ using KM.Core.Output;
 using KM.Core.Projects;
 using KM.SwSh.Editing;
 using KM.SwSh.ExeFs;
+using KM.SwSh.Trainers;
 
 namespace KM.SwSh.TrainerDynamax;
 
-public sealed record SwShTrainerDynamaxSettings(bool DisablePlayer, bool DisableOpponents)
-{
-    internal int Mask => (DisablePlayer ? 1 : 0) | (DisableOpponents ? 2 : 0);
-}
-
 public sealed record SwShTrainerDynamaxStatus(bool CanEdit, SwShTrainerDynamaxSettings Settings,
-    bool Partial, string? BuildId, string SourceLayer, IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    bool Partial, string? BuildId, string SourceLayer, IReadOnlyList<ValidationDiagnostic> Diagnostics, IReadOnlyList<SwShTrainerDynamaxTrainer>? Trainers = null);
 public sealed record SwShTrainerDynamaxReview(string? ReviewToken, SwShTrainerDynamaxSettings Settings,
     string OutputAction, IReadOnlyList<ValidationDiagnostic> Diagnostics);
 public sealed record SwShTrainerDynamaxApplyResult(SwShTrainerDynamaxStatus Status, ApplyResult ApplyResult);
@@ -37,8 +33,11 @@ public sealed class SwShTrainerDynamaxService(ProjectWorkspaceService? workspace
         {
             var snapshot = Read(paths);
             var state = SwShTrainerDynamaxMainPatcher.Inspect(snapshot.Source, paths.SelectedGame);
-            return new(true, new((state.DisabledSides & 1) != 0, (state.DisabledSides & 2) != 0),
-                state.Partial, state.BuildId, snapshot.Preimage.Exists ? "layered" : "base", []);
+            var roster = new SwShTrainersWorkflowService().Load(workspace.Open(paths));
+            var trainers = roster.Trainers.Where(row => row.TrainerId is >= 1 and <= 436)
+                .Select(row => new SwShTrainerDynamaxTrainer(row.TrainerId, row.Name)).ToArray();
+            return new(true, new((state.DisabledSides & 1) != 0, (state.DisabledSides & 2) != 0, state.Trainers),
+                state.Partial, state.BuildId, snapshot.Preimage.Exists ? "layered" : "base", roster.Diagnostics, trainers);
         }
         catch (Exception exception) when (IsInputFailure(exception))
         {
@@ -95,7 +94,8 @@ public sealed class SwShTrainerDynamaxService(ProjectWorkspaceService? workspace
     private Prepared Prepare(ProjectPaths paths, SwShTrainerDynamaxSettings settings)
     {
         var snapshot = Read(paths);
-        var bytes = SwShTrainerDynamaxMainPatcher.Apply(snapshot.Vanilla, snapshot.Source, paths.SelectedGame, settings.Mask);
+        settings = settings.Canonical();
+        var bytes = SwShTrainerDynamaxMainPatcher.ApplySettings(snapshot.Vanilla, snapshot.Source, paths.SelectedGame, settings);
         var unchanged = SwShTrainerDynamaxMainPatcher.Equivalent(bytes, snapshot.Source);
         var action = unchanged ? "none" : settings.Mask == 0 && SwShTrainerDynamaxMainPatcher.Equivalent(bytes, snapshot.Vanilla)
             ? "delete" : snapshot.Preimage.Exists ? "write" : "create";
@@ -121,7 +121,7 @@ public sealed class SwShTrainerDynamaxService(ProjectWorkspaceService? workspace
             throw new InvalidDataException("Trainer Dynamax could not read its output target. Check exefs/main and refresh.");
         var vanilla = File.ReadAllBytes(Path.Combine(paths.BaseExeFsPath, "main"));
         var vanillaState = SwShTrainerDynamaxMainPatcher.Inspect(vanilla, paths.SelectedGame);
-        if (vanillaState.DisabledSides != 0 || vanillaState.Partial)
+        if (vanillaState.Installed)
             throw new InvalidDataException("Trainer Dynamax requires vanilla Base ExeFS.");
         var source = preimage!.Exists
             ? File.ReadAllBytes(SwShExeFsPatchWorkflowService.ResolveOutputPath(paths, MainPath)!) : vanilla;

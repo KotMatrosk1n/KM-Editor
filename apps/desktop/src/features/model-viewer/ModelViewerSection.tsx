@@ -67,8 +67,6 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
   const [properties, setProperties] = useState<ModelProperties | null>(null);
   const [options, setOptions] = useState<ModelViewOptions>({ display: 0, wireframe: false, hidden: [], selected: null });
   const [selectionRevision, setSelectionRevision] = useState(0);
-  const [materialTextureHost, setMaterialTextureHost] = useState<HTMLDivElement | null>(null);
-  const [inspectedMaterial, setInspectedMaterial] = useState('');
   const selectPart = (part: number | null) => {
     setOptions(old => ({ ...old, selected: part }));
     setSelectionRevision(value => value + 1);
@@ -301,14 +299,11 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
                 selectedMaterial={viewer.info?.parts.find(p => p.id === options.selected)?.material}
                 selectionRevision={selectionRevision}
                 onSelectMaterial={material => selectPart(viewer.info?.parts.find(p => p.material === material)?.id ?? null)}
-                onInspectedMaterial={setInspectedMaterial} onTextureHost={setMaterialTextureHost}
                 onDirtyChange={materialDirtyChange} onStage={onStageAsset} onPreview={setAssetChanges} /></div>
             </> : null}
             <div hidden={editing && tab !== 'textures'}><ModelTextureEditor key={`${selected}/${restoreRevision}`} paths={paths} model={selected} session={session} disabled={disabled || restoring || pendingRestore || original}
               selectedMaterial={viewer.info?.parts.find(p => p.id === options.selected)?.material} onInspect={(texture, changes) => void inspectTexture(texture, changes)}
               selectionRevision={selectionRevision}
-              container={editing && tab === 'materials' ? materialTextureHost : null}
-              materialFilter={editing && tab === 'materials' ? inspectedMaterial : undefined}
               onPreview={setTextureChanges} onStage={onStage} onDirtyChange={dirtyChange} /></div>
           </div> : null}
           </div>
