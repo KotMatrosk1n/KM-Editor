@@ -45495,6 +45495,44 @@ function createEncounterBatchDraftPlan(
 }
 
 
+function getProjectedEncounterSlot(
+  slot: EncounterSlotRecord,
+  fields: EncounterEditableField[],
+  drafts: Record<string, string>,
+  pokemonWorkflow: PokemonWorkflow | null,
+  editorFamily: EditorUiFamily
+) {
+  const read = (name: string, fallback: number, context?: SpeciesFormOptionContext) => {
+    const sourceField = fields.find(field => field.field === name);
+    const value = drafts[name];
+    if (!sourceField || value === undefined) return fallback;
+    const field = toNumericEditableControlField(sourceField,
+      context ? getContextualFieldOptions(sourceField, context) : undefined);
+    const summary = getTrainerDraftSummary([field], { [name]: value }, () => fallback);
+    return summary.invalidFields.length === 0
+      ? parseEditableIntegerDraft(value, field.options) ?? fallback
+      : fallback;
+  };
+  const speciesId = read(encounterSpeciesFieldName, slot.speciesId);
+  const context = createDraftSpeciesFormOptionContext(
+    fields.find(field => field.field === encounterSpeciesFieldName), speciesId.toString(),
+    slot.species, slot.speciesId, undefined, editorFamily, undefined, slot.formOptions
+  );
+  const form = read(encounterFormFieldName, speciesId === slot.speciesId ? slot.form : 0, context);
+  const reference = pokemonWorkflow?.pokemon.find(pokemon =>
+    pokemon.speciesId === speciesId && pokemon.form === form);
+  return {
+    ...slot,
+    speciesId,
+    species: speciesId === 0 ? 'Empty' : reference?.name ?? context.species,
+    spriteName: reference?.spriteName,
+    form,
+    levelMin: read(encounterLevelMinFieldName, slot.levelMin),
+    levelMax: read(encounterLevelMaxFieldName, slot.levelMax),
+    weight: read(editorFamily === 'swsh' ? encounterProbabilityFieldName : zaEncounterWeightFieldName, slot.weight)
+  };
+}
+
 function SelectedEncounterPanel({
   areaTabs,
   canEditEncounters,
@@ -46540,10 +46578,6 @@ function SelectedEncounterPanel({
   const zaPhaseConditionDisplay =
     isZaEncounterTable ? formatZaPhaseConditions(table?.phaseConditions, t) : null;
   const displayedEncounterSlots = table?.slots ?? [];
-  const encounterWeightTotal = displayedEncounterSlots.reduce(
-    (total, slot) => total + slot.weight,
-    0
-  );
   const getEncounterClipboardValues = (slot: EncounterSlotRecord) => {
     if (!table) {
       return {};
@@ -46565,6 +46599,12 @@ function SelectedEncounterPanel({
       ...(editorFamily === 'za' ? zaAppearanceDraftsByTableId[table.tableId] ?? {} : {})
     };
   };
+  const encounterSlotPreviews = new Map(displayedEncounterSlots.map(slot => [
+    slot.slot,
+    getProjectedEncounterSlot(slot, editableFields, getEncounterClipboardValues(slot), pokemonWorkflow, editorFamily)
+  ]));
+  const getEncounterSlotPreview = (slot: EncounterSlotRecord) => encounterSlotPreviews.get(slot.slot) ?? slot;
+  const encounterWeightTotal = [...encounterSlotPreviews.values()].reduce((total, slot) => total + slot.weight, 0);
   const encounterClipboardDisabledReason = (
     slot: EncounterSlotRecord,
     operation: 'copy' | 'paste'
@@ -46675,6 +46715,16 @@ function SelectedEncounterPanel({
         : createTrainerDrafts(defaultEncounterFields, (field) =>
             getEditableEncounterFieldValue(pastedSlot, field)
           );
+      const targetDrafts = editorFamily === 'za'
+        ? createPokemonInstanceDrafts(defaultEncounterFields, field => getEditableEncounterFieldValue(target.slot, field))
+        : createTrainerDrafts(defaultEncounterFields, field => getEditableEncounterFieldValue(target.slot, field));
+      const targetDefaults = (defaults: Record<string, string>) => Object.fromEntries(
+        Object.keys(defaults).map(field => [field, targetDrafts[field] ?? ''])
+      );
+      const targetSlotDefaults = targetDefaults(encounterSlotDraftDefaults);
+      const targetLevelDefaults = targetDefaults(encounterLevelDraftDefaults);
+      const targetPlacementDefaults = targetDefaults(zaEncounterSlotDraftDefaults);
+      const targetAppearanceDefaults = targetDefaults(zaEncounterAppearanceDraftDefaults);
       const ownedFields = new Set(row.values.map((value) => value.fieldKey));
       const selectPastedDrafts = (
         defaults: Record<string, string>,
@@ -46694,10 +46744,10 @@ function SelectedEncounterPanel({
           currentDrafts,
           sharedKey,
           selectPastedDrafts(
-            encounterSlotDraftDefaults,
-            currentDrafts[sharedKey] ?? encounterSlotDraftDefaults
+            targetSlotDefaults,
+            currentDrafts[sharedKey] ?? targetSlotDefaults
           ),
-          encounterSlotDraftDefaults
+          targetSlotDefaults
         )
       );
       if (levelKey) {
@@ -46706,10 +46756,10 @@ function SelectedEncounterPanel({
             currentDrafts,
             levelKey,
             selectPastedDrafts(
-              encounterLevelDraftDefaults,
-              currentDrafts[levelKey] ?? encounterLevelDraftDefaults
+              targetLevelDefaults,
+              currentDrafts[levelKey] ?? targetLevelDefaults
             ),
-            encounterLevelDraftDefaults
+            targetLevelDefaults
           )
         );
       }
@@ -46719,10 +46769,10 @@ function SelectedEncounterPanel({
             currentDrafts,
             slotKey,
             selectPastedDrafts(
-              zaEncounterSlotDraftDefaults,
-              currentDrafts[slotKey] ?? zaEncounterSlotDraftDefaults
+              targetPlacementDefaults,
+              currentDrafts[slotKey] ?? targetPlacementDefaults
             ),
-            zaEncounterSlotDraftDefaults
+            targetPlacementDefaults
           )
         );
         setZaAppearanceDraftsByTableId((currentDrafts) =>
@@ -46730,10 +46780,10 @@ function SelectedEncounterPanel({
             currentDrafts,
             tableId,
             selectPastedDrafts(
-              zaEncounterAppearanceDraftDefaults,
-              currentDrafts[tableId] ?? zaEncounterAppearanceDraftDefaults
+              targetAppearanceDefaults,
+              currentDrafts[tableId] ?? targetAppearanceDefaults
             ),
-            zaEncounterAppearanceDraftDefaults
+            targetAppearanceDefaults
           )
         );
       }
@@ -47085,14 +47135,15 @@ function SelectedEncounterPanel({
               <>
                 <div className="encounter-slot-tabs" aria-label="Encounter slot list">
                   {displayedEncounterSlots.map((slot) => {
-                    const slotLabel = formatEncounterSlotSpeciesLabel(slot, editorFamily);
+                    const preview = encounterSlotPreviews.get(slot.slot)!;
+                    const slotLabel = formatEncounterSlotSpeciesLabel(preview, editorFamily);
                     const slotSpriteLabel = formatSpeciesFormLabel(
-                      slot.species,
-                      slot.form,
-                      slot.speciesId,
+                      preview.species,
+                      preview.form,
+                      preview.speciesId,
                       editorFamily
                     );
-                    const slotBadge = formatEncounterSlotBadge(slot, {
+                    const slotBadge = formatEncounterSlotBadge(preview, {
                       isScarletViolet: isSvEncounterTable,
                       isPokemonLegendsZA: isZaEncounterTable
                     });
@@ -47110,23 +47161,23 @@ function SelectedEncounterPanel({
                     const slotSummary = isZaEncounterTable
                       ? encounterWeightTotal > 0
                         ? t('za.spawnSettings.slotSummaryWithShare', {
-                            levelMax: slot.levelMax,
-                            levelMin: slot.levelMin,
+                            levelMax: preview.levelMax,
+                            levelMin: preview.levelMin,
                             share:
                               formatEncounterSharePercent(
-                                slot.weight,
+                                preview.weight,
                                 encounterWeightTotal,
                                 formatLocale
                               ) ?? '',
-                            weight: slot.weight
+                            weight: preview.weight
                           })
                         : t('za.spawnSettings.slotSummary', {
-                            levelMax: slot.levelMax,
-                            levelMin: slot.levelMin,
-                            weight: slot.weight
+                            levelMax: preview.levelMax,
+                            levelMin: preview.levelMin,
+                            weight: preview.weight
                           })
                       : formatEncounterSlotWeightSummary(
-                          slot,
+                          preview,
                           encounterWeightTotal,
                           isSvEncounterTable,
                           formatLocale
@@ -47194,7 +47245,8 @@ function SelectedEncounterPanel({
                         onClick={() => onSelectSlot(slot.slot)}
                         type="button"
                       >
-                        <PokemonSprite className="slot-tab-sprite" name={slotSpriteLabel} preferStatic />
+                        <PokemonSprite className="slot-tab-sprite" editorFamily={editorFamily} form={preview.form}
+                          speciesId={preview.speciesId} spriteName={preview.spriteName} name={slotSpriteLabel} preferStatic />
                         <strong>{slotBadge}</strong>
                         <span>{slotLabel}</span>
                         {isZaEncounterTable &&
@@ -47277,7 +47329,7 @@ function SelectedEncounterPanel({
                     <div>
                       <dt>Species</dt>
                       <dd>
-                        {formatEncounterSlotSpeciesLabel(encounterSlot, editorFamily)}
+                        {formatEncounterSlotSpeciesLabel(getEncounterSlotPreview(encounterSlot), editorFamily)}
                       </dd>
                     </div>
                   ) : null}
@@ -47303,14 +47355,14 @@ function SelectedEncounterPanel({
                     <div>
                       <dt>Levels</dt>
                       <dd>
-                        {encounterSlot.levelMin}-{encounterSlot.levelMax}
+                        {getEncounterSlotPreview(encounterSlot).levelMin}-{getEncounterSlotPreview(encounterSlot).levelMax}
                       </dd>
                     </div>
                   ) : null}
                   {!isZaEncounterTable ? (
                     <div>
                       <dt>{isSvEncounterTable ? 'Lot weight' : 'Probability'}</dt>
-                      <dd>{encounterSlot.weight}</dd>
+                      <dd>{getEncounterSlotPreview(encounterSlot).weight}</dd>
                     </div>
                   ) : null}
                   {isZaEncounterTable &&
@@ -47345,12 +47397,12 @@ function SelectedEncounterPanel({
                       <dd>
                         {isZaEncounterTable
                           ? formatEncounterSharePercent(
-                              encounterSlot.weight,
+                              getEncounterSlotPreview(encounterSlot).weight,
                               encounterWeightTotal,
                               formatLocale
                             ) ?? t('za.spawnSettings.unavailable')
                           : formatEncounterLotShare(
-                              encounterSlot.weight,
+                              getEncounterSlotPreview(encounterSlot).weight,
                               encounterWeightTotal,
                               formatLocale
                             )}

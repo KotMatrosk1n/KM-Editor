@@ -466,9 +466,22 @@ internal sealed class ZaItemsEditSessionService
         }
 
         ValidateUniquePendingEditTargets(effectiveSession, diagnostics);
+        var projectedItemIds = workflow.Items
+            .Where(item => item.Metadata.IsProjectedTechnicalMachineSlot)
+            .Select(item => item.ItemId.ToString(CultureInfo.InvariantCulture))
+            .ToHashSet(StringComparer.Ordinal);
+        // Sibling fields see pending materialization, while move validation still uses the source.
+        var pendingMachineWorkflow = OverlayPendingEdits(workflow, effectiveSession.PendingEdits.Where(edit =>
+            edit.Domain == ZaEditSessionSupport.ItemsDomain
+            && edit.Field == ZaItemsWorkflowService.MachineMoveIdField
+            && edit.RecordId is not null && projectedItemIds.Contains(edit.RecordId)
+            && int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var moveId)
+            && moveId > 0));
         foreach (var edit in effectiveSession.PendingEdits)
         {
-            ValidatePendingEdit(workflow, edit, diagnostics, vanillaValues);
+            ValidatePendingEdit(
+                edit.Field == ZaItemsWorkflowService.MachineMoveIdField ? workflow : pendingMachineWorkflow,
+                edit, diagnostics, vanillaValues);
         }
 
         if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
@@ -701,15 +714,19 @@ internal sealed class ZaItemsEditSessionService
             var machineWazaLayoutRepair = itemSemanticState.MachineWazaLayout;
             RestoreMintNatureSentinels(rows, mintNatureRecovery.ItemIds);
             ApplyTechnicalMachineLegacyRecovery(rows, technicalMachineRecovery, diagnostics);
-            foreach (var extension in GetTargetedProjectedTechnicalMachines(
-                         loadedWorkflow,
-                         effectiveSession))
+            var projectedMachines = GetTargetedProjectedTechnicalMachines(loadedWorkflow, effectiveSession);
+            foreach (var extension in projectedMachines)
             {
+                // A reciprocal number swap may still occupy the final number until edits are applied.
+                var provisionNumber = rows.Any(row => IsTechnicalMachine(row) && row.SortNum == extension.Number)
+                    ? Enumerable.Range(1, ZaTechnicalMachineCatalog.LastOwnedExtensionSlot)
+                        .FirstOrDefault(number => rows.All(row => !IsTechnicalMachine(row) || row.SortNum != number))
+                    : extension.Number;
                 var provisioning = ZaOwnedTechnicalMachineProvisioner.ProvisionSlot(
                     rows,
                     extension.Slot,
                     extension.MoveId,
-                    extension.Number);
+                    provisionNumber);
                 if (!provisioning.IsAvailable)
                 {
                     diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -784,6 +801,12 @@ internal sealed class ZaItemsEditSessionService
             foreach (var edit in effectiveSession.PendingEdits)
             {
                 ApplyEdit(rows, edit, diagnostics);
+            }
+
+            foreach (var extension in projectedMachines)
+            {
+                var row = rows.Single(row => row.Id == ZaTechnicalMachineCatalog.GetOwnedExtensionItemId(extension.Slot));
+                ApplyField(row, ZaItemsWorkflowService.TechnicalMachineNumberField, extension.Number);
             }
 
             var personalBytes = ApplyTechnicalMachineMoveAssignments(
@@ -3361,10 +3384,10 @@ internal sealed class ZaItemsEditSessionService
 
         diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
             DiagnosticSeverity.Error,
-            "Assign a move and apply this unused TM slot before editing its other item fields.",
+            "Assign a move to this unused TM slot before editing its other item fields. The assignment and item changes can be applied together.",
             ZaEditSessionSupport.ItemsDomain,
             field: field.Field,
-            expected: "TM move assignment followed by apply and reload"));
+            expected: "Pending or applied TM move assignment"));
         return false;
     }
 
