@@ -60,8 +60,9 @@ internal sealed class SvStarmobilesService
             var moveOptions = LoadMoveOptions(project, diagnostics);
             var abilityOptions = LoadAbilityOptions(project, diagnostics);
             var values = document.Rows.ToDictionary(row => row.Id, row => row.Values.ToDictionary());
-            foreach (var edit in session?.PendingEdits.Where(edit => edit.Domain == Domain) ?? [])
+            foreach (var stagedEdit in session?.PendingEdits.Where(edit => edit.Domain == Domain) ?? [])
             {
+                var edit = RebindMissingOutput(stagedEdit, source, document);
                 if (TryResolve(document, edit, moveOptions, abilityOptions, out var value, diagnostics))
                     values[edit.RecordId!][edit.Field!] = value;
             }
@@ -97,7 +98,7 @@ internal sealed class SvStarmobilesService
                 diagnostics.Add(Error("Starmobile data changed. Reload before staging.", "sourceRevision"));
                 return new(workflow, current, diagnostics);
             }
-            var edits = current.PendingEdits.ToList();
+            var edits = current.PendingEdits.Select(edit => RebindMissingOutput(edit, source, document)).ToList();
             var targets = new HashSet<(string, string)>();
             foreach (var update in updates)
             {
@@ -146,6 +147,10 @@ internal sealed class SvStarmobilesService
                 return new(session, false, diagnostics);
             var source = files.Read(project, VirtualPath);
             var document = new SvStarmobileDocument(source.Bytes);
+            session = session with
+            {
+                PendingEdits = session.PendingEdits.Select(edit => RebindMissingOutput(edit, source, document)).ToArray(),
+            };
             var targets = new HashSet<(string?, string?)>();
             foreach (var edit in session.PendingEdits)
             {
@@ -168,8 +173,8 @@ internal sealed class SvStarmobilesService
     public ChangePlan CreateChangePlan(ProjectPaths paths, EditSession session, SvOutputMode mode)
     {
         var validation = Validate(paths, session);
-        return SvChangePlanSourceGuard.Capture(paths, session,
-            SvEditSessionSupport.CreateSingleFileChangePlan(paths, session, Domain, VirtualPath,
+        return SvChangePlanSourceGuard.Capture(paths, validation.Session,
+            SvEditSessionSupport.CreateSingleFileChangePlan(paths, validation.Session, Domain, VirtualPath,
                 "Starmobiles", validation.Diagnostics, mode), mode);
     }
 
@@ -188,7 +193,12 @@ internal sealed class SvStarmobilesService
         {
             try
             {
-                var document = new SvStarmobileDocument(files.Read(projects.Open(paths), VirtualPath).Bytes);
+                var source = files.Read(projects.Open(paths), VirtualPath);
+                var document = new SvStarmobileDocument(source.Bytes);
+                session = session with
+                {
+                    PendingEdits = session.PendingEdits.Select(edit => RebindMissingOutput(edit, source, document)).ToArray(),
+                };
                 var moveOptions = session.PendingEdits.Any(edit => SvStarmobileDocument.MoveFields.Contains(edit.Field ?? ""))
                     ? LoadMoveOptions(projects.Open(paths), diagnostics) : [];
                 var changes = new List<(string, string, int)>();
@@ -209,6 +219,34 @@ internal sealed class SvStarmobilesService
             }
         }
         return SvEditSessionSupport.CreateApplyResult(id, time, current, written, diagnostics);
+    }
+
+    private static PendingEdit RebindMissingOutput(PendingEdit edit, SvWorkflowFile source,
+        SvStarmobileDocument document)
+    {
+        // The file reader returns Base only after checking every supported output form.
+        // Retain the pending value against vanilla when its former output is gone.
+        if (edit.Domain != Domain || source.SourceLayer != ProjectFileLayer.Base
+            || edit.Sources.Count != 1 || edit.Sources[0].Layer != ProjectFileLayer.Layered
+            || !string.Equals(edit.Sources[0].RelativePath, source.RelativePath, StringComparison.OrdinalIgnoreCase)
+            || edit.Field is null || edit.NewValue is null || edit.NewValue.Length > 256)
+            return edit;
+        try
+        {
+            var intent = JsonSerializer.Deserialize<Intent>(edit.NewValue);
+            var row = document.Rows.SingleOrDefault(row => row.Id == edit.RecordId);
+            if (intent is null || row is null || !row.Values.TryGetValue(edit.Field, out var previous))
+                return edit;
+            return edit with
+            {
+                Sources = [new ProjectFileReference(source.SourceLayer, source.RelativePath)],
+                NewValue = JsonSerializer.Serialize(new Intent(document.Revision, previous, intent.Value)),
+            };
+        }
+        catch (JsonException)
+        {
+            return edit;
+        }
     }
 
     private static bool TryResolve(SvStarmobileDocument document, PendingEdit edit,
@@ -348,7 +386,7 @@ internal sealed class SvStarmobilesService
             }
         }
     }
-    private static bool IsSourceFailure(Exception exception) => exception is IOException or UnauthorizedAccessException
+    private static bool IsSourceFailure(Exception exception) => exception is IOException or InvalidDataException or UnauthorizedAccessException
         or InvalidOperationException or ArgumentException or OverflowException;
     private static ValidationDiagnostic Error(string message, string field) => new(
         DiagnosticSeverity.Error, message, $"romfs/{VirtualPath}", Domain, field)

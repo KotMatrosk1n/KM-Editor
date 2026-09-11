@@ -1181,7 +1181,7 @@ public sealed class SwShTradePokemonEditSessionService
         if (signedRecord)
         {
             return stagedSources.Count == expectedSources.Count
-                && expectedSources.All(stagedSources.Contains);
+                && expectedSources.All(source => SwShStagedSourceIdentity.Contains(stagedSources, source));
         }
 
         var currentTradeSource = new ProjectFileReference(
@@ -1199,7 +1199,7 @@ public sealed class SwShTradePokemonEditSessionService
                     source.RelativePath,
                     expected.RelativePath,
                     StringComparison.OrdinalIgnoreCase))
-                .All(source => source.Layer == expected.Layer));
+                .All(source => SwShStagedSourceIdentity.Matches(source, expected)));
     }
 
     private static IEnumerable<ProjectFileReference> GetPlanSources(

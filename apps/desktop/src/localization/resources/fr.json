@@ -1,5 +1,10 @@
 {
   "keys": {
+    "encounters.drafts.stage": "Préparer les modifications des rencontres",
+    "encounters.drafts.summary": "{count} champs modifiés dans {records} enregistrements de rencontres.",
+    "encounters.drafts.unavailable": "Un brouillon de rencontre conservé ne correspond plus à un enregistrement disponible. Supprimez les brouillons indisponibles ou rechargez les données des rencontres.",
+    "encounters.drafts.conflict": "Les brouillons de rencontres partagés contiennent des valeurs contradictoires. Rechargez les données des rencontres et vérifiez ces brouillons.",
+    "encounters.drafts.invalidLevels": "Le niveau minimum ne peut pas dépasser le niveau maximum.",
     "projectPaths.diagnostic.supportRequired": "Un dossier de support est requis pour ce jeu. Sélectionnez le dossier contenant oo2core_8_win64.dll dans la configuration du projet, puis validez les chemins pour activer les éditeurs.",
     "projectPaths.diagnostic.supportWrongKind": "Le chemin du support désigne un fichier. Sélectionnez le dossier contenant oo2core_8_win64.dll dans la configuration du projet, puis validez les chemins pour activer les éditeurs.",
     "projectPaths.diagnostic.supportFolderMissing": "Le dossier de support n’existe pas. Sélectionnez le dossier contenant oo2core_8_win64.dll dans la configuration du projet, puis validez les chemins pour activer les éditeurs.",

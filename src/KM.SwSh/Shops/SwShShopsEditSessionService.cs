@@ -1070,7 +1070,7 @@ public sealed class SwShShopsEditSessionService
         if (signedRecord)
         {
             return stagedSources.Count == expectedSources.Count
-                && expectedSources.All(stagedSources.Contains);
+                && expectedSources.All(source => SwShStagedSourceIdentity.Contains(stagedSources, source));
         }
 
         var currentShopSource = new ProjectFileReference(
@@ -1088,7 +1088,7 @@ public sealed class SwShShopsEditSessionService
                     source.RelativePath,
                     expected.RelativePath,
                     StringComparison.OrdinalIgnoreCase))
-                .Any(source => source.Layer == expected.Layer));
+                .Any(source => SwShStagedSourceIdentity.Matches(source, expected)));
     }
 
     private static void ValidateItemSemantics(

@@ -6440,6 +6440,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     {
         return domain switch
         {
+            // Validate assignments against the move availability produced by this batch.
+            EditSessionDomain.RentalPokemon => remainingDomains.Contains(EditSessionDomain.Moves),
             EditSessionDomain.Items => remainingDomains.Any(candidate => candidate is
                 EditSessionDomain.Shops or
                 EditSessionDomain.RaidRewards or

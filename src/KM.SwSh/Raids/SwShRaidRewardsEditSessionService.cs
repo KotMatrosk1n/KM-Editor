@@ -729,7 +729,7 @@ public sealed class SwShRaidRewardsEditSessionService
                 || archiveSources[0].Layer == table.Provenance.SourceLayer);
         if (!archiveSourceMatches
             || edit.Sources.Count != currentSources.Count + 1
-            || currentSources.Any(source => !edit.Sources.Contains(source)))
+            || currentSources.Any(source => !SwShStagedSourceIdentity.Contains(edit.Sources, source)))
         {
             diagnostics.Add(CreateDiagnostic(
                 editDomain,
