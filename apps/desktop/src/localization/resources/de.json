@@ -1,5 +1,10 @@
 {
   "keys": {
+    "encounters.drafts.stage": "Begegnungsänderungen vormerken",
+    "encounters.drafts.summary": "{count} geänderte Felder in {records} Begegnungsdatensätzen.",
+    "encounters.drafts.unavailable": "Ein gespeicherter Begegnungsentwurf entspricht keinem verfügbaren Datensatz mehr. Verwirf nicht verfügbare Entwürfe oder lade die Begegnungsdaten erneut.",
+    "encounters.drafts.conflict": "Gemeinsame Begegnungsentwürfe enthalten widersprüchliche Werte. Lade die Begegnungsdaten erneut und prüfe diese Entwürfe.",
+    "encounters.drafts.invalidLevels": "Das Mindestlevel darf nicht höher als das Höchstlevel sein.",
     "projectPaths.diagnostic.supportRequired": "Für dieses Spiel ist ein Supportordner erforderlich. Wähle in der Projekteinrichtung den Ordner mit oo2core_8_win64.dll und validiere dann die Pfade, um die Editoren zu aktivieren.",
     "projectPaths.diagnostic.supportWrongKind": "Der Supportpfad verweist auf eine Datei. Wähle in der Projekteinrichtung den Ordner mit oo2core_8_win64.dll und validiere dann die Pfade, um die Editoren zu aktivieren.",
     "projectPaths.diagnostic.supportFolderMissing": "Der Supportordner ist nicht vorhanden. Wähle in der Projekteinrichtung den Ordner mit oo2core_8_win64.dll und validiere dann die Pfade, um die Editoren zu aktivieren.",

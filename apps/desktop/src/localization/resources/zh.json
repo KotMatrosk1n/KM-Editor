@@ -1,5 +1,10 @@
 {
   "keys": {
+    "encounters.drafts.stage": "暂存遭遇修改",
+    "encounters.drafts.summary": "已修改 {records} 条遭遇记录中的 {count} 个字段。",
+    "encounters.drafts.unavailable": "保留的遭遇草稿已不再对应可用记录。请丢弃不可用的草稿或重新加载遭遇数据。",
+    "encounters.drafts.conflict": "共享遭遇草稿包含冲突的值。请重新加载遭遇数据并检查这些草稿。",
+    "encounters.drafts.invalidLevels": "最低等级不能高于最高等级。",
     "projectPaths.diagnostic.supportRequired": "此游戏需要支持文件夹。 请在项目设置中选择包含 oo2core_8_win64.dll 的文件夹，然后验证路径以启用编辑器。",
     "projectPaths.diagnostic.supportWrongKind": "支持路径指向一个文件。 请在项目设置中选择包含 oo2core_8_win64.dll 的文件夹，然后验证路径以启用编辑器。",
     "projectPaths.diagnostic.supportFolderMissing": "支持文件夹不存在。 请在项目设置中选择包含 oo2core_8_win64.dll 的文件夹，然后验证路径以启用编辑器。",

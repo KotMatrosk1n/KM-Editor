@@ -6706,51 +6706,6 @@ export function App({
       setSelectedEncounterSlot
     ]
   );
-  const handleReviewEncounterDraftLocation = useCallback(
-    (tableId: string, slot: number) => {
-      if (!activeProjectId || !selectedGame) {
-        setSelectedEncounterTableId(tableId);
-        setSelectedEncounterSlot(slot);
-        return;
-      }
-
-      const destination = createStableEntityLocation({
-        game: selectedGame,
-        projectId: activeProjectId,
-        section: 'encounters',
-        subrecordId: `slot:${slot}`,
-        value: tableId
-      });
-      return handleNavigateLocation(
-        destination,
-        () => {
-          setSelectedEncounterTableId(tableId);
-          setSelectedEncounterSlot(slot);
-        },
-        'replace',
-        {
-          protectedTabKeys: getProtectedWorkspaceTabKeys(
-            workspaceShellStateRef.current.tabs,
-            editorDraftDirtySectionsRef.current
-          ),
-          rememberRecent: false,
-          tabEligible: isStableLocationTabEligible(
-            destination,
-            sessionLocalEditorSections
-          )
-        },
-        undefined,
-        { preserveSameSectionDraftScope: true }
-      );
-    },
-    [
-      activeProjectId,
-      handleNavigateLocation,
-      selectedGame,
-      setSelectedEncounterSlot,
-      setSelectedEncounterTableId
-    ]
-  );
   const handleSelectTeraRaidLocation = useCallback(
     (recordId: string | null, onCommit?: () => void) =>
       handleSelectStableLocation('teraRaids', recordId, () => {
@@ -19458,6 +19413,12 @@ export function App({
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
       );
+      if (hasApplyErrors) {
+        setChangePlan(null);
+        visibleChangePlanRef.current = null;
+        setChangePlanSessionSignature(null);
+        setValidatedEditSessionSignature(null);
+      }
       const completedApplyResult = completeSuccessfulApplyResult(
         response.applyResult,
         planToApply
@@ -19530,6 +19491,10 @@ export function App({
     } catch (error) {
       await notifySemanticOutputFailure(error);
       if (isCurrentProjectOperation()) {
+        setChangePlan(null);
+        visibleChangePlanRef.current = null;
+        setChangePlanSessionSignature(null);
+        setValidatedEditSessionSignature(null);
         setBridgeDiagnostics(toBridgeDiagnostics(error));
       }
     } finally {
@@ -20431,8 +20396,8 @@ export function App({
           [section]: {
             actionDiagnostics: currentStates[section]?.actionDiagnostics ?? [],
             applyResult: response.applyResult,
-            changePlan: currentStates[section]?.changePlan ?? null,
-            changePlanSessionSignature: currentStates[section]?.changePlanSessionSignature ?? null
+            changePlan: null,
+            changePlanSessionSignature: null
           }
         }));
       }
@@ -20479,7 +20444,15 @@ export function App({
           }
         }));
       } else {
-        setScopedEditorPanelDiagnostics(section, refreshDiagnostics);
+        setScopedEditorPanelStates((currentStates) => ({
+          ...currentStates,
+          [section]: {
+            actionDiagnostics: refreshDiagnostics,
+            applyResult: null,
+            changePlan: null,
+            changePlanSessionSignature: null
+          }
+        }));
       }
     } finally {
       if (editSessionApplyRunRef.current === runId) {
@@ -21795,7 +21768,6 @@ export function App({
                 isEncounterUpdating={isEncounterUpdating}
                 onCopyEncounterSlot={handleCopyEncounterClipboard}
                 onPasteEncounterSlot={handlePasteEncounterClipboard}
-                onReviewDraftTarget={handleReviewEncounterDraftLocation}
                 onSearchChange={handleEncounterSearchChange}
                 onSelectSlot={handleSelectEncounterSlotLocation}
                 onSelectTable={handleSelectEncounterLocation}
@@ -21814,7 +21786,6 @@ export function App({
                 isEncounterUpdating={isEncounterUpdating}
                 onCopyEncounterSlot={handleCopyEncounterClipboard}
                 onPasteEncounterSlot={handlePasteEncounterClipboard}
-                onReviewDraftTarget={handleReviewEncounterDraftLocation}
                 onSearchChange={handleEncounterSearchChange}
                 onSelectSlot={handleSelectEncounterSlotLocation}
                 onSelectTable={handleSelectEncounterLocation}
@@ -21834,7 +21805,6 @@ export function App({
                 isEncounterUpdating={isEncounterUpdating}
                 onCopyEncounterSlot={handleCopyEncounterClipboard}
                 onPasteEncounterSlot={handlePasteEncounterClipboard}
-                onReviewDraftTarget={handleReviewEncounterDraftLocation}
                 onSearchChange={handleEncounterSearchChange}
                 onSelectSlot={handleSelectEncounterSlotLocation}
                 onSelectTable={handleSelectEncounterLocation}
@@ -45151,7 +45121,6 @@ type EncountersSectionProps = {
   onPasteEncounterSlot: (
     input: EncounterClipboardPasteInput
   ) => Promise<RowClipboardPasteActionResult>;
-  onReviewDraftTarget: (tableId: string, slot: number) => void;
   onSearchChange: (searchText: string) => void;
   onSelectSlot: (slot: number | null, retainInRecordTab?: boolean) => void;
   onSelectTable: (tableId: string | null) => void;
@@ -45190,7 +45159,6 @@ function EncountersSection({
   isEncounterUpdating,
   onCopyEncounterSlot,
   onPasteEncounterSlot,
-  onReviewDraftTarget,
   onSearchChange,
   onSelectSlot,
   onSelectTable,
@@ -45370,7 +45338,6 @@ function EncountersSection({
               isEncounterUpdating={isEncounterUpdating}
               onCopyEncounterSlot={onCopyEncounterSlot}
               onPasteEncounterSlot={onPasteEncounterSlot}
-              onReviewDraftTarget={onReviewDraftTarget}
               onSelectSlot={onSelectSlot}
               onSelectTable={onSelectTable}
               onStageEncounterVanilla={onStageEncounterVanilla}
@@ -45394,6 +45361,140 @@ function EncountersSection({
   );
 }
 
+type EncounterBatchDrafts = {
+  encounter: EncounterDraftRecords;
+  slot: EncounterDraftRecords;
+  appearance: EncounterDraftRecords;
+  level: EncounterDraftRecords;
+  partner: EncounterDraftRecords;
+  boss: Record<string, string>;
+};
+
+function createEncounterBatchDraftPlan(
+  editorFamily: EditorUiFamily, editableFields: EncounterEditableField[], tables: EncounterTableRecord[],
+  scriptedBosses: ScriptedBossProfile[], scriptedBossMoveOptions: ScriptedBossMoveOption[],
+  targets: Array<{ tableId: string; slot: number }>, retained: EncounterBatchDrafts, t: ZaLocalizationFormatter
+) {
+  const updates: EncounterSlotFieldUpdate[] = [];
+  const invalidFields: Array<{ field: string; label?: string; message?: string }> = [];
+  const submittedFields = new Map<string, string>();
+  const visitedPartners = new Set<string>();
+  const tableIndex = new Map(tables.map(table => [table.tableId, table]));
+  const alphaKinds = new Map<string, Set<boolean>>();
+  if (editorFamily === 'za') for (const table of tables) for (const slot of table.slots) {
+    const key = getZaEncounterGroupKey(table.tableId, slot);
+    const kinds = alphaKinds.get(key) ?? new Set<boolean>();
+    kinds.add(slot.isAlpha === true);
+    alphaKinds.set(key, kinds);
+  }
+  const rank = (field: string) => field === encounterSpeciesFieldName ? 0 : field === encounterFormFieldName ? 1 : 2;
+  const addChanges = (table: EncounterTableRecord, slot: number,
+    changes: Array<{ field: string; value: string }>, identity: (field: string) => string) => {
+    const unique = changes.filter(change => {
+      const key = `${identity(change.field)}:${change.field}`;
+      const previous = submittedFields.get(key);
+      if (previous !== undefined) {
+        if (previous !== change.value) invalidFields.push({ field: key, message: t('encounters.drafts.conflict') });
+        return false;
+      }
+      submittedFields.set(key, change.value);
+      return true;
+    });
+    if (unique.length) updates.push({ tableId: table.tableId, slot, changes: unique });
+  };
+  for (const target of targets) {
+    const table = tableIndex.get(target.tableId);
+    const slot = table?.slots.find(slot => slot.slot === target.slot);
+    if (!table || !slot) continue;
+    const groupKey = editorFamily === 'za' ? getZaEncounterGroupKey(table.tableId, slot) : `${table.tableId}:${slot.slot}`;
+    const placementKey = `${table.tableId}:${slot.slot}`;
+    const levelKey = editorFamily === 'swsh' ? table.tableId : groupKey;
+    const ownership = table.scriptedMoveOwnership;
+    const scripted = editorFamily === 'za' && (isZaScriptedBossEncounterTable(table) || ownership?.encounterMoveListAuthoritative === false);
+    const profile = scripted
+      ? ownership?.encounterMoveListAuthoritative === false
+        ? scriptedBosses.find(profile => profile.key === ownership.profileKey) ?? null
+        : findScriptedBossProfile(scriptedBosses, slot.speciesId, slot.form, getZaBossEncounterLineageKey(table))
+      : null;
+    const initialFields = editableFields.filter(field =>
+      (!scripted || !zaEncounterMoveFieldNames.has(field.field)) &&
+      (!zaEncounterStrengthenFieldNames.has(field.field) || slot.canEditStrengthenValues === true)
+    ).map(field => {
+      const numeric = toNumericEditableControlField(field, getContextualFieldOptions(field, {
+        formOptions: slot.formOptions, gameFamily: editorFamily, species: slot.species, speciesId: slot.speciesId
+      }));
+      const contextual = localizeZaEncounterSpawnerField(contextualizeZaEncounterField(numeric, slot, editorFamily), editorFamily, t);
+      return editorFamily === 'za' ? withPokemonInstanceIvPresetOptions(contextual) : contextual;
+    });
+    const defaults = editorFamily === 'za'
+      ? createPokemonInstanceDrafts(initialFields, field => getEditableEncounterFieldValue(slot, field))
+      : createTrainerDrafts(initialFields, field => getEditableEncounterFieldValue(slot, field));
+    const drafts = {
+      ...defaults, ...retained.encounter[groupKey],
+      ...(editorFamily !== 'sv' ? retained.level[levelKey] : {}),
+      ...(editorFamily === 'za' ? retained.slot[placementKey] : {}),
+      ...(editorFamily === 'za' ? retained.appearance[table.tableId] : {})
+    };
+    if (editorFamily === 'za') {
+      if (isZaGuaranteedAlphaSlot(slot) || (alphaKinds.get(groupKey)?.size ?? 0) > 1 || getZaAlphaChancePercent(slot) === null)
+        drafts[zaEncounterAlphaChanceFieldName] = getEditableEncounterFieldValue(slot, zaEncounterAlphaChanceFieldName)?.toString() ?? '';
+      if (typeof slot.alphaLevelBonus !== 'number') drafts[zaEncounterAlphaLevelBonusFieldName] = '';
+    }
+    const context = createDraftSpeciesFormOptionContext(
+      initialFields.find(field => field.field === encounterSpeciesFieldName) ?? null,
+      drafts[encounterSpeciesFieldName], slot.species, slot.speciesId, undefined, editorFamily, undefined, slot.formOptions
+    );
+    const fields = initialFields.map(field => ({ ...field, options: getContextualFieldOptions(field, context) }));
+    const summary = getTrainerDraftSummary(
+      editorFamily === 'za' ? getActivePokemonInstanceFields(fields, drafts) : fields,
+      drafts, field => getEditableEncounterFieldValue(slot, field)
+    );
+    const label = `${table.location}, ${slot.species}, ${slot.slot}`;
+    invalidFields.push(...summary.invalidFields.map(issue => ({ field: `${placementKey}:${issue.field}`, label: `${label}: ${issue.label}` })));
+    const levels = getOrderedEncounterLevelChanges(slot, summary.changedFields);
+    const appearance = getOrderedZaAppearanceCountChanges(slot, summary.changedFields);
+    const levelNames = [encounterLevelMinFieldName, encounterLevelMaxFieldName];
+    const appearanceNames = [zaEncounterAppearanceMinCountFieldName, zaEncounterAppearanceMaxCountFieldName];
+    if (summary.changedFields.some(change => levelNames.includes(change.field)) && levels.length === 0)
+      invalidFields.push({ field: `${placementKey}:levels`, label, message: t('encounters.drafts.invalidLevels') });
+    if (summary.changedFields.some(change => appearanceNames.includes(change.field)) && appearance.length === 0)
+      invalidFields.push({ field: `${placementKey}:appearance`, label, message: t('za.spawnSettings.minExceedsMaxError') });
+    addChanges(table, slot.slot, [
+      ...summary.changedFields.filter(change => !levelNames.includes(change.field) && !appearanceNames.includes(change.field))
+        .sort((left, right) => rank(left.field) - rank(right.field)), ...levels, ...appearance
+    ], field => editorFamily === 'za' && zaEncounterSlotSpecificFieldNames.has(field) ? `slot:${placementKey}`
+      : editorFamily === 'za' && zaEncounterAppearanceFieldNames.has(field) ? `appearance:${table.tableId}`
+      : editorFamily !== 'sv' && levelNames.includes(field) ? `level:${levelKey}` : `encounter:${groupKey}`);
+    if (ownership?.authority !== 'shared-primary-controller') for (const action of profile?.actions ?? []) {
+      if (action.selectorActionId === null || !action.canEdit || action.kind !== 'battle-move' || action.variant === null) continue;
+      const key = action.selectorActionId.toString();
+      if (retained.boss[key] === undefined) continue;
+      const options = scriptedBossMoveOptions.filter(option => option.variant === action.variant).map(option => ({ value: option.moveId, label: option.name }));
+      if (action.moveId !== null && !options.some(option => option.value === action.moveId)) options.push({ value: action.moveId, label: action.name });
+      const field = { field: `bossAction.${key}.moveId`, label: action.name, minimumValue: 0, maximumValue: 999, valueKind: 'integer', options } satisfies NumericEditableField;
+      const summary = getTrainerDraftSummary([field], { [field.field]: retained.boss[key] }, () => action.moveId);
+      invalidFields.push(...summary.invalidFields.map(issue => ({ field: issue.field, label: `${label}: ${issue.label}` })));
+      addChanges(table, slot.slot, summary.changedFields, () => `boss:${key}`);
+    }
+    const partner = table.playerPartner;
+    if (editorFamily === 'za' && partner) {
+      const key = `${table.tableId}:${partner.pokemonDataId}:${partner.pokemonDataSourceIndex}`;
+      if (!retained.partner[key] || visitedPartners.has(key)) continue;
+      visitedPartners.add(key);
+      const initial = partner.editableFields.map(field => withPokemonInstanceIvPresetOptions(toNumericEditableControlField(field)));
+      const values = { ...createPokemonInstanceDrafts(initial, field => getEditableEncounterPlayerPartnerFieldValue(partner, field)), ...retained.partner[key] };
+      const context = createDraftSpeciesFormOptionContext(initial.find(field => field.field === encounterSpeciesFieldName) ?? null,
+        values[encounterSpeciesFieldName], partner.species, partner.speciesId, undefined, 'za', undefined, partner.formOptions);
+      const fields = initial.map(field => ({ ...field, options: getContextualFieldOptions(field, context) }));
+      const summary = getTrainerDraftSummary(getActivePokemonInstanceFields(fields, values), values, field => getEditableEncounterPlayerPartnerFieldValue(partner, field));
+      invalidFields.push(...summary.invalidFields.map(issue => ({ field: `${key}:${issue.field}`, label: `${table.location}, ${partner.species}: ${issue.label}` })));
+      addChanges(table, partner.slot, [...summary.changedFields].sort((left, right) => rank(left.field) - rank(right.field)), () => `partner:${getZaEncounterPlayerPartnerRecordId(partner)}`);
+    }
+  }
+  return { updates, invalidFields, changedFieldCount: submittedFields.size };
+}
+
+
 function SelectedEncounterPanel({
   areaTabs,
   canEditEncounters,
@@ -45406,7 +45507,6 @@ function SelectedEncounterPanel({
   isEncounterUpdating,
   onCopyEncounterSlot,
   onPasteEncounterSlot,
-  onReviewDraftTarget,
   onSelectSlot,
   onSelectTable,
   onStageEncounterVanilla,
@@ -45434,7 +45534,6 @@ function SelectedEncounterPanel({
   onPasteEncounterSlot: (
     input: EncounterClipboardPasteInput
   ) => Promise<RowClipboardPasteActionResult>;
-  onReviewDraftTarget: (tableId: string, slot: number) => void;
   onSelectSlot: (slot: number | null) => void;
   onSelectTable: (tableId: string | null) => void;
   onStageEncounterVanilla?: (tableId: string, slot: number) => Promise<boolean>;
@@ -46110,51 +46209,11 @@ function SelectedEncounterPanel({
     }
 
     const coveredDraftIdentities = new Set<string>();
-    const targets: Array<{
-      equivalentSelectionKeys: string[];
-      key: string;
-      slot: number;
-      tableId: string;
-    }> = [];
-    while (true) {
-      let bestCandidate: (typeof candidates)[number] | null = null;
-      let bestUncoveredCount = 0;
-      for (const candidate of candidates) {
-        const uncoveredCount = candidate.visibleDraftIdentities.reduce(
-          (count, identity) => count + (coveredDraftIdentities.has(identity) ? 0 : 1),
-          0
-        );
-        if (uncoveredCount > bestUncoveredCount) {
-          bestCandidate = candidate;
-          bestUncoveredCount = uncoveredCount;
-        }
-      }
-
-      if (!bestCandidate) {
-        break;
-      }
-
-      const newlyCoveredDraftIdentities = bestCandidate.visibleDraftIdentities.filter(
-        (identity) => !coveredDraftIdentities.has(identity)
-      );
-      targets.push({
-        equivalentSelectionKeys: candidates
-          .filter((candidate) =>
-            newlyCoveredDraftIdentities.every((identity) =>
-              candidate.visibleDraftIdentities.includes(identity)
-            )
-          )
-          .map((candidate) => candidate.key),
-        key: bestCandidate.key,
-        slot: bestCandidate.slot,
-        tableId: bestCandidate.tableId
-      });
-      for (const identity of bestCandidate.visibleDraftIdentities) {
-        coveredDraftIdentities.add(identity);
-      }
-      if (coveredDraftIdentities.size === outstandingDraftIdentities.size) {
-        break;
-      }
+    const targets: Array<{ tableId: string; slot: number }> = [];
+    for (const candidate of candidates) {
+      if (candidate.visibleDraftIdentities.every(identity => coveredDraftIdentities.has(identity))) continue;
+      targets.push({ tableId: candidate.tableId, slot: candidate.slot });
+      for (const identity of candidate.visibleDraftIdentities) coveredDraftIdentities.add(identity);
     }
 
     return {
@@ -46174,24 +46233,6 @@ function SelectedEncounterPanel({
     zaAppearanceDraftsByTableId,
     zaSlotDraftsBySlotKey
   ]);
-  const selectedEncounterPlacementKey =
-    table && encounterSlot ? JSON.stringify([table.tableId, encounterSlot.slot]) : null;
-  const selectedEncounterDraftTargetKey = selectedEncounterPlacementKey
-    ? outstandingEncounterDraftTargets.find((target) =>
-        target.equivalentSelectionKeys.includes(selectedEncounterPlacementKey)
-      )?.key ?? null
-    : null;
-  const nextEncounterDraftTargetKey = getNextOutstandingEditorDraftKey(
-    outstandingEncounterDraftTargets.map((target) => target.key),
-    selectedEncounterDraftTargetKey
-  );
-  const nextEncounterDraftTarget = nextEncounterDraftTargetKey
-    ? outstandingEncounterDraftTargets.find(
-        (target) => target.key === nextEncounterDraftTargetKey
-      ) ?? null
-    : null;
-  const outstandingEncounterDraftCount =
-    outstandingEncounterDraftTargets.length + unavailableEncounterDraftIdentities.length;
   const discardUnavailableEncounterDrafts = () => {
     if (
       unavailableEncounterDraftIdentities.length === 0 ||
@@ -46361,16 +46402,49 @@ function SelectedEncounterPanel({
     hasChangedZaAppearanceCountDraft &&
     !hasInvalidZaAppearanceCountDraft &&
     zaAppearanceCountChanges.length === 0;
-  const encounterStageChanges = [
-    ...encounterDraftSummary.changedFields.filter(
-      (change) =>
-        !encounterLevelFieldNames.includes(change.field) &&
-        !zaAppearanceCountFieldNames.includes(change.field)
-    ),
-    ...encounterLevelChanges,
-    ...zaAppearanceCountChanges,
-    ...scriptedBossDraftSummary.changedFields
-  ];
+  const encounterStagePlan = useMemo(() => {
+    const plan = createEncounterBatchDraftPlan(editorFamily, editableFields, tables, scriptedBosses, scriptedBossMoveOptions,
+      outstandingEncounterDraftTargets, { encounter: draftsBySlotKey, slot: zaSlotDraftsBySlotKey,
+        appearance: zaAppearanceDraftsByTableId, level: levelDraftsByScopeKey,
+        partner: playerPartnerDraftsByKey, boss: scriptedBossDraftsBySelectorId }, t);
+    plan.invalidFields.push(...unavailableEncounterDraftIdentities.map(field => ({ field, message: t('encounters.drafts.unavailable') })));
+    return plan;
+  }, [editorFamily, editableFields, tables, scriptedBosses, scriptedBossMoveOptions, outstandingEncounterDraftTargets,
+    draftsBySlotKey, zaSlotDraftsBySlotKey, zaAppearanceDraftsByTableId, levelDraftsByScopeKey,
+    playerPartnerDraftsByKey, scriptedBossDraftsBySelectorId, unavailableEncounterDraftIdentities, t]);
+  const encounterProjectScope = useWorkbenchStore(state => JSON.stringify([state.openProject?.projectId, state.draftPaths]));
+  const encounterStageScopeRef = useRef<string | null>(encounterProjectScope);
+  encounterStageScopeRef.current = encounterProjectScope;
+  useEffect(() => () => { encounterStageScopeRef.current = null; }, []);
+  const encounterStageInFlightRef = useRef(false);
+  const stageEncounterDrafts = async () => {
+    if (!canSaveEncounterDrafts || encounterStageInFlightRef.current) return;
+    encounterStageInFlightRef.current = true;
+    try {
+      const scope = encounterStageScopeRef.current;
+      const submitted = { encounter: draftsBySlotKey, slot: zaSlotDraftsBySlotKey,
+        appearance: zaAppearanceDraftsByTableId, level: levelDraftsByScopeKey,
+        partner: playerPartnerDraftsByKey, boss: scriptedBossDraftsBySelectorId };
+      if (!await onUpdateEncounterSlotUpdates(encounterStagePlan.updates) || encounterStageScopeRef.current !== scope) return;
+      const clear = (current: EncounterDraftRecords, snapshot: EncounterDraftRecords) => {
+        let next = current;
+        for (const [key, fields] of Object.entries(snapshot)) next = clearSubmittedKeyedEditorDraft(next, key, fields, areFieldDraftsEqual);
+        return next;
+      };
+      setDraftsBySlotKey(current => clear(current, submitted.encounter));
+      setZaSlotDraftsBySlotKey(current => clear(current, submitted.slot));
+      setZaAppearanceDraftsByTableId(current => clear(current, submitted.appearance));
+      setLevelDraftsByScopeKey(current => clear(current, submitted.level));
+      setPlayerPartnerDraftsByKey(current => clear(current, submitted.partner));
+      setScriptedBossDraftsBySelectorId(current => {
+        let next = current;
+        for (const [key, value] of Object.entries(submitted.boss)) next = clearSubmittedKeyedEditorDraft(next, key, value);
+        return next;
+      });
+    } finally {
+      encounterStageInFlightRef.current = false;
+    }
+  };
   const zaEncounterLevelZoneGroups = useMemo(
     () => (table && isZaEncounterTable ? getZaEncounterLevelZoneGroups(table, tables) : []),
     [isZaEncounterTable, table, tables]
@@ -46391,15 +46465,8 @@ function SelectedEncounterPanel({
       : encounterLevelScopeUpdates.map((update) => update.tableId)
   );
   const canSaveEncounterDrafts =
-    table !== null &&
-    encounterSlot !== null &&
-    editSession !== null &&
-    canEditEncounters &&
-    !isEncounterUpdating &&
-    combinedEncounterDraftSummary.changedFields.length > 0 &&
-    combinedEncounterDraftSummary.invalidFields.length === 0 &&
-    !hasInvalidEncounterLevelPair &&
-    !hasInvalidZaAppearanceCountPair;
+    editSession !== null && canEditEncounters && !isEncounterUpdating && !isEncounterClipboardBusy &&
+    encounterStagePlan.updates.length > 0 && encounterStagePlan.invalidFields.length === 0;
   const workflowHasZaAlphaChanceField = editableFields.some(
     (field) => field.field === zaEncounterAlphaChanceFieldName
   );
@@ -46754,35 +46821,57 @@ function SelectedEncounterPanel({
     <aside aria-label="Selected encounter provenance" className="encounter-inspector">
       <PublishedLocalEditorValidationDiagnostics
         domain="workflow.encounters"
-        issues={combinedEncounterDraftSummary.invalidFields}
+        issues={encounterStagePlan.invalidFields}
       />
-      {editSession && !encounterSlot ? (
-        <EmptySelectionEditorSessionActions
-          isBusy={isEncounterUpdating}
-          onCancel={() =>
-            cancelActiveEditSession(() => {
-              setDraftsBySlotKey({});
-              setZaSlotDraftsBySlotKey({});
-              setZaAppearanceDraftsByTableId({});
-              setLevelDraftsByScopeKey({});
-              setPlayerPartnerDraftsByKey({});
-              setScriptedBossDraftsBySelectorId({});
-            })
-          }
-          summary={t('editorDrafts.empty.encounters', {
-            unavailableCount: unavailableEncounterDraftIdentities.length
-          })}
-        />
-      ) : null}
-      {editSession && !encounterSlot && unavailableEncounterDraftIdentities.length > 0 ? (
-        <button
-          className="danger-button"
-          disabled={isEncounterUpdating || isEncounterClipboardBusy}
-          onClick={discardUnavailableEncounterDrafts}
-          type="button"
-        >
-          {t('editorDrafts.discardUnavailable')}
-        </button>
+      {editSession ? (
+        <EditorSessionBarActions>
+          <button
+            aria-busy={isEncounterUpdating || undefined}
+            className="primary-button"
+            disabled={!canSaveEncounterDrafts}
+            onClick={() => void stageEncounterDrafts()}
+            type="button"
+          >
+            <BusyActionContent
+              busyLabel="Staging"
+              icon={<Save aria-hidden="true" size={16} />}
+              isBusy={isEncounterUpdating}
+              label={t('encounters.drafts.stage')}
+            />
+          </button>
+          {unavailableEncounterDraftIdentities.length > 0 ? (
+            <button
+              className="danger-button"
+              disabled={isEncounterUpdating || isEncounterClipboardBusy}
+              onClick={discardUnavailableEncounterDrafts}
+              type="button"
+            >
+              {t('editorDrafts.discardUnavailable')}
+            </button>
+          ) : null}
+          <button
+            className="danger-button"
+            disabled={isEncounterUpdating}
+            onClick={() =>
+              cancelActiveEditSession(() => {
+                setDraftsBySlotKey({});
+                setZaSlotDraftsBySlotKey({});
+                setZaAppearanceDraftsByTableId({});
+                setLevelDraftsByScopeKey({});
+                setPlayerPartnerDraftsByKey({});
+                setScriptedBossDraftsBySelectorId({});
+              })
+            }
+            type="button"
+          >
+            <X aria-hidden="true" size={16} />
+            <span>Cancel</span>
+          </button>
+          <span className="draft-action-summary">
+            {t('encounters.drafts.summary', { count: encounterStagePlan.changedFieldCount,
+              records: new Set(encounterStagePlan.updates.map(update => `${update.tableId}:${update.slot}`)).size })}
+          </span>
+        </EditorSessionBarActions>
       ) : null}
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
@@ -47324,7 +47413,6 @@ function SelectedEncounterPanel({
                     isEncounterUpdating={isEncounterUpdating}
                     onDraftsByKeyChange={setPlayerPartnerDraftsByKey}
                     onStageVanilla={onStageEncounterVanilla}
-                    onUpdateFields={onUpdateEncounterSlotFields}
                     partner={table.playerPartner}
                     pokemonWorkflow={pokemonWorkflow}
                     tableId={table.tableId}
@@ -47936,162 +48024,7 @@ function SelectedEncounterPanel({
                     </div>
                   </div>
                 ) : null}
-                {editSession ? (
-                  <EditorSessionBarActions>
-                    <button
-                      aria-busy={isEncounterUpdating || undefined}
-                      className="primary-button"
-                      disabled={!canSaveEncounterDrafts}
-                      onClick={async () => {
-                        if (!table || !encounterSlot || !encounterDraftKey) {
-                          return;
-                        }
 
-                        const submittedSlotDraft = draftsBySlotKey[encounterDraftKey];
-                        const submittedZaSlotDraft = zaEncounterSlotDraftKey
-                          ? zaSlotDraftsBySlotKey[zaEncounterSlotDraftKey]
-                          : undefined;
-                        const submittedZaAppearanceDraft = zaEncounterAppearanceDraftKey
-                          ? zaAppearanceDraftsByTableId[zaEncounterAppearanceDraftKey]
-                          : undefined;
-                        const submittedLevelDraft = encounterLevelDraftKey
-                          ? levelDraftsByScopeKey[encounterLevelDraftKey]
-                          : undefined;
-                        const submittedScriptedBossDrafts = Object.fromEntries(
-                          scriptedBossActionEditorEntries.flatMap(({ action }) => {
-                            const selectorId = action.selectorActionId!.toString();
-                            const submittedDraft =
-                              scriptedBossDraftsBySelectorId[selectorId];
-                            return submittedDraft === undefined
-                              ? []
-                              : [[selectorId, submittedDraft] as const];
-                          })
-                        );
-                        const didSave = await onUpdateEncounterSlotFields(
-                          table.tableId,
-                          encounterSlot.slot,
-                          encounterStageChanges.map((change) => ({
-                            field: change.field,
-                            value: change.value
-                          }))
-                        );
-                        if (didSave) {
-                          if (submittedSlotDraft) {
-                            setDraftsBySlotKey((currentDrafts) =>
-                              clearSubmittedKeyedEditorDraft(
-                                currentDrafts,
-                                encounterDraftKey,
-                                submittedSlotDraft,
-                                areFieldDraftsEqual
-                              )
-                            );
-                          }
-                          if (zaEncounterSlotDraftKey && submittedZaSlotDraft) {
-                            setZaSlotDraftsBySlotKey((currentDrafts) =>
-                              clearSubmittedKeyedEditorDraft(
-                                currentDrafts,
-                                zaEncounterSlotDraftKey,
-                                submittedZaSlotDraft,
-                                areFieldDraftsEqual
-                              )
-                            );
-                          }
-                          if (zaEncounterAppearanceDraftKey && submittedZaAppearanceDraft) {
-                            setZaAppearanceDraftsByTableId((currentDrafts) =>
-                              clearSubmittedKeyedEditorDraft(
-                                currentDrafts,
-                                zaEncounterAppearanceDraftKey,
-                                submittedZaAppearanceDraft,
-                                areFieldDraftsEqual
-                              )
-                            );
-                          }
-                          if (encounterLevelDraftKey && submittedLevelDraft) {
-                            setLevelDraftsByScopeKey((currentDrafts) =>
-                              clearSubmittedKeyedEditorDraft(
-                                currentDrafts,
-                                encounterLevelDraftKey,
-                                submittedLevelDraft,
-                                areFieldDraftsEqual
-                              )
-                            );
-                          }
-                          setScriptedBossDraftsBySelectorId((currentDrafts) => {
-                            let nextDrafts = currentDrafts;
-                            for (const [selectorId, submittedDraft] of Object.entries(
-                              submittedScriptedBossDrafts
-                            )) {
-                              nextDrafts = clearSubmittedKeyedEditorDraft(
-                                nextDrafts,
-                                selectorId,
-                                submittedDraft
-                              );
-                            }
-                            return nextDrafts;
-                          });
-                        }
-                      }}
-                      type="button"
-                    >
-                      <BusyActionContent
-                        busyLabel="Staging"
-                        icon={<Save aria-hidden="true" size={16} />}
-                        isBusy={isEncounterUpdating}
-                        label="Stage"
-                      />
-                    </button>
-                    {nextEncounterDraftTarget ? (
-                      <button
-                        className="secondary-button"
-                        disabled={isEncounterUpdating || isEncounterClipboardBusy}
-                        onClick={() =>
-                          onReviewDraftTarget(
-                            nextEncounterDraftTarget.tableId,
-                            nextEncounterDraftTarget.slot
-                          )
-                        }
-                        type="button"
-                      >
-                        {t('editorDrafts.reviewNext')}
-                      </button>
-                    ) : null}
-                    {unavailableEncounterDraftIdentities.length > 0 ? (
-                      <button
-                        className="danger-button"
-                        disabled={isEncounterUpdating || isEncounterClipboardBusy}
-                        onClick={discardUnavailableEncounterDrafts}
-                        type="button"
-                      >
-                        {t('editorDrafts.discardUnavailable')}
-                      </button>
-                    ) : null}
-                    <button
-                      className="danger-button"
-                      disabled={isEncounterUpdating}
-                      onClick={() =>
-                        cancelActiveEditSession(() => {
-                          setDraftsBySlotKey({});
-                          setZaSlotDraftsBySlotKey({});
-                          setZaAppearanceDraftsByTableId({});
-                          setLevelDraftsByScopeKey({});
-                          setPlayerPartnerDraftsByKey({});
-                          setScriptedBossDraftsBySelectorId({});
-                        })
-                      }
-                      type="button"
-                    >
-                      <X aria-hidden="true" size={16} />
-                      <span>Cancel</span>
-                    </button>
-                    <span className="draft-action-summary">
-                      {formatDraftSummary(combinedEncounterDraftSummary)};{' '}
-                      {t('editorDrafts.summary.encounters', {
-                        count: outstandingEncounterDraftCount,
-                        unavailableCount: unavailableEncounterDraftIdentities.length
-                      })}
-                    </span>
-                  </EditorSessionBarActions>
-                ) : null}
               </>
             ) : (
               <p className="empty-copy">No encounter slot selected.</p>
@@ -48228,7 +48161,6 @@ function ZaEncounterPlayerPartnerEditor({
   isEncounterUpdating,
   onDraftsByKeyChange,
   onStageVanilla,
-  onUpdateFields,
   partner,
   pokemonWorkflow,
   tableId
@@ -48242,11 +48174,6 @@ function ZaEncounterPlayerPartnerEditor({
     SetStateAction<Record<string, Record<string, string>>>
   >;
   onStageVanilla?: (tableId: string, slot: number) => Promise<boolean>;
-  onUpdateFields: (
-    tableId: string,
-    slot: number,
-    changes: Array<{ field: string; value: string }>
-  ) => Promise<boolean>;
   partner: EncounterPlayerPartnerRecord;
   pokemonWorkflow: PokemonWorkflow | null;
   tableId: string;
@@ -48326,12 +48253,6 @@ function ZaEncounterPlayerPartnerEditor({
   const hasStagedChanges = (editSession?.pendingEdits ?? []).some(
     (edit) => edit.domain === 'workflow.encounters' && edit.recordId === recordId
   );
-  const canStage =
-    editSession !== null &&
-    canEditEncounters &&
-    !isEncounterUpdating &&
-    draftSummary.changedFields.length > 0 &&
-    draftSummary.invalidFields.length === 0;
   const revertBlockedReason = hasLocalDrafts
     ? t('za.encounters.playerPartner.revertDraftBlocked')
     : partner.revertToVanillaBlockedReason
@@ -48546,41 +48467,7 @@ function ZaEncounterPlayerPartnerEditor({
       </div>
 
       {editSession ? (
-        <EditorSessionBarActions>
-          <button
-            aria-busy={isEncounterUpdating || undefined}
-            className="primary-button"
-            disabled={!canStage}
-            onClick={async () => {
-              const submittedDraft = { ...drafts };
-              const didSave = await onUpdateFields(
-                tableId,
-                partner.slot,
-                draftSummary.changedFields.map((change) => ({
-                  field: change.field,
-                  value: change.value
-                }))
-              );
-              if (didSave) {
-                onDraftsByKeyChange((currentDrafts) =>
-                  clearSubmittedKeyedEditorDraft(
-                    currentDrafts,
-                    draftKey,
-                    submittedDraft,
-                    areFieldDraftsEqual
-                  )
-                );
-              }
-            }}
-            type="button"
-          >
-            <BusyActionContent
-              busyLabel="Staging"
-              icon={<Save aria-hidden="true" size={16} />}
-              isBusy={isEncounterUpdating}
-              label="Stage Partner"
-            />
-          </button>
+        <div className="field-group-action-row">
           <button
             className="secondary-button"
             disabled={!hasLocalDrafts || isEncounterUpdating}
@@ -48595,7 +48482,7 @@ function ZaEncounterPlayerPartnerEditor({
             <span>{t('za.encounters.playerPartner.discardDraft')}</span>
           </button>
           <span className="draft-action-summary">{formatDraftSummary(draftSummary)}</span>
-        </EditorSessionBarActions>
+        </div>
       ) : null}
 
       {onStageVanilla ? (

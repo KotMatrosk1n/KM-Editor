@@ -1,5 +1,10 @@
 {
   "keys": {
+    "encounters.drafts.stage": "Stage Encounter Changes",
+    "encounters.drafts.summary": "{count} changed fields across {records} encounter records.",
+    "encounters.drafts.unavailable": "A retained encounter draft no longer matches an available record. Discard unavailable drafts or reload the encounter data.",
+    "encounters.drafts.conflict": "Shared encounter drafts contain conflicting values. Reload the encounter data and review those drafts.",
+    "encounters.drafts.invalidLevels": "Minimum level cannot be higher than maximum level.",
     "projectPaths.diagnostic.supportRequired": "A support folder is required for this game. Select the folder containing oo2core_8_win64.dll in Project Setup, then validate paths to enable editors.",
     "projectPaths.diagnostic.supportWrongKind": "The support path points to a file. Select the folder containing oo2core_8_win64.dll in Project Setup, then validate paths to enable editors.",
     "projectPaths.diagnostic.supportFolderMissing": "The support folder does not exist. Select the folder containing oo2core_8_win64.dll in Project Setup, then validate paths to enable editors.",

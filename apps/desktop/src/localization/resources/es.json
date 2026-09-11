@@ -1,5 +1,10 @@
 {
   "keys": {
+    "encounters.drafts.stage": "Preparar cambios de encuentros",
+    "encounters.drafts.summary": "{count} campos modificados en {records} registros de encuentros.",
+    "encounters.drafts.unavailable": "Un borrador de encuentro guardado ya no corresponde a un registro disponible. Descarta los borradores no disponibles o vuelve a cargar los datos de encuentros.",
+    "encounters.drafts.conflict": "Los borradores de encuentros compartidos contienen valores en conflicto. Vuelve a cargar los datos de encuentros y revisa esos borradores.",
+    "encounters.drafts.invalidLevels": "El nivel mínimo no puede ser mayor que el nivel máximo.",
     "projectPaths.diagnostic.supportRequired": "Este juego requiere una carpeta de soporte. Selecciona la carpeta que contiene oo2core_8_win64.dll en Configuración del proyecto y valida las rutas para habilitar los editores.",
     "projectPaths.diagnostic.supportWrongKind": "La ruta de soporte apunta a un archivo. Selecciona la carpeta que contiene oo2core_8_win64.dll en Configuración del proyecto y valida las rutas para habilitar los editores.",
     "projectPaths.diagnostic.supportFolderMissing": "La carpeta de soporte no existe. Selecciona la carpeta que contiene oo2core_8_win64.dll en Configuración del proyecto y valida las rutas para habilitar los editores.",

@@ -1108,50 +1108,19 @@ for (const draftCollection of [
 }
 assert.match(
   selectedEncounterPanel,
-  /const visibleOutstandingDraftIdentities = \[[\s\S]*?new Set\([\s\S]*?visibleDraftIdentities\.filter[\s\S]*?while \(true\)[\s\S]*?bestUncoveredCount/u,
-  'Wild Encounter draft maps must collapse into deterministic review destinations that cover overlapping slot, appearance, level, boss, and partner scopes once.'
+  /createEncounterBatchDraftPlan[\s\S]*?onUpdateEncounterSlotUpdates\(encounterStagePlan\.updates\)/u,
+  'Wild Encounter staging must submit retained drafts together through the batch update path.'
 );
-assert.match(
+assert.doesNotMatch(
   selectedEncounterPanel,
-  /getNextOutstandingEditorDraftKey\([\s\S]*?outstandingEncounterDraftTargets\.map[\s\S]*?selectedEncounterDraftTargetKey/u,
-  'Wild Encounter draft review must advance relative to the selected normalized destination.'
-);
-assert.match(
-  selectedEncounterPanel,
-  /const outstandingEncounterDraftCount =[\s\S]*?outstandingEncounterDraftTargets\.length \+ unavailableEncounterDraftIdentities\.length[\s\S]*?t\('editorDrafts\.summary\.encounters',[\s\S]*?count: outstandingEncounterDraftCount[\s\S]*?unavailableCount: unavailableEncounterDraftIdentities\.length/u,
-  'Wild Encounter actions must report both normalized review destinations and unresolved retained records in the aggregate count.'
+  /nextEncounterDraftTarget|editorDrafts\.reviewNext/u,
+  'Wild Encounter staging must not require reviewing records individually.'
 );
 assert.match(
   selectedEncounterPanel,
   /unavailableEncounterDraftIdentities: \[\.\.\.outstandingDraftIdentities\]\.filter\([\s\S]*?!coveredDraftIdentities\.has\(identity\)[\s\S]*?const discardUnavailableEncounterDrafts = \(\) => \{[\s\S]*?window\.confirm\([\s\S]*?setDraftsBySlotKey[\s\S]*?setZaSlotDraftsBySlotKey[\s\S]*?setZaAppearanceDraftsByTableId[\s\S]*?setLevelDraftsByScopeKey[\s\S]*?setPlayerPartnerDraftsByKey[\s\S]*?setScriptedBossDraftsBySelectorId/u,
   'Wild Encounter unresolved draft identities must remain counted and require an explicit confirmed recovery action across every retained draft map.'
 );
-const encounterReviewAction = between(
-  selectedEncounterPanel,
-  '{nextEncounterDraftTarget ? (',
-  ') : null}'
-);
-assert.match(
-  encounterReviewAction,
-  /onReviewDraftTarget\([\s\S]*?nextEncounterDraftTarget\.tableId,[\s\S]*?nextEncounterDraftTarget\.slot/u,
-  'Wild Encounter review must select the exact owning table and slot.'
-);
-assert.doesNotMatch(
-  encounterReviewAction,
-  /\b(?:set[A-Za-z]*Draft[A-Za-z]*|onSearchChange|onUpdate[A-Za-z]*|onStage[A-Za-z]*|clearSubmitted[A-Za-z]*|cancelActiveEditSession)\s*\(/u,
-  'Wild Encounter review must select only; it must not stage, clear, discard, or reset filters.'
-);
-const encounterDraftLocationHandler = between(
-  app,
-  'const handleReviewEncounterDraftLocation = useCallback(',
-  'const handleSelectTeraRaidLocation = useCallback('
-);
-assert.match(
-  encounterDraftLocationHandler,
-  /setSelectedEncounterTableId\(tableId\);[\s\S]*?setSelectedEncounterSlot\(slot\);[\s\S]*?preserveSameSectionDraftScope: true/u,
-  'Wild Encounter draft review must commit table and slot together while preserving same-section local drafts.'
-);
-
 const selectedRaidBattlePanel = between(
   app,
   'function SelectedRaidBattlePanel({',

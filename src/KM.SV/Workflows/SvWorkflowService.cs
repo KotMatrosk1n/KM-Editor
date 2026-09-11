@@ -2119,6 +2119,15 @@ public sealed class SvWorkflowService
                 (orderedDomains[itemsIndex], orderedDomains[pokemonIndex]);
         }
 
+        // Starmobile assignments must see the move availability produced by this batch.
+        var movesIndex = Array.IndexOf(orderedDomains, SvEditSessionDomain.Moves);
+        var starmobilesIndex = Array.IndexOf(orderedDomains, SvEditSessionDomain.Starmobiles);
+        if (movesIndex > starmobilesIndex && starmobilesIndex >= 0)
+        {
+            (orderedDomains[starmobilesIndex], orderedDomains[movesIndex]) =
+                (orderedDomains[movesIndex], orderedDomains[starmobilesIndex]);
+        }
+
         domains = orderedDomains;
         return orderedDomains.Length > 1 && orderedDomains.All(IsNormalDomain);
     }

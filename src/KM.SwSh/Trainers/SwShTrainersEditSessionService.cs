@@ -1967,7 +1967,7 @@ public sealed class SwShTrainersEditSessionService
         }
 
         if (edit.Sources.Count != currentSources.Count
-            || currentSources.Any(source => !edit.Sources.Contains(source)))
+            || currentSources.Any(source => !SwShStagedSourceIdentity.Contains(edit.Sources, source)))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
