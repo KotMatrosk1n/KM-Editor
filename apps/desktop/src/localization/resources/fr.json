@@ -1,5 +1,9 @@
 {
   "keys": {
+    "projectPaths.diagnostic.supportRequired": "Un dossier de support est requis pour ce jeu. Sélectionnez le dossier contenant oo2core_8_win64.dll dans la configuration du projet, puis validez les chemins pour activer les éditeurs.",
+    "projectPaths.diagnostic.supportWrongKind": "Le chemin du support désigne un fichier. Sélectionnez le dossier contenant oo2core_8_win64.dll dans la configuration du projet, puis validez les chemins pour activer les éditeurs.",
+    "projectPaths.diagnostic.supportFolderMissing": "Le dossier de support n’existe pas. Sélectionnez le dossier contenant oo2core_8_win64.dll dans la configuration du projet, puis validez les chemins pour activer les éditeurs.",
+    "projectPaths.diagnostic.supportFileMissing": "Le dossier de support sélectionné ne contient pas oo2core_8_win64.dll. Sélectionnez le dossier contenant oo2core_8_win64.dll dans la configuration du projet, puis validez les chemins pour activer les éditeurs.",
     "trainerWhiteout.title": "Défaite face aux Dresseurs",
     "trainerWhiteout.subtitle": "Comportement après une défaite dans Sword et Shield",
     "trainerWhiteout.enabled": "Retour après défaite activé ?",
@@ -7668,7 +7672,7 @@
     "moves": "bouge",
     "n/a": "n/a",
     "not inspected": "non inspecté",
-    "oo2core_8_win64.dll Folder (Optional)": "Dossier oo2core_8_win64.dll (facultatif)",
+    "oo2core_8_win64.dll Folder": "Dossier oo2core_8_win64.dll",
     "oo2core_8_win64.dll folder does not exist; S/V data editors are disabled until it is configured.": "Le dossier oo2core_8_win64.dll n'existe pas ; Les éditeurs de données S/V sont désactivés jusqu'à ce qu'ils soient configurés.",
     "oo2core_8_win64.dll folder does not exist; Z-A data editors are disabled until it is configured.": "Le dossier oo2core_8_win64.dll n’existe pas ; les éditeurs de données Z-A sont désactivés jusqu’à sa configuration.",
     "oo2core_8_win64.dll folder is not configured. Set it in Project Setup to enable Z-A data editors.": "Le dossier oo2core_8_win64.dll n’est pas configuré. Définissez-le dans Project Setup pour activer les éditeurs de données Z-A.",

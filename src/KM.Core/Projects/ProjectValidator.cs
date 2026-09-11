@@ -18,6 +18,11 @@ public sealed class ProjectValidator
     public const string SaveFileWrongKindDiagnosticCode = "KM-PROJECT-SAVE-WRONG-KIND";
     public const string SaveFileMissingDiagnosticCode = "KM-PROJECT-SAVE-MISSING";
 
+    public const string SupportRequiredDiagnosticCode = "KM-PROJECT-SUPPORT-REQUIRED";
+    public const string SupportWrongKindDiagnosticCode = "KM-PROJECT-SUPPORT-WRONG-KIND";
+    public const string SupportFolderMissingDiagnosticCode = "KM-PROJECT-SUPPORT-FOLDER-MISSING";
+    public const string SupportFileMissingDiagnosticCode = "KM-PROJECT-SUPPORT-FILE-MISSING";
+
     private const int NpdmTitleIdOffset = 0x290;
     private const int NpdmMinimumTitleIdLength = sizeof(ulong);
 
@@ -55,12 +60,16 @@ public sealed class ProjectValidator
         var baseExeFs = ValidateRequiredDirectory(ProjectPathRole.BaseExeFs, paths.BaseExeFsPath, "Base ExeFS");
         var outputRoot = ValidateOptionalOutputRoot(paths.OutputRootPath);
         var saveFile = ValidateOptionalSaveFile(paths.SaveFilePath);
-        var scarletVioletSupportFolder = ValidateOptionalScarletVioletSupportFolder(
+        var scarletVioletSupportFolder = ValidateSupportFolder(
+            ProjectPathRole.ScarletVioletSupportFolder,
             paths.ScarletVioletSupportFolderPath,
-            paths.SelectedGame);
-        var pokemonLegendsZASupportFolder = ValidateOptionalPokemonLegendsZASupportFolder(
+            paths.SelectedGame is ProjectGame.Scarlet or ProjectGame.Violet,
+            "scarletVioletSupportFolderPath");
+        var pokemonLegendsZASupportFolder = ValidateSupportFolder(
+            ProjectPathRole.PokemonLegendsZASupportFolder,
             paths.PokemonLegendsZASupportFolderPath,
-            paths.SelectedGame);
+            paths.SelectedGame is ProjectGame.ZA,
+            "pokemonLegendsZASupportFolderPath");
 
         AddPhysicalPathSafetyDiagnostic(baseRomFs, "Base RomFS", isDirectory: true);
         AddPhysicalPathSafetyDiagnostic(baseExeFs, "Base ExeFS", isDirectory: true);
@@ -107,7 +116,7 @@ public sealed class ProjectValidator
             pokemonLegendsZASupportFolder.ToResult(),
         };
         var diagnostics = pathResults.SelectMany(result => result.Diagnostics).ToArray();
-        var state = ResolveHealthState(baseRomFs, baseExeFs, outputRoot);
+        var state = ResolveHealthState(baseRomFs, baseExeFs, outputRoot, scarletVioletSupportFolder, pokemonLegendsZASupportFolder);
         var graph = CreateFileGraphSummary(
             paths,
             baseRomFs,
@@ -141,16 +150,19 @@ public sealed class ProjectValidator
     private static ProjectHealthState ResolveHealthState(
         PathValidationDraft baseRomFs,
         PathValidationDraft baseExeFs,
-        PathValidationDraft outputRoot)
+        PathValidationDraft outputRoot,
+        params PathValidationDraft[] supportFolders)
     {
-        if (IsMissingRequiredBasePath(baseRomFs) || IsMissingRequiredBasePath(baseExeFs))
+        if (IsMissingRequiredBasePath(baseRomFs) || IsMissingRequiredBasePath(baseExeFs)
+            || supportFolders.Any(path => path.IsRequired && IsMissingRequiredBasePath(path)))
         {
             return ProjectHealthState.NeedsPaths;
         }
 
         if (baseRomFs.HasBlockingError
             || baseExeFs.HasBlockingError
-            || outputRoot.HasBlockingError)
+            || outputRoot.HasBlockingError
+            || supportFolders.Any(path => path.IsRequired && path.HasBlockingError))
         {
             return ProjectHealthState.Blocked;
         }
@@ -312,13 +324,14 @@ public sealed class ProjectValidator
         return draft;
     }
 
-    private static PathValidationDraft ValidateOptionalScarletVioletSupportFolder(
+    private static PathValidationDraft ValidateSupportFolder(
+        ProjectPathRole role,
         string? path,
-        ProjectGame? selectedGame)
+        bool isRequired,
+        string field)
     {
-        var draft = new PathValidationDraft(ProjectPathRole.ScarletVioletSupportFolder, path, isRequired: false);
-
-        if (selectedGame is not ProjectGame.Scarlet and not ProjectGame.Violet)
+        var draft = new PathValidationDraft(role, path, isRequired);
+        if (!isRequired)
         {
             draft.Status = string.IsNullOrWhiteSpace(path)
                 ? ProjectPathStatus.NotSet
@@ -326,99 +339,40 @@ public sealed class ProjectValidator
             return draft;
         }
 
+        string? code;
+        string message;
         if (string.IsNullOrWhiteSpace(path))
         {
             draft.Status = ProjectPathStatus.NotSet;
-            return draft;
+            code = SupportRequiredDiagnosticCode;
+            message = "A support folder is required for this game. Select the folder containing oo2core_8_win64.dll in Project Setup, then validate paths to enable editors.";
         }
-
-        if (File.Exists(path))
+        else if (File.Exists(path))
         {
             draft.Status = ProjectPathStatus.WrongKind;
-            draft.AddDiagnostic(
-                DiagnosticSeverity.Warning,
-                "S/V support path must be a folder.",
-                expected: "Folder containing oo2core_8_win64.dll");
-            return draft;
+            code = SupportWrongKindDiagnosticCode;
+            message = "The support path points to a file. Select the folder containing oo2core_8_win64.dll in Project Setup, then validate paths to enable editors.";
         }
-
-        if (!Directory.Exists(path))
+        else if (!Directory.Exists(path))
         {
             draft.Status = ProjectPathStatus.Missing;
-            draft.AddDiagnostic(
-                DiagnosticSeverity.Warning,
-                "oo2core_8_win64.dll folder does not exist; S/V data editors are disabled until it is configured.",
-                expected: "Existing oo2core_8_win64.dll folder");
-            return draft;
+            code = SupportFolderMissingDiagnosticCode;
+            message = "The support folder does not exist. Select an existing folder containing oo2core_8_win64.dll in Project Setup, then validate paths to enable editors.";
         }
-
-        var requiredFilePath = Path.Combine(path, CreateScarletVioletSupportFileName());
-        if (!File.Exists(requiredFilePath))
+        else if (!File.Exists(Path.Combine(path, CreateScarletVioletSupportFileName())))
         {
             draft.Status = ProjectPathStatus.Missing;
-            draft.AddDiagnostic(
-                DiagnosticSeverity.Warning,
-                "oo2core_8_win64.dll was not found in the selected folder; S/V data editors are disabled until it is configured.",
-                expected: "Folder containing oo2core_8_win64.dll");
-            return draft;
+            code = SupportFileMissingDiagnosticCode;
+            message = "The selected support folder does not contain oo2core_8_win64.dll. Select the correct folder in Project Setup, then validate paths to enable editors.";
         }
-
-        draft.Status = ProjectPathStatus.Valid;
-        return draft;
-    }
-
-    private static PathValidationDraft ValidateOptionalPokemonLegendsZASupportFolder(
-        string? path,
-        ProjectGame? selectedGame)
-    {
-        var draft = new PathValidationDraft(ProjectPathRole.PokemonLegendsZASupportFolder, path, isRequired: false);
-
-        if (selectedGame is not ProjectGame.ZA)
+        else
         {
-            draft.Status = string.IsNullOrWhiteSpace(path)
-                ? ProjectPathStatus.NotSet
-                : ProjectPathStatus.Valid;
+            draft.Status = ProjectPathStatus.Valid;
             return draft;
         }
 
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            draft.Status = ProjectPathStatus.NotSet;
-            return draft;
-        }
-
-        if (File.Exists(path))
-        {
-            draft.Status = ProjectPathStatus.WrongKind;
-            draft.AddDiagnostic(
-                DiagnosticSeverity.Warning,
-                "Pokemon Legends Z-A support path must be a folder.",
-                expected: "Folder containing oo2core_8_win64.dll");
-            return draft;
-        }
-
-        if (!Directory.Exists(path))
-        {
-            draft.Status = ProjectPathStatus.Missing;
-            draft.AddDiagnostic(
-                DiagnosticSeverity.Warning,
-                "oo2core_8_win64.dll folder does not exist; Z-A data editors are disabled until it is configured.",
-                expected: "Existing oo2core_8_win64.dll folder");
-            return draft;
-        }
-
-        var requiredFilePath = Path.Combine(path, CreateScarletVioletSupportFileName());
-        if (!File.Exists(requiredFilePath))
-        {
-            draft.Status = ProjectPathStatus.Missing;
-            draft.AddDiagnostic(
-                DiagnosticSeverity.Warning,
-                "oo2core_8_win64.dll was not found in the selected folder; Z-A data editors are disabled until it is configured.",
-                expected: "Folder containing oo2core_8_win64.dll");
-            return draft;
-        }
-
-        draft.Status = ProjectPathStatus.Valid;
+        draft.AddDiagnostic(DiagnosticSeverity.Error, message,
+            expected: "Folder containing oo2core_8_win64.dll", field: field, code: code);
         return draft;
     }
 

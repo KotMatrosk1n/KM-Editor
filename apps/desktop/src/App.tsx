@@ -1306,7 +1306,7 @@ const pathFields: Array<{
     field: 'scarletVioletSupportFolderPath',
     helpKey: 'projectPaths.help.supportFolder',
     kind: 'directory',
-    label: 'oo2core_8_win64.dll Folder (Optional)',
+    label: 'oo2core_8_win64.dll Folder',
     role: 'scarletVioletSupportFolder',
     scope: 'scarletViolet'
   },
@@ -1314,7 +1314,7 @@ const pathFields: Array<{
     field: 'pokemonLegendsZASupportFolderPath',
     helpKey: 'projectPaths.help.supportFolder',
     kind: 'directory',
-    label: 'oo2core_8_win64.dll Folder (Optional)',
+    label: 'oo2core_8_win64.dll Folder',
     role: 'pokemonLegendsZASupportFolder',
     scope: 'pokemonLegendsZA'
   }

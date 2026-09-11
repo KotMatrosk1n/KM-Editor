@@ -1,5 +1,9 @@
 {
   "keys": {
+    "projectPaths.diagnostic.supportRequired": "此游戏需要支持文件夹。 请在项目设置中选择包含 oo2core_8_win64.dll 的文件夹，然后验证路径以启用编辑器。",
+    "projectPaths.diagnostic.supportWrongKind": "支持路径指向一个文件。 请在项目设置中选择包含 oo2core_8_win64.dll 的文件夹，然后验证路径以启用编辑器。",
+    "projectPaths.diagnostic.supportFolderMissing": "支持文件夹不存在。 请在项目设置中选择包含 oo2core_8_win64.dll 的文件夹，然后验证路径以启用编辑器。",
+    "projectPaths.diagnostic.supportFileMissing": "所选支持文件夹不包含 oo2core_8_win64.dll。 请在项目设置中选择包含 oo2core_8_win64.dll 的文件夹，然后验证路径以启用编辑器。",
     "trainerWhiteout.title": "训练家战败返回",
     "trainerWhiteout.subtitle": "Sword 和 Shield 的训练家战败行为",
     "trainerWhiteout.enabled": "启用战败返回？",
@@ -7668,7 +7672,7 @@
     "moves": "招式",
     "n/a": "不适用",
     "not inspected": "未检查",
-    "oo2core_8_win64.dll Folder (Optional)": "oo2core_8_win64.dll文件夹（可选）",
+    "oo2core_8_win64.dll Folder": "oo2core_8_win64.dll 文件夹",
     "oo2core_8_win64.dll folder does not exist; S/V data editors are disabled until it is configured.": "oo2core_8_win64.dll文件夹不存在；朱/紫数据编辑器在配置前禁用。",
     "oo2core_8_win64.dll folder does not exist; Z-A data editors are disabled until it is configured.": "oo2core_8_win64.dll文件夹不存在；Z-A数据编辑器在配置前禁用。",
     "oo2core_8_win64.dll folder is not configured. Set it in Project Setup to enable Z-A data editors.": "oo2core_8_win64.dll文件夹未配置。在项目设置中设置以启用Z-A数据编辑器。",

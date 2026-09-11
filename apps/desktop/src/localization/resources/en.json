@@ -1,5 +1,9 @@
 {
   "keys": {
+    "projectPaths.diagnostic.supportRequired": "A support folder is required for this game. Select the folder containing oo2core_8_win64.dll in Project Setup, then validate paths to enable editors.",
+    "projectPaths.diagnostic.supportWrongKind": "The support path points to a file. Select the folder containing oo2core_8_win64.dll in Project Setup, then validate paths to enable editors.",
+    "projectPaths.diagnostic.supportFolderMissing": "The support folder does not exist. Select the folder containing oo2core_8_win64.dll in Project Setup, then validate paths to enable editors.",
+    "projectPaths.diagnostic.supportFileMissing": "The selected support folder does not contain oo2core_8_win64.dll. Select the folder containing oo2core_8_win64.dll in Project Setup, then validate paths to enable editors.",
     "trainerWhiteout.title": "Trainer Whiteout",
     "trainerWhiteout.subtitle": "Sword and Shield trainer defeat behavior",
     "trainerWhiteout.enabled": "Whiteout enabled?",
@@ -7668,7 +7672,7 @@
     "moves": "moves",
     "n/a": "n/a",
     "not inspected": "not inspected",
-    "oo2core_8_win64.dll Folder (Optional)": "oo2core_8_win64.dll Folder (Optional)",
+    "oo2core_8_win64.dll Folder": "oo2core_8_win64.dll Folder",
     "oo2core_8_win64.dll folder does not exist; S/V data editors are disabled until it is configured.": "oo2core_8_win64.dll folder does not exist; S/V data editors are disabled until it is configured.",
     "oo2core_8_win64.dll folder does not exist; Z-A data editors are disabled until it is configured.": "oo2core_8_win64.dll folder does not exist; Z-A data editors are disabled until it is configured.",
     "oo2core_8_win64.dll folder is not configured. Set it in Project Setup to enable Z-A data editors.": "oo2core_8_win64.dll folder is not configured. Set it in Project Setup to enable Z-A data editors.",

@@ -157,6 +157,8 @@
 .model-workspace__restore { font-size: .85rem; padding: .5rem 0; border-bottom: 1px solid var(--color-border); }
 .model-workspace__restore summary { cursor: pointer; }
 .model-workspace__scene-background { display: flex; flex-direction: column; align-items: flex-start; gap: .6rem; }
+.model-workspace__scene-background > label { display: inline-flex; align-items: center; gap: .5rem; }
+.model-workspace__scene-background > label > input[type="checkbox"] { flex-shrink: 0; }
 .model-parts > input { width: 100%; margin: .4rem 0; }
 .model-parts ul { padding: 0; margin: .5rem 0; list-style: none; }
 .model-parts li { display: flex; align-items: center; gap: .5rem; margin-bottom: .3rem; }
