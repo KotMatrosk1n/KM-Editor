@@ -98,6 +98,10 @@ const diagnosticLocalizationKeys: Readonly<Record<string, string>> = {
   'KM-OUTPUT-UNKNOWN-TARGET-STATE': 'outputSafety.diagnostic.unknownTarget',
   'KM-OUTPUT-UNSAFE-PATH': 'outputSafety.diagnostic.unsafePath',
   'KM-PROJECT-OUTPUT-MIGRATION-BLOCKED': 'outputSafety.diagnostic.migrationBlocked',
+  'KM-PROJECT-SUPPORT-REQUIRED': 'projectPaths.diagnostic.supportRequired',
+  'KM-PROJECT-SUPPORT-WRONG-KIND': 'projectPaths.diagnostic.supportWrongKind',
+  'KM-PROJECT-SUPPORT-FOLDER-MISSING': 'projectPaths.diagnostic.supportFolderMissing',
+  'KM-PROJECT-SUPPORT-FILE-MISSING': 'projectPaths.diagnostic.supportFileMissing',
   'KM-PROJECT-OUTPUT-MISSING': 'outputSafety.diagnostic.outputRootMissing',
   'KM-PROJECT-OUTPUT-NOT-CONFIGURED': 'outputSafety.diagnostic.outputRootNotConfigured',
   'KM-PROJECT-RELOCATION-CONFLICT': 'outputSafety.diagnostic.relocationConflict',
@@ -398,7 +402,7 @@ function humanizeIdentifier(value: string) {
 function normalizeSentence(value: string) {
   const trimmed = value.trim();
 
-  if (trimmed.length === 0 || /[.!?]$/.test(trimmed)) {
+  if (trimmed.length === 0 || /[.!?。！？]$/u.test(trimmed)) {
     return trimmed;
   }
 

@@ -1,5 +1,9 @@
 {
   "keys": {
+    "projectPaths.diagnostic.supportRequired": "Este juego requiere una carpeta de soporte. Selecciona la carpeta que contiene oo2core_8_win64.dll en Configuración del proyecto y valida las rutas para habilitar los editores.",
+    "projectPaths.diagnostic.supportWrongKind": "La ruta de soporte apunta a un archivo. Selecciona la carpeta que contiene oo2core_8_win64.dll en Configuración del proyecto y valida las rutas para habilitar los editores.",
+    "projectPaths.diagnostic.supportFolderMissing": "La carpeta de soporte no existe. Selecciona la carpeta que contiene oo2core_8_win64.dll en Configuración del proyecto y valida las rutas para habilitar los editores.",
+    "projectPaths.diagnostic.supportFileMissing": "La carpeta de soporte seleccionada no contiene oo2core_8_win64.dll. Selecciona la carpeta que contiene oo2core_8_win64.dll en Configuración del proyecto y valida las rutas para habilitar los editores.",
     "trainerWhiteout.title": "Debilitamiento ante entrenadores",
     "trainerWhiteout.subtitle": "Comportamiento tras perder en Sword y Shield",
     "trainerWhiteout.enabled": "¿Debilitamiento total activado?",
@@ -7668,7 +7672,7 @@
     "moves": "movimientos",
     "n/a": "n/d",
     "not inspected": "no inspeccionado",
-    "oo2core_8_win64.dll Folder (Optional)": "Carpeta de oo2core_8_win64.dll (opcional)",
+    "oo2core_8_win64.dll Folder": "Carpeta de oo2core_8_win64.dll",
     "oo2core_8_win64.dll folder does not exist; S/V data editors are disabled until it is configured.": "La carpeta de oo2core_8_win64.dll no existe; los editores de datos de S/V estarán desactivados hasta configurarla.",
     "oo2core_8_win64.dll folder does not exist; Z-A data editors are disabled until it is configured.": "La carpeta de oo2core_8_win64.dll no existe; los editores de datos de Z-A estarán desactivados hasta configurarla.",
     "oo2core_8_win64.dll folder is not configured. Set it in Project Setup to enable Z-A data editors.": "La carpeta de oo2core_8_win64.dll no está configurada. Configúrala en Project Setup para habilitar los editores de datos de Z-A.",

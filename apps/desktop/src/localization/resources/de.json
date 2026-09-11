@@ -1,5 +1,9 @@
 {
   "keys": {
+    "projectPaths.diagnostic.supportRequired": "Für dieses Spiel ist ein Supportordner erforderlich. Wähle in der Projekteinrichtung den Ordner mit oo2core_8_win64.dll und validiere dann die Pfade, um die Editoren zu aktivieren.",
+    "projectPaths.diagnostic.supportWrongKind": "Der Supportpfad verweist auf eine Datei. Wähle in der Projekteinrichtung den Ordner mit oo2core_8_win64.dll und validiere dann die Pfade, um die Editoren zu aktivieren.",
+    "projectPaths.diagnostic.supportFolderMissing": "Der Supportordner ist nicht vorhanden. Wähle in der Projekteinrichtung den Ordner mit oo2core_8_win64.dll und validiere dann die Pfade, um die Editoren zu aktivieren.",
+    "projectPaths.diagnostic.supportFileMissing": "Der ausgewählte Supportordner enthält oo2core_8_win64.dll nicht. Wähle in der Projekteinrichtung den Ordner mit oo2core_8_win64.dll und validiere dann die Pfade, um die Editoren zu aktivieren.",
     "trainerWhiteout.title": "Niederlage gegen Trainer",
     "trainerWhiteout.subtitle": "Verhalten nach Niederlagen in Sword und Shield",
     "trainerWhiteout.enabled": "Rückkehr nach Niederlage aktiviert?",
@@ -7668,7 +7672,7 @@
     "moves": "bewegt sich",
     "n/a": "n/a",
     "not inspected": "nicht geprüft",
-    "oo2core_8_win64.dll Folder (Optional)": "oo2core_8_win64.dll-Ordner (optional)",
+    "oo2core_8_win64.dll Folder": "Ordner mit oo2core_8_win64.dll",
     "oo2core_8_win64.dll folder does not exist; S/V data editors are disabled until it is configured.": "Der Ordner oo2core_8_win64.dll existiert nicht; Die S/V-Dateneditoren sind bis zur Konfiguration deaktiviert.",
     "oo2core_8_win64.dll folder does not exist; Z-A data editors are disabled until it is configured.": "Der Ordner oo2core_8_win64.dll existiert nicht; Z-A Dateneditoren sind deaktiviert, bis er konfiguriert ist.",
     "oo2core_8_win64.dll folder is not configured. Set it in Project Setup to enable Z-A data editors.": "Der Ordner oo2core_8_win64.dll ist nicht konfiguriert. Legen Sie ihn in Project Setup fest, um Z-A Dateneditoren zu aktivieren.",

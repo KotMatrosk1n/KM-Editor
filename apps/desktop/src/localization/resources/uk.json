@@ -1,5 +1,9 @@
 {
   "keys": {
+    "projectPaths.diagnostic.supportRequired": "Для цієї гри потрібна папка підтримки. Виберіть папку з oo2core_8_win64.dll у налаштуваннях проєкту та перевірте шляхи, щоб відкрити редактори.",
+    "projectPaths.diagnostic.supportWrongKind": "Шлях підтримки вказує на файл. Виберіть папку з oo2core_8_win64.dll у налаштуваннях проєкту та перевірте шляхи, щоб відкрити редактори.",
+    "projectPaths.diagnostic.supportFolderMissing": "Папка підтримки не існує. Виберіть папку з oo2core_8_win64.dll у налаштуваннях проєкту та перевірте шляхи, щоб відкрити редактори.",
+    "projectPaths.diagnostic.supportFileMissing": "Вибрана папка підтримки не містить oo2core_8_win64.dll. Виберіть папку з oo2core_8_win64.dll у налаштуваннях проєкту та перевірте шляхи, щоб відкрити редактори.",
     "trainerWhiteout.title": "Поразка в бою з тренером",
     "trainerWhiteout.subtitle": "Поведінка після поразки у Sword і Shield",
     "trainerWhiteout.enabled": "Повернення після поразки ввімкнено?",
@@ -7668,7 +7672,7 @@
     "moves": "рухається",
     "n/a": "n/a",
     "not inspected": "не перевірено",
-    "oo2core_8_win64.dll Folder (Optional)": "Папка oo2core_8_win64.dll (необов'язково)",
+    "oo2core_8_win64.dll Folder": "Папка oo2core_8_win64.dll",
     "oo2core_8_win64.dll folder does not exist; S/V data editors are disabled until it is configured.": "папка oo2core_8_win64.dll не існує; Редактори даних S/V вимкнено, доки його не налаштовано.",
     "oo2core_8_win64.dll folder does not exist; Z-A data editors are disabled until it is configured.": "Папка oo2core_8_win64.dll не існує; редактори даних Z-A вимкнено, доки її не буде налаштовано.",
     "oo2core_8_win64.dll folder is not configured. Set it in Project Setup to enable Z-A data editors.": "Папку oo2core_8_win64.dll не налаштовано. Укажіть її в Project Setup, щоб увімкнути редактори даних Z-A.",

@@ -134,7 +134,7 @@ export function AppSidebar({
 
           {canShowWorkflowNavigation || canShowGameplaySettingsNavigation
             ? workflowNavigationGroups.map((group) => {
-                if (group.id === 'betaEditors' && !showBetaEditors) return null;
+                if (group.id === 'betaEditors' && (!canShowWorkflowNavigation || !showBetaEditors)) return null;
                 const visibleSectionIds = group.sectionIds.filter(
                   (sectionId) =>
                     (sectionId === 'gameplaySettings'
