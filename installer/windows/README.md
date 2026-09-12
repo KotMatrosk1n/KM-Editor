@@ -3,7 +3,7 @@
 # KM Editor Windows Setup
 
 This directory contains KM Editor's custom Windows setup implementation. It is intentionally
-separate from the normal KM Editor solution and pull-request build workflow so ordinary
+separate from the normal KM Editor solution and pull request build workflow so ordinary
 application compilation does not create installer artifacts. Release packaging is wired
 separately through `.github/workflows/desktop-release.yml`, which invokes the setup driver
 for eligible versioned release runs.
@@ -50,7 +50,7 @@ cross-version storage.
   arguments, hash-verifies the embedded Burn bundle, and forwards its exact exit code.
 
 These projects are not added to `KM.Editor.slnx`. A normal backend or desktop compile, and
-the pull-request `Build` workflow, must not create Windows installer artifacts. This does
+the pull request `Build` workflow, must not create Windows installer artifacts. This does
 not exclude setup from releases: the dedicated `Desktop Release` workflow builds the
 unbundled desktop application and then invokes the setup driver explicitly.
 
@@ -124,20 +124,20 @@ numeric release tag before it invokes this setup driver.
 
 These commands do not change dependency or toolchain versions, supported game versions,
 installer family identities, protocol and manifest format versions, release tags, or
-historical release documentation. The statement that 2.3.6 is the final legacy-installer
+historical release documentation. The statement that 2.3.6 is the final legacy installer
 release is intentionally retained. The README release badge has no hard-coded application
 version; it follows the latest published GitHub Release and should be verified after that
 release is published.
 
 ## GitHub release automation
 
-The pull-request `Build` workflow compiles and checks the product but does not package an
+The pull request `Build` workflow compiles and checks the product but does not package an
 installer. The `Desktop Release` workflow is the only GitHub Actions caller of the setup
 driver. It starts for a pushed `v*` tag or an explicit manual run, then rejects the run
 before packaging unless all of these conditions hold:
 
 - the release tag is exactly numeric `vX.Y.Z` and every desktop version field matches it;
-- the source is a two-parent pull-request merge whose tree matches its checked head;
+- the source is a two parent pull request merge whose tree matches its checked head;
 - `Build / Desktop` and `Build / Backend` passed for that head;
 - repository variable `WIX_V7_EULA_ACCEPTED` is `true`; and
 - Actions secret `TAURI_SIGNING_PRIVATE_KEY` is configured. The password secret is needed
@@ -215,7 +215,7 @@ windows-x86_64      -> KM.Editor.Setup_<version>_x64.exe
 
 Only the outer launcher is an updater artifact. The inner Burn EXE and MSI are never
 published as alternate user-facing installers. Installer packaging is deliberately not run
-by the pull-request `Build` workflow. Eligible pushed numeric version tags and eligible
+by the pull request `Build` workflow. Eligible pushed numeric version tags and eligible
 manual `Desktop Release` runs build the custom setup and Minisign-sign only the final outer
 bytes. Maintainers may also invoke the packaging driver explicitly for local release
 validation; ordinary application and solution builds never invoke it. All three Windows
@@ -257,7 +257,7 @@ can still uninstall itself when a stale legacy key or MSI ownership conflict is 
 Do not replace the published installer or updater manifest until clean install, update,
 repair, uninstall, cancellation, rollback, legacy migration, passive relaunch, app-in-use,
 and display-scaling checks pass on supported Windows versions. Installer packaging and
-installation are explicit release-validation actions, not normal pull-request side effects.
+installation are explicit release-validation actions, not normal pull request side effects.
 This lifecycle matrix is a manual release gate. GitHub Actions validates the source, product
 checks, versions, packaging inputs, and updater signature, but it does not automate every
 Windows installation scenario listed above.

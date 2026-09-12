@@ -8,9 +8,9 @@ Before every release, finalize this content against the complete release changel
 
 ## Releases
 
-Add a `releases` entry with an exact `version`, `summary`, and `sections`. The hub selects only the entry matching the installed application version reported by the native app, with Tauri configuration as the browser fallback. Missing versions display an empty state. Do not put unreleased changes in an older version's notes. The bundled 2.5.9 content comes from that version's published GitHub release. The 2.6.0 entry supplies the matching [release notes](../../../../../docs/release-notes/2.6.0.md); keep its English summary, sections, items, and comparison link identical to that document when revising the release.
+Add a `releases` entry with an exact `version`, `summary`, and `sections`. The hub selects only the entry matching the installed application version reported by the native app, with Tauri configuration as the browser fallback. Missing versions display an empty state. Do not put unreleased changes in an older version's notes. Keep each entry's English summary, sections, items and comparison link identical to its matching document in `docs/release-notes/`. Preserve historical entries when adding a new release.
 
-Each section has a `title` and `items`. Each item has a `body` and `audience`. Supported audiences are `all`, `swsh`, `sv`, `za`, `sword`, `shield`, `scarlet`, and `violet`. Use `all` for application-wide changes; it remains visible under every game filter. Use multiple audiences for changes shared by selected families. Empty filtered sections are hidden. The complete-notes control expands all matching items inside the app.
+Each section has a `title` and `items`. Each item has a `body` and `audience`. Supported audiences are `all`, `swsh`, `sv`, `za`, `sword`, `shield`, `scarlet`, and `violet`. Use `all` for application wide changes; it remains visible under every game filter. Use multiple audiences for changes shared by selected families. Empty filtered sections are hidden. The complete-notes control expands all matching items inside the app.
 
 ## From the developer
 

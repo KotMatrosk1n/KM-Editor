@@ -4,7 +4,7 @@ KM Editor publishes Windows desktop builds through GitHub Releases.
 
 ## Release Workflow
 
-The `Desktop Release` workflow requires its source SHA to be a two-parent merge whose tree exactly matches its second parent, verifies successful `Build / Desktop` and `Build / Backend` checks on that pull-request head, compiles the Tauri desktop app on Windows, packages it with the custom KM Editor setup, and uploads the release assets to a draft GitHub Release.
+The `Desktop Release` workflow requires its source SHA to be a two parent merge whose tree exactly matches its second parent, verifies successful `Build / Desktop` and `Build / Backend` checks on that pull request head, compiles the Tauri desktop app on Windows, packages it with the custom KM Editor setup, and uploads the release assets to a draft GitHub Release.
 
 KM Editor 2.4.0 is the first release using the custom setup described below. KM Editor 2.3.6 is the final release using the legacy NSIS and MSI asset set.
 
@@ -23,7 +23,7 @@ Native updates use Tauri's updater plugin, the public key in `apps/desktop/src-t
 
 If native update checks are unavailable, Settings falls back to opening the newer GitHub Release page.
 
-Users on versions before the native updater was added must manually install the first updater-enabled release. After that install, later releases can update natively.
+Users on versions before the native updater was added must manually install the first updater enabled release. After that install, later releases can update natively.
 
 ## Updater Signing
 
@@ -32,7 +32,7 @@ Tauri updater artifacts must be signed. The release workflow expects these GitHu
 - `TAURI_SIGNING_PRIVATE_KEY`
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, if the private key was created with a password
 
-The private signing key must never be committed. If the private key or password is lost, installed updater-enabled builds cannot receive future native updates signed by a different key.
+The private signing key must never be committed. If the private key or password is lost, installed updater enabled builds cannot receive future native updates signed by a different key.
 
 The workflow also requires repository variable `WIX_V7_EULA_ACCEPTED=true`, recorded only after the WiX v7 OSMF EULA has been reviewed and accepted. KM Editor's outer setup is not currently required to carry an Authenticode signature; Tauri/Minisign updater signing remains mandatory, and the included WebView2 bootstrapper must retain its valid Microsoft Authenticode signature.
 
@@ -51,13 +51,13 @@ Use the GitHub Actions UI when a release should be created from the final pull r
 
 For a manual run, `gh release create` creates the requested tag at the workflow SHA if it does not already exist. A tag-push run uses the tag that triggered it.
 
-The tag must match the desktop app version and point to a pull request merge whose tree matches its build-checked head. For example, `v0.1.0` requires the app version to be `0.1.0`.
+The tag must match the desktop app version and point to a pull request merge whose tree matches its build checked head. For example, `v0.1.0` requires the app version to be `0.1.0`.
 
 ## Bundled Welcome Notes
 
-Finalize the welcome hub content before merging the release candidate and starting packaging. In `apps/desktop/src/features/welcome/content.json`, check the exact release version, summary, game-family audiences, shared changes, developer message, and comparison link against the final changelog. Follow the [welcome content guide](../apps/desktop/src/features/welcome/README.md) and run `pnpm --filter @km-editor/desktop check:welcome`.
+Finalize the welcome hub content before merging the release candidate and starting packaging. In `apps/desktop/src/features/welcome/content.json`, check the exact release version, summary, game family audiences, shared changes, developer message, and comparison link against the final changelog. Follow the [welcome content guide](../apps/desktop/src/features/welcome/README.md) and run `pnpm --filter @km-editor/desktop check:welcome`.
 
-Check the notes under all five game selections and the all-games filter. Shared changes must remain visible under each game filter. Confirm the installed version selects the intended entry and that the developer card contains the approved message.
+Check the notes under all five game selections and the all games filter. Shared changes must remain visible under each game filter. Confirm the installed version selects the intended entry and that the developer card contains the approved message.
 
 Welcome content is embedded in the desktop build. Editing GitHub release notes after publication does not update an installed application's welcome hub. A correction to bundled content requires another application build. GitHub release notes remain separately editable and should contain the curated changelog and version comparison link.
 
@@ -70,7 +70,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-Create the tag at the final build-checked pull-request merge on `master`. The workflow rejects non-two-parent source commits, trees that differ from the second parent, and second parents without the required successful product checks; selecting and verifying `master` remains a maintainer responsibility.
+Create the tag at the final build checked pull request merge on `master`. The workflow rejects source commits without exactly two parents, trees that differ from the second parent, and second parents without the required successful product checks; selecting and verifying `master` remains a maintainer responsibility.
 
 ## Version Checklist
 
@@ -90,11 +90,11 @@ pnpm check:version X.Y.Z
 - the package version in `apps/desktop/src-tauri/Cargo.toml`
 - the unique `km-editor-desktop` package version in `apps/desktop/src-tauri/Cargo.lock`
 
-`pnpm check:version X.Y.Z` fails unless all six fields match the requested version. The normal repository check and pull-request desktop build also run the synchronization check. The release workflow repeats it against the exact `vX.Y.Z` tag before packaging.
+`pnpm check:version X.Y.Z` fails unless all six fields match the requested version. The normal repository check and pull request desktop build also run the synchronization check. The release workflow repeats it against the exact `vX.Y.Z` tag before packaging.
 
-The version command does not update dependency versions, toolchain versions, supported game versions, protocol or manifest format versions, release tags, historical release statements, or release records. In particular, references identifying 2.3.6 as the final legacy-installer release remain historical facts.
+The version command does not update dependency versions, toolchain versions, supported game versions, protocol or manifest format versions, release tags, historical release statements, or release records. In particular, references identifying 2.3.6 as the final legacy installer release remain historical facts.
 
-The README release badge reads the latest published GitHub Release dynamically and has no literal app version to change. Review the release-facing README summary during release preparation, then verify that the badge and latest-release link resolve to the newly published release.
+The README release badge reads the latest published GitHub Release dynamically and has no literal app version to change. Review the release facing README summary during release preparation, then verify that the badge and latest release link resolve to the newly published release.
 
 Desktop packaging derives the project bridge binary metadata from the synchronized app version. The setup driver derives setup binary metadata from its mandatory version and rejects manual packaging when that version differs from the synchronized source metadata or the staged application and project bridge metadata.
 
