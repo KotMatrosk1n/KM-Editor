@@ -25302,20 +25302,33 @@ function getPokemonSpriteNameForSpecies(
   editorFamily: EditorUiFamily,
   fallback: string
 ) {
+  const baseRecord = pokemonRecords.find(
+    (record) => record.speciesId === speciesId &&
+      (editorFamily === 'swsh' ? record.personalId === speciesId : record.form === 0)
+  );
+  // SwSh's stored Form field is not the evolution form index. Alternate rows
+  // are addressed through the base species' personal table form range.
+  const swshPersonalId = form === 0
+    ? speciesId
+    : baseRecord && baseRecord.personal.formStatsIndex > 0 && form > 0 && form < baseRecord.personal.formCount
+      ? baseRecord.personal.formStatsIndex + form - 1
+      : null;
   const matchingForm = pokemonRecords.find(
-    (record) => record.speciesId === speciesId && record.form === form
+    (record) => record.speciesId === speciesId &&
+      (editorFamily === 'swsh' ? record.personalId === swshPersonalId : record.form === form)
   );
   const matchingSpriteName = getPokemonRecordSpriteName(matchingForm);
   if (matchingSpriteName) {
     return formatSpeciesFormLabel(matchingSpriteName, form, speciesId, editorFamily);
   }
 
-  const baseRecord = pokemonRecords.find(
-    (record) => record.speciesId === speciesId && record.form === 0
-  );
   const baseSpriteName = getPokemonRecordSpriteName(baseRecord);
   if (baseSpriteName) {
-    return formatSpeciesFormLabel(baseSpriteName, form, speciesId, editorFamily);
+    const baseFormSuffix = ` (${baseRecord?.formLabel})`;
+    const speciesSpriteName = editorFamily === 'swsh' && baseSpriteName.endsWith(baseFormSuffix)
+      ? baseSpriteName.slice(0, -baseFormSuffix.length)
+      : baseSpriteName;
+    return formatSpeciesFormLabel(speciesSpriteName, form, speciesId, editorFamily);
   }
 
   return matchingForm?.name ?? baseRecord?.name ?? fallback;

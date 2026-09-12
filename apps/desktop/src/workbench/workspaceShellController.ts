@@ -51,6 +51,8 @@ export type PendingWorkspaceNavigation = {
 };
 
 export type WorkspaceNavigationCommitOptions = {
+  // Accepted from navigation callers for compatibility. Draft protection applies
+  // to explicit close, not automatic eviction from the recent record bar.
   protectedTabKeys?: ReadonlySet<string>;
   rememberRecent?: boolean;
   tabEligible?: boolean;
@@ -237,8 +239,7 @@ export function commitWorkspaceNavigation(
     ? rememberEligibleTab(
         state.tabs,
         canonicalCommittedLocation,
-        revision,
-        options.protectedTabKeys ?? new Set<string>()
+        revision
       )
     : state.tabs;
 
@@ -368,8 +369,7 @@ function rememberRecentLocation(
 function rememberEligibleTab(
   tabs: readonly WorkspaceShellTab[],
   location: WorkbenchLocation,
-  revision: number,
-  protectedTabKeys: ReadonlySet<string>
+  revision: number
 ) {
   const key = workspaceTabKey(location);
   if (!key) {
@@ -377,18 +377,9 @@ function rememberEligibleTab(
   }
 
   const nextTab = { key, lastAccessRevision: revision, location: withoutInspector(location) };
-  const nextTabs = promoteRecentRecordTab(tabs, nextTab);
-  if (nextTabs.length <= maximumWorkspaceTabs) {
-    return nextTabs;
-  }
-
-  const evictionCandidate = nextTabs
-    .filter((tab) => tab.key !== key && !protectedTabKeys.has(tab.key))
-    .sort((left, right) => left.lastAccessRevision - right.lastAccessRevision)[0];
-  if (!evictionCandidate) {
-    return tabs;
-  }
-  return nextTabs.filter((tab) => tab.key !== evictionCandidate.key);
+  // Tabs are navigation bookmarks in most recently visited order. Trimming the
+  // oldest bookmark does not close its editor or discard its retained drafts.
+  return promoteRecentRecordTab(tabs, nextTab).slice(0, maximumWorkspaceTabs);
 }
 
 function withoutInspector(location: WorkbenchLocation) {

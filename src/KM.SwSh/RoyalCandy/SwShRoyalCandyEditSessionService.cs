@@ -1079,7 +1079,7 @@ public sealed class SwShRoyalCandyEditSessionService
         if (IsItemTextOutput(relativePath))
         {
             var text = SwShGameTextFile.Parse(output);
-            var expected = GetRoyalCandyTextReplacement(relativePath, selectedWorkflow.WorkflowId);
+            var expected = GetRoyalCandyTextOutputValue(project, selectedWorkflow, relativePath);
             if (text.Lines.Count <= RoyalCandyItemId
                 || !string.Equals(text.Lines[RoyalCandyItemId].Text, expected, StringComparison.Ordinal))
             {
@@ -1359,7 +1359,7 @@ public sealed class SwShRoyalCandyEditSessionService
             }
 
             var lines = textFile.Lines.ToArray();
-            var replacement = GetRoyalCandyTextReplacement(relativePath, selectedWorkflow.WorkflowId);
+            var replacement = GetRoyalCandyTextOutputValue(project, selectedWorkflow, relativePath);
             lines[RoyalCandyItemId] = lines[RoyalCandyItemId] with { Text = replacement };
             return textFile.WritePreserving(lines);
         }
@@ -1782,6 +1782,28 @@ public sealed class SwShRoyalCandyEditSessionService
         return string.Equals(workflowId, StoryLimitsWorkflowId, StringComparison.Ordinal)
             ? StoryLimitsDescription
             : UnlimitedDescription;
+    }
+
+    private static string GetRoyalCandyTextOutputValue(
+        OpenedProject project,
+        SwShRoyalCandyWorkflowRecord selectedWorkflow,
+        string relativePath)
+    {
+        var source = ResolveWorkflowFile(project, relativePath);
+        if (string.Equals(selectedWorkflow.Status, "installed", StringComparison.Ordinal)
+            && source?.GraphEntry.LayeredFile is not null)
+        {
+            // Text remains user editable after installation, including during a cap refresh.
+            var text = SwShGameTextFile.Parse(File.ReadAllBytes(source.AbsolutePath));
+            if (text.Lines.Count <= RoyalCandyItemId)
+            {
+                throw new InvalidDataException($"Text table does not contain item {RoyalCandyItemId}.");
+            }
+
+            return text.Lines[RoyalCandyItemId].Text;
+        }
+
+        return GetRoyalCandyTextReplacement(relativePath, selectedWorkflow.WorkflowId);
     }
 
     private static string GetRoyalCandyTextReplacement(string relativePath, string workflowId)
