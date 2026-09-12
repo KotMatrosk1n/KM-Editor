@@ -25,6 +25,7 @@ type HoverTooltipAnchorProps = {
   onBlur?: (event: FocusEvent<HTMLElement>) => void;
   onFocus?: (event: FocusEvent<HTMLElement>) => void;
   onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void;
+  onPointerDown?: (event: PointerEvent<HTMLElement>) => void;
   onPointerEnter?: (event: PointerEvent<HTMLElement>) => void;
   onPointerLeave?: (event: PointerEvent<HTMLElement>) => void;
   style?: CSSProperties;
@@ -273,8 +274,10 @@ export function HoverTooltip({
       },
       onFocus: (event: FocusEvent<HTMLElement>) => {
         anchorProps.onFocus?.(event);
-        hasFocusRef.current = true;
-        openTooltip(event.currentTarget, true);
+        hasFocusRef.current = event.target.matches(':focus-visible');
+        if (hasFocusRef.current) {
+          openTooltip(event.currentTarget, true);
+        }
       },
       onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
         anchorProps.onKeyDown?.(event);
@@ -285,6 +288,10 @@ export function HoverTooltip({
       onPointerEnter: (event: PointerEvent<HTMLElement>) => {
         anchorProps.onPointerEnter?.(event);
         openTooltip(event.currentTarget);
+      },
+      onPointerDown: (event: PointerEvent<HTMLElement>) => {
+        anchorProps.onPointerDown?.(event);
+        hasFocusRef.current = false;
       },
       onPointerLeave: (event: PointerEvent<HTMLElement>) => {
         anchorProps.onPointerLeave?.(event);

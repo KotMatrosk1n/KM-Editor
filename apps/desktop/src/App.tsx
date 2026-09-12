@@ -4522,13 +4522,10 @@ export function App({
     activeSectionOwnsScarletVioletAdvancedEditSession ||
     activeSectionOwnsPokemonLegendsZAAdvancedEditSession ||
     activeSectionOwnsDexLayoutEditSession;
-  const getEditSessionForSection = useCallback(
-    (section: WorkbenchSection) =>
-      editSessionSection === section ||
-      (editSessionCanBeSharedAcrossNormalEditors &&
-        isSharedStagedEditorSection(section, selectedGame))
-        ? editSession
-        : null,
+  const getEditSessionForSection = useMemo(
+    () => createEditSessionSectionSelector(
+      editSession, editSessionCanBeSharedAcrossNormalEditors, editSessionSection, selectedGame
+    ),
     [editSession, editSessionCanBeSharedAcrossNormalEditors, editSessionSection, selectedGame]
   );
 
@@ -4808,95 +4805,15 @@ export function App({
     return evictedSections;
   }, [evictWorkflowPayloads, getProtectedWorkflowSections, loadedWorkflowRetentionEntries]);
 
-  const runRetainedWorkflowLoad = useCallback(
-    async <TResponse,>(
-      section: RetainedWorkflowSection,
-      setLoading: (isLoading: boolean) => void,
-      load: () => Promise<TResponse>,
-      commit: (response: TResponse) => void,
-      canCommitExtra: () => boolean = () => true,
-      onError: (error: unknown) => void = (error) =>
-        setBridgeDiagnostics(toBridgeDiagnostics(error))
-    ) => {
-      const lazyLoadScope = isWorkflowSection(activeSection)
-        ? resolveWorkflowDataSection(activeSection)
-        : section;
-      const token = workflowLoadGenerationRef.current.begin(section);
-      const previousLoad = workflowLoadTailRef.current.catch(() => undefined);
-      let releaseLoadTurn: () => void = () => {};
-      const loadTurn = new Promise<void>((resolve) => {
-        releaseLoadTurn = resolve;
-      });
-      workflowLoadTailRef.current = previousLoad.then(() => loadTurn);
-      setLoading(true);
-      setBridgeDiagnostics([]);
-
-      try {
-        await previousLoad;
-        if (
-          !workflowLoadGenerationRef.current.canCommit(section, token) ||
-          !canCommitExtra()
-        ) {
-          return;
-        }
-
-        setLazyLoadedWorkflowSections((currentSections) => {
-          if (currentSections.has(section)) {
-            return currentSections;
-          }
-
-          const nextSections = new Set(currentSections);
-          nextSections.add(section);
-          return nextSections;
-        });
-        const response = await load();
-        if (workflowLoadGenerationRef.current.canCommit(section, token) && canCommitExtra()) {
-          commit(response);
-          lazyWorkflowRetryCountRef.current.delete(lazyLoadScope);
-          workflowRecencyRef.current = touchWorkflowRecency(
-            workflowRecencyRef.current,
-            section
-          );
-        } else if (workflowLoadGenerationRef.current.canCommit(section, token)) {
-          setLazyLoadedWorkflowSections((currentSections) => {
-            const nextSections = new Set(currentSections);
-            nextSections.delete(section);
-            return nextSections;
-          });
-        }
-      } catch (error) {
-        if (workflowLoadGenerationRef.current.canCommit(section, token) && canCommitExtra()) {
-          onError(error);
-          const retryCount = lazyWorkflowRetryCountRef.current.get(lazyLoadScope) ?? 0;
-          if (retryCount < 1) {
-            lazyWorkflowRetryCountRef.current.set(lazyLoadScope, retryCount + 1);
-            setLazyLoadedWorkflowSections((currentSections) => {
-              if (
-                !currentSections.has(section) &&
-                !currentSections.has(lazyLoadScope)
-              ) {
-                return currentSections;
-              }
-
-              const nextSections = new Set(currentSections);
-              nextSections.delete(section);
-              nextSections.delete(lazyLoadScope);
-              return nextSections;
-            });
-          }
-        }
-      } finally {
-        releaseLoadTurn();
-        const completion = workflowLoadGenerationRef.current.finish(section, token);
-        if (completion === 'current') {
-          setLoading(false);
-        } else if (completion === 'invalidated') {
-          setLoading(false);
-        }
-      }
-    },
-    [activeSection, setBridgeDiagnostics]
-  );
+  const runRetainedWorkflowLoad = useRetainedWorkflowLoader({
+    activeSection,
+    setBridgeDiagnostics,
+    workflowLoadGenerationRef,
+    workflowLoadTailRef,
+    setLazyLoadedWorkflowSections,
+    lazyWorkflowRetryCountRef,
+    workflowRecencyRef
+  });
 
   useEffect(() => {
     const activeRetainedSection = resolveRetainedWorkflowSection(activeSection);
@@ -7888,30 +7805,12 @@ export function App({
     ? requestedInspectorTab
     : null;
   const isInspectorOpen = inspectorAvailable && activeInspectorTab !== null;
-  const handleToggleInspector = useCallback(() => {
-    if (!inspectorAvailable) return;
-    const destination = createWorkbenchLocation({
-      ...activeLocation,
-      inspectorTab: isInspectorOpen ? undefined : 'notes'
-    });
-    handleNavigateLocation(destination, undefined, 'inspector', {
-      rememberRecent: false
-    });
-  }, [activeLocation, handleNavigateLocation, inspectorAvailable, isInspectorOpen]);
-  const handleSelectInspectorTab = useCallback(
-    (inspectorTab: WorkbenchLocation['inspectorTab']) => {
-      if (!inspectorAvailable || !inspectorTab) {
-        return;
-      }
-      handleNavigateLocation(
-        createWorkbenchLocation({ ...activeLocation, inspectorTab }),
-        undefined,
-        'inspector',
-        { rememberRecent: false }
-      );
-    },
-    [activeLocation, handleNavigateLocation, inspectorAvailable]
-  );
+  const { handleToggleInspector, handleSelectInspectorTab } = useInspectorNavigation({
+    activeLocation,
+    handleNavigateLocation,
+    inspectorAvailable,
+    isInspectorOpen
+  });
   const handleRemoveBookmark = useCallback(async (bookmarkId: string) => {
     if (
       personalWorkspaceMutationOperationRef.current !== null ||
@@ -11258,67 +11157,18 @@ export function App({
     [bridge, commitSwShPlacementCatalog, createProjectPaths]
   );
 
-  const loadSwShPlacementObjectDetails = useCallback(
-    async (revision: string, objectId: string) => {
-      const runId = swShPlacementDetailRunRef.current + 1;
-      swShPlacementDetailRunRef.current = runId;
-      setIsSwShPlacementDetailLoading(true);
-      setSwShPlacementRequestDiagnostics([]);
-
-      try {
-        const response = await bridge.loadSwShPlacementObject({
-          objectId,
-          paths: createProjectPaths(draftPathsRef.current),
-          revision,
-          session: getEditSessionForSection('placement')
-        });
-        if (
-          swShPlacementDetailRunRef.current !== runId ||
-          swShPlacementCatalogRevisionRef.current !== response.revision
-        ) {
-          return;
-        }
-
-        const currentWorkflow = useWorkbenchStore.getState().placementWorkflow;
-        if (!currentWorkflow?.objects.some((placedObject) => placedObject.objectId === objectId)) {
-          return;
-        }
-
-        setSwShPlacementRequestDiagnostics([]);
-        setPlacementWorkflowPage({
-          ...currentWorkflow,
-          diagnostics: deduplicateDiagnostics([
-            ...currentWorkflow.diagnostics,
-            ...response.diagnostics
-          ]),
-          objects: currentWorkflow.objects.map((placedObject) =>
-            placedObject.objectId === objectId ? response.object : placedObject
-          )
-        });
-      } catch (error) {
-        if (
-          swShPlacementDetailRunRef.current === runId &&
-          !(await recoverSwShPlacementCatalog(
-            error,
-            revision,
-            () => swShPlacementDetailRunRef.current === runId
-          ))
-        ) {
-          setSwShPlacementRequestDiagnostics(toBridgeDiagnostics(error));
-        }
-      } finally {
-        if (swShPlacementDetailRunRef.current === runId) {
-          setIsSwShPlacementDetailLoading(false);
-        }
-      }
-    },
-    [
-      bridge,
-      getEditSessionForSection,
-      recoverSwShPlacementCatalog,
-      setPlacementWorkflowPage
-    ]
-  );
+  const loadSwShPlacementObjectDetails = useSwShPlacementObjectLoader({
+    bridge,
+    createProjectPaths,
+    draftPathsRef,
+    getEditSessionForSection,
+    recoverSwShPlacementCatalog,
+    setPlacementWorkflowPage,
+    swShPlacementDetailRunRef,
+    swShPlacementCatalogRevisionRef,
+    setIsSwShPlacementDetailLoading,
+    setSwShPlacementRequestDiagnostics
+  });
 
   const handleOpenPlacementWorkflow = async () => {
     if (isSwordShieldProject) {
@@ -69561,6 +69411,260 @@ function resolveProjectAnalysisPaths(
     scarletVioletSupportFolderPath:
       validation('scarletVioletSupportFolder')?.path ?? null
   };
+}
+
+// Separate callback scopes prevent memoized handlers from retaining App's older workflow snapshots.
+function useSwShPlacementObjectLoader({
+  bridge,
+  createProjectPaths,
+  draftPathsRef,
+  getEditSessionForSection,
+  recoverSwShPlacementCatalog,
+  setPlacementWorkflowPage,
+  swShPlacementDetailRunRef,
+  swShPlacementCatalogRevisionRef,
+  setIsSwShPlacementDetailLoading,
+  setSwShPlacementRequestDiagnostics
+}: {
+  bridge: ProjectBridge;
+  createProjectPaths: (draft: ProjectPathDraft) => ReturnType<typeof toProjectPaths>;
+  draftPathsRef: { current: ProjectPathDraft };
+  getEditSessionForSection: ReturnType<typeof createEditSessionSectionSelector>;
+  recoverSwShPlacementCatalog: (error: unknown, revision: string, canCommit: () => boolean) => Promise<boolean>;
+  setPlacementWorkflowPage: ReturnType<typeof useWorkbenchStore.getState>['setPlacementWorkflowPage'];
+  swShPlacementDetailRunRef: { current: number };
+  swShPlacementCatalogRevisionRef: { current: string | null };
+  setIsSwShPlacementDetailLoading: Dispatch<SetStateAction<boolean>>;
+  setSwShPlacementRequestDiagnostics: Dispatch<SetStateAction<ApiDiagnostic[]>>;
+}) {
+  return useCallback(
+    async (revision: string, objectId: string) => {
+      const runId = swShPlacementDetailRunRef.current + 1;
+      swShPlacementDetailRunRef.current = runId;
+      setIsSwShPlacementDetailLoading(true);
+      setSwShPlacementRequestDiagnostics([]);
+
+      try {
+        const response = await bridge.loadSwShPlacementObject({
+          objectId,
+          paths: createProjectPaths(draftPathsRef.current),
+          revision,
+          session: getEditSessionForSection('placement')
+        });
+        if (
+          swShPlacementDetailRunRef.current !== runId ||
+          swShPlacementCatalogRevisionRef.current !== response.revision
+        ) {
+          return;
+        }
+
+        const currentWorkflow = useWorkbenchStore.getState().placementWorkflow;
+        if (!currentWorkflow?.objects.some((placedObject) => placedObject.objectId === objectId)) {
+          return;
+        }
+
+        setSwShPlacementRequestDiagnostics([]);
+        setPlacementWorkflowPage({
+          ...currentWorkflow,
+          diagnostics: deduplicateDiagnostics([
+            ...currentWorkflow.diagnostics,
+            ...response.diagnostics
+          ]),
+          objects: currentWorkflow.objects.map((placedObject) =>
+            placedObject.objectId === objectId ? response.object : placedObject
+          )
+        });
+      } catch (error) {
+        if (
+          swShPlacementDetailRunRef.current === runId &&
+          !(await recoverSwShPlacementCatalog(
+            error,
+            revision,
+            () => swShPlacementDetailRunRef.current === runId
+          ))
+        ) {
+          setSwShPlacementRequestDiagnostics(toBridgeDiagnostics(error));
+        }
+      } finally {
+        if (swShPlacementDetailRunRef.current === runId) {
+          setIsSwShPlacementDetailLoading(false);
+        }
+      }
+    },
+    [
+      bridge,
+      getEditSessionForSection,
+      recoverSwShPlacementCatalog,
+      setPlacementWorkflowPage
+    ]
+  );
+}
+
+
+function useInspectorNavigation({
+  activeLocation,
+  handleNavigateLocation,
+  inspectorAvailable,
+  isInspectorOpen
+}: {
+  activeLocation: WorkbenchLocation;
+  handleNavigateLocation: (
+    destination: WorkbenchLocation,
+    onCommit: undefined,
+    mode: 'inspector',
+    options: { rememberRecent: boolean }
+  ) => unknown;
+  inspectorAvailable: boolean;
+  isInspectorOpen: boolean;
+}) {
+  const handleToggleInspector = useCallback(() => {
+    if (!inspectorAvailable) return;
+    const destination = createWorkbenchLocation({
+      ...activeLocation,
+      inspectorTab: isInspectorOpen ? undefined : 'notes'
+    });
+    handleNavigateLocation(destination, undefined, 'inspector', {
+      rememberRecent: false
+    });
+  }, [activeLocation, handleNavigateLocation, inspectorAvailable, isInspectorOpen]);
+  const handleSelectInspectorTab = useCallback(
+    (inspectorTab: WorkbenchLocation['inspectorTab']) => {
+      if (!inspectorAvailable || !inspectorTab) {
+        return;
+      }
+      handleNavigateLocation(
+        createWorkbenchLocation({ ...activeLocation, inspectorTab }),
+        undefined,
+        'inspector',
+        { rememberRecent: false }
+      );
+    },
+    [activeLocation, handleNavigateLocation, inspectorAvailable]
+  );
+
+  return { handleToggleInspector, handleSelectInspectorTab };
+}
+
+
+function useRetainedWorkflowLoader({
+  activeSection,
+  setBridgeDiagnostics,
+  workflowLoadGenerationRef,
+  workflowLoadTailRef,
+  setLazyLoadedWorkflowSections,
+  lazyWorkflowRetryCountRef,
+  workflowRecencyRef
+}: {
+  activeSection: WorkbenchSection;
+  setBridgeDiagnostics: Dispatch<SetStateAction<ApiDiagnostic[]>>;
+  workflowLoadGenerationRef: { current: WorkflowLoadGeneration };
+  workflowLoadTailRef: { current: Promise<void> };
+  setLazyLoadedWorkflowSections: Dispatch<SetStateAction<Set<WorkbenchSection>>>;
+  lazyWorkflowRetryCountRef: { current: Map<WorkbenchSection, number> };
+  workflowRecencyRef: { current: RetainedWorkflowSection[] };
+}) {
+  return useCallback(
+    async <TResponse,>(
+      section: RetainedWorkflowSection,
+      setLoading: (isLoading: boolean) => void,
+      load: () => Promise<TResponse>,
+      commit: (response: TResponse) => void,
+      canCommitExtra: () => boolean = () => true,
+      onError: (error: unknown) => void = (error) =>
+        setBridgeDiagnostics(toBridgeDiagnostics(error))
+    ) => {
+      const lazyLoadScope = isWorkflowSection(activeSection)
+        ? resolveWorkflowDataSection(activeSection)
+        : section;
+      const token = workflowLoadGenerationRef.current.begin(section);
+      const previousLoad = workflowLoadTailRef.current.catch(() => undefined);
+      let releaseLoadTurn: () => void = () => {};
+      const loadTurn = new Promise<void>((resolve) => {
+        releaseLoadTurn = resolve;
+      });
+      workflowLoadTailRef.current = previousLoad.then(() => loadTurn);
+      setLoading(true);
+      setBridgeDiagnostics([]);
+
+      try {
+        await previousLoad;
+        if (
+          !workflowLoadGenerationRef.current.canCommit(section, token) ||
+          !canCommitExtra()
+        ) {
+          return;
+        }
+
+        setLazyLoadedWorkflowSections((currentSections) => {
+          if (currentSections.has(section)) {
+            return currentSections;
+          }
+
+          const nextSections = new Set(currentSections);
+          nextSections.add(section);
+          return nextSections;
+        });
+        const response = await load();
+        if (workflowLoadGenerationRef.current.canCommit(section, token) && canCommitExtra()) {
+          commit(response);
+          lazyWorkflowRetryCountRef.current.delete(lazyLoadScope);
+          workflowRecencyRef.current = touchWorkflowRecency(
+            workflowRecencyRef.current,
+            section
+          );
+        } else if (workflowLoadGenerationRef.current.canCommit(section, token)) {
+          setLazyLoadedWorkflowSections((currentSections) => {
+            const nextSections = new Set(currentSections);
+            nextSections.delete(section);
+            return nextSections;
+          });
+        }
+      } catch (error) {
+        if (workflowLoadGenerationRef.current.canCommit(section, token) && canCommitExtra()) {
+          onError(error);
+          const retryCount = lazyWorkflowRetryCountRef.current.get(lazyLoadScope) ?? 0;
+          if (retryCount < 1) {
+            lazyWorkflowRetryCountRef.current.set(lazyLoadScope, retryCount + 1);
+            setLazyLoadedWorkflowSections((currentSections) => {
+              if (
+                !currentSections.has(section) &&
+                !currentSections.has(lazyLoadScope)
+              ) {
+                return currentSections;
+              }
+
+              const nextSections = new Set(currentSections);
+              nextSections.delete(section);
+              nextSections.delete(lazyLoadScope);
+              return nextSections;
+            });
+          }
+        }
+      } finally {
+        releaseLoadTurn();
+        const completion = workflowLoadGenerationRef.current.finish(section, token);
+        if (completion === 'current') {
+          setLoading(false);
+        } else if (completion === 'invalidated') {
+          setLoading(false);
+        }
+      }
+    },
+    [activeSection, setBridgeDiagnostics, workflowLoadGenerationRef, workflowLoadTailRef, setLazyLoadedWorkflowSections, lazyWorkflowRetryCountRef, workflowRecencyRef]
+  );
+}
+
+
+function createEditSessionSectionSelector(
+  editSession: EditSession | null,
+  canShare: boolean,
+  ownerSection: WorkbenchSection | null,
+  game: ProjectGame | null
+) {
+  return (section: WorkbenchSection) =>
+    ownerSection === section || (canShare && isSharedStagedEditorSection(section, game))
+      ? editSession
+      : null;
 }
 
 function isValidatedOutputSafetyScope(
