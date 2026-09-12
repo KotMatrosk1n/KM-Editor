@@ -1,5 +1,9 @@
 {
   "keys": {
+    "settings.cache.status.awaitingValidation": "Ожидание проверки путей",
+    "settings.cache.status.validatingPaths": "Проверка путей",
+    "settings.cache.status.validationRequired": "Проверьте пути проекта, чтобы проверить состояние кэша.",
+    "settings.cache.status.validatingPathsDescription": "Проверка путей проекта перед проверкой кэша.",
     "encounters.drafts.stage": "Подготовить изменения встреч",
     "encounters.drafts.summary": "Изменено полей: {count}. Записей встреч: {records}.",
     "encounters.drafts.unavailable": "Сохранённый черновик встречи больше не соответствует доступной записи. Удалите недоступные черновики или перезагрузите данные встреч.",

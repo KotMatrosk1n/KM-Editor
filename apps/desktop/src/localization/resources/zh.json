@@ -1,5 +1,9 @@
 {
   "keys": {
+    "settings.cache.status.awaitingValidation": "等待验证路径",
+    "settings.cache.status.validatingPaths": "正在验证路径",
+    "settings.cache.status.validationRequired": "请验证项目路径，以检查缓存状态。",
+    "settings.cache.status.validatingPathsDescription": "正在验证项目路径，完成后将检查缓存。",
     "encounters.drafts.stage": "暂存遭遇修改",
     "encounters.drafts.summary": "已修改 {records} 条遭遇记录中的 {count} 个字段。",
     "encounters.drafts.unavailable": "保留的遭遇草稿已不再对应可用记录。请丢弃不可用的草稿或重新加载遭遇数据。",

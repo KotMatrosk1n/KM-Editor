@@ -23213,10 +23213,12 @@ function HealthSection({
     isProjectPathFieldVisible(pathField, selectedGame)
   );
   const canShowSvCacheProgress = isProjectCacheGame(selectedGame);
-  const cacheSourceState: CacheProgressSourceState = hasSvCacheRequestError
-    ? 'error'
-    : !health
-      ? 'checking'
+  const cacheSourceState: CacheProgressSourceState = !health
+    ? projectStatus === 'validating' || projectStatus === 'opening'
+      ? 'validating'
+      : 'unvalidated'
+    : hasSvCacheRequestError
+      ? 'error'
       : hasValidProjectCacheSource(selectedGame, health)
         ? 'ready'
         : 'setupRequired';
@@ -23448,6 +23450,11 @@ function SvCacheProgressPanel({
   const isWarmupPaused = sourceState === 'ready' && hasWarmupError;
   const isChecking =
     sourceState === 'checking' || (sourceState === 'ready' && status === null);
+  const isAwaitingValidation = sourceState === 'unvalidated';
+  const isValidatingPaths = sourceState === 'validating';
+  const validationLabel = isValidatingPaths
+    ? t('settings.cache.status.validatingPaths')
+    : t('settings.cache.status.awaitingValidation');
   const isSetupRequired = sourceState === 'setupRequired';
   const isMinimal = effectiveStatus?.settings.mode === 'minimal';
   const isSwordShieldCache = isSwordShieldGame(selectedGame);
@@ -23463,7 +23470,9 @@ function SvCacheProgressPanel({
   } = progress;
   const isSessionOnlyReady =
     isSwordShieldCache && !isMinimal && isReady && effectiveStatus?.cacheSizeBytes === 0;
-  const phaseLabel = isError
+  const phaseLabel = isAwaitingValidation || isValidatingPaths
+    ? validationLabel
+    : isError
     ? 'Error'
     : isWarmupPaused
       ? 'Build paused'
@@ -23480,7 +23489,11 @@ function SvCacheProgressPanel({
               : completedUnitCount > 0
                 ? 'Partially built'
                 : 'Ready to build';
-  const message = isError
+  const message = isAwaitingValidation
+    ? t('settings.cache.status.validationRequired')
+    : isValidatingPaths
+      ? t('settings.cache.status.validatingPathsDescription')
+    : isError
     ? `The ${cacheTitle} status request stopped before completion. Retry the check. Editors can still read the configured project sources.`
     : isWarmupPaused
       ? `The ${cacheTitle} build stopped because the next batch could not be verified. Existing cache data and the last measured progress remain available. Retry to continue from the last verified item.`
@@ -23518,7 +23531,7 @@ function SvCacheProgressPanel({
           {phaseLabel}
         </span>
       </div>
-      {!isMinimal && !isError ? (
+      {!isMinimal && !isError && !isAwaitingValidation && !isValidatingPaths ? (
         <div
           aria-label={`${cacheTitle} build progress`}
           aria-valuemax={100}
@@ -23541,7 +23554,11 @@ function SvCacheProgressPanel({
         <div>
           <dt>Mode</dt>
           <dd>
-            {isError && !effectiveStatus
+            {isAwaitingValidation
+              ? translateLiteral('Not checked')
+              : isValidatingPaths
+                ? validationLabel
+              : isError && !effectiveStatus
               ? 'Unavailable'
               : isError
                 ? `${formatSvCacheModeLabel(effectiveStatus!.settings.mode)} (last known)`
@@ -23556,7 +23573,9 @@ function SvCacheProgressPanel({
           <div>
             <dt>Progress</dt>
             <dd>
-              {isError && !effectiveStatus
+              {isAwaitingValidation || isValidatingPaths
+                ? validationLabel
+                : isError && !effectiveStatus
                 ? 'Retry required'
                 : isError
                   ? `${percent}% (${completedUnitCount} of ${totalUnitCount}, last known)`
@@ -23606,7 +23625,7 @@ function SvCacheProgressPanel({
   );
 }
 
-type CacheProgressSourceState = 'checking' | 'error' | 'ready' | 'setupRequired';
+type CacheProgressSourceState = 'unvalidated' | 'validating' | 'checking' | 'error' | 'ready' | 'setupRequired';
 
 type ItemsSectionProps = {
   editSession: EditSession | null;
@@ -59571,7 +59590,8 @@ function ChangesSection({
       label: 'Staged'
     },
     {
-      complete: Boolean(changePlan?.canApply) || applyResult !== null,
+      complete: Boolean(changePlan?.canApply) ||
+        (applyResult !== null && !hasWriteErrors && applyResult.writtenFiles.length > 0),
       label: 'Review'
     },
     {

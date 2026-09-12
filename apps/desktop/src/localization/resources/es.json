@@ -1,5 +1,9 @@
 {
   "keys": {
+    "settings.cache.status.awaitingValidation": "Pendiente de validar las rutas",
+    "settings.cache.status.validatingPaths": "Validando rutas",
+    "settings.cache.status.validationRequired": "Valida las rutas del proyecto para comprobar el estado de la caché.",
+    "settings.cache.status.validatingPathsDescription": "Validando las rutas del proyecto antes de comprobar la caché.",
     "encounters.drafts.stage": "Preparar cambios de encuentros",
     "encounters.drafts.summary": "{count} campos modificados en {records} registros de encuentros.",
     "encounters.drafts.unavailable": "Un borrador de encuentro guardado ya no corresponde a un registro disponible. Descarta los borradores no disponibles o vuelve a cargar los datos de encuentros.",
