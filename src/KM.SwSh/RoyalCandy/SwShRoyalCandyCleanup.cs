@@ -169,14 +169,6 @@ internal static class SwShRoyalCandyCleanup
         }
 
         var blockers = new List<SwShRoyalCandyCleanupBlocker>();
-        if (acquisitionOwnership.State == SwShRoyalCandyAcquisitionOwnershipState.Invalid
-            && acquisitionOwnership.Entry is not null)
-        {
-            blockers.Add(new SwShRoyalCandyCleanupBlocker(
-                acquisitionOwnership.Entry,
-                acquisitionOwnership.Message));
-        }
-
         foreach (var entry in project.FileGraph.Entries.Where(entry => entry.LayeredFile is not null))
         {
             if (string.Equals(
@@ -209,7 +201,9 @@ internal static class SwShRoyalCandyCleanup
 
             if (IsShopDataOutput(entry.RelativePath))
             {
-                if (TryGetShopCleanupBlocker(project, entry, out var message))
+                // Customized acquisitions outside the verified mapping stay untouched.
+                if (HasRoyalCandyShopPatch(project, entry)
+                    && TryGetShopCleanupBlocker(project, entry, out var message))
                 {
                     blockers.Add(new SwShRoyalCandyCleanupBlocker(entry, message));
                 }
@@ -219,7 +213,8 @@ internal static class SwShRoyalCandyCleanup
 
             if (IsAcquisitionArchiveOutput(entry.RelativePath))
             {
-                if (TryGetAcquisitionCleanupBlocker(project, entry, out var message))
+                if (HasRoyalCandyAcquisitionPatch(project, entry)
+                    && TryGetAcquisitionCleanupBlocker(project, entry, out var message))
                 {
                     blockers.Add(new SwShRoyalCandyCleanupBlocker(entry, message));
                 }
@@ -1200,7 +1195,7 @@ internal static class SwShRoyalCandyCleanup
         return false;
     }
 
-    private static bool HasRoyalCandyShopPatch(OpenedProject project, ProjectFileGraphEntry entry)
+    internal static bool HasRoyalCandyShopPatch(OpenedProject project, ProjectFileGraphEntry entry)
     {
         var sourcePath = ResolveSourcePath(project.Paths, entry);
         var basePath = ResolveBaseSourcePath(project.Paths, entry.RelativePath);
@@ -1214,9 +1209,9 @@ internal static class SwShRoyalCandyCleanup
             var targetData = SwShShopDataFile.Parse(File.ReadAllBytes(sourcePath));
             var baseData = SwShShopDataFile.Parse(File.ReadAllBytes(basePath));
             var mapping = SwShRoyalCandyShopPatchMapper.Analyze(targetData, baseData);
-            return mapping.LegacyMissingOccurrences > 0
-                || (mapping.OwnedReplacementOccurrences > 0
-                    && SwShRoyalCandyAcquisitionOwnershipService.Inspect(project).IsValid);
+            return mapping.LegacyMissingOccurrences == 0
+                && mapping.OwnedReplacementOccurrences > 0
+                && SwShRoyalCandyAcquisitionOwnershipService.Inspect(project).IsValid;
         }
         catch (InvalidDataException)
         {

@@ -198,7 +198,7 @@ public sealed class SwShRoyalCandyWorkflowService
 
         var npdmFlavor = AddNpdmFlavorCheck(project, checks, sourceMap, sourceEntries);
         var gameFlavor = AddGameRoutingCheck(project, checks, sourceMap, npdmFlavor);
-        var installationState = DetectRoyalCandyInstallation(project, selectedTextSets);
+        var installationState = DetectRoyalCandyInstallation(project);
         var installedStoryLevelCaps = ReadInstalledStoryLevelCapOverrides(project, sourceMap, installationState, checks);
         var exeFsWorkflow = exeFsPatchWorkflowService.Load(project);
         AddExeFsCompatibilityChecks(checks, exeFsWorkflow, installationState);
@@ -1094,10 +1094,15 @@ public sealed class SwShRoyalCandyWorkflowService
 
         yield return CreateOutput(workflowId, ItemPath, FindSource(sourceMap, ItemPath), "RomFS data", outputStatus, "Royal Candy item row patch.");
         yield return CreateOutput(workflowId, ItemHashPath, FindSource(sourceMap, ItemHashPath), "RomFS data", outputStatus, "Royal Candy item hash lookup patch.");
-        yield return CreateOutput(workflowId, ResolveShopOutputPath(sourceMap), FindSource(sourceMap, ShopDataPath, LegacyShopDataPath), "RomFS data", outputStatus, "Replace verified vanilla Exp. Candy XL shop listings with Rare Candy.");
-        yield return CreateOutput(workflowId, NestDataPath, FindSource(sourceMap, NestDataPath), "RomFS archive", outputStatus, "Replace verified vanilla Exp. Candy XL raid rewards with Rare Candy.");
-        yield return CreateOutput(workflowId, PlacementPath, FindSource(sourceMap, PlacementPath), "RomFS archive", outputStatus, "Replace verified vanilla Exp. Candy XL overworld pickups with Rare Candy.");
-        yield return CreateOutput(workflowId, AcquisitionOwnershipManifestPath, sourceEntry: null, "Ownership manifest", outputStatus, "Record KM ownership of the verified acquisition substitutions for safe refresh and uninstall.");
+        // Acquisition substitutions belong to installation. Refresh must not reinsert
+        // removed rewards or claim ownership of later acquisition edits.
+        if (!string.Equals(installStatus, "installed", StringComparison.Ordinal))
+        {
+            yield return CreateOutput(workflowId, ResolveShopOutputPath(sourceMap), FindSource(sourceMap, ShopDataPath, LegacyShopDataPath), "RomFS data", outputStatus, "Replace verified vanilla Exp. Candy XL shop listings with Rare Candy.");
+            yield return CreateOutput(workflowId, NestDataPath, FindSource(sourceMap, NestDataPath), "RomFS archive", outputStatus, "Replace verified vanilla Exp. Candy XL raid rewards with Rare Candy.");
+            yield return CreateOutput(workflowId, PlacementPath, FindSource(sourceMap, PlacementPath), "RomFS archive", outputStatus, "Replace verified vanilla Exp. Candy XL overworld pickups with Rare Candy.");
+            yield return CreateOutput(workflowId, AcquisitionOwnershipManifestPath, sourceEntry: null, "Ownership manifest", outputStatus, "Record KM ownership of the verified acquisition substitutions for safe refresh and uninstall.");
+        }
         yield return CreateOutput(workflowId, BagEventScriptPath, FindSource(sourceMap, BagEventScriptPath), "Bag Hook slot", outputStatus, "Royal Candy Bag Hook slot 1 grant.");
         yield return CreateOutput(workflowId, ExeFsMainPath, FindSource(sourceMap, ExeFsMainPath), "ExeFS NSO", outputStatus, "Royal Candy ExeFS UI and usage patch.");
 
@@ -1392,28 +1397,11 @@ public sealed class SwShRoyalCandyWorkflowService
     }
 
     private static RoyalCandyInstallationState DetectRoyalCandyInstallation(
-        OpenedProject project,
-        IReadOnlyList<MessageTextSet> selectedTextSets)
+        OpenedProject project)
     {
-        var acquisitionOwnership = SwShRoyalCandyAcquisitionOwnershipService.Inspect(project);
         var layeredEntries = GetKnownRoyalCandyLayeredEntries(project)
             .OrderBy(entry => entry.RelativePath, StringComparer.Ordinal)
             .ToArray();
-        if (acquisitionOwnership.State == SwShRoyalCandyAcquisitionOwnershipState.Invalid)
-        {
-            var conflictEntries = acquisitionOwnership.Entry is null
-                ? layeredEntries
-                : layeredEntries
-                    .Append(acquisitionOwnership.Entry)
-                    .DistinctBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(entry => entry.RelativePath, StringComparer.Ordinal)
-                    .ToArray();
-            return new RoyalCandyInstallationState(
-                RoyalCandyInstallKind.UnknownConflict,
-                null,
-                conflictEntries,
-                acquisitionOwnership.Message);
-        }
 
         var identifyingEntries = layeredEntries
             .Where(entry => !string.Equals(entry.RelativePath, ItemHashPath, StringComparison.OrdinalIgnoreCase)
@@ -1429,45 +1417,15 @@ public sealed class SwShRoyalCandyWorkflowService
                 "No Royal Candy LayeredFS output was detected.");
         }
 
-        var textDetection = DetectRoyalCandyTextInstallKind(project, identifyingEntries, selectedTextSets);
-        if (textDetection.HasConflict)
-        {
-            return new RoyalCandyInstallationState(
-                RoyalCandyInstallKind.UnknownConflict,
-                null,
-                layeredEntries,
-                "LayeredFS output contains conflicting Royal Candy item-text variants across language sets. Remove the stale Royal Candy text output and reinstall one variant for the selected game-text language.");
-        }
-
-        var textInstallKind = textDetection.Kind;
+        // Editable RomFS content and acquisition metadata do not identify the executable variant.
         var exeFsInstallKind = DetectRoyalCandyExeFsInstallKind(project, identifyingEntries);
-        if (textInstallKind is null || exeFsInstallKind is null)
-        {
-            var selectedLanguage = textDetection.SelectedLanguage ?? "selected";
-            var detectedPart = (textInstallKind, exeFsInstallKind, textDetection.HasRecognizedText) switch
-            {
-                (not null, null, _) => "selected-language Royal Candy item text without a matching complete exefs/main signature",
-                (null, not null, true) => $"a complete Royal Candy exefs/main signature with Royal Candy text only outside the selected {selectedLanguage} language set",
-                (null, not null, false) => $"a complete Royal Candy exefs/main signature without matching Royal Candy item text in the selected {selectedLanguage} language set",
-                (null, null, true) => $"Royal Candy item text outside the selected {selectedLanguage} language set without a matching complete exefs/main signature",
-                _ => "known Royal Candy output that does not contain a complete selected-language text and exefs/main signature pair",
-            };
-            return new RoyalCandyInstallationState(
-                RoyalCandyInstallKind.UnknownConflict,
-                null,
-                layeredEntries,
-                $"LayeredFS output contains a partial Royal Candy installation: {detectedPart}. Review and remove the partial output before reinstalling.");
-        }
-
-        if (textInstallKind.Value != exeFsInstallKind.Value)
+        if (exeFsInstallKind is null)
         {
             return new RoyalCandyInstallationState(
                 RoyalCandyInstallKind.UnknownConflict,
                 null,
                 layeredEntries,
-                string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"LayeredFS output contains mixed Royal Candy targets: item text identifies {FormatRoyalCandyInstallKind(textInstallKind.Value)}, but exefs/main identifies {FormatRoyalCandyInstallKind(exeFsInstallKind.Value)}. Remove stale Royal Candy output and reinstall one variant."));
+                "LayeredFS output contains Royal Candy targets without a complete Royal Candy exefs/main signature. Review the output before reinstalling.");
         }
 
         var installKind = exeFsInstallKind.Value;
@@ -1484,76 +1442,6 @@ public sealed class SwShRoyalCandyWorkflowService
             string.Create(
                 CultureInfo.InvariantCulture,
                 $"{name} is installed in the configured LayeredFS output ({layeredEntries.Length:N0} known Royal Candy target file(s))."));
-    }
-
-    private static string FormatRoyalCandyInstallKind(RoyalCandyInstallKind installKind)
-    {
-        return installKind switch
-        {
-            RoyalCandyInstallKind.StoryLimits => StoryLimitsRoyalCandyName,
-            RoyalCandyInstallKind.Unlimited => UnlimitedRoyalCandyName,
-            _ => "unknown Royal Candy output",
-        };
-    }
-
-    private static RoyalCandyTextInstallationDetection DetectRoyalCandyTextInstallKind(
-        OpenedProject project,
-        IReadOnlyList<ProjectFileGraphEntry> layeredEntries,
-        IReadOnlyList<MessageTextSet> selectedTextSets)
-    {
-        var selectedItemInfoPaths = selectedTextSets
-            .Select(textSet => textSet.ItemInfo.RelativePath)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var recognized = new List<(string RelativePath, RoyalCandyInstallKind Kind)>();
-        foreach (var entry in layeredEntries.Where(entry =>
-            entry.RelativePath.EndsWith("/iteminfo.dat", StringComparison.OrdinalIgnoreCase)))
-        {
-            var sourcePath = ResolveSourcePath(project.Paths, entry);
-            if (sourcePath is null || !File.Exists(sourcePath))
-            {
-                continue;
-            }
-
-            try
-            {
-                var text = SwShGameTextFile.Parse(File.ReadAllBytes(sourcePath));
-                if (text.Lines.Count <= RoyalCandyItemId)
-                {
-                    continue;
-                }
-
-                var description = text.Lines[RoyalCandyItemId].Text;
-                if (string.Equals(description, StoryLimitsRoyalCandyDescription, StringComparison.Ordinal))
-                {
-                    recognized.Add((entry.RelativePath, RoyalCandyInstallKind.StoryLimits));
-                }
-                else if (string.Equals(description, UnlimitedRoyalCandyDescription, StringComparison.Ordinal))
-                {
-                    recognized.Add((entry.RelativePath, RoyalCandyInstallKind.Unlimited));
-                }
-            }
-            catch (InvalidDataException)
-            {
-            }
-            catch (IOException)
-            {
-            }
-        }
-
-        var recognizedKinds = recognized
-            .Select(candidate => candidate.Kind)
-            .Distinct()
-            .ToArray();
-        var selectedKinds = recognized
-            .Where(candidate => selectedItemInfoPaths.Contains(candidate.RelativePath))
-            .Select(candidate => candidate.Kind)
-            .Distinct()
-            .ToArray();
-        return new RoyalCandyTextInstallationDetection(
-            selectedKinds.Length == 1 ? selectedKinds[0] : null,
-            HasRecognizedText: recognized.Count > 0,
-            HasConflict: recognizedKinds.Length > 1 || selectedKinds.Length > 1,
-            SelectedLanguage: selectedTextSets.FirstOrDefault()?.Language);
     }
 
     private static RoyalCandyInstallKind? DetectRoyalCandyExeFsInstallKind(
@@ -1957,7 +1845,7 @@ public sealed class SwShRoyalCandyWorkflowService
             .Where(entry => entry.LayeredFile is not null
                 && (string.Equals(entry.RelativePath, ShopDataPath, StringComparison.OrdinalIgnoreCase)
                     || string.Equals(entry.RelativePath, LegacyShopDataPath, StringComparison.OrdinalIgnoreCase)))
-            .Where(entry => HasRoyalCandyShopPatch(project, entry))
+            .Where(entry => SwShRoyalCandyCleanup.HasRoyalCandyShopPatch(project, entry))
             .OrderBy(entry => entry.RelativePath, StringComparer.Ordinal)
             .ToArray();
     }
@@ -1971,38 +1859,6 @@ public sealed class SwShRoyalCandyWorkflowService
             .Where(entry => SwShRoyalCandyCleanup.HasRoyalCandyAcquisitionPatch(project, entry))
             .OrderBy(entry => entry.RelativePath, StringComparer.Ordinal)
             .ToArray();
-    }
-
-    private static bool HasRoyalCandyShopPatch(OpenedProject project, ProjectFileGraphEntry entry)
-    {
-        var sourcePath = ResolveSourcePath(project.Paths, entry);
-        var basePath = ResolveBaseSourcePath(project.Paths, entry.RelativePath);
-        if (sourcePath is null || basePath is null || !File.Exists(sourcePath) || !File.Exists(basePath))
-        {
-            return false;
-        }
-
-        try
-        {
-            var targetData = SwShShopDataFile.Parse(File.ReadAllBytes(sourcePath));
-            var baseData = SwShShopDataFile.Parse(File.ReadAllBytes(basePath));
-            return HasRoyalCandyShopReplacement(targetData, baseData);
-        }
-        catch (InvalidDataException)
-        {
-        }
-        catch (IOException)
-        {
-        }
-
-        return false;
-    }
-
-    private static bool HasRoyalCandyShopReplacement(SwShShopDataFile targetData, SwShShopDataFile baseData)
-    {
-        var mapping = SwShRoyalCandyShopPatchMapper.Analyze(targetData, baseData);
-        return mapping.OwnedReplacementOccurrences > 0
-            || mapping.LegacyMissingOccurrences > 0;
     }
 
     private static bool IsItemMessageOutputPath(string relativePath)
@@ -2180,12 +2036,6 @@ public sealed class SwShRoyalCandyWorkflowService
             or RoyalCandyInstallKind.StoryLimits
             or RoyalCandyInstallKind.UnknownConflict;
     }
-
-    private sealed record RoyalCandyTextInstallationDetection(
-        RoyalCandyInstallKind? Kind,
-        bool HasRecognizedText,
-        bool HasConflict,
-        string? SelectedLanguage);
 
     private sealed record MessageTextSet(
         string Language,
