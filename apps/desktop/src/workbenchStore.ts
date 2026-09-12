@@ -79,6 +79,16 @@ type ProjectPathDraftValues = Pick<ProjectPathDraft, ProjectPathFieldName>;
 type ValidatedProjectPathCache = Partial<Record<ProjectGame, ProjectPathDraftValues>>;
 const projectPathDraftStorageKey = 'km-editor.project-path-draft.v1';
 const validatedProjectPathCacheStorageKey = 'km-editor.validated-project-path-cache.v1';
+const showUnusedItemsStorageKey = 'km-editor.items.show-unused.v1';
+
+function loadShowUnusedItems(): boolean {
+  try {
+    return window.localStorage.getItem(showUnusedItemsStorageKey) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 const maximumLegacyProjectPathStorageCharacters = 256 * 1024;
 export type OpenProjectState = {
   fileGraph?: ProjectFileGraph;
@@ -436,7 +446,6 @@ function createLoadedWorkflowResetState(): Partial<WorkbenchState> {
     dynamaxAdventureSearchText: '',
     dynamaxAdventuresWorkflow: null,
     itemSearchText: '',
-    showUnusedItems: false,
     itemsWorkflow: null,
     movesSearchText: '',
     movesWorkflow: null,
@@ -553,7 +562,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   dynamaxAdventureSearchText: '',
   dynamaxAdventuresWorkflow: null,
   itemSearchText: '',
-  showUnusedItems: false,
+  showUnusedItems: loadShowUnusedItems(),
   itemsWorkflow: null,
   movesSearchText: '',
   movesWorkflow: null,
@@ -809,7 +818,14 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       };
     }),
   setItemSearchText: (itemSearchText) => set({ itemSearchText }),
-  setShowUnusedItems: (showUnusedItems) => set({ showUnusedItems }),
+  setShowUnusedItems: (showUnusedItems) => {
+    set({ showUnusedItems });
+    try {
+      window.localStorage.setItem(showUnusedItemsStorageKey, String(showUnusedItems));
+    } catch {
+      // Retain the session preference when persistent storage is unavailable.
+    }
+  },
   setMovesSearchText: (movesSearchText) => set({ movesSearchText }),
   setShopSearchText: (shopSearchText) => set({ shopSearchText }),
   setTextSearchText: (textSearchText) => set({ textSearchText }),

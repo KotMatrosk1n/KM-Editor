@@ -714,6 +714,12 @@ internal sealed class ZaItemsEditSessionService
             var machineWazaLayoutRepair = itemSemanticState.MachineWazaLayout;
             RestoreMintNatureSentinels(rows, mintNatureRecovery.ItemIds);
             ApplyTechnicalMachineLegacyRecovery(rows, technicalMachineRecovery, diagnostics);
+            foreach (var edit in effectiveSession.PendingEdits.Where(edit =>
+                         edit.Domain == ZaEditSessionSupport.ItemsDomain
+                         && edit.Field == ZaItemsWorkflowService.MachineMoveIdField
+                         && int.TryParse(edit.RecordId, out var itemId)
+                         && rows.Any(row => row.Id == itemId)))
+                ApplyEdit(rows, edit, diagnostics);
             var projectedMachines = GetTargetedProjectedTechnicalMachines(loadedWorkflow, effectiveSession);
             foreach (var extension in projectedMachines)
             {
@@ -1548,6 +1554,7 @@ internal sealed class ZaItemsEditSessionService
                 ZaDataPaths.ItemDataArray,
                 ZaDataPaths.EvolutionItemConversionArray,
                 ZaDataPaths.ShopItemLineupArray,
+                ZaDataPaths.PersonalArray,
             }
             .Where(virtualPath => PlanContainsVirtualWrite(
                 paths,
@@ -2429,39 +2436,9 @@ internal sealed class ZaItemsEditSessionService
 
             var personalSource = fileSource.Read(project, ZaDataPaths.PersonalArray);
             var basePersonalSource = fileSource.ReadBase(project, ZaDataPaths.PersonalArray);
-            var requiresMigration = machineMoveEdits.Any(edit =>
-            {
-                if (!string.Equals(edit.Field, ZaItemsWorkflowService.MachineMoveIdField, StringComparison.Ordinal)
-                    || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
-                    || !ushort.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var moveId)
-                    || workflow.Items.FirstOrDefault(item => item.ItemId == itemId) is not { } item
-                    || item.Metadata.MachineMoveId is not { } oldMoveId
-                    || item.Metadata.BaseMachineMoveId is not { } baseMoveId
-                    || oldMoveId == moveId)
-                {
-                    return false;
-                }
-
-                if (moveId == 0 && item.IsOwnedTechnicalMachineExtension)
-                {
-                    return false;
-                }
-
-                if (moveId == baseMoveId)
-                {
-                    return ZaTechnicalMachineCompatibilityMigration.InspectBaseRestore(
-                        personalSource.Bytes,
-                        basePersonalSource.Bytes,
-                        checked((ushort)oldMoveId),
-                        checked((ushort)baseMoveId)).ChangedValues > 0;
-                }
-
-                var inspection = ZaTechnicalMachineCompatibilityMigration.Inspect(
-                    personalSource.Bytes,
-                    checked((ushort)oldMoveId),
-                    moveId);
-                return inspection.AffectedValues > 0 && inspection.ExistingTargetRows == 0;
-            });
+            var projectedPersonal = ZaTechnicalMachineCompatibilityMigration.ApplyBatch(
+                personalSource.Bytes, basePersonalSource.Bytes, GetCompatibilityAssignments(workflow, session));
+            var requiresMigration = !personalSource.Bytes.AsSpan().SequenceEqual(projectedPersonal);
             if (!requiresMigration)
             {
                 return plan;
@@ -2517,6 +2494,7 @@ internal sealed class ZaItemsEditSessionService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         byte[]? baseItemBytes = null;
+        var effectiveWorkflow = OverlayPendingEdits(workflow, session.PendingEdits);
         var verifiedRowRestores = session.PendingEdits
             .Where(IsVerifiedBaseItemRowEdit)
             .ToArray();
@@ -2537,7 +2515,7 @@ internal sealed class ZaItemsEditSessionService
                     continue;
                 }
 
-                var anotherBaseMoveOwner = workflow.Items.FirstOrDefault(candidate =>
+                var anotherBaseMoveOwner = effectiveWorkflow.Items.FirstOrDefault(candidate =>
                     candidate.ItemId != restoredItemId
                     && ZaItemsWorkflowService.IsTechnicalMachineRecord(candidate)
                     && candidate.Metadata.MachineMoveId == baseItem.Row.MachineWaza);
@@ -2568,7 +2546,6 @@ internal sealed class ZaItemsEditSessionService
             return;
         }
 
-        var effectiveWorkflow = OverlayPendingEdits(workflow, session.PendingEdits);
         var editedItemIds = edits
             .Select(edit => int.TryParse(
                     edit.RecordId,
@@ -2730,7 +2707,7 @@ internal sealed class ZaItemsEditSessionService
             var restoringBase = newMoveId == baseMoveId;
             if (!restoresVerifiedBaseRow || !restoringBase)
             {
-                var anotherTargetOwner = workflow.Items.FirstOrDefault(candidate =>
+                var anotherTargetOwner = effectiveWorkflow.Items.FirstOrDefault(candidate =>
                     candidate.ItemId != itemId
                     && ZaItemsWorkflowService.IsTechnicalMachineRecord(candidate)
                     && candidate.Metadata.MachineMoveId == newMoveId);
@@ -2764,54 +2741,7 @@ internal sealed class ZaItemsEditSessionService
                 }
             }
 
-            personalBytes ??= fileSource.Read(project, ZaDataPaths.PersonalArray).Bytes;
-            if (restoringBase)
-            {
-                basePersonalBytes ??= fileSource.ReadBase(project, ZaDataPaths.PersonalArray).Bytes;
-                ZaTechnicalMachineCompatibilityMigration.BaseRestoreInspection restoration;
-                try
-                {
-                    restoration = ZaTechnicalMachineCompatibilityMigration.InspectBaseRestore(
-                        personalBytes,
-                        basePersonalBytes,
-                        checked((ushort)oldMoveId),
-                        checked((ushort)baseMoveId));
-                }
-                catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException or ArgumentException)
-                {
-                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                        DiagnosticSeverity.Error,
-                        $"Verified vanilla TM compatibility could not be restored safely: {exception.Message}",
-                        ZaEditSessionSupport.ItemsDomain,
-                        field: ZaItemsWorkflowService.MachineMoveIdField,
-                        expected: "Active compatibility matching either the current assignment or the exact verified vanilla position"));
-                    continue;
-                }
-
-                if (restoration.ChangedValues > 0)
-                {
-                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                        DiagnosticSeverity.Info,
-                        $"{item.Name} will restore its verified base move and {restoration.ChangedValues} compatibility position(s) from clean base data.",
-                        ZaEditSessionSupport.ItemsDomain,
-                        field: ZaItemsWorkflowService.MachineMoveIdField));
-                }
-                else
-                {
-                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                        DiagnosticSeverity.Info,
-                        $"{item.Name} will restore its verified base move and disc icon. Pokemon compatibility already matches the verified base positions for this TM.",
-                        ZaEditSessionSupport.ItemsDomain,
-                        field: ZaItemsWorkflowService.MachineMoveIdField));
-                }
-
-                continue;
-            }
-
-            var inspection = ZaTechnicalMachineCompatibilityMigration.Inspect(
-                personalBytes,
-                checked((ushort)oldMoveId),
-                newMoveId);
+            if (restoringBase) continue;
 
             baseItemBytes ??= fileSource.ReadBase(project, ZaDataPaths.ItemDataArray).Bytes;
             battleMoveBytes ??= fileSource.Read(project, ZaDataPaths.BattleMoveParameterArray).Bytes;
@@ -2830,45 +2760,55 @@ internal sealed class ZaItemsEditSessionService
                 continue;
             }
 
-            if (inspection.AffectedValues == 0)
-            {
-                if (item.IsOwnedTechnicalMachineExtension)
-                {
-                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                        DiagnosticSeverity.Info,
-                        $"{item.Name} has no current Pokemon compatibility references to migrate. The move and disc icon will change without rewriting Personal data.",
-                        ZaEditSessionSupport.ItemsDomain,
-                        field: ZaItemsWorkflowService.MachineMoveIdField));
-                    continue;
-                }
-
-                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"No Pokemon compatibility entries reference {item.Metadata.MachineMoveName ?? oldMoveId.ToString(CultureInfo.InvariantCulture)}. "
-                    + "Restore the verified base assignment first if this TM came from an older item-only edit.",
-                    ZaEditSessionSupport.ItemsDomain,
-                    field: ZaItemsWorkflowService.MachineMoveIdField,
-                    expected: "At least one unambiguous compatibility entry for the current TM move"));
-                continue;
-            }
-
-            if (inspection.ExistingTargetRows > 0)
-            {
-                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"The selected move already appears in {inspection.ExistingTargetRows} Pokemon compatibility row(s), so TM ownership is ambiguous.",
-                    ZaEditSessionSupport.ItemsDomain,
-                    field: ZaItemsWorkflowService.MachineMoveIdField,
-                    expected: "Selected move absent from existing TM compatibility"));
-                continue;
-            }
-
-            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                DiagnosticSeverity.Info,
-                $"TM reassignment will migrate {inspection.AffectedValues} compatibility reference(s) across {inspection.AffectedRows} Pokemon row(s).",
-                ZaEditSessionSupport.ItemsDomain,
-                field: ZaItemsWorkflowService.MachineMoveIdField));
         }
+
+        if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            try
+            {
+                personalBytes = fileSource.Read(project, ZaDataPaths.PersonalArray).Bytes;
+                basePersonalBytes = fileSource.ReadBase(project, ZaDataPaths.PersonalArray).Bytes;
+                var projected = ZaTechnicalMachineCompatibilityMigration.ApplyBatch(
+                    personalBytes, basePersonalBytes, GetCompatibilityAssignments(workflow, session));
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Info,
+                    personalBytes.AsSpan().SequenceEqual(projected)
+                        ? "TM assignments will preserve the existing Pokemon compatibility without rewriting Personal data."
+                        : "TM assignments will update Pokemon compatibility together, preserving existing selected move compatibility without adding duplicates.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: ZaItemsWorkflowService.MachineMoveIdField));
+            }
+            catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException or ArgumentException)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pokemon TM compatibility could not be prepared: {exception.Message}",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: ZaItemsWorkflowService.MachineMoveIdField,
+                    expected: "Readable Pokemon compatibility and matching vanilla identities for restoration"));
+            }
+        }
+    }
+
+    private static IReadOnlyList<ZaTechnicalMachineCompatibilityMigration.Assignment> GetCompatibilityAssignments(
+        ZaItemsWorkflow workflow, EditSession session)
+    {
+        var assignments = new List<ZaTechnicalMachineCompatibilityMigration.Assignment>();
+        foreach (var edit in session.PendingEdits)
+        {
+            if (edit.Domain != ZaEditSessionSupport.ItemsDomain
+                || edit.Field != ZaItemsWorkflowService.MachineMoveIdField
+                || !int.TryParse(edit.RecordId, out var itemId)
+                || !ushort.TryParse(edit.NewValue, out var newMove)
+                || workflow.Items.FirstOrDefault(item => item.ItemId == itemId) is not { } item
+                || item.Metadata.MachineMoveId is not > 0
+                || item.Metadata.BaseMachineMoveId is not { } baseMove
+                || newMove == 0 || newMove == item.Metadata.MachineMoveId
+                || (HasVerifiedBaseItemRowEdit(session, itemId)
+                    && (!ZaItemsWorkflowService.IsTechnicalMachineRecord(item) || baseMove == 0))) continue;
+            assignments.Add(new(checked((ushort)item.Metadata.MachineMoveId.Value), newMove, checked((ushort)baseMove)));
+        }
+        return assignments;
     }
 
     private byte[]? ApplyTechnicalMachineMoveAssignments(
@@ -2880,321 +2820,44 @@ internal sealed class ZaItemsEditSessionService
         ZaOutputMode outputMode,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var edits = session.PendingEdits
-            .Where(edit => string.Equals(
-                edit.Field,
-                ZaItemsWorkflowService.MachineMoveIdField,
-                StringComparison.Ordinal))
-            .ToArray();
-        if (edits.Length == 0)
-        {
-            return null;
-        }
-
+        var edits = session.PendingEdits.Where(edit => edit.Domain == ZaEditSessionSupport.ItemsDomain
+            && edit.Field == ZaItemsWorkflowService.MachineMoveIdField).ToArray();
+        if (edits.Length == 0) return null;
         var baseItemSource = fileSource.ReadBase(project, ZaDataPaths.ItemDataArray);
-        var baseItemBytes = baseItemSource.Bytes;
-        var baseRows = ReadRows(baseItemBytes).ToDictionary(row => row.Id);
+        var baseRows = ReadRows(baseItemSource.Bytes).ToDictionary(row => row.Id);
         ZaWorkflowFile? battleMoveSource = null;
-        ZaWorkflowFile? personalSource = null;
-        ZaWorkflowFile? basePersonalSource = null;
-        byte[]? personalBytes = null;
-        var migrationSourcesVerified = false;
-
         foreach (var edit in edits)
         {
-            if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
+            if (!int.TryParse(edit.RecordId, out var itemId)
                 || sourceWorkflow.Items.FirstOrDefault(item => item.ItemId == itemId) is not { } sourceItem
                 || rows.FirstOrDefault(row => row.Id == itemId) is not { } row)
-            {
-                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    "TM assignment output could not resolve its active and verified base rows.",
-                    ZaEditSessionSupport.ItemsDomain,
-                    field: ZaItemsWorkflowService.MachineMoveIdField,
-                    expected: "Unique active and clean base physical TM rows"));
-                continue;
-            }
-
-            if (row.MachineWaza == 0
-                && sourceItem.IsOwnedTechnicalMachineExtension
-                && ZaItemsWorkflowService.IsTechnicalMachineRecord(sourceItem))
-            {
-                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                    DiagnosticSeverity.Info,
-                    $"Returned TM{sourceItem.Metadata.MachineSlot!.Value.ToString(CultureInfo.InvariantCulture)} to an unassigned owned slot without rewriting Pokemon compatibility.",
-                    ZaEditSessionSupport.ItemsDomain,
-                    field: ZaItemsWorkflowService.MachineMoveIdField));
-                continue;
-            }
-
-            if (sourceItem.Metadata.IsProjectedTechnicalMachineSlot
-                && sourceItem.Metadata.MachineMoveId is null)
-            {
-                battleMoveSource ??= fileSource.Read(project, ZaDataPaths.BattleMoveParameterArray);
-                if (!ZaTechnicalMachineIconResolver.TryResolve(
-                        baseItemBytes,
-                        battleMoveSource.Bytes,
-                        row.MachineWaza,
-                        out var projectedIconName))
-                {
-                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                        DiagnosticSeverity.Error,
-                        $"The selected move's TM disc icon could not be resolved unambiguously for {sourceItem.Name}.",
-                        ZaEditSessionSupport.ItemsDomain,
-                        field: ZaItemsWorkflowService.MachineMoveIdField,
-                        expected: "Move with a uniquely mapped elemental TM icon"));
-                    continue;
-                }
-
-                row.IconName = projectedIconName;
-                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                    DiagnosticSeverity.Info,
-                    $"Materialized TM{sourceItem.Metadata.MachineSlot!.Value.ToString(CultureInfo.InvariantCulture)} without rewriting Pokemon compatibility. Apply and reload before editing compatibility.",
-                    ZaEditSessionSupport.ItemsDomain,
-                    field: ZaItemsWorkflowService.MachineMoveIdField));
-                continue;
-            }
-
+                throw new InvalidDataException("TM assignment output could not resolve its active item row.");
+            if (row.MachineWaza == 0 && sourceItem.IsOwnedTechnicalMachineExtension) continue;
             var baseRow = baseRows.GetValueOrDefault(itemId);
-            if (baseRow is null
-                && sourceItem.IsOwnedTechnicalMachineExtension
-                && sourceItem.Metadata.MachineSlot is { } ownedSlot
-                && sourceItem.Metadata.BaseMachineMoveId is { } ownedBaseMove)
-            {
-                baseRow = ItemRow.CreateOwnedTechnicalMachineExtension(
-                    ownedSlot,
-                    checked((ushort)ownedBaseMove));
-            }
-            if (baseRow is null)
-            {
-                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    "TM assignment output could not resolve its verified base row.",
-                    ZaEditSessionSupport.ItemsDomain,
-                    field: ZaItemsWorkflowService.MachineMoveIdField,
-                    expected: "Unique clean base TM row or an owned extension assignment"));
-                continue;
-            }
-
-            var restoresVerifiedBaseRow = HasVerifiedBaseItemRowEdit(session, itemId);
-            var activeIsTechnicalMachine = ZaItemsWorkflowService.IsTechnicalMachineRecord(sourceItem);
-            var baseIsTechnicalMachine = IsTechnicalMachine(baseRow);
-            if (restoresVerifiedBaseRow
-                && (!activeIsTechnicalMachine || !baseIsTechnicalMachine))
-            {
-                // The complete verified row copy already restored this item into or out
-                // of TM ownership. No current/base compatibility ownership pair exists.
-                continue;
-            }
-
-            if (sourceItem.Metadata.MachineMoveId is not { } oldMoveId
-                || sourceItem.Metadata.BaseMachineMoveId is not { } baseMoveId)
-            {
-                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    "TM assignment output could not resolve its active and verified base move ownership.",
-                    ZaEditSessionSupport.ItemsDomain,
-                    field: ZaItemsWorkflowService.MachineMoveIdField,
-                    expected: "Physical TM with unique active and clean base moves"));
-                continue;
-            }
-
-            var newMoveId = row.MachineWaza;
-            var restoringBase = newMoveId == baseMoveId;
-            if (restoringBase && newMoveId == oldMoveId)
-            {
+            if (HasVerifiedBaseItemRowEdit(session, itemId)
+                && (!ZaItemsWorkflowService.IsTechnicalMachineRecord(sourceItem)
+                    || baseRow is null || !IsTechnicalMachine(baseRow))) continue;
+            if (baseRow is not null && row.MachineWaza == baseRow.MachineWaza)
                 row.IconName = baseRow.IconName;
-                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                    DiagnosticSeverity.Info,
-                    $"Restored {sourceItem.Name} to its verified base disc icon. The TM move assignment was already vanilla.",
-                    ZaEditSessionSupport.ItemsDomain,
-                    field: ZaItemsWorkflowService.MachineMoveIdField));
-                continue;
-            }
-
-            var writesCompatibility = PlanContainsVirtualWrite(
-                project.Paths,
-                currentPlan,
-                ZaDataPaths.PersonalArray,
-                outputMode);
-            if (!restoringBase && sourceItem.IsOwnedTechnicalMachineExtension)
-            {
-                personalSource ??= fileSource.Read(project, ZaDataPaths.PersonalArray);
-                var inspection = ZaTechnicalMachineCompatibilityMigration.Inspect(
-                    personalBytes ?? personalSource.Bytes,
-                    checked((ushort)oldMoveId),
-                    newMoveId);
-                if (inspection.AffectedValues == 0)
-                {
-                    battleMoveSource ??= fileSource.Read(project, ZaDataPaths.BattleMoveParameterArray);
-                    if (!ZaTechnicalMachineIconResolver.TryResolve(
-                            baseItemBytes,
-                            battleMoveSource.Bytes,
-                            newMoveId,
-                            out var noMigrationIconName))
-                    {
-                        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                            DiagnosticSeverity.Error,
-                            $"The selected move's TM disc icon could not be resolved unambiguously for {sourceItem.Name}.",
-                            ZaEditSessionSupport.ItemsDomain,
-                            field: ZaItemsWorkflowService.MachineMoveIdField,
-                            expected: "Move with a uniquely mapped elemental TM icon"));
-                        continue;
-                    }
-
-                    row.IconName = noMigrationIconName;
-                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                        DiagnosticSeverity.Info,
-                        $"Changed {sourceItem.Name} without rewriting Pokemon compatibility because its previous move had no compatibility references.",
-                        ZaEditSessionSupport.ItemsDomain,
-                        field: ZaItemsWorkflowService.MachineMoveIdField));
-                    continue;
-                }
-            }
-            if (restoringBase)
-            {
-                row.IconName = baseRow.IconName;
-                personalSource ??= fileSource.Read(project, ZaDataPaths.PersonalArray);
-                basePersonalSource ??= fileSource.ReadBase(project, ZaDataPaths.PersonalArray);
-                ZaTechnicalMachineCompatibilityMigration.BaseRestoreInspection restorationInspection;
-                try
-                {
-                    restorationInspection = ZaTechnicalMachineCompatibilityMigration.InspectBaseRestore(
-                        personalBytes ?? personalSource.Bytes,
-                        basePersonalSource.Bytes,
-                        checked((ushort)oldMoveId),
-                        checked((ushort)baseMoveId));
-                }
-                catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException or ArgumentException)
-                {
-                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                        DiagnosticSeverity.Error,
-                        $"Verified vanilla TM compatibility changed after review: {exception.Message}",
-                        ZaEditSessionSupport.ItemsDomain,
-                        field: ZaItemsWorkflowService.MachineMoveIdField,
-                        expected: "The exact reviewed active and verified vanilla compatibility positions"));
-                    continue;
-                }
-
-                if (restorationInspection.ChangedValues == 0)
-                {
-                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                        DiagnosticSeverity.Info,
-                        $"Restored {sourceItem.Name} to its verified base move and disc icon. Pokemon compatibility already matched the verified base positions for this TM.",
-                        ZaEditSessionSupport.ItemsDomain,
-                        field: ZaItemsWorkflowService.MachineMoveIdField));
-                    continue;
-                }
-            }
-
-            if (!writesCompatibility)
-            {
-                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    "The reviewed plan does not include the required Pokemon compatibility migration.",
-                    ZaEditSessionSupport.ItemsDomain,
-                    file: $"romfs/{ZaDataPaths.PersonalArray}",
-                    expected: "Personal data write reviewed with the TM reassignment"));
-                continue;
-            }
-
-            battleMoveSource ??= fileSource.Read(project, ZaDataPaths.BattleMoveParameterArray);
-            personalSource ??= fileSource.Read(project, ZaDataPaths.PersonalArray);
-            basePersonalSource ??= fileSource.ReadBase(project, ZaDataPaths.PersonalArray);
-            if (!migrationSourcesVerified)
-            {
-                migrationSourcesVerified = CapturedSourcesMatchPlan(
-                    project.Paths,
-                    currentPlan,
-                    ZaDataPaths.PersonalArray,
-                    outputMode,
-                    [
-                        CreatePlanFingerprintSource(ZaDataPaths.PersonalArray, personalSource),
-                        CreatePlanFingerprintSource(
-                            $"{ZaDataPaths.PersonalArray}#base",
-                            basePersonalSource),
-                        CreatePlanFingerprintSource(ZaDataPaths.BattleMoveParameterArray, battleMoveSource),
-                        CreatePlanFingerprintSource($"{ZaDataPaths.ItemDataArray}#base", baseItemSource),
-                    ]);
-                if (!migrationSourcesVerified)
-                {
-                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                        DiagnosticSeverity.Error,
-                        "TM compatibility, move type, or clean base item data changed after review. Review the change plan again before applying.",
-                        ZaEditSessionSupport.ItemsDomain,
-                        file: $"romfs/{ZaDataPaths.PersonalArray}",
-                        expected: "The exact reviewed compatibility, runtime move type, and base TM icon sources"));
-                    continue;
-                }
-            }
-
-            string iconName;
-            if (restoringBase)
-            {
-                iconName = baseRow.IconName;
-            }
-            else if (!ZaTechnicalMachineIconResolver.TryResolve(
-                         baseItemBytes,
-                         battleMoveSource.Bytes,
-                         newMoveId,
-                         out iconName))
-            {
-                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"The selected move's TM disc icon could not be resolved unambiguously for {sourceItem.Name}.",
-                    ZaEditSessionSupport.ItemsDomain,
-                    field: ZaItemsWorkflowService.MachineMoveIdField,
-                    expected: "Move with a uniquely mapped elemental TM icon"));
-                continue;
-            }
-
-            personalBytes ??= personalSource.Bytes;
-            try
-            {
-                int changedValues;
-                int changedRows;
-                if (restoringBase)
-                {
-                    personalBytes = ZaTechnicalMachineCompatibilityMigration.RestoreBaseAssignment(
-                        personalBytes,
-                        basePersonalSource.Bytes,
-                        checked((ushort)oldMoveId),
-                        checked((ushort)baseMoveId),
-                        out var restoration);
-                    changedValues = restoration.ChangedValues;
-                    changedRows = restoration.ChangedRows;
-                }
-                else
-                {
-                    personalBytes = ZaTechnicalMachineCompatibilityMigration.Apply(
-                        personalBytes,
-                        checked((ushort)oldMoveId),
-                        newMoveId,
-                        out var inspection);
-                    changedValues = inspection.AffectedValues;
-                    changedRows = inspection.AffectedRows;
-                }
-                row.IconName = iconName;
-                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                    DiagnosticSeverity.Info,
-                    restoringBase
-                        ? $"Restored {sourceItem.Name} and {changedValues} compatibility position(s) across {changedRows} Pokemon row(s) from verified vanilla data."
-                        : $"Migrated {changedValues} TM compatibility reference(s) across {changedRows} Pokemon row(s) and synchronized the disc icon.",
-                    ZaEditSessionSupport.ItemsDomain,
-                    field: ZaItemsWorkflowService.MachineMoveIdField));
-            }
-            catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException or ArgumentException)
-            {
-                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"TM compatibility migration failed: {exception.Message}",
-                    ZaEditSessionSupport.ItemsDomain,
-                    file: $"romfs/{ZaDataPaths.PersonalArray}",
-                    expected: "Validated compatibility replacement with no duplicate move IDs"));
-            }
+            else if (ZaTechnicalMachineIconResolver.TryResolve(baseItemSource.Bytes,
+                         (battleMoveSource ??= fileSource.Read(project, ZaDataPaths.BattleMoveParameterArray)).Bytes,
+                         row.MachineWaza, out var icon)) row.IconName = icon;
+            else throw new InvalidDataException("The selected move's TM disc icon could not be resolved.");
         }
-
-        return personalBytes;
+        var personalSource = fileSource.Read(project, ZaDataPaths.PersonalArray);
+        var basePersonalSource = fileSource.ReadBase(project, ZaDataPaths.PersonalArray);
+        var projected = ZaTechnicalMachineCompatibilityMigration.ApplyBatch(
+            personalSource.Bytes, basePersonalSource.Bytes, GetCompatibilityAssignments(sourceWorkflow, session));
+        if (personalSource.Bytes.AsSpan().SequenceEqual(projected)) return null;
+        battleMoveSource ??= fileSource.Read(project, ZaDataPaths.BattleMoveParameterArray);
+        if (!PlanContainsVirtualWrite(project.Paths, currentPlan, ZaDataPaths.PersonalArray, outputMode)
+            || !CapturedSourcesMatchPlan(project.Paths, currentPlan, ZaDataPaths.PersonalArray, outputMode,
+                [CreatePlanFingerprintSource(ZaDataPaths.PersonalArray, personalSource),
+                 CreatePlanFingerprintSource($"{ZaDataPaths.PersonalArray}#base", basePersonalSource),
+                 CreatePlanFingerprintSource(ZaDataPaths.BattleMoveParameterArray, battleMoveSource),
+                 CreatePlanFingerprintSource($"{ZaDataPaths.ItemDataArray}#base", baseItemSource)]))
+            throw new InvalidDataException("TM compatibility or move sources changed after review. Review the change plan again before applying.");
+        return projected;
     }
 
     private static void ValidateTechnicalMachineNumberAssignments(

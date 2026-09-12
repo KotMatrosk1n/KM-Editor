@@ -2010,15 +2010,43 @@ internal sealed class ZaWorkflowFileSource
             {
                 throw new OutputPreimageConflictException(relativePath);
             }
+            var requestedOwnerId = mutation.ApplyContext?.OwnerId ?? defaultOwnerId;
+            var isSharedDescriptor = string.Equals(
+                relativePath.Value,
+                ToOutputRelativePath(DescriptorVirtualPath, ZaOutputMode.Standalone),
+                StringComparison.OrdinalIgnoreCase);
+            var isOrdinaryData = !IsComposedExecutablePath(relativePath)
+                && requestedOwnerId.Value is "workflow.za.output" or "workflow.za.items";
             var ownership = new OwnedTarget(
                 GameFamily.LegendsZA,
                 new OwnedTargetAddress(relativePath),
-                mutation.ApplyContext?.OwnerId ?? defaultOwnerId,
+                isSharedDescriptor || isOrdinaryData
+                    ? new OwnershipOwnerId("workflow.za.output")
+                    : requestedOwnerId,
                 preservationRule);
             var ownedRecord = inventory.Files.FirstOrDefault(record =>
                 record.Path == relativePath && record.CurrentState == expectedPreimage);
             var isComposedExecutable = IsComposedExecutablePath(relativePath);
             var ownershipClaims = new[] { ownership };
+            // Items also rebuilds tables used by other editors. Retain recognized
+            // earlier claims so changing editors does not change file authority.
+            // The descriptor is shared by every standalone RomFS operation.
+            if ((isOrdinaryData || isSharedDescriptor)
+                && ownedRecord is not null
+                && ownedRecord.Claims.Length > 0
+                && ownedRecord.Claims.All(claim =>
+                    claim.GameFamily == ownership.GameFamily
+                    && claim.Address == ownership.Address
+                    && claim.PreservationRule == ownership.PreservationRule
+                    && (claim.OwnerId.Value is "workflow.za.output" or "workflow.za.items"
+                        || isSharedDescriptor && claim.OwnerId.Value == "workflow.za.mod-merger")))
+            {
+                if (!coordinator.OwnershipScopeMatches(ownedRecord, projectId, GameFamily.LegendsZA))
+                {
+                    throw new OutputOwnershipConflictException(relativePath);
+                }
+                ownershipClaims = ownedRecord.Claims.ToArray();
+            }
             if (isComposedExecutable && ownedRecord is not null)
             {
                 ValidateComposedExecutableOwnership(
@@ -2122,7 +2150,7 @@ internal sealed class ZaWorkflowFileSource
                     outputMutations.Add(OutputMutation.Delete(
                         relativePath,
                         expectedPreimage,
-                        [ownership],
+                        ownershipClaims,
                         outputModeKey));
                     EnsureMutationCountWithinLimit(outputMutations.Count, coordinatorOptions);
                     continue;

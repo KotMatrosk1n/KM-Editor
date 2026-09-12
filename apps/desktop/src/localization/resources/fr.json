@@ -1,5 +1,9 @@
 {
   "keys": {
+    "settings.cache.status.awaitingValidation": "En attente de validation des chemins",
+    "settings.cache.status.validatingPaths": "Validation des chemins",
+    "settings.cache.status.validationRequired": "Validez les chemins du projet pour vérifier l’état du cache.",
+    "settings.cache.status.validatingPathsDescription": "Validation des chemins du projet avant de vérifier le cache.",
     "encounters.drafts.stage": "Préparer les modifications des rencontres",
     "encounters.drafts.summary": "{count} champs modifiés dans {records} enregistrements de rencontres.",
     "encounters.drafts.unavailable": "Un brouillon de rencontre conservé ne correspond plus à un enregistrement disponible. Supprimez les brouillons indisponibles ou rechargez les données des rencontres.",

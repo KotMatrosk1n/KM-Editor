@@ -370,8 +370,13 @@ assert.equal(
 
 assert.match(
   app,
-  /type CacheProgressSourceState = 'checking' \| 'error' \| 'ready' \| 'setupRequired';/,
-  'Cache progress must model request failure separately from checking.'
+  /type CacheProgressSourceState = 'unvalidated' \| 'validating' \| 'checking' \| 'error' \| 'ready' \| 'setupRequired';/,
+  'Cache progress must distinguish path validation, status checks and request failure.'
+);
+assert.match(
+  projectSetup,
+  /const cacheSourceState: CacheProgressSourceState = !health\s*\? projectStatus === 'validating' \|\| projectStatus === 'opening'\s*\? 'validating'\s*: 'unvalidated'/,
+  'An unvalidated project must wait for path validation instead of reporting an active cache check.'
 );
 assert.match(
   app,

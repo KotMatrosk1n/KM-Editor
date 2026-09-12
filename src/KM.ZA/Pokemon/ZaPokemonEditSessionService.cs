@@ -6107,6 +6107,21 @@ internal sealed class ZaPokemonEditSessionService
         return rows;
     }
 
+    internal static byte[] RewriteTechnicalMachineCompatibility(
+        byte[] source,
+        IReadOnlyDictionary<int, ushort[]> replacements)
+    {
+        var rows = ReadTableRows(ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(source)));
+        foreach (var (index, moves) in replacements)
+        {
+            rows[index].HasTmMoves = true;
+            rows[index].TmMoves.Clear();
+            rows[index].TmMoves.AddRange(moves);
+        }
+
+        return WriteRows(rows);
+    }
+
     private static byte[] WriteRows(IReadOnlyList<PersonalRow> rows)
     {
         var builder = new FlatBufferBuilder(1024);

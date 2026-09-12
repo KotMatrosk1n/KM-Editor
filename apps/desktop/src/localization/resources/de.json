@@ -1,5 +1,9 @@
 {
   "keys": {
+    "settings.cache.status.awaitingValidation": "Pfadprüfung ausstehend",
+    "settings.cache.status.validatingPaths": "Pfade werden geprüft",
+    "settings.cache.status.validationRequired": "Prüfe die Projektpfade, um den Cachestatus zu prüfen.",
+    "settings.cache.status.validatingPathsDescription": "Die Projektpfade werden vor der Cacheprüfung geprüft.",
     "encounters.drafts.stage": "Begegnungsänderungen vormerken",
     "encounters.drafts.summary": "{count} geänderte Felder in {records} Begegnungsdatensätzen.",
     "encounters.drafts.unavailable": "Ein gespeicherter Begegnungsentwurf entspricht keinem verfügbaren Datensatz mehr. Verwirf nicht verfügbare Entwürfe oder lade die Begegnungsdaten erneut.",

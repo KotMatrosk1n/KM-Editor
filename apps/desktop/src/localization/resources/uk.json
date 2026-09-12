@@ -1,5 +1,9 @@
 {
   "keys": {
+    "settings.cache.status.awaitingValidation": "Очікування перевірки шляхів",
+    "settings.cache.status.validatingPaths": "Перевірка шляхів",
+    "settings.cache.status.validationRequired": "Перевірте шляхи проєкту, щоб перевірити стан кешу.",
+    "settings.cache.status.validatingPathsDescription": "Перевірка шляхів проєкту перед перевіркою кешу.",
     "encounters.drafts.stage": "Підготувати зміни зустрічей",
     "encounters.drafts.summary": "Змінено полів: {count}. Записів зустрічей: {records}.",
     "encounters.drafts.unavailable": "Збережена чернетка зустрічі більше не відповідає доступному запису. Видаліть недоступні чернетки або перезавантажте дані зустрічей.",

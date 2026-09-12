@@ -2,255 +2,77 @@
 
 using Google.FlatBuffers;
 using KM.Formats.ZA.Generated.GameData;
+using KM.ZA.Pokemon;
 
 namespace KM.ZA.Items;
 
 internal static class ZaTechnicalMachineCompatibilityMigration
 {
-    public static Inspection Inspect(byte[] bytes, ushort oldMoveId, ushort newMoveId)
+    internal readonly record struct Assignment(ushort OldMove, ushort NewMove, ushort BaseMove);
+
+    // Resolve the whole batch against the same source. A move produced by one assignment
+    // must never become the input of another assignment in this batch.
+    public static byte[] ApplyBatch(byte[] bytes, byte[] baseBytes, IReadOnlyList<Assignment> assignments)
     {
-        ArgumentNullException.ThrowIfNull(bytes);
-
-        var table = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(bytes));
-        var affectedRows = 0;
-        var affectedValues = 0;
-        var conflictingRows = 0;
-        var existingTargetRows = 0;
-        for (var rowIndex = 0; rowIndex < table.EntryLength; rowIndex++)
+        var active = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(bytes));
+        var vanilla = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(baseBytes));
+        var changes = assignments.Where(a => a.OldMove != 0 && a.NewMove != 0 && a.OldMove != a.NewMove).ToArray();
+        if (changes.Length == 0) return bytes.ToArray();
+        var restores = changes.Where(a => a.NewMove == a.BaseMove).ToArray();
+        if (restores.Length > 0 && active.EntryLength != vanilla.EntryLength)
+            throw new InvalidDataException("Active and vanilla Pokemon tables have different row counts.");
+        var mappings = changes.Where(a => a.NewMove != a.BaseMove).ToDictionary(a => a.OldMove, a => a.NewMove);
+        var targets = changes.Select(a => a.NewMove).ToHashSet();
+        var replacements = new Dictionary<int, ushort[]>();
+        for (var index = 0; index < active.EntryLength; index++)
         {
-            if (table.Entry(rowIndex) is not { } row)
+            var row = active.Entry(index);
+            var baseRow = restores.Length > 0 ? vanilla.Entry(index) : null;
+            if (restores.Length > 0 && ((row is null) != (baseRow is null)
+                || row is { } current && baseRow is { } original
+                && (current.Species?.Species != original.Species?.Species || current.Species?.Form != original.Species?.Form)))
+                throw new InvalidDataException($"Pokemon compatibility row {index} does not match its vanilla identity.");
+            if (row is null) continue;
+            var before = row.Value.GetTmMovesArray();
+            var baseMoves = baseRow?.GetTmMovesArray() ?? [];
+            var rowRestores = restores.Where(a => baseMoves.Contains(a.BaseMove)).ToArray();
+            var after = before.Select(move =>
             {
-                continue;
+                var restore = rowRestores.FirstOrDefault(a => a.OldMove == move && !baseMoves.Contains(move));
+                return restore.NewMove != 0 ? restore.NewMove : mappings.GetValueOrDefault(move, move);
+            }).ToList();
+            foreach (var restore in rowRestores)
+            {
+                if (after.Contains(restore.BaseMove)) continue;
+                var empty = after.IndexOf(0);
+                if (empty >= 0) after[empty] = restore.BaseMove;
+                else after.Add(restore.BaseMove);
             }
-
-            var moves = row.GetTmMovesArray();
-            var oldCount = moves.Count(move => move == oldMoveId);
-            if (moves.Contains(newMoveId))
+            var seen = new HashSet<ushort>();
+            for (var slot = 0; slot < after.Count; slot++)
+                if (targets.Contains(after[slot]) && !seen.Add(after[slot])) after[slot] = 0;
+            if (!before.SequenceEqual(after)) replacements.Add(index, after.ToArray());
+        }
+        if (replacements.Count == 0) return bytes.ToArray();
+        byte[] output;
+        if (replacements.Any(pair => pair.Value.Length != active.Entry(pair.Key)!.Value.TmMovesLength))
+            output = ZaPokemonEditSessionService.RewriteTechnicalMachineCompatibility(bytes, replacements);
+        else
+        {
+            output = bytes.ToArray();
+            var table = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(output));
+            foreach (var (index, moves) in replacements)
             {
-                existingTargetRows++;
-            }
-            if (oldCount == 0)
-            {
-                continue;
-            }
-
-            affectedRows++;
-            affectedValues += oldCount;
-            if (moves.Contains(newMoveId))
-            {
-                conflictingRows++;
+                var row = table.Entry(index)!.Value;
+                for (var slot = 0; slot < moves.Length; slot++)
+                    if (row.TmMoves(slot) != moves[slot] && !row.MutateTmMove(slot, moves[slot]))
+                        throw new InvalidDataException("Pokemon TM compatibility could not be written.");
             }
         }
-
-        return new Inspection(affectedRows, affectedValues, conflictingRows, existingTargetRows);
-    }
-
-    public static byte[] Apply(byte[] bytes, ushort oldMoveId, ushort newMoveId, out Inspection inspection)
-    {
-        inspection = Inspect(bytes, oldMoveId, newMoveId);
-        if (inspection.ExistingTargetRows > 0)
-        {
-            throw new InvalidOperationException(
-                "The selected move already appears in Pokemon TM compatibility, so ownership is ambiguous.");
-        }
-
-        var output = bytes.ToArray();
-        var table = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(output));
-        var changedValues = 0;
-        for (var rowIndex = 0; rowIndex < table.EntryLength; rowIndex++)
-        {
-            if (table.Entry(rowIndex) is not { } row)
-            {
-                continue;
-            }
-
-            for (var moveIndex = 0; moveIndex < row.TmMovesLength; moveIndex++)
-            {
-                if (row.TmMoves(moveIndex) == oldMoveId && row.MutateTmMove(moveIndex, newMoveId))
-                {
-                    changedValues++;
-                }
-            }
-        }
-
-        if (changedValues != inspection.AffectedValues)
-        {
-            throw new InvalidDataException(
-                "TM compatibility migration did not update the expected number of move references.");
-        }
-
-        var verification = Inspect(output, oldMoveId, newMoveId);
-        if (verification.AffectedValues != 0)
-        {
-            throw new InvalidDataException("TM compatibility migration left old move references behind.");
-        }
-
+        var verification = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(output));
+        foreach (var (index, moves) in replacements)
+            if (!verification.Entry(index)!.Value.GetTmMovesArray().SequenceEqual(moves))
+                throw new InvalidDataException("Pokemon TM compatibility did not match the reviewed batch.");
         return output;
     }
-
-    public static BaseRestoreInspection InspectBaseRestore(
-        byte[] bytes,
-        byte[] baseBytes,
-        ushort currentMoveId,
-        ushort baseMoveId)
-    {
-        ArgumentNullException.ThrowIfNull(bytes);
-        ArgumentNullException.ThrowIfNull(baseBytes);
-
-        var table = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(bytes));
-        var baseTable = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(baseBytes));
-        return InspectBaseRestore(table, baseTable, currentMoveId, baseMoveId);
-    }
-
-    public static byte[] RestoreBaseAssignment(
-        byte[] bytes,
-        byte[] baseBytes,
-        ushort currentMoveId,
-        ushort baseMoveId,
-        out BaseRestoreInspection inspection)
-    {
-        ArgumentNullException.ThrowIfNull(bytes);
-        ArgumentNullException.ThrowIfNull(baseBytes);
-
-        var output = bytes.ToArray();
-        var table = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(output));
-        var baseTable = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(baseBytes));
-        inspection = InspectBaseRestore(table, baseTable, currentMoveId, baseMoveId);
-
-        var changedValues = 0;
-        for (var rowIndex = 0; rowIndex < table.EntryLength; rowIndex++)
-        {
-            if (table.Entry(rowIndex) is not { } row
-                || baseTable.Entry(rowIndex) is not { } baseRow)
-            {
-                continue;
-            }
-
-            for (var moveIndex = 0; moveIndex < row.TmMovesLength; moveIndex++)
-            {
-                if (baseRow.TmMoves(moveIndex) == baseMoveId
-                    && row.TmMoves(moveIndex) == currentMoveId
-                    && row.MutateTmMove(moveIndex, baseMoveId))
-                {
-                    changedValues++;
-                }
-            }
-        }
-
-        if (changedValues != inspection.ChangedValues)
-        {
-            throw new InvalidDataException(
-                "TM compatibility restoration did not update the expected number of verified base positions.");
-        }
-
-        var verification = InspectBaseRestore(
-            ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(output)),
-            baseTable,
-            currentMoveId,
-            baseMoveId);
-        if (verification.ChangedValues != 0)
-        {
-            throw new InvalidDataException(
-                "TM compatibility restoration left verified base positions unrestored.");
-        }
-
-        return output;
-    }
-
-    private static BaseRestoreInspection InspectBaseRestore(
-        ZaPersonalTable table,
-        ZaPersonalTable baseTable,
-        ushort currentMoveId,
-        ushort baseMoveId)
-    {
-        if (table.EntryLength != baseTable.EntryLength)
-        {
-            throw new InvalidDataException(
-                "The active and verified vanilla Pokemon tables do not contain the same number of rows.");
-        }
-
-        var ownedRows = 0;
-        var ownedValues = 0;
-        var changedRows = 0;
-        var changedValues = 0;
-        for (var rowIndex = 0; rowIndex < table.EntryLength; rowIndex++)
-        {
-            var row = table.Entry(rowIndex);
-            var baseRow = baseTable.Entry(rowIndex);
-            if ((row is null) != (baseRow is null))
-            {
-                throw new InvalidDataException(
-                    $"Pokemon compatibility row {rowIndex} is not present in both the active and verified vanilla tables.");
-            }
-            if (row is null || baseRow is null)
-            {
-                continue;
-            }
-
-            var identity = row.Value.Species;
-            var baseIdentity = baseRow.Value.Species;
-            if ((identity is null) != (baseIdentity is null)
-                || identity is { } activeSpecies
-                && baseIdentity is { } vanillaSpecies
-                && (activeSpecies.Species != vanillaSpecies.Species
-                    || activeSpecies.Form != vanillaSpecies.Form))
-            {
-                throw new InvalidDataException(
-                    $"Pokemon compatibility row {rowIndex} does not match the verified vanilla species and form identity.");
-            }
-
-            if (row.Value.TmMovesLength != baseRow.Value.TmMovesLength)
-            {
-                throw new InvalidDataException(
-                    $"Pokemon compatibility row {rowIndex} does not have the verified vanilla vector length.");
-            }
-
-            var ownsRow = false;
-            var changesRow = false;
-            for (var moveIndex = 0; moveIndex < row.Value.TmMovesLength; moveIndex++)
-            {
-                if (baseRow.Value.TmMoves(moveIndex) != baseMoveId)
-                {
-                    continue;
-                }
-
-                ownsRow = true;
-                ownedValues++;
-                var activeValue = row.Value.TmMoves(moveIndex);
-                if (activeValue == baseMoveId)
-                {
-                    continue;
-                }
-                if (activeValue != currentMoveId)
-                {
-                    throw new InvalidOperationException(
-                        $"Pokemon compatibility row {rowIndex}, position {moveIndex} contains move {activeValue} where verified vanilla expects the selected TM's base move.");
-                }
-
-                changesRow = true;
-                changedValues++;
-            }
-
-            ownedRows += ownsRow ? 1 : 0;
-            changedRows += changesRow ? 1 : 0;
-        }
-
-        return new BaseRestoreInspection(
-            ownedRows,
-            ownedValues,
-            changedRows,
-            changedValues);
-    }
-
-    public readonly record struct Inspection(
-        int AffectedRows,
-        int AffectedValues,
-        int ConflictingRows,
-        int ExistingTargetRows);
-
-    public readonly record struct BaseRestoreInspection(
-        int OwnedRows,
-        int OwnedValues,
-        int ChangedRows,
-        int ChangedValues);
 }
