@@ -2,6 +2,327 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "version": "2.6.2",
+      "summary": {
+        "en": "KM Editor 2.6.2 adds Trainer Whiteout, Trainer Dynamax and Raid Dens controls for Sword and Shield. It improves combined editor output, keeps editing available after generated files are deleted, stages Wild Encounter drafts together, and expands Legends Z-A TM numbering and compatibility editing."
+      },
+      "sections": [
+        {
+          "title": {
+            "en": "Editing And Output"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Deleting generated output files or folders no longer prevents valid editing. Missing files fall back to vanilla, and Apply creates only the output required by the pending changes. Deleted saved edits are not replayed from History. Readable existing output and unrelated edits are preserved."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Combined editor sessions handle shared source files and dependent edits together. Pokemon data and trainer party changes can apply in one operation, and move changes are resolved before dependent Sword and Shield Rental Pokemon or Scarlet and Violet Starmobile edits. Invalid combined edits still prevent partial output."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Wild Encounter drafts across records and slots now use one Stage Encounter Changes action in every supported game. Copying, pasting and valid draft edits update slot names, sprites, levels and probabilities immediately. Failed staging preserves drafts, and successful staging preserves newer input."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "A failed Apply retains pending edits and diagnostics, clears the obsolete reviewed plan, and leaves the progress indicator at Review. Correct the reported problem and review again before writing."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Sword And Shield"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Trainer Whiteout is a new Beta editor with a searchable table of 436 trainer records, Yes and No choices, Reset to Vanilla, Enable Whiteout All and Disable Whiteout All. Select anywhere on a row, stage the desired settings, then review and apply through Changes. Disabling whiteout does not turn a defeat into a victory."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Trainer Whiteout writes the battle scripts and executable callbacks required by the selected trainer settings instead of rewriting every supported script. Shared scripts preserve compatible Raid Dens edits, and executable changes preserve FPS and other registered patch owners. Repeated uses of one trainer record share its setting; generated Battle Tower opponents are outside individual whiteout control."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Trainer Dynamax is a new Beta editor with independent Enabled and Disabled permissions for the player and opponent, per trainer reset and separate mass actions. Review and Apply stay inside the editor. All 436 roster records can be configured when used as opponents; repeated uses of one record share a setting, and generated Battle Tower battles use the mass settings."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Dynamax permission is separate from trainer team flags. Team Can Dynamax fields remain in Trainers, and the original Band, Pokemon eligibility and usage checks remain. Verified vanilla permissions are displayed where established; unknown original battle routes are labeled instead of assigned a guessed value. Enabling permission does not guarantee an opponent will choose Dynamax. Trainer Dynamax remains Beta."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Trainer Dynamax can apply, upgrade or remove its own executable patch while preserving Trainer Whiteout, FPS and other registered executable edits."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Raid Dens appears under Tools below Profanity Filter Bypass. Disable or restore the entire den interaction, including the den menu, starting a raid there, collecting Watts and using Wishing Pieces. Dens and beams remain visible. Y-Comm joining and Dynamax Adventures remain separate."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "60FPS Opening and demos now includes evolution, post evolution, title and egg sequences. Absolute frame jump destinations scale with the sequence timeline. Recognized older output can be upgraded or removed, including cleanup when no new timing files need writing. Other cinematic timing and audio synchronization can still vary."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Gameplay Settings moves Experience Share, Experience Rate and EXP Level Cap into X > Options. Upgrading removes the recognized old PC menu components while preserving saved settings. The package also corrects the runtime mapping failure associated with the old PC entry. Gameplay Settings remains Beta."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Data Cache preparation reuses the current vanilla work plan and completed progress across ordinary editing and output refresh. Warmup continues away from Project Setup, yields to foreground operations, and avoids rebuilding the text source plan for every item."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Battle Cafe Rewards uses the shared Start Editing, Stage and Cancel workflow with an action bar that stays visible while scrolling."
+              },
+              "audience": [
+                "swsh"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Scarlet And Violet"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Starmobile pending edits remain usable after their generated output is deleted. Apply uses the current vanilla record with the pending changes, without restoring deleted saved edits from History."
+              },
+              "audience": [
+                "sv"
+              ]
+            },
+            {
+              "body": {
+                "en": "Combined Moves and Starmobile output respects the resulting move availability regardless of staging order. Invalid assignments prevent the combined write."
+              },
+              "audience": [
+                "sv"
+              ]
+            },
+            {
+              "body": {
+                "en": "The 3D Model Editor better retains surface color in shaded areas under Studio and In Game lighting. This affects preview rendering, not saved materials or game lighting."
+              },
+              "audience": [
+                "sv"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Legends Z-A"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "All supported physical TMs, including added TMs, can use TM numbers 1 through 201. Selecting an occupied number swaps numbering with its current owner while preserving stable item identities, taught moves and shop references. Changing only a number does not rewrite Pokemon compatibility."
+              },
+              "audience": [
+                "za"
+              ]
+            },
+            {
+              "body": {
+                "en": "An unused TM can receive a move assignment and a new number in the same staged batch. For example, assign Vine Whip to the unused TM201 slot and change it to TM161 before one Review and Apply. Compatibility editing for the newly assigned move becomes available after Apply and reload."
+              },
+              "audience": [
+                "za"
+              ]
+            },
+            {
+              "body": {
+                "en": "TM reassignment preserves existing compatibility for the selected move without creating duplicate references. Batches resolve swaps from the original assignments, support moves with no previous compatibility, and allow an added TM to use a move freed by another edit in that batch. Final duplicate TM move assignments remain invalid."
+              },
+              "audience": [
+                "za"
+              ]
+            },
+            {
+              "body": {
+                "en": "Vanilla TM restoration matches Pokemon identity and original move membership even after compatibility positions have changed. Compatibility lists can grow when necessary, and unchanged compatibility produces no Personal output."
+              },
+              "audience": [
+                "za"
+              ]
+            },
+            {
+              "body": {
+                "en": "Items and Pokemon edits can update shared generated files in successive operations without conflicting ownership claims. Standalone descriptor output includes every affected table, while Trinity Mod Manager and Trinity Bypass retain their own layouts."
+              },
+              "audience": [
+                "za"
+              ]
+            },
+            {
+              "body": {
+                "en": "Show Unused Items defaults unchecked and remembers the chosen state across output refresh, project changes and application restart."
+              },
+              "audience": [
+                "za"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Models And Audio"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Texture recoloring is in Textures. Materials retains material properties, tints and bindings. Selecting a material outlines its visible meshes, and selecting it again can restore that outline. Material and texture Stage and Discard controls appear at the top for the active category."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Close editor remains available during model drafting and operations. A confirmation lets you stay with your drafts or close and discard unstaged drafts; staged edits remain in Changes. Material scalar labels appear once, and Studio grid controls have clearer spacing."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Texture tolerance guidance explains that 0 percent matches the source color and 100 percent affects every visible color in the selected texture. Shared textures still affect every part that uses them."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Sound Studio recognizes supported music track references and categorizes more complete recordings under Music / BGM. Ambiguous uses remain under Other. Playback still auditions individual recordings rather than recreating interactive music events."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Project Setup And Welcome Hub"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Scarlet, Violet and Legends Z-A require a valid user selected support folder before editors appear, alongside valid base paths. Missing support is reported in Project Setup diagnostics."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Beta Editors remain hidden until paths are validated and the Beta Editors setting is enabled. Cache status says Not checked and Awaiting path validation before validation begins, then distinguishes path validation from cache checking."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Install Update can display its confirmation and diagnostics directly in the Welcome Hub. The hub includes the 2.6.2 notes, and navigation titles for Trainer Whiteout, Trainer Dynamax and Raid Dens are available in all seven interface languages."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Release Metadata"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Application, setup, updater and window title metadata identify KM Editor 2.6.2 consistently."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "The Windows release includes the custom x64 setup executable, its updater signature, the updater manifest and checksums."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": {
+            "en": "Full changelog"
+          },
+          "url": "https://github.com/KotMatrosk1n/KM-Editor/compare/v2.6.1...v2.6.2"
+        }
+      ]
+    },
+    {
       "version": "2.6.1",
       "summary": {
         "en": "KM Editor 2.6.1 adds Sound Studio, brings the 3D Model Editor to every supported game, and introduces a dedicated Starmobiles editor for Scarlet and Violet. It also adds direct Gameplay Settings installation to emulator folders and improves trainer copying, History, diagnostics, and desktop presentation."
@@ -903,24 +1224,24 @@
   ],
   "announcements": [
     {
-      "id": "sound-studio-and-model-editor-2-6-1",
+      "id": "battle-tools-and-editing-2-6-2",
       "title": {
-        "en": "Sound Studio and 3D Model Editor",
-        "de": "Sound Studio und 3D Modelleditor",
-        "es": "Sound Studio y editor de modelos 3D",
-        "fr": "Sound Studio et éditeur de modèles 3D",
-        "ru": "Sound Studio и редактор 3D моделей",
-        "uk": "Sound Studio та редактор 3D моделей",
-        "zh": "Sound Studio 和 3D 模型编辑器"
+        "en": "Battle tools and editing",
+        "de": "Kampfwerkzeuge und Bearbeitung",
+        "es": "Herramientas de combate y edición",
+        "fr": "Outils de combat et édition",
+        "ru": "Инструменты боёв и редактирование",
+        "uk": "Інструменти боїв і редагування",
+        "zh": "对战工具与编辑"
       },
       "body": {
-        "en": "Check out the new Sound Studio! The 3D Model Editor is also now avaliable for all games.",
-        "de": "Entdecke das neue Sound Studio! Der 3D Modelleditor ist jetzt auch für alle Spiele verfügbar.",
-        "es": "¡Descubre el nuevo Sound Studio! El editor de modelos 3D también está disponible para todos los juegos.",
-        "fr": "Découvrez le nouveau Sound Studio ! L’éditeur de modèles 3D est désormais aussi disponible pour tous les jeux.",
-        "ru": "Попробуйте новую Sound Studio! Редактор 3D моделей теперь также доступен для всех игр.",
-        "uk": "Спробуйте нову Sound Studio! Редактор 3D моделей тепер також доступний для всіх ігор.",
-        "zh": "快来体验全新的 Sound Studio！3D 模型编辑器现在也已支持所有游戏。"
+        "en": "Try the new Sword and Shield battle controls. This update also improves encounter drafting, combined output and Z-A TM editing. Trainer Whiteout and Trainer Dynamax remain Beta.",
+        "de": "Probiere die neuen Kampfoptionen für Schwert und Schild aus. Dieses Update verbessert auch Begegnungsentwürfe, gemeinsame Ausgabe und die TM Bearbeitung in Z-A. Trainer Whiteout und Trainer Dynamax bleiben Beta.",
+        "es": "Prueba los nuevos controles de combate de Espada y Escudo. Esta actualización también mejora los borradores de encuentros, la salida combinada y la edición de MT en Z-A. Trainer Whiteout y Trainer Dynamax siguen en Beta.",
+        "fr": "Essayez les nouveaux réglages de combat pour Épée et Bouclier. Cette mise à jour améliore aussi les brouillons de rencontres, la sortie combinée et la modification des CT dans Z-A. Trainer Whiteout et Trainer Dynamax restent en Beta.",
+        "ru": "Попробуйте новые настройки боёв для Sword и Shield. Обновление также улучшает черновики встреч, совместную запись изменений и редактирование TM в Z-A. Trainer Whiteout и Trainer Dynamax остаются в Beta.",
+        "uk": "Спробуйте нові налаштування боїв для Sword і Shield. Оновлення також покращує чернетки зустрічей, спільний запис змін і редагування TM у Z-A. Trainer Whiteout і Trainer Dynamax залишаються в Beta.",
+        "zh": "试试 Sword 和 Shield 的全新对战控制功能。本次更新还改进了遭遇草稿、合并输出和 Z-A 的 TM 编辑。Trainer Whiteout 和 Trainer Dynamax 仍处于 Beta 阶段。"
       },
       "audience": [
         "all"

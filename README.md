@@ -14,6 +14,7 @@ KM Editor is a Windows desktop modding toolkit for Pokémon Sword and Shield, Po
 ## Editors and Tools
 
 - Edit Pokémon, trainer teams, moves, items, encounters, and other supported records with names, sprites, search, and controls specific to each game.
+- Control Sword and Shield trainer battle permissions in [Trainer Dynamax](https://github.com/KotMatrosk1n/KM-Editor/wiki/Trainer-Dynamax), loss behavior in [Trainer Whiteout](https://github.com/KotMatrosk1n/KM-Editor/wiki/Trainer-Whiteout), and den interaction in [Raid Dens](https://github.com/KotMatrosk1n/KM-Editor/wiki/Raid-Dens). Trainer Dynamax and Trainer Whiteout are Beta editors.
 - Edit Team Star bosses in the Scarlet and Violet [Starmobiles editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/Starmobiles-Editor), including supported stats, types, abilities, and moves.
 - Inspect models and animations, recolor textures, edit supported materials, and restore original assets in the [3D Model Editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/3D-Model-Editor) for all five games.
 - Browse and play discovered game recordings in [Sound Studio](https://github.com/KotMatrosk1n/KM-Editor/wiki/Sound-Studio), with seeking, loops, volume controls, and audio meters.
@@ -28,12 +29,12 @@ Supported fields and output rules differ by game. The [wiki](https://github.com/
 2. Choose your game in the welcome hub, then select **Open** for that game.
 3. Open **Project Setup** and select clean Base RomFS and Base ExeFS folders.
 4. Choose a separate Output Root that does not overlap your source folders.
-5. Select **Validate Paths**.
+5. Select **Validate Paths**. Scarlet, Violet and Legends Z-A also require an external support folder to be selected first.
 6. Open an editor, save or stage your changes, then review the output plan before applying it.
 
 The welcome hub shows release notes filtered by game and restores saved project paths. Loading game data and preparing caches wait until you select **Validate Paths**.
 
-Optional Scarlet/Violet data support requires an external dependency folder selected by the user. Legends Z-A archive editors also require a selected support folder. See [Project Setup](https://github.com/KotMatrosk1n/KM-Editor/wiki/Project-Setup) for the complete path requirements.
+Scarlet, Violet and Legends Z-A require a valid user selected support folder before editors appear. Beta Editors additionally require their setting to be enabled. See [Project Setup](https://github.com/KotMatrosk1n/KM-Editor/wiki/Project-Setup) for the complete path requirements.
 
 KM Editor does not include ROM dumps, RomFS, ExeFS, console keys, or save data. You are responsible for obtaining and using required game data in compliance with applicable law.
 
@@ -55,7 +56,7 @@ Normal editor changes are staged before they are applied. Open **Changes** to in
 
 Unstaged drafts and staged changes are separate. Moving to Changes preserves staged work; if a local draft still needs attention, the warning identifies that draft before you discard it. Review checks the combined session against current source and output files, and a failed final review blocks output even when the individual edits passed validation.
 
-Clean Base RomFS and Base ExeFS inputs remain untouched. Normal edits write to a separate Output Root, with output history, checkpoints, and recovery tools. Gameplay Settings can also install its reviewed package into a selected emulator data folder. Existing output stays editable after configuration changes, including changes to support folders; current file checks still protect reviewed writes.
+Clean Base RomFS and Base ExeFS inputs remain untouched. Normal edits write to a separate Output Root, with output history, checkpoints, and recovery tools. Gameplay Settings can also install its reviewed package into a selected emulator data folder. Existing output stays editable after configuration changes, including changes to support folders. Deleting generated files is supported: newly reviewed edits use surviving output with vanilla fallback and write only their required targets. Deleted saved edits are not replayed from History; current file checks still protect reviewed writes.
 
 ## Learn More
 
