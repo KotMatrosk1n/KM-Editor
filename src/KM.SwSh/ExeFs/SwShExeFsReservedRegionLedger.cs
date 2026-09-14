@@ -58,6 +58,7 @@ internal static class SwShExeFsReservedRegionLedger
 
     private static readonly SwShExeFsReservedRegion[] regions =
     [
+        .. KM.SwSh.FpsPatch.SwShFpsClockPatches.CreateReservations(),
         .. KM.SwSh.TrainerWhiteout.SwShTrainerWhiteoutMainPatcher.CreateReservations(),
         .. KM.SwSh.TrainerDynamax.SwShTrainerDynamaxMainPatcher.CreateReservations(),
         new(OwnerBagHook, "bag-hook-v2", BagEventScriptPath, "whole-file", null, null, "Bag-event AMX grant route", "owns-file"),
@@ -399,7 +400,8 @@ internal static class SwShExeFsReservedRegionLedger
         ProjectGame? game)
     {
         var ownerRegions = MainTextRegionsForOwner(owner);
-        if ((string.Equals(owner, OwnerHyperTraining, StringComparison.Ordinal)
+        if ((string.Equals(owner, OwnerFpsPatch, StringComparison.Ordinal)
+                || string.Equals(owner, OwnerHyperTraining, StringComparison.Ordinal)
                 || string.Equals(owner, OwnerShinyRate, StringComparison.Ordinal)
                 || string.Equals(owner, OwnerDynamaxAdventures, StringComparison.Ordinal)
                 || string.Equals(owner, OwnerTrainerDynamax, StringComparison.Ordinal))

@@ -16,8 +16,8 @@ public static class SwShBattleCafeRewardSourceReader
     private const ushort Amx64Magic = 0xF1E1;
     private const short CompactFlag = 0x0004;
     private const int CellSize = 8;
-    private const int ExpectedCodeCellCount = 5_541;
-    private const int ExpectedDataCellCount = 4_443;
+    private const int MinimumCodeCellCount = 5_541;
+    private const int MinimumDataCellCount = 4_443;
     private const int TableVectorCell = 4_327;
     internal const int TableRowCount = 23;
     internal const int TableFirstRowCell = 4_351;
@@ -66,8 +66,10 @@ public static class SwShBattleCafeRewardSourceReader
     {
         ArgumentNullException.ThrowIfNull(itemNames);
         var decoded = DecodeAmx(source);
-        if (decoded.Code.Length != ExpectedCodeCellCount * CellSize
-            || decoded.Data.Length != ExpectedDataCellCount * CellSize)
+        // Other script features may append code and data without moving the reward table.
+        // Validate the owned consumers and table below while preserving those extensions.
+        if (decoded.Code.Length < MinimumCodeCellCount * CellSize
+            || decoded.Data.Length < MinimumDataCellCount * CellSize)
         {
             throw new InvalidDataException("Battle Cafe source has an unsupported AMX code or data shape.");
         }

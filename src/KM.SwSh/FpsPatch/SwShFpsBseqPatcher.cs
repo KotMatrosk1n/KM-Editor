@@ -12,25 +12,30 @@ internal sealed record SwShFpsBseqConversionStats(
 
 internal static class SwShFpsBseqPatcher
 {
-    public const double MoveEffectTimelineScale = 2.25d;
+    public const double MoveEffectTimelineScale = 2d;
     public const double OpeningDemoTimelineScale = 2.0d;
     public const double DynamaxBallTimelineScale = 2.0d;
 
     private const int OpeningDemoNooneLifetimeCommandIndex = 21;
     private const uint OpeningDemoNooneScaledEndFrame = 346;
     private const ulong AbsoluteFrameJumpCommand = 0x4FFDD33C6628F5F9;
+    private const ulong MultiHitFrameRangesCommand = 0x329BD8EC0DB2E523;
 
     public static byte[] Convert(byte[] source, double scale, out SwShFpsBseqConversionStats stats)
-        => ConvertTimeline(source, scale, scaleJumpDestinations: true, out stats);
+        => ConvertTimeline(source, scale, scaleJumpDestinations: true, scaleMultiHitRanges: true, out stats);
 
     // Reproduce earlier output exactly for ownership migration and restoration.
     internal static byte[] ConvertLegacyTimeline(byte[] source, double scale)
-        => ConvertTimeline(source, scale, scaleJumpDestinations: false, out _);
+        => ConvertTimeline(source, scale, scaleJumpDestinations: false, scaleMultiHitRanges: false, out _);
+
+    internal static byte[] ConvertLegacyMultiHitTimeline(byte[] source, double scale)
+        => ConvertTimeline(source, scale, scaleJumpDestinations: true, scaleMultiHitRanges: false, out _);
 
     private static byte[] ConvertTimeline(
         byte[] source,
         double scale,
         bool scaleJumpDestinations,
+        bool scaleMultiHitRanges,
         out SwShFpsBseqConversionStats stats)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -77,6 +82,38 @@ internal static class SwShFpsBseqPatcher
                 if (scaledTarget != target)
                 {
                     fieldsChanged++;
+                }
+            }
+
+            if (scaleMultiHitRanges && command.Hash == MultiHitFrameRangesCommand)
+            {
+                if (command.PayloadLength != 12 * sizeof(int))
+                {
+                    throw new InvalidDataException("BSEQ multihit frame ranges have an unsupported payload layout.");
+                }
+
+                // Six start/end pairs select the seek position and playback cutoff for each hit.
+                // Zero entries are meaningful, and some authored cutoffs exceed the sequence length.
+                for (var index = 0; index < 12; index++)
+                {
+                    var offset = command.PayloadOffset + index * sizeof(int);
+                    var frame = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(offset, sizeof(int)));
+                    if (frame < 0)
+                    {
+                        throw new InvalidDataException("BSEQ multihit frame ranges contain a negative frame.");
+                    }
+
+                    var scaledFrame = ScaleU32((uint)frame, scale);
+                    if (scaledFrame > int.MaxValue)
+                    {
+                        throw new InvalidDataException("BSEQ multihit frame range exceeds the supported signed frame range.");
+                    }
+
+                    WriteU32(data, offset, scaledFrame);
+                    if (scaledFrame != frame)
+                    {
+                        fieldsChanged++;
+                    }
                 }
             }
         }

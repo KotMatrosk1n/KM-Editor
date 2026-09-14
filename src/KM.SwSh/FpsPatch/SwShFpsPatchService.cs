@@ -43,13 +43,12 @@ public sealed class SwShFpsPatchService
     private const string LegacyCharaTrainerRootInsideRomFs = "bin/chara/data/tr";
     private const string OpeningDemoBseqRelativePath = "romfs/bin/demo/sequence/d010.bseq";
     private const string EggDemoBseqRelativePath = "romfs/bin/demo/sequence/sd9120_egg.bseq";
-    private const int ExpectedManagedBseqFileCount = 1010;
+    private const int ExpectedManagedBseqFileCount = 1551;
     private const int MaximumReportedRomFsPaths = 25;
 
     private static readonly EnumerationOptions RecursiveEnumeration = CreateEnumerationOptions(recursive: true);
     private static readonly EnumerationOptions TopDirectoryEnumeration = CreateEnumerationOptions(recursive: false);
 
-    private static readonly string[] ManagedBseqPrefixes = ["eg", "es", "et", "ew"];
     private static readonly string[] RomFsCategoryOrder =
     [
         "battleSequences",
@@ -58,6 +57,7 @@ public sealed class SwShFpsPatchService
         "battleModels",
         "openingAndDemos",
         "recoveryAnimation",
+        "fieldAnimations",
         "other",
     ];
     private static readonly IReadOnlySet<string> AllAnimationTimingComponentIds =
@@ -185,6 +185,7 @@ public sealed class SwShFpsPatchService
     {
         var normalized = NormalizeRelativePath(relativePath);
         return IsSpecialManagedRomFsPath(normalized)
+            || string.Equals(normalized, SwShFpsFieldAnimationPatcher.RelativePath, StringComparison.OrdinalIgnoreCase)
             || IsManagedMoveEffectBseqPath(normalized)
             || IsManagedBattleCameraPath(normalized)
             || IsManagedBattleUiArchivePath(normalized)
@@ -225,7 +226,7 @@ public sealed class SwShFpsPatchService
 
             var manifestHashes = ReadManifestOwnedFileHashes(paths);
             return MatchesManifestOwnedOutput(normalized, output, manifestHashes)
-                || MatchesLegacyJumpTimelineOutput(normalized, source, output);
+                || MatchesLegacyTimingOutput(normalized, source, output);
         }
         catch (IOException)
         {
@@ -250,7 +251,7 @@ public sealed class SwShFpsPatchService
         ValidateEditableProject(project, diagnostics);
 
         var manifest = ReadManifestSnapshot(paths, diagnostics);
-        var mainStatus = AnalyzeMain(paths, diagnostics);
+        var mainStatus = AnalyzeMain(paths, diagnostics, manifest.EnabledAnimationTimingComponentIds);
         var globalApplyBlocked = !manifest.IsValid
             || diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             || mainStatus.Kind is SwShFpsPatchMainKind.UnsupportedBuild
@@ -320,7 +321,7 @@ public sealed class SwShFpsPatchService
             return CreateApplyResult(paths, writtenFiles, diagnostics);
         }
 
-        var preparedMain = PrepareMainApply(paths, diagnostics);
+        var preparedMain = PrepareMainApply(paths, diagnostics, enabledComponents);
         var preparedRomFsApply = PrepareRomFsApply(
             paths,
             enabledComponents,
@@ -473,9 +474,8 @@ public sealed class SwShFpsPatchService
             restoredComponents,
             previousManifest,
             diagnostics);
-        var preparedMainRestore = fullRestore
-            ? PrepareMainRestore(paths, diagnostics)
-            : null;
+        var preparedMainRestore = PrepareMainRestore(paths, diagnostics,
+            fullRestore ? null : restoredComponents);
         var preparedLegacyDeletes = fullRestore
             ? PrepareLegacyCleanupDeletes(paths, diagnostics)
             : [];
@@ -689,7 +689,7 @@ public sealed class SwShFpsPatchService
         }
     }
 
-    private byte[]? PrepareMainApply(ProjectPaths paths, ICollection<ValidationDiagnostic> diagnostics)
+    private byte[]? PrepareMainApply(ProjectPaths paths, ICollection<ValidationDiagnostic> diagnostics, IReadOnlySet<string>? enabledComponents = null)
     {
         if (string.IsNullOrWhiteSpace(paths.BaseExeFsPath) || string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
@@ -727,7 +727,7 @@ public sealed class SwShFpsPatchService
         try
         {
             var current = File.ReadAllBytes(sourcePath);
-            var patched = SwShFpsMainPatcher.Apply(current, paths.SelectedGame);
+            var patched = SwShFpsMainPatcher.Apply(current, paths.SelectedGame, enabledComponents);
             return patched.SequenceEqual(current) ? null : patched;
         }
         catch (IOException exception)
@@ -872,7 +872,7 @@ public sealed class SwShFpsPatchService
 
                 if (!existing.SequenceEqual(sourceBytes)
                     && !MatchesManifestOwnedOutput(sourceFile.RelativePath, existing, manifestHashes)
-                    && !MatchesLegacyJumpTimelineOutput(sourceFile.RelativePath, sourceBytes, existing))
+                    && !MatchesLegacyTimingOutput(sourceFile.RelativePath, sourceBytes, existing))
                 {
                     diagnostics.Add(CreateDiagnostic(
                         DiagnosticSeverity.Error,
@@ -933,7 +933,8 @@ public sealed class SwShFpsPatchService
 
     private SwShOutputFileMutation? PrepareMainRestore(
         ProjectPaths paths,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        IReadOnlySet<string>? restoredComponents = null)
     {
         if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
@@ -985,7 +986,7 @@ public sealed class SwShFpsPatchService
         {
             var current = File.ReadAllBytes(outputMainPath);
             var baseBytes = File.ReadAllBytes(baseMainPath);
-            var restored = SwShFpsMainPatcher.RestoreFromBase(current, baseBytes, paths.SelectedGame);
+            var restored = SwShFpsMainPatcher.RestoreFromBase(current, baseBytes, paths.SelectedGame, restoredComponents);
             if (restored.SequenceEqual(current))
             {
                 return null;
@@ -1136,7 +1137,7 @@ public sealed class SwShFpsPatchService
                     var sourceBytes = File.ReadAllBytes(sourceFile.SourcePath);
                     var generated = ConvertManagedRomFsFile(relativePath, sourceBytes);
                     if (outputBytes.SequenceEqual(generated)
-                        || MatchesLegacyJumpTimelineOutput(relativePath, sourceBytes, outputBytes))
+                        || MatchesLegacyTimingOutput(relativePath, sourceBytes, outputBytes))
                     {
                         preparedDeletes.Add(new PreparedRomFsDelete(relativePath, ToOutputFileState(outputBytes)));
                         continue;
@@ -1249,7 +1250,7 @@ public sealed class SwShFpsPatchService
         }
     }
 
-    private MainStatus AnalyzeMain(ProjectPaths paths, ICollection<ValidationDiagnostic> diagnostics)
+    private MainStatus AnalyzeMain(ProjectPaths paths, ICollection<ValidationDiagnostic> diagnostics, IReadOnlySet<string>? enabledComponents = null)
     {
         if (string.IsNullOrWhiteSpace(paths.BaseExeFsPath))
         {
@@ -1287,7 +1288,7 @@ public sealed class SwShFpsPatchService
 
         try
         {
-            var analysis = SwShFpsMainPatcher.Analyze(File.ReadAllBytes(sourcePath), paths.SelectedGame);
+            var analysis = SwShFpsMainPatcher.Analyze(File.ReadAllBytes(sourcePath), paths.SelectedGame, enabledComponents);
             if (analysis.Kind is SwShFpsPatchMainKind.UnsupportedBuild or SwShFpsPatchMainKind.GameMismatch or SwShFpsPatchMainKind.Conflict)
             {
                 diagnostics.Add(CreateDiagnostic(
@@ -1510,7 +1511,7 @@ public sealed class SwShFpsPatchService
                 : outputBytes.SequenceEqual(preparedSource.SourceBytes)
                     ? ManagedRomFsFileState.NotInstalled
                     : MatchesManifestOwnedOutput(sourceFile.RelativePath, outputBytes, manifestHashes)
-                        || MatchesLegacyJumpTimelineOutput(sourceFile.RelativePath, preparedSource.SourceBytes, outputBytes)
+                        || MatchesLegacyTimingOutput(sourceFile.RelativePath, preparedSource.SourceBytes, outputBytes)
                         ? ManagedRomFsFileState.StaleOwned
                         : ManagedRomFsFileState.Conflict;
             inspectedFiles.Add(new InspectedRomFsFile(sourceFile.RelativePath, componentId, state));
@@ -1653,6 +1654,8 @@ public sealed class SwShFpsPatchService
     private static string GetRomFsCategory(string relativePath)
     {
         var normalized = NormalizeRelativePath(relativePath);
+        if (string.Equals(normalized, SwShFpsFieldAnimationPatcher.RelativePath, StringComparison.OrdinalIgnoreCase))
+            return SwShFpsPatchAnimationTimingComponents.FieldAnimations;
         if (normalized.StartsWith(SequenceRootRelativePath + "/", StringComparison.OrdinalIgnoreCase))
         {
             return "battleSequences";
@@ -1900,6 +1903,9 @@ public sealed class SwShFpsPatchService
                 diagnostics);
         }
 
+        if (Includes(SwShFpsPatchAnimationTimingComponents.FieldAnimations))
+            AddRequiredManagedRomFsFile(baseRomFsPath, SwShFpsFieldAnimationPatcher.RelativePath, files, diagnostics);
+
         var includedComponentIds = animationTimingComponentIds ?? AllAnimationTimingComponentIds;
         foreach (var componentId in includedComponentIds)
         {
@@ -1922,6 +1928,7 @@ public sealed class SwShFpsPatchService
         }
 
         return files
+            .DistinctBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
             .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
@@ -1983,8 +1990,7 @@ public sealed class SwShFpsPatchService
 
     private static bool IsManagedBseqFileName(string fileName)
     {
-        return fileName.EndsWith(".bseq", StringComparison.OrdinalIgnoreCase)
-            && ManagedBseqPrefixes.Any(prefix => fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        return fileName.EndsWith(".bseq", StringComparison.OrdinalIgnoreCase);
     }
 
     private static IReadOnlyList<ManagedRomFsFile> EnumerateManagedBattleCameraFiles(
@@ -2351,6 +2357,8 @@ public sealed class SwShFpsPatchService
     private static byte[] ConvertManagedRomFsFile(string relativePath, byte[] sourceBytes)
     {
         var normalized = NormalizeRelativePath(relativePath);
+        if (string.Equals(normalized, SwShFpsFieldAnimationPatcher.RelativePath, StringComparison.OrdinalIgnoreCase))
+            return SwShFpsFieldAnimationPatcher.ConvertScript(sourceBytes);
         if (ManagedBseqTimelineScales.TryGetValue(normalized, out var scale))
         {
             return ConvertBseq(sourceBytes, scale);
@@ -2363,17 +2371,20 @@ public sealed class SwShFpsPatchService
 
         if (IsManagedBattleCameraPath(normalized))
         {
-            return SwShFpsBattleCameraPatcher.ConvertAnimationToHalfSpeed(sourceBytes);
+            SwShFpsBattleCameraPatcher.ConvertAnimationToHalfSpeed(sourceBytes);
+            return sourceBytes.ToArray();
         }
 
         if (IsManagedBattleUiArchivePath(normalized))
         {
-            return SwShFpsUiKeySelectPatcher.ConvertArchive(sourceBytes);
+            SwShFpsUiKeySelectPatcher.ConvertArchive(sourceBytes);
+            return sourceBytes.ToArray();
         }
 
         if (IsManagedBattleModelAnimationPath(normalized))
         {
-            return SwShFpsBattleModelAnimationPatcher.ConvertAnimationToHalfSpeed(sourceBytes);
+            SwShFpsBattleModelAnimationPatcher.ConvertAnimationToHalfSpeed(sourceBytes);
+            return sourceBytes.ToArray();
         }
 
         if (string.Equals(normalized, OpeningDemoBseqRelativePath, StringComparison.OrdinalIgnoreCase))
@@ -2399,14 +2410,31 @@ public sealed class SwShFpsPatchService
             SwShFpsPokemonCenterRecoveryPatcher.RecoveryArchiveRelativePath,
             StringComparison.OrdinalIgnoreCase))
         {
-            return SwShFpsPokemonCenterRecoveryPatcher.ConvertArchive(sourceBytes);
+            SwShFpsPokemonCenterRecoveryPatcher.ConvertArchive(sourceBytes);
+            return sourceBytes.ToArray();
         }
 
         throw new InvalidDataException("60FPS Patch does not manage this ROMFS path.");
     }
 
-    private static bool MatchesLegacyJumpTimelineOutput(string relativePath, byte[] source, byte[] output)
+    private static bool MatchesLegacyTimingOutput(string relativePath, byte[] source, byte[] output)
     {
+        if (IsManagedBattleCameraPath(relativePath))
+            return output.AsSpan().SequenceEqual(SwShFpsBattleCameraPatcher.ConvertAnimationToHalfSpeed(source));
+        if (IsManagedBattleUiArchivePath(relativePath))
+            return output.AsSpan().SequenceEqual(SwShFpsUiKeySelectPatcher.ConvertArchive(source));
+        if (IsManagedBattleModelAnimationPath(relativePath))
+            return output.AsSpan().SequenceEqual(SwShFpsBattleModelAnimationPatcher.ConvertAnimationToHalfSpeed(source));
+        if (string.Equals(relativePath, SwShFpsPokemonCenterRecoveryPatcher.RecoveryArchiveRelativePath, StringComparison.OrdinalIgnoreCase))
+            return output.AsSpan().SequenceEqual(SwShFpsPokemonCenterRecoveryPatcher.ConvertArchive(source));
+        if (IsManagedMoveEffectBseqPath(relativePath))
+        {
+            foreach (var scale in new[] { 2d, 2.25d })
+                if (output.AsSpan().SequenceEqual(SwShFpsBseqPatcher.ConvertLegacyMultiHitTimeline(source, scale))
+                    || output.AsSpan().SequenceEqual(ConvertBseq(source, scale)))
+                    return true;
+        }
+
         // Recognize only exact earlier output for the verified demo sequences.
         return LegacyJumpTimelinePaths.Contains(relativePath, StringComparer.OrdinalIgnoreCase)
             && output.AsSpan().SequenceEqual(SwShFpsBseqPatcher.ConvertLegacyTimeline(
@@ -2569,6 +2597,7 @@ public sealed class SwShFpsPatchService
             SwShFpsPatchAnimationTimingComponents.OpeningAndDemos => DemoSequenceRootRelativePath,
             SwShFpsPatchAnimationTimingComponents.RecoveryAnimation =>
                 SwShFpsPokemonCenterRecoveryPatcher.RecoveryArchiveRelativePath,
+            SwShFpsPatchAnimationTimingComponents.FieldAnimations => SwShFpsFieldAnimationPatcher.RelativePath,
             _ => "romfs",
         };
     }
@@ -2889,7 +2918,8 @@ public sealed class SwShFpsPatchService
 
         try
         {
-            return SwShFpsMainPatcher.Analyze(File.ReadAllBytes(outputMainPath), paths.SelectedGame).PatchedSiteCount > 0;
+            return SwShFpsMainPatcher.Analyze(File.ReadAllBytes(outputMainPath), paths.SelectedGame).Kind
+                is SwShFpsPatchMainKind.Installed or SwShFpsPatchMainKind.Partial;
         }
         catch (IOException)
         {

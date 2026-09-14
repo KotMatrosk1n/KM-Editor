@@ -42,7 +42,7 @@ internal static class SwShFpsMainPatcher
         return SwShExeFsReservedRegionLedger.MainTextRegionsForOwner(SwShExeFsReservedRegionLedger.OwnerFpsPatch);
     }
 
-    public static SwShFpsPatchMainAnalysis Analyze(byte[] mainBytes, ProjectGame? expectedGame = null)
+    public static SwShFpsPatchMainAnalysis Analyze(byte[] mainBytes, ProjectGame? expectedGame = null, IReadOnlySet<string>? enabledComponents = null)
     {
         ArgumentNullException.ThrowIfNull(mainBytes);
 
@@ -78,21 +78,22 @@ internal static class SwShFpsMainPatcher
             var text = nso.Text.DecompressedData;
             var patchedCount = 0;
             var vanillaCount = 0;
+            var knownCount = 0;
             foreach (var patch in layout.Patches)
             {
-                EnsureTextRange(text, patch.Offset, patch.Expected.Length, patch.Label);
-                var current = text.AsSpan(patch.Offset, patch.Expected.Length);
-                if (current.SequenceEqual(patch.Replacement))
+                var current = ReadSite(text, patch);
+                if (current.SequenceEqual(Desired(patch, enabledComponents)))
                 {
                     patchedCount++;
                 }
-                else if (current.SequenceEqual(patch.Expected))
+                if (current.SequenceEqual(patch.Expected))
                 {
                     vanillaCount++;
                 }
+                if (IsKnown(current, patch)) knownCount++;
             }
 
-            if (patchedCount == layout.Patches.Count)
+            if (patchedCount == layout.Patches.Count && vanillaCount != layout.Patches.Count)
             {
                 return new SwShFpsPatchMainAnalysis(
                     SwShFpsPatchMainKind.Installed,
@@ -110,11 +111,11 @@ internal static class SwShFpsMainPatcher
                     "60FPS ExeFS patch sites are not installed.",
                     buildId,
                     layout.Game,
-                    patchedCount,
+                    0,
                     layout.Patches.Count);
             }
 
-            var kind = patchedCount > 0 && patchedCount + vanillaCount == layout.Patches.Count
+            var kind = knownCount == layout.Patches.Count
                 ? SwShFpsPatchMainKind.Partial
                 : SwShFpsPatchMainKind.Conflict;
             var message = kind == SwShFpsPatchMainKind.Partial
@@ -140,11 +141,11 @@ internal static class SwShFpsMainPatcher
         }
     }
 
-    public static byte[] Apply(byte[] mainBytes, ProjectGame? expectedGame = null)
+    public static byte[] Apply(byte[] mainBytes, ProjectGame? expectedGame = null, IReadOnlySet<string>? enabledComponents = null)
     {
         ArgumentNullException.ThrowIfNull(mainBytes);
 
-        var analysis = Analyze(mainBytes, expectedGame);
+        var analysis = Analyze(mainBytes, expectedGame, enabledComponents);
         if (analysis.Kind is SwShFpsPatchMainKind.UnsupportedBuild
             or SwShFpsPatchMainKind.GameMismatch
             or SwShFpsPatchMainKind.Conflict)
@@ -158,19 +159,19 @@ internal static class SwShFpsMainPatcher
         var text = nso.Text.DecompressedData.ToArray();
         foreach (var patch in layout.Patches)
         {
-            var current = text.AsSpan(patch.Offset, patch.Expected.Length);
-            if (!current.SequenceEqual(patch.Expected) && !current.SequenceEqual(patch.Replacement))
+            var current = ReadSite(text, patch);
+            if (!IsKnown(current, patch))
             {
                 throw new InvalidDataException(
                     string.Create(CultureInfo.InvariantCulture, $"60FPS Patch found conflicting bytes at {FormatTextOffset(patch.Offset)}."));
             }
 
-            patch.Replacement.CopyTo(text.AsSpan(patch.Offset));
+            WriteSite(ref text, patch, Desired(patch, enabledComponents), nso.Ro.Header.MemoryOffset);
         }
 
         var output = nso.Write(textDecompressedData: text);
         ValidateOnlyOwnedTextBytesChanged(mainBytes, output, layout);
-        var outputAnalysis = Analyze(output, expectedGame);
+        var outputAnalysis = Analyze(output, expectedGame, enabledComponents);
         if (outputAnalysis.Kind != SwShFpsPatchMainKind.Installed)
         {
             throw new InvalidDataException("60FPS Patch verification failed after writing exefs/main.");
@@ -182,7 +183,8 @@ internal static class SwShFpsMainPatcher
     public static byte[] RestoreFromBase(
         byte[] currentMainBytes,
         byte[] baseMainBytes,
-        ProjectGame? expectedGame = null)
+        ProjectGame? expectedGame = null,
+        IReadOnlySet<string>? restoredComponents = null)
     {
         ArgumentNullException.ThrowIfNull(currentMainBytes);
         ArgumentNullException.ThrowIfNull(baseMainBytes);
@@ -210,25 +212,32 @@ internal static class SwShFpsMainPatcher
         var baseText = baseNso.Text.DecompressedData;
         foreach (var patch in layout.Patches)
         {
-            EnsureTextRange(text, patch.Offset, patch.Expected.Length, patch.Label);
-            EnsureTextRange(baseText, patch.Offset, patch.Expected.Length, patch.Label);
-            if (!baseText.AsSpan(patch.Offset, patch.Expected.Length).SequenceEqual(patch.Expected))
+            if (restoredComponents is not null
+                && (patch.Component is null || !restoredComponents.Contains(patch.Component)))
+            {
+                continue;
+            }
+
+            if (!ReadSite(baseText, patch).SequenceEqual(patch.Expected))
             {
                 throw new InvalidDataException(
                     string.Create(CultureInfo.InvariantCulture, $"Base exefs/main is not vanilla at {FormatTextOffset(patch.Offset)}."));
             }
 
-            var current = text.AsSpan(patch.Offset, patch.Expected.Length);
-            if (current.SequenceEqual(patch.Replacement))
-            {
-                patch.Expected.CopyTo(text.AsSpan(patch.Offset));
-            }
-            else if (!current.SequenceEqual(patch.Expected))
+            var current = ReadSite(text, patch);
+            if (!IsKnown(current, patch))
             {
                 throw new InvalidDataException(
                     string.Create(CultureInfo.InvariantCulture, $"60FPS Patch found non-owned bytes at {FormatTextOffset(patch.Offset)} and will not overwrite them."));
             }
+            WriteSite(ref text, patch, patch.Expected, currentNso.Ro.Header.MemoryOffset);
         }
+
+        // Remove only the owned trailing padding. Foreign appended data stays intact.
+        if (text.Length > baseText.Length && text.AsSpan(baseText.Length).IndexOfAnyExcept((byte)0) < 0
+            && Enumerable.Range(baseText.Length, text.Length - baseText.Length)
+                .All(offset => layout.Patches.Any(patch => offset >= patch.Offset && offset < patch.Offset + patch.Expected.Length)))
+            Array.Resize(ref text, baseText.Length);
 
         var output = currentNso.Write(textDecompressedData: text);
         ValidateOnlyOwnedTextBytesChanged(currentMainBytes, output, layout);
@@ -264,14 +273,15 @@ internal static class SwShFpsMainPatcher
 
         var beforeText = before.Text.DecompressedData;
         var afterText = after.Text.DecompressedData;
-        if (beforeText.Length != afterText.Length)
+        if (before.Ro.Header.MemoryOffset != after.Ro.Header.MemoryOffset
+            || before.Data.Header.MemoryOffset != after.Data.Header.MemoryOffset)
         {
-            throw new InvalidDataException("60FPS Patch changed the decompressed .text segment size.");
+            throw new InvalidDataException("60FPS Patch changed segment memory offsets.");
         }
 
-        for (var offset = 0; offset < beforeText.Length; offset++)
+        for (var offset = 0; offset < Math.Max(beforeText.Length, afterText.Length); offset++)
         {
-            var changed = beforeText[offset] != afterText[offset];
+            var changed = offset >= beforeText.Length || offset >= afterText.Length || beforeText[offset] != afterText[offset];
             if (!changed)
             {
                 continue;
@@ -285,6 +295,35 @@ internal static class SwShFpsMainPatcher
                         $"60FPS Patch unexpectedly changed .text byte 0x{offset:X}."));
             }
         }
+    }
+
+    private static byte[] Desired(MainPatch patch, IReadOnlySet<string>? enabledComponents) =>
+        patch.Component is null || enabledComponents is null || enabledComponents.Contains(patch.Component)
+            ? patch.Replacement : patch.Expected;
+
+    private static bool IsKnown(ReadOnlySpan<byte> current, MainPatch patch) =>
+        current.SequenceEqual(patch.Expected) || current.SequenceEqual(patch.Replacement)
+        || (patch.Legacy is not null && current.SequenceEqual(patch.Legacy));
+
+    private static byte[] ReadSite(byte[] text, MainPatch patch)
+    {
+        if (patch.Offset >= text.Length && patch.Expected.AsSpan().IndexOfAnyExcept((byte)0) < 0)
+            return new byte[patch.Expected.Length];
+        EnsureTextRange(text, patch.Offset, patch.Expected.Length, patch.Label);
+        return text.AsSpan(patch.Offset, patch.Expected.Length).ToArray();
+    }
+
+    private static void WriteSite(ref byte[] text, MainPatch patch, byte[] value, int readOnlyOffset)
+    {
+        var end = checked(patch.Offset + value.Length);
+        if (end > text.Length)
+        {
+            if (value.AsSpan().IndexOfAnyExcept((byte)0) < 0) return;
+            if (end > readOnlyOffset || patch.Offset != text.Length)
+                throw new InvalidDataException("60FPS clock storage conflicts with the executable layout.");
+            Array.Resize(ref text, end);
+        }
+        value.CopyTo(text.AsSpan(patch.Offset));
     }
 
     private static void EnsureTextRange(ReadOnlySpan<byte> text, int offset, int length, string label)
@@ -329,7 +368,8 @@ internal static class SwShFpsMainPatcher
         return CreatePatches(
             nvnPresentIntervalOffset: 0x018A2C88,
             battleEventSchedulerAdrpOffset: 0x0131677C,
-            battleEventSchedulerLdrOffset: 0x01316780);
+            battleEventSchedulerLdrOffset: 0x01316780)
+            .Concat(SwShFpsClockPatches.ForGame(ProjectGame.Sword)).ToArray();
     }
 
     private static IReadOnlyList<MainPatch> CreateShieldPatches()
@@ -337,7 +377,8 @@ internal static class SwShFpsMainPatcher
         return CreatePatches(
             nvnPresentIntervalOffset: 0x018A2D18,
             battleEventSchedulerAdrpOffset: 0x013167AC,
-            battleEventSchedulerLdrOffset: 0x013167B0);
+            battleEventSchedulerLdrOffset: 0x013167B0)
+            .Concat(SwShFpsClockPatches.ForGame(ProjectGame.Shield)).ToArray();
     }
 
     private static IReadOnlyList<MainPatch> CreatePatches(
@@ -345,7 +386,7 @@ internal static class SwShFpsMainPatcher
         int battleEventSchedulerAdrpOffset,
         int battleEventSchedulerLdrOffset)
     {
-        return
+        MainPatch[] legacy =
         [
             new(nvnPresentIntervalOffset, Hex("E103152A"), Hex("E1030032"), "Force NVN present interval 1"),
             new(0x000061F0, Hex("E2030032"), Hex("02008052"), "Duration table index 0"),
@@ -363,6 +404,9 @@ internal static class SwShFpsMainPatcher
             new(0x009D0838, Hex("01102E1E"), Hex("01902E1E"), "Battle actor direct +0x4E8 seed 1.0->1.25"),
             new(0x009D0848, Hex("00102C1E"), Hex("00902C1E"), "Battle actor direct +0x4E8 seed 0.5->0.625"),
         ];
+        return legacy.Select(patch => patch.Offset is >= 0x009D0000 and < 0x009D2000
+            ? patch with { Replacement = patch.Expected, Legacy = patch.Replacement }
+            : patch).ToArray();
     }
 
     private sealed record PatchLayout(
@@ -371,9 +415,11 @@ internal static class SwShFpsMainPatcher
         string BuildId,
         IReadOnlyList<MainPatch> Patches);
 
-    private sealed record MainPatch(
+    internal sealed record MainPatch(
         int Offset,
         byte[] Expected,
         byte[] Replacement,
-        string Label);
+        string Label,
+        string? Component = null,
+        byte[]? Legacy = null);
 }

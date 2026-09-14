@@ -14,7 +14,8 @@ export const fpsPatchAnimationTimingComponentIdSchema = z.enum([
   'battleInterface',
   'battleModels',
   'openingAndDemos',
-  'recoveryAnimation'
+  'recoveryAnimation',
+  'fieldAnimations'
 ]);
 export const applyFpsPatchRequestSchema = z.strictObject({
   paths: projectPathsSchema,

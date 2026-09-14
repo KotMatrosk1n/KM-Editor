@@ -6499,6 +6499,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private static bool IsNormalSwShDomain(EditSessionDomain domain)
     {
         return domain is
+            EditSessionDomain.BattleCafeRewards or
             EditSessionDomain.RaidDens or
             EditSessionDomain.TrainerWhiteout or
             EditSessionDomain.ModelTextures or
