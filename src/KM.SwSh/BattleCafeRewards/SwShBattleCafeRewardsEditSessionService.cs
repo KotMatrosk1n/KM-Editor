@@ -57,20 +57,6 @@ public sealed class SwShBattleCafeRewardsEditSessionService
             return new SwShBattleCafeRewardsEditResult(workflow, currentSession, diagnostics);
         }
 
-        if (currentSession.PendingEdits.Any(edit =>
-                !string.Equals(
-                    edit.Domain,
-                    SwShBattleCafeRewardsWorkflowService.EditDomain,
-                    StringComparison.Ordinal)))
-        {
-            diagnostics.Add(Diagnostic(
-                DiagnosticSeverity.Error,
-                "Battle Cafe Rewards needs its own edit session before staging.",
-                SwShBattleCafeRewardsDiagnosticCodes.SessionInvalid,
-                expected: "Battle Cafe Rewards only edit session"));
-            return new SwShBattleCafeRewardsEditResult(workflow, currentSession, diagnostics);
-        }
-
         SwShBattleCafeRewardsLoadedSource loaded;
         try
         {

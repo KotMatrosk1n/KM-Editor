@@ -14,6 +14,7 @@ public static class SwShFpsPatchAnimationTimingComponents
     public const string BattleModels = "battleModels";
     public const string OpeningAndDemos = "openingAndDemos";
     public const string RecoveryAnimation = "recoveryAnimation";
+    public const string FieldAnimations = "fieldAnimations";
 
     public static IReadOnlyList<string> All { get; } = Array.AsReadOnly(
         new[]
@@ -24,6 +25,7 @@ public static class SwShFpsPatchAnimationTimingComponents
             BattleModels,
             OpeningAndDemos,
             RecoveryAnimation,
+            FieldAnimations,
         });
 }
 
