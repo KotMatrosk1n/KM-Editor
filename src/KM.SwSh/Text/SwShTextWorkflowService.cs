@@ -396,10 +396,28 @@ public sealed class SwShTextWorkflowService
         }
     }
 
+    internal SwShTextWorkflow LoadForEdit(OpenedProject project, string textKey, SwShTextWorkflowQuery? query)
+    {
+        var normalizedQuery = NormalizeQuery(query);
+        if (!TryGetVirtualPathFromTextKey(textKey, out var virtualPath, out var lineIndex)
+            || normalizedQuery is not { Limit: 1 }
+            || normalizedQuery.Offset != lineIndex
+            || !string.Equals(normalizedQuery.SearchText, virtualPath, StringComparison.Ordinal)
+            || !string.Equals(normalizedQuery.Language, virtualPath.Split('/')[3], StringComparison.Ordinal)
+            || (normalizedQuery.CategoryId is not null
+                && !string.Equals(normalizedQuery.CategoryId, AllCategoryId, StringComparison.Ordinal)))
+        {
+            return Load(project, query);
+        }
+
+        return LoadCore(project, normalizedQuery, unpagedLanguage: null, exactSourcePath: virtualPath);
+    }
+
     private SwShTextWorkflow LoadCore(
         OpenedProject project,
         SwShTextWorkflowQuery? query,
-        string? unpagedLanguage)
+        string? unpagedLanguage,
+        string? exactSourcePath = null)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -465,21 +483,35 @@ public sealed class SwShTextWorkflowService
         var hasNextPage = false;
         var stopScanning = false;
 
-        foreach (var source in selectedSources)
+        // Exact mutations read the effective table directly, including current output changes.
+        var sourcesToRead = exactSourcePath is null
+            ? selectedSources
+            : selectedSources.Where(source => string.Equals(source.VirtualPath, exactSourcePath, StringComparison.Ordinal));
+        foreach (var source in sourcesToRead)
         {
-            if (!loadedCategories.TryGetValue(source.CategoryId, out var loadedSources))
+            SwShTextCachedSource? parsedSource;
+            if (exactSourcePath is not null)
             {
-                loadedSources = LoadEffectiveCategory(
-                    project,
-                    selectedLanguage,
-                    source.CategoryId,
-                    sourcesByCategory[source.CategoryId],
-                    inventory.LayeredKeyOverrides,
-                    diagnostics);
-                loadedCategories.Add(source.CategoryId, loadedSources);
+                parsedSource = TryParseEffectiveSource(project, source, diagnostics);
+            }
+            else
+            {
+                if (!loadedCategories.TryGetValue(source.CategoryId, out var loadedSources))
+                {
+                    loadedSources = LoadEffectiveCategory(
+                        project,
+                        selectedLanguage,
+                        source.CategoryId,
+                        sourcesByCategory[source.CategoryId],
+                        inventory.LayeredKeyOverrides,
+                        diagnostics);
+                    loadedCategories.Add(source.CategoryId, loadedSources);
+                }
+
+                loadedSources.TryGetValue(source.VirtualPath, out parsedSource);
             }
 
-            if (!loadedSources.TryGetValue(source.VirtualPath, out var parsedSource))
+            if (parsedSource is null)
             {
                 continue;
             }

@@ -4690,53 +4690,17 @@ export function App({
       ? 'standalone'
       : undefined;
 
-  const getProtectedWorkflowSections = useCallback(
-    (includeActiveSection = true) => {
-      const protectedSections = new Set<WorkbenchSection>(
-        getEditSessionOwnerSections(editSession, editSessionSection)
-      );
-      for (const section of editorDraftDirtySections) {
-        const retainedSection = resolveRetainedWorkflowSection(section);
-        if (retainedSection) {
-          protectedSections.add(retainedSection);
-        }
-      }
-      if (hasModMergerLocalState) {
-        protectedSections.add('modMerger');
-      }
-      const authoringProtectionScopeKey = createAdvancedAuthoringProtectionScopeKey(
-        activeProjectId,
-        selectedGame,
-        activeChangeSetId
-      );
-      if (
-        authoringProtectionScopeKey !== null &&
-        advancedAuthoringDraftProtection.scopeKey === authoringProtectionScopeKey
-      ) {
-        for (const section of advancedAuthoringDraftProtection.sections) {
-          protectedSections.add(section);
-        }
-      }
-
-      const activeRetainedSection = resolveRetainedWorkflowSection(activeSection);
-      if (includeActiveSection && activeRetainedSection) {
-        protectedSections.add(activeRetainedSection);
-      }
-
-      return protectedSections;
-    },
-    [
-      activeChangeSetId,
-      activeProjectId,
-      activeSection,
-      advancedAuthoringDraftProtection,
-      editSession,
-      editSessionSection,
-      editorDraftDirtySections,
-      hasModMergerLocalState,
-      selectedGame
-    ]
-  );
+  const getProtectedWorkflowSections = useProtectedWorkflowSections({
+    activeChangeSetId,
+    activeProjectId,
+    activeSection,
+    advancedAuthoringDraftProtection,
+    editSession,
+    editSessionSection,
+    editorDraftDirtySections,
+    hasModMergerLocalState,
+    selectedGame
+  });
 
   const evictWorkflowPayloads = useCallback(
     (sections: Iterable<WorkbenchSection>) => {
@@ -4792,18 +4756,12 @@ export function App({
     [clearDynamaxAdventurePanelState, clearScopedEditorPanelState, evictLoadedWorkflowSections]
   );
 
-  const evictUnprotectedWorkflowPayloads = useCallback(() => {
-    const protectedSections = getProtectedWorkflowSections();
-    const evictionCandidates = new Set([
-      ...loadedWorkflowRetentionEntries.map((entry) => entry.section),
-      ...workflowLoadGenerationRef.current.getActiveSections()
-    ]);
-    const evictedSections = [...evictionCandidates].filter(
-      (section) => !protectedSections.has(section)
-    );
-    evictWorkflowPayloads(evictedSections);
-    return evictedSections;
-  }, [evictWorkflowPayloads, getProtectedWorkflowSections, loadedWorkflowRetentionEntries]);
+  const evictUnprotectedWorkflowPayloads = useUnprotectedWorkflowEviction({
+    evictWorkflowPayloads,
+    getProtectedWorkflowSections,
+    loadedWorkflowRetentionEntries,
+    workflowLoadGenerationRef
+  });
 
   const runRetainedWorkflowLoad = useRetainedWorkflowLoader({
     activeSection,
@@ -5404,41 +5362,16 @@ export function App({
     ]
   );
 
-  const requestEditorExit = useCallback(
-    (destination: WorkbenchSection | null, kind: ExitPromptState['kind']) => {
-      const destinationLocation = destination
-        ? createSectionLocation(destination, {
-            game: selectedGame,
-            projectId: activeProjectId
-          })
-        : null;
-      if (editSession || (kind === 'editor' && activeEditorHasLocalDrafts)) {
-        setExitPrompt({
-          allowGoToChanges:
-            !activeSectionOwnsAdvancedEditSession && !activeEditorHasLocalDrafts,
-          destination: destinationLocation,
-          discardPendingSession: activeSectionOwnsAdvancedEditSession,
-          kind,
-          mode: 'confirm',
-          stageOnlyDexLayout: activeSection === 'dexLayout'
-        });
-        return;
-      }
-
-      if (kind === 'editor' && destinationLocation) {
-        commitWorkbenchLocation(destinationLocation);
-      }
-    },
-    [
-      activeSection,
-      activeProjectId,
-      activeEditorHasLocalDrafts,
-      activeSectionOwnsAdvancedEditSession,
-      commitWorkbenchLocation,
-      editSession,
-      selectedGame
-    ]
-  );
+  const requestEditorExit = useEditorExitRequest({
+    activeSection,
+    activeProjectId,
+    activeEditorHasLocalDrafts,
+    activeSectionOwnsAdvancedEditSession,
+    commitWorkbenchLocation,
+    editSession,
+    selectedGame,
+    setExitPrompt
+  });
 
   const navigationGuardStateRef = useRef<WorkbenchNavigationGuardState | null>(null);
   navigationGuardStateRef.current = {
@@ -6396,30 +6329,14 @@ export function App({
     workspaceShortcuts
   ]);
 
-  const handleNavigateSection = useCallback(
-    (destination: WorkbenchSection) => {
-      if (
-        destination === activeLocation.section &&
-        destination === activeSection
-      ) {
-        return;
-      }
+  const handleNavigateSection = useSectionNavigation({
+    activeLocationSection: activeLocation.section,
+    activeProjectId,
+    activeSection,
+    handleNavigateLocation,
+    selectedGame
+  });
 
-      return handleNavigateLocation(
-        createSectionLocation(destination, {
-          game: selectedGame,
-          projectId: activeProjectId
-        })
-      );
-    },
-    [
-      activeLocation.section,
-      activeProjectId,
-      activeSection,
-      handleNavigateLocation,
-      selectedGame
-    ]
-  );
   const handleOpenGuidedDesignChanges = useCallback(() => {
     void handleNavigateSection('changes');
   }, [handleNavigateSection]);
@@ -7109,116 +7026,28 @@ export function App({
   activeNoteDirtyRef.current = activeNoteIsDirty;
   const noteSaveRevisionRef = useRef(0);
   const activeNoteSavePromiseRef = useRef<Promise<boolean> | null>(null);
-  const saveActiveNote = useCallback(async (): Promise<boolean> => {
-    if (activeNoteSavePromiseRef.current) {
-      return activeNoteSavePromiseRef.current;
-    }
-    if (!activeNoteIsDirty) {
-      setNoteStatusKey('workbench.notes.saved');
-      return true;
-    }
-    if (
-      isPersonalWorkspaceMutationBusy ||
-      personalWorkspaceMutationOperationRef.current !== null ||
-      !personalProjectTarget ||
-      !activeRecordLocation ||
-      !activeScopedLocationKey
-    ) {
-      setNoteStatusKey('workbench.notes.saveError');
-      return false;
-    }
-    const requestedProjectId = personalProjectTarget.projectId;
-    const requestedLocationKey = activeScopedLocationKey;
-    const saveRevision = ++noteSaveRevisionRef.current;
-    const workspaceMutationOperation = {};
-    personalWorkspaceMutationOperationRef.current = workspaceMutationOperation;
-    setIsPersonalWorkspaceMutationBusy(true);
-    setNoteStatusKey('workbench.notes.saving');
-    const savePromise = (async () => {
-      let latestSnapshot = projectWorkspaceSnapshot;
-      let storedNote = activeStoredNote;
-      const noteId = storedNote?.noteId ?? createWorkspaceEntryId();
-      try {
-        while (true) {
-          const requestedNoteDraft = noteDraftRef.current;
-          if (requestedNoteDraft === (storedNote?.body ?? '')) {
-            activeNoteDirtyRef.current = false;
-            setNoteStatusKey('workbench.notes.saved');
-            setPersonalWorkspaceError(null);
-            return true;
-          }
-          latestSnapshot = requestedNoteDraft.length === 0 && storedNote
-            ? await personalWorkspaceRegistry.removeNote(
-                personalProjectTarget,
-                storedNote.noteId
-              )
-            : await personalWorkspaceRegistry.saveNote(personalProjectTarget, {
-                body: requestedNoteDraft,
-                location: activeRecordLocation,
-                noteId,
-                updatedAtUtc: new Date().toISOString()
-              });
-          const isCurrentProject = activeProjectIdRef.current === requestedProjectId;
-          const isCurrentLocation =
-            activeScopedLocationKeyRef.current === requestedLocationKey;
-          if (noteSaveRevisionRef.current === saveRevision && isCurrentProject) {
-            setProjectWorkspaceSnapshot(latestSnapshot);
-          }
-          if (
-            noteSaveRevisionRef.current !== saveRevision ||
-            !isCurrentProject ||
-            !isCurrentLocation
-          ) {
-            return true;
-          }
-          storedNote = latestSnapshot.document?.notes.find((candidate) =>
-            scopedWorkspaceLocationsEqual(
-              withoutScopedLocationInspector(candidate.location),
-              activeRecordLocation
-            )
-          ) ?? null;
-          if (noteDraftRef.current === requestedNoteDraft) {
-            activeNoteDirtyRef.current = false;
-            setNoteStatusKey('workbench.notes.saved');
-            setPersonalWorkspaceError(null);
-            return true;
-          }
-          activeNoteDirtyRef.current = true;
-          setNoteStatusKey('workbench.notes.saving');
-        }
-      } catch (error) {
-        if (
-          noteSaveRevisionRef.current === saveRevision &&
-          activeProjectIdRef.current === requestedProjectId &&
-          activeScopedLocationKeyRef.current === requestedLocationKey
-        ) {
-          setNoteStatusKey('workbench.notes.saveError');
-          setPersonalWorkspaceError(getErrorMessage(error));
-        }
-        return false;
-      } finally {
-        if (personalWorkspaceMutationOperationRef.current === workspaceMutationOperation) {
-          personalWorkspaceMutationOperationRef.current = null;
-          setIsPersonalWorkspaceMutationBusy(false);
-        }
-      }
-    })();
-    activeNoteSavePromiseRef.current = savePromise;
-    const didSave = await savePromise;
-    if (activeNoteSavePromiseRef.current === savePromise) {
-      activeNoteSavePromiseRef.current = null;
-    }
-    return didSave;
-  }, [
+  const saveActiveNote = useActiveNoteSave({
+    activeNoteSavePromiseRef,
     activeNoteIsDirty,
+    setNoteStatusKey,
+    isPersonalWorkspaceMutationBusy,
+    personalWorkspaceMutationOperationRef,
+    personalProjectTarget,
     activeRecordLocation,
     activeScopedLocationKey,
+    noteSaveRevisionRef,
+    setIsPersonalWorkspaceMutationBusy,
+    projectWorkspaceSnapshot,
     activeStoredNote,
-    isPersonalWorkspaceMutationBusy,
-    personalProjectTarget,
+    noteDraftRef,
+    activeNoteDirtyRef,
+    setPersonalWorkspaceError,
     personalWorkspaceRegistry,
-    projectWorkspaceSnapshot
-  ]);
+    activeProjectIdRef,
+    activeScopedLocationKeyRef,
+    setProjectWorkspaceSnapshot
+  });
+
   flushActiveNoteRef.current = saveActiveNote;
   useEffect(() => {
     if (
@@ -7563,27 +7392,13 @@ export function App({
     personalWorkspaceRegistry,
     t
   ]);
-  const handleOpenSavedView = useCallback((viewId: string) => {
-    const view = projectWorkspaceDocument?.savedViews.find(
-      (candidate) => candidate.viewId === viewId
-    );
-    if (!view) return;
-    const search = applyWorkspaceView(view.location.section, {
-      adapterId: view.adapterId,
-      adapterSchemaVersion: view.adapterSchemaVersion,
-      payload: view.payload
-    });
-    const target = fromScopedWorkspaceLocation(view.location, activeProjectId);
-    if (!search || !target) return;
-    handleNavigateLocation(target, () => {
-      applyWorkspaceSearchText(target.section, search.searchText);
-    });
-  }, [
+  const handleOpenSavedView = useSavedViewNavigation({
     activeProjectId,
     applyWorkspaceSearchText,
     handleNavigateLocation,
-    projectWorkspaceDocument?.savedViews
-  ]);
+    savedViews: projectWorkspaceDocument?.savedViews
+  });
+
   const handleDeleteSavedView = useCallback(async (viewId: string) => {
     if (
       personalWorkspaceMutationOperationRef.current !== null ||
@@ -8958,65 +8773,28 @@ export function App({
     ]
   );
 
-  const handleRefreshSvCacheStatus = useCallback(async () => {
-    if (
-      !isProjectCacheGame(selectedGame) ||
-      svCacheRefreshInFlightRef.current !== null ||
-      svCacheSettingsOperationRef.current !== null
-    ) {
-      return;
-    }
-
-    const refreshInFlightOperation = {};
-    svCacheRefreshInFlightRef.current = refreshInFlightOperation;
-    const paths = createProjectPaths(draftPathsRef.current);
-    const operationScopeKey = svCacheScopeKey;
-    const operationGeneration = svCacheOperationGenerationRef.current + 1;
-    svCacheOperationGenerationRef.current = operationGeneration;
-    const refreshOperation = svCacheRefreshOperationRef.current + 1;
-    svCacheRefreshOperationRef.current = refreshOperation;
-    const isCurrentOperation = () =>
-      svCacheRefreshInFlightRef.current === refreshInFlightOperation &&
-      svCacheOperationGenerationRef.current === operationGeneration &&
-      svCacheScopeKeyRef.current === operationScopeKey;
-    setIsSvCacheRefreshing(true);
-    setSvCacheStatusScopeKey(svCacheScopeKey);
-    setHasSvCacheRequestError(false);
-    try {
-      const response = await getProjectCacheStatusForGame(bridge, selectedGame, paths);
-      if (!isCurrentOperation()) {
-        return;
-      }
-      setSvCacheStatusScopeKey(svCacheScopeKey);
-      setSvCacheStatus(response.status);
-      setHasSvCacheRequestError(false);
-      setHasSvCacheWarmupError(false);
-      setSvCacheRefreshTick((currentTick) => currentTick + 1);
-      if (
-        health &&
-        svCacheScopeKey &&
-        !isSvCacheWarming &&
-        hasValidProjectCacheSource(selectedGame, health) &&
-        response.status.settings.mode !== 'minimal' &&
-        response.status.warmupCompleted < response.status.warmupTotal
-      ) {
-        void startSvCacheWarmup(paths, health, svCacheScopeKey, response.status);
-      }
-    } catch (error) {
-      if (isCurrentOperation() && !isStaleProjectScopeError(error)) {
-        setSvCacheStatusScopeKey(svCacheScopeKey);
-        setHasSvCacheRequestError(true);
-        setBridgeDiagnostics(toBridgeDiagnostics(error));
-      }
-    } finally {
-      if (svCacheRefreshInFlightRef.current === refreshInFlightOperation) {
-        svCacheRefreshInFlightRef.current = null;
-      }
-      if (svCacheRefreshOperationRef.current === refreshOperation) {
-        setIsSvCacheRefreshing(false);
-      }
-    }
-  }, [bridge, health, isSvCacheWarming, selectedGame, startSvCacheWarmup, svCacheScopeKey]);
+  const handleRefreshSvCacheStatus = useProjectCacheStatusRefresh({
+    bridge,
+    health,
+    isSvCacheWarming,
+    selectedGame,
+    startSvCacheWarmup,
+    svCacheScopeKey,
+    svCacheRefreshInFlightRef,
+    svCacheSettingsOperationRef,
+    createProjectPaths,
+    draftPathsRef,
+    svCacheOperationGenerationRef,
+    svCacheRefreshOperationRef,
+    svCacheScopeKeyRef,
+    setIsSvCacheRefreshing,
+    setSvCacheStatusScopeKey,
+    setHasSvCacheRequestError,
+    setSvCacheStatus,
+    setHasSvCacheWarmupError,
+    setSvCacheRefreshTick,
+    setBridgeDiagnostics
+  });
 
   const handleConfirmClearSvCache = useCallback(async () => {
     if (
@@ -69545,6 +69323,521 @@ function useInspectorNavigation({
   return { handleToggleInspector, handleSelectInspectorTab };
 }
 
+
+// Keep callback captures outside the App render scope so retired workflows can be collected.
+function useProtectedWorkflowSections({
+  activeChangeSetId,
+  activeProjectId,
+  activeSection,
+  advancedAuthoringDraftProtection,
+  editSession,
+  editSessionSection,
+  editorDraftDirtySections,
+  hasModMergerLocalState,
+  selectedGame
+}: {
+  activeChangeSetId: string | null;
+  activeProjectId: string | null;
+  activeSection: WorkbenchSection;
+  advancedAuthoringDraftProtection: AdvancedAuthoringDraftProtection;
+  editSession: EditSession | null;
+  editSessionSection: WorkbenchSection | null;
+  editorDraftDirtySections: Set<WorkbenchSection>;
+  hasModMergerLocalState: boolean;
+  selectedGame: ReturnType<typeof useWorkbenchStore.getState>['draftPaths']['selectedGame'];
+}) {
+  return useCallback(
+    (includeActiveSection = true) => {
+      const protectedSections = new Set<WorkbenchSection>(
+        getEditSessionOwnerSections(editSession, editSessionSection)
+      );
+      for (const section of editorDraftDirtySections) {
+        const retainedSection = resolveRetainedWorkflowSection(section);
+        if (retainedSection) {
+          protectedSections.add(retainedSection);
+        }
+      }
+      if (hasModMergerLocalState) {
+        protectedSections.add('modMerger');
+      }
+      const authoringProtectionScopeKey = createAdvancedAuthoringProtectionScopeKey(
+        activeProjectId,
+        selectedGame,
+        activeChangeSetId
+      );
+      if (
+        authoringProtectionScopeKey !== null &&
+        advancedAuthoringDraftProtection.scopeKey === authoringProtectionScopeKey
+      ) {
+        for (const section of advancedAuthoringDraftProtection.sections) {
+          protectedSections.add(section);
+        }
+      }
+
+      const activeRetainedSection = resolveRetainedWorkflowSection(activeSection);
+      if (includeActiveSection && activeRetainedSection) {
+        protectedSections.add(activeRetainedSection);
+      }
+
+      return protectedSections;
+    },
+    [
+      activeChangeSetId,
+      activeProjectId,
+      activeSection,
+      advancedAuthoringDraftProtection,
+      editSession,
+      editSessionSection,
+      editorDraftDirtySections,
+      hasModMergerLocalState,
+      selectedGame
+    ]
+  );
+}
+
+function useUnprotectedWorkflowEviction({
+  evictWorkflowPayloads,
+  getProtectedWorkflowSections,
+  loadedWorkflowRetentionEntries,
+  workflowLoadGenerationRef
+}: {
+  evictWorkflowPayloads: (sections: Iterable<WorkbenchSection>) => void;
+  getProtectedWorkflowSections: (includeActiveSection?: boolean) => Set<WorkbenchSection>;
+  loadedWorkflowRetentionEntries: ReturnType<typeof getLoadedWorkflowRetentionEntries>;
+  workflowLoadGenerationRef: { current: WorkflowLoadGeneration };
+}) {
+  return useCallback(() => {
+    const protectedSections = getProtectedWorkflowSections();
+    const evictionCandidates = new Set([
+      ...loadedWorkflowRetentionEntries.map((entry) => entry.section),
+      ...workflowLoadGenerationRef.current.getActiveSections()
+    ]);
+    const evictedSections = [...evictionCandidates].filter(
+      (section) => !protectedSections.has(section)
+    );
+    evictWorkflowPayloads(evictedSections);
+    return evictedSections;
+  }, [evictWorkflowPayloads, getProtectedWorkflowSections, loadedWorkflowRetentionEntries, workflowLoadGenerationRef]);
+}
+
+function useSavedViewNavigation({
+  activeProjectId,
+  applyWorkspaceSearchText,
+  handleNavigateLocation,
+  savedViews
+}: {
+  activeProjectId: string | null;
+  applyWorkspaceSearchText: (section: WorkbenchSection, searchText: string) => void;
+  handleNavigateLocation: (destination: WorkbenchLocation, onCommit?: () => void) => unknown;
+  savedViews: WorkspaceProjectPersonalStateDocument['savedViews'] | undefined;
+}) {
+  return useCallback((viewId: string) => {
+    const view = savedViews?.find(
+      (candidate) => candidate.viewId === viewId
+    );
+    if (!view) return;
+    const search = applyWorkspaceView(view.location.section, {
+      adapterId: view.adapterId,
+      adapterSchemaVersion: view.adapterSchemaVersion,
+      payload: view.payload
+    });
+    const target = fromScopedWorkspaceLocation(view.location, activeProjectId);
+    if (!search || !target) return;
+    handleNavigateLocation(target, () => {
+      applyWorkspaceSearchText(target.section, search.searchText);
+    });
+  }, [
+    activeProjectId,
+    applyWorkspaceSearchText,
+    handleNavigateLocation,
+    savedViews
+  ]);
+}
+
+function useSectionNavigation({
+  activeLocationSection,
+  activeProjectId,
+  activeSection,
+  handleNavigateLocation,
+  selectedGame
+}: {
+  activeLocationSection: WorkbenchSection;
+  activeProjectId: string | null;
+  activeSection: WorkbenchSection;
+  handleNavigateLocation: (destination: WorkbenchLocation) => unknown;
+  selectedGame: ReturnType<typeof useWorkbenchStore.getState>['draftPaths']['selectedGame'];
+}) {
+  return useCallback(
+    (destination: WorkbenchSection) => {
+      if (
+        destination === activeLocationSection &&
+        destination === activeSection
+      ) {
+        return;
+      }
+
+      return handleNavigateLocation(
+        createSectionLocation(destination, {
+          game: selectedGame,
+          projectId: activeProjectId
+        })
+      );
+    },
+    [
+      activeLocationSection,
+      activeProjectId,
+      activeSection,
+      handleNavigateLocation,
+      selectedGame
+    ]
+  );
+}
+
+function useActiveNoteSave({
+  activeNoteSavePromiseRef,
+  activeNoteIsDirty,
+  setNoteStatusKey,
+  isPersonalWorkspaceMutationBusy,
+  personalWorkspaceMutationOperationRef,
+  personalProjectTarget,
+  activeRecordLocation,
+  activeScopedLocationKey,
+  noteSaveRevisionRef,
+  setIsPersonalWorkspaceMutationBusy,
+  projectWorkspaceSnapshot,
+  activeStoredNote,
+  noteDraftRef,
+  activeNoteDirtyRef,
+  setPersonalWorkspaceError,
+  personalWorkspaceRegistry,
+  activeProjectIdRef,
+  activeScopedLocationKeyRef,
+  setProjectWorkspaceSnapshot
+}: {
+  activeNoteSavePromiseRef: { current: Promise<boolean> | null };
+  activeNoteIsDirty: boolean;
+  setNoteStatusKey: (value: string | null) => void;
+  isPersonalWorkspaceMutationBusy: boolean;
+  personalWorkspaceMutationOperationRef: { current: object | null };
+  personalProjectTarget: Parameters<ReturnType<typeof createBridgeBackedPersonalWorkspaceRegistry>['saveNote']>[0] | null;
+  activeRecordLocation: WorkspaceScopedLocation | null;
+  activeScopedLocationKey: string | null;
+  noteSaveRevisionRef: { current: number };
+  setIsPersonalWorkspaceMutationBusy: (value: boolean) => void;
+  projectWorkspaceSnapshot: PersonalWorkspaceSnapshot<WorkspaceProjectPersonalStateDocument>;
+  activeStoredNote: WorkspaceProjectPersonalStateDocument['notes'][number] | null;
+  noteDraftRef: { current: string };
+  activeNoteDirtyRef: { current: boolean };
+  setPersonalWorkspaceError: (value: string | null) => void;
+  personalWorkspaceRegistry: ReturnType<typeof createBridgeBackedPersonalWorkspaceRegistry>;
+  activeProjectIdRef: { current: string | null };
+  activeScopedLocationKeyRef: { current: string | null };
+  setProjectWorkspaceSnapshot: (value: PersonalWorkspaceSnapshot<WorkspaceProjectPersonalStateDocument>) => void;
+}) {
+  return useCallback(async (): Promise<boolean> => {
+    if (activeNoteSavePromiseRef.current) {
+      return activeNoteSavePromiseRef.current;
+    }
+    if (!activeNoteIsDirty) {
+      setNoteStatusKey('workbench.notes.saved');
+      return true;
+    }
+    if (
+      isPersonalWorkspaceMutationBusy ||
+      personalWorkspaceMutationOperationRef.current !== null ||
+      !personalProjectTarget ||
+      !activeRecordLocation ||
+      !activeScopedLocationKey
+    ) {
+      setNoteStatusKey('workbench.notes.saveError');
+      return false;
+    }
+    const requestedProjectId = personalProjectTarget.projectId;
+    const requestedLocationKey = activeScopedLocationKey;
+    const saveRevision = ++noteSaveRevisionRef.current;
+    const workspaceMutationOperation = {};
+    personalWorkspaceMutationOperationRef.current = workspaceMutationOperation;
+    setIsPersonalWorkspaceMutationBusy(true);
+    setNoteStatusKey('workbench.notes.saving');
+    const savePromise = (async () => {
+      let latestSnapshot = projectWorkspaceSnapshot;
+      let storedNote = activeStoredNote;
+      const noteId = storedNote?.noteId ?? createWorkspaceEntryId();
+      try {
+        while (true) {
+          const requestedNoteDraft = noteDraftRef.current;
+          if (requestedNoteDraft === (storedNote?.body ?? '')) {
+            activeNoteDirtyRef.current = false;
+            setNoteStatusKey('workbench.notes.saved');
+            setPersonalWorkspaceError(null);
+            return true;
+          }
+          latestSnapshot = requestedNoteDraft.length === 0 && storedNote
+            ? await personalWorkspaceRegistry.removeNote(
+                personalProjectTarget,
+                storedNote.noteId
+              )
+            : await personalWorkspaceRegistry.saveNote(personalProjectTarget, {
+                body: requestedNoteDraft,
+                location: activeRecordLocation,
+                noteId,
+                updatedAtUtc: new Date().toISOString()
+              });
+          const isCurrentProject = activeProjectIdRef.current === requestedProjectId;
+          const isCurrentLocation =
+            activeScopedLocationKeyRef.current === requestedLocationKey;
+          if (noteSaveRevisionRef.current === saveRevision && isCurrentProject) {
+            setProjectWorkspaceSnapshot(latestSnapshot);
+          }
+          if (
+            noteSaveRevisionRef.current !== saveRevision ||
+            !isCurrentProject ||
+            !isCurrentLocation
+          ) {
+            return true;
+          }
+          storedNote = latestSnapshot.document?.notes.find((candidate) =>
+            scopedWorkspaceLocationsEqual(
+              withoutScopedLocationInspector(candidate.location),
+              activeRecordLocation
+            )
+          ) ?? null;
+          if (noteDraftRef.current === requestedNoteDraft) {
+            activeNoteDirtyRef.current = false;
+            setNoteStatusKey('workbench.notes.saved');
+            setPersonalWorkspaceError(null);
+            return true;
+          }
+          activeNoteDirtyRef.current = true;
+          setNoteStatusKey('workbench.notes.saving');
+        }
+      } catch (error) {
+        if (
+          noteSaveRevisionRef.current === saveRevision &&
+          activeProjectIdRef.current === requestedProjectId &&
+          activeScopedLocationKeyRef.current === requestedLocationKey
+        ) {
+          setNoteStatusKey('workbench.notes.saveError');
+          setPersonalWorkspaceError(getErrorMessage(error));
+        }
+        return false;
+      } finally {
+        if (personalWorkspaceMutationOperationRef.current === workspaceMutationOperation) {
+          personalWorkspaceMutationOperationRef.current = null;
+          setIsPersonalWorkspaceMutationBusy(false);
+        }
+      }
+    })();
+    activeNoteSavePromiseRef.current = savePromise;
+    const didSave = await savePromise;
+    if (activeNoteSavePromiseRef.current === savePromise) {
+      activeNoteSavePromiseRef.current = null;
+    }
+    return didSave;
+  }, [
+    activeNoteSavePromiseRef,
+    activeNoteIsDirty,
+    setNoteStatusKey,
+    isPersonalWorkspaceMutationBusy,
+    personalWorkspaceMutationOperationRef,
+    personalProjectTarget,
+    activeRecordLocation,
+    activeScopedLocationKey,
+    noteSaveRevisionRef,
+    setIsPersonalWorkspaceMutationBusy,
+    projectWorkspaceSnapshot,
+    activeStoredNote,
+    noteDraftRef,
+    activeNoteDirtyRef,
+    setPersonalWorkspaceError,
+    personalWorkspaceRegistry,
+    activeProjectIdRef,
+    activeScopedLocationKeyRef,
+    setProjectWorkspaceSnapshot
+  ]);
+}
+
+function useEditorExitRequest({
+  activeSection,
+  activeProjectId,
+  activeEditorHasLocalDrafts,
+  activeSectionOwnsAdvancedEditSession,
+  commitWorkbenchLocation,
+  editSession,
+  selectedGame,
+  setExitPrompt
+}: {
+  activeSection: WorkbenchSection;
+  activeProjectId: string | null;
+  activeEditorHasLocalDrafts: boolean;
+  activeSectionOwnsAdvancedEditSession: boolean;
+  commitWorkbenchLocation: (location: WorkbenchLocation) => unknown;
+  editSession: EditSession | null;
+  selectedGame: ProjectPathDraft['selectedGame'];
+  setExitPrompt: (value: ExitPromptState) => void;
+}) {
+  return useCallback(
+    (destination: WorkbenchSection | null, kind: ExitPromptState['kind']) => {
+      const destinationLocation = destination
+        ? createSectionLocation(destination, {
+            game: selectedGame,
+            projectId: activeProjectId
+          })
+        : null;
+      if (editSession || (kind === 'editor' && activeEditorHasLocalDrafts)) {
+        setExitPrompt({
+          allowGoToChanges:
+            !activeSectionOwnsAdvancedEditSession && !activeEditorHasLocalDrafts,
+          destination: destinationLocation,
+          discardPendingSession: activeSectionOwnsAdvancedEditSession,
+          kind,
+          mode: 'confirm',
+          stageOnlyDexLayout: activeSection === 'dexLayout'
+        });
+        return;
+      }
+
+      if (kind === 'editor' && destinationLocation) {
+        commitWorkbenchLocation(destinationLocation);
+      }
+    },
+    [
+      activeSection,
+      activeProjectId,
+      activeEditorHasLocalDrafts,
+      activeSectionOwnsAdvancedEditSession,
+      commitWorkbenchLocation,
+      editSession,
+      selectedGame,
+      setExitPrompt
+    ]
+  );
+}
+
+function useProjectCacheStatusRefresh({
+  bridge,
+  health,
+  isSvCacheWarming,
+  selectedGame,
+  startSvCacheWarmup,
+  svCacheScopeKey,
+  svCacheRefreshInFlightRef,
+  svCacheSettingsOperationRef,
+  createProjectPaths,
+  draftPathsRef,
+  svCacheOperationGenerationRef,
+  svCacheRefreshOperationRef,
+  svCacheScopeKeyRef,
+  setIsSvCacheRefreshing,
+  setSvCacheStatusScopeKey,
+  setHasSvCacheRequestError,
+  setSvCacheStatus,
+  setHasSvCacheWarmupError,
+  setSvCacheRefreshTick,
+  setBridgeDiagnostics
+}: {
+  bridge: ProjectBridge;
+  health: ProjectHealth | null;
+  isSvCacheWarming: boolean;
+  selectedGame: ProjectPathDraft['selectedGame'];
+  startSvCacheWarmup: (paths: ReturnType<typeof toProjectPaths>, health: ProjectHealth, scopeKey: string, knownStatus?: TrinityCacheStatus) => Promise<void>;
+  svCacheScopeKey: string | null;
+  svCacheRefreshInFlightRef: { current: object | null };
+  svCacheSettingsOperationRef: { current: object | null };
+  createProjectPaths: (draft: ProjectPathDraft) => ReturnType<typeof toProjectPaths>;
+  draftPathsRef: { current: ProjectPathDraft };
+  svCacheOperationGenerationRef: { current: number };
+  svCacheRefreshOperationRef: { current: number };
+  svCacheScopeKeyRef: { current: string | null };
+  setIsSvCacheRefreshing: (value: boolean) => void;
+  setSvCacheStatusScopeKey: (value: string | null) => void;
+  setHasSvCacheRequestError: (value: boolean) => void;
+  setSvCacheStatus: (value: TrinityCacheStatus) => void;
+  setHasSvCacheWarmupError: (value: boolean) => void;
+  setSvCacheRefreshTick: Dispatch<SetStateAction<number>>;
+  setBridgeDiagnostics: (value: ApiDiagnostic[]) => void;
+}) {
+  return useCallback(async () => {
+    if (
+      !isProjectCacheGame(selectedGame) ||
+      svCacheRefreshInFlightRef.current !== null ||
+      svCacheSettingsOperationRef.current !== null
+    ) {
+      return;
+    }
+
+    const refreshInFlightOperation = {};
+    svCacheRefreshInFlightRef.current = refreshInFlightOperation;
+    const paths = createProjectPaths(draftPathsRef.current);
+    const operationScopeKey = svCacheScopeKey;
+    const operationGeneration = svCacheOperationGenerationRef.current + 1;
+    svCacheOperationGenerationRef.current = operationGeneration;
+    const refreshOperation = svCacheRefreshOperationRef.current + 1;
+    svCacheRefreshOperationRef.current = refreshOperation;
+    const isCurrentOperation = () =>
+      svCacheRefreshInFlightRef.current === refreshInFlightOperation &&
+      svCacheOperationGenerationRef.current === operationGeneration &&
+      svCacheScopeKeyRef.current === operationScopeKey;
+    setIsSvCacheRefreshing(true);
+    setSvCacheStatusScopeKey(svCacheScopeKey);
+    setHasSvCacheRequestError(false);
+    try {
+      const response = await getProjectCacheStatusForGame(bridge, selectedGame, paths);
+      if (!isCurrentOperation()) {
+        return;
+      }
+      setSvCacheStatusScopeKey(svCacheScopeKey);
+      setSvCacheStatus(response.status);
+      setHasSvCacheRequestError(false);
+      setHasSvCacheWarmupError(false);
+      setSvCacheRefreshTick((currentTick) => currentTick + 1);
+      if (
+        health &&
+        svCacheScopeKey &&
+        !isSvCacheWarming &&
+        hasValidProjectCacheSource(selectedGame, health) &&
+        response.status.settings.mode !== 'minimal' &&
+        response.status.warmupCompleted < response.status.warmupTotal
+      ) {
+        void startSvCacheWarmup(paths, health, svCacheScopeKey, response.status);
+      }
+    } catch (error) {
+      if (isCurrentOperation() && !isStaleProjectScopeError(error)) {
+        setSvCacheStatusScopeKey(svCacheScopeKey);
+        setHasSvCacheRequestError(true);
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
+    } finally {
+      if (svCacheRefreshInFlightRef.current === refreshInFlightOperation) {
+        svCacheRefreshInFlightRef.current = null;
+      }
+      if (svCacheRefreshOperationRef.current === refreshOperation) {
+        setIsSvCacheRefreshing(false);
+      }
+    }
+  }, [
+    bridge,
+    health,
+    isSvCacheWarming,
+    selectedGame,
+    startSvCacheWarmup,
+    svCacheScopeKey,
+    svCacheRefreshInFlightRef,
+    svCacheSettingsOperationRef,
+    createProjectPaths,
+    draftPathsRef,
+    svCacheOperationGenerationRef,
+    svCacheRefreshOperationRef,
+    svCacheScopeKeyRef,
+    setIsSvCacheRefreshing,
+    setSvCacheStatusScopeKey,
+    setHasSvCacheRequestError,
+    setSvCacheStatus,
+    setHasSvCacheWarmupError,
+    setSvCacheRefreshTick,
+    setBridgeDiagnostics
+  ]);
+}
 
 function useRetainedWorkflowLoader({
   activeSection,

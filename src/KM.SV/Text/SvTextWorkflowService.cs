@@ -342,6 +342,54 @@ public sealed class SvTextWorkflowService
         return LoadCore(project, query: null, unpagedLanguage: language);
     }
 
+    internal SvTextWorkflow LoadForEdit(
+        OpenedProject project,
+        string textKey,
+        SvTextWorkflowQuery? query)
+    {
+        var normalizedQuery = NormalizeQuery(query);
+        if (!TryGetVirtualPathFromTextKey(textKey, out var virtualPath, out var lineIndex)
+            || normalizedQuery is not { Limit: 1 }
+            || normalizedQuery.Offset != lineIndex
+            || !string.Equals(normalizedQuery.SearchText, CreateRelativePath(virtualPath), StringComparison.Ordinal)
+            || !string.Equals(normalizedQuery.Language, GetLanguage(virtualPath), StringComparison.Ordinal)
+            || (normalizedQuery.CategoryId is not null
+                && !string.Equals(normalizedQuery.CategoryId, AllCategoryId, StringComparison.Ordinal)))
+        {
+            return Load(project, query);
+        }
+
+        // Exact mutations use the stable source and line identity. General browsing
+        // still resolves search results and paging across the selected categories.
+        var summary = CreateSummary(project);
+        var diagnostics = new List<ValidationDiagnostic>(summary.Diagnostics);
+        var entries = new List<SvTextEntryRecord>();
+        var references = new List<SvDialogueReferenceRecord>();
+        IReadOnlyList<TextFileSource> sources = [];
+        var language = GetLanguage(virtualPath)!;
+        var lineCount = 0;
+        if (summary.Availability != SvWorkflowAvailability.Disabled)
+        {
+            sources = ResolveMessageSources(GetSourceInventory(project), language);
+            if (TryLoadEntry(project, textKey, diagnostics, out var entry, out lineCount)
+                && entry is not null)
+            {
+                entries.Add(entry);
+                var context = GetLanguageRelativePath(virtualPath, language);
+                references.Add(new SvDialogueReferenceRecord(
+                    CreateDialogueId(context, lineIndex), entry.Label, entry.TextId,
+                    context, CreatePreview(entry.Value), entry.Provenance));
+            }
+        }
+
+        return CreateWorkflow(
+            summary, entries, references, diagnostics, CreateCategories(sources),
+            AllCategoryId, language,
+            new SvTextResultPage(lineIndex, 1, entries.Count, lineIndex > 0,
+                entries.Count > 0 && lineIndex < lineCount - 1),
+            sources.Count);
+    }
+
     public void ClearMemoryCache()
     {
         cacheStore.ClearMemoryCache();
@@ -665,9 +713,20 @@ public sealed class SvTextWorkflowService
         ICollection<ValidationDiagnostic> diagnostics,
         out SvTextEntryRecord? entry)
     {
+        return TryLoadEntry(project, textKey, diagnostics, out entry, out _);
+    }
+
+    private bool TryLoadEntry(
+        OpenedProject project,
+        string? textKey,
+        ICollection<ValidationDiagnostic> diagnostics,
+        out SvTextEntryRecord? entry,
+        out int lineCount)
+    {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(diagnostics);
         entry = null;
+        lineCount = 0;
         if (!TryGetVirtualPathFromTextKey(textKey, out var virtualPath, out var lineIndex))
         {
             diagnostics.Add(CreateDiagnostic(
@@ -682,6 +741,7 @@ public sealed class SvTextWorkflowService
         {
             var dataFile = fileSource.Read(project, virtualPath);
             var textFile = SwShGameTextFile.Parse(dataFile.Bytes);
+            lineCount = textFile.Lines.Count;
             if (lineIndex >= textFile.Lines.Count)
             {
                 diagnostics.Add(CreateDiagnostic(

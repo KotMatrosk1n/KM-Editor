@@ -351,12 +351,14 @@ assert.equal(
   2,
   'Only the cache mode and size settings may explicitly restart warmup.'
 );
-const cacheRetryEnd = app.indexOf('const handleConfirmClearSvCache');
+const cacheRetryStart = app.indexOf('function useProjectCacheStatusRefresh(');
+const cacheRetryEnd = app.indexOf('\nfunction ', cacheRetryStart + 1);
 assert.ok(
-  cacheRetryEnd > cacheSettingsRestartEnd,
+  cacheRetryStart > 0 && cacheRetryEnd > cacheRetryStart,
   'The cache retry handler must remain discoverable by the contract.'
 );
-const cacheRetryBlock = app.slice(cacheSettingsRestartEnd, cacheRetryEnd);
+assert.match(app, /const handleRefreshSvCacheStatus = useProjectCacheStatusRefresh\(/);
+const cacheRetryBlock = app.slice(cacheRetryStart, cacheRetryEnd);
 assert.match(
   cacheRetryBlock,
   /response\.status\.warmupCompleted < response\.status\.warmupTotal[\s\S]*?startSvCacheWarmup\(paths, health, svCacheScopeKey, response\.status\)/,

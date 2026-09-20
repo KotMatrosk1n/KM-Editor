@@ -41,8 +41,13 @@ internal static partial class SwShTrainerWhiteoutMainPatcher
         var baseState = Inspect(vanilla, expectedGame);
         var current = Inspect(source, expectedGame);
         if (baseState.HasAny) throw new InvalidDataException("Trainer Whiteout requires vanilla facility callbacks in Base ExeFS.");
-        if (!baseline.BuildId.SequenceEqual(input.BuildId) || baseline.Text.DecompressedData.Length != input.Text.DecompressedData.Length)
-            throw new InvalidDataException("Trainer Whiteout requires matching base and output executable layouts.");
+        if (!baseline.BuildId.SequenceEqual(input.BuildId)
+            || baseline.Text.Header.MemoryOffset != input.Text.Header.MemoryOffset
+            || baseline.Ro.Header.MemoryOffset != input.Ro.Header.MemoryOffset
+            || baseline.Data.Header.MemoryOffset != input.Data.Header.MemoryOffset
+            || input.Text.DecompressedData.Length < baseline.Text.DecompressedData.Length
+            || (long)input.Text.Header.MemoryOffset + input.Text.DecompressedData.Length > input.Ro.Header.MemoryOffset)
+            throw new InvalidDataException("Trainer Whiteout requires compatible base and output executable layouts.");
         if (installed ? current.Installed : !current.HasAny) return source.ToArray();
         var text = input.Text.DecompressedData.ToArray();
         foreach (var span in layout.Spans)

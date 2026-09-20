@@ -49,7 +49,7 @@ public sealed class SwShTextEditSessionService
 
         var currentSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var sourceWorkflow = textWorkflowService.Load(project, query);
+        var sourceWorkflow = textWorkflowService.LoadForEdit(project, textKey, query);
         var workflow = OverlayPendingEdits(sourceWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
