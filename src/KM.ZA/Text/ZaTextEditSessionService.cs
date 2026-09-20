@@ -45,7 +45,7 @@ public sealed class ZaTextEditSessionService
 
         var currentSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var workflow = textWorkflowService.Load(project, query);
+        var workflow = textWorkflowService.LoadForEdit(project, textKey, query);
         var diagnostics = new List<ValidationDiagnostic>();
 
         if (!CanEditText(project, workflow, diagnostics))

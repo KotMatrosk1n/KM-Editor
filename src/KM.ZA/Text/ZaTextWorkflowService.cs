@@ -294,10 +294,28 @@ public sealed class ZaTextWorkflowService
         return LoadCore(project, query: null, unpagedLanguage: language);
     }
 
+    internal ZaTextWorkflow LoadForEdit(OpenedProject project, string textKey, ZaTextWorkflowQuery? query)
+    {
+        var normalizedQuery = NormalizeQuery(query);
+        if (!TryGetVirtualPathFromTextKey(textKey, out var virtualPath, out var lineIndex)
+            || normalizedQuery is not { Limit: 1 }
+            || normalizedQuery.Offset != lineIndex
+            || !string.Equals(normalizedQuery.SearchText, $"romfs/{virtualPath}", StringComparison.Ordinal)
+            || !string.Equals(normalizedQuery.Language, virtualPath.Split('/')[2], StringComparison.Ordinal)
+            || (normalizedQuery.CategoryId is not null
+                && !string.Equals(normalizedQuery.CategoryId, AllCategoryId, StringComparison.Ordinal)))
+        {
+            return Load(project, query);
+        }
+
+        return LoadCore(project, normalizedQuery, unpagedLanguage: null, exactSourcePath: virtualPath);
+    }
+
     private ZaTextWorkflow LoadCore(
         OpenedProject project,
         ZaTextWorkflowQuery? query,
-        string? unpagedLanguage)
+        string? unpagedLanguage,
+        string? exactSourcePath = null)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -359,7 +377,11 @@ public sealed class ZaTextWorkflowService
         var hasNextPage = false;
         var stopScanning = false;
 
-        foreach (var source in selectedSources)
+        // Exact mutations retain source membership and query checks without reading other tables.
+        var sourcesToRead = exactSourcePath is null
+            ? selectedSources
+            : selectedSources.Where(source => string.Equals(source.VirtualPath, exactSourcePath, StringComparison.Ordinal));
+        foreach (var source in sourcesToRead)
         {
             try
             {

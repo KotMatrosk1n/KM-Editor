@@ -612,6 +612,7 @@ public sealed class SvWorkflowService
         EditSession? session,
         IReadOnlyList<SvItemFieldUpdate> updates)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(updates);
         var workspace = new ProjectWorkspaceService();
@@ -629,6 +630,7 @@ public sealed class SvWorkflowService
         EditSession? session,
         IReadOnlyList<SvPokemonFieldUpdate> updates)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(updates);
         var workspace = new ProjectWorkspaceService();
@@ -646,6 +648,7 @@ public sealed class SvWorkflowService
         EditSession? session,
         IReadOnlyList<SvTrainerFieldUpdate> updates)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(updates);
         var workspace = new ProjectWorkspaceService();
@@ -682,6 +685,7 @@ public sealed class SvWorkflowService
         int? moveId,
         int? level)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         ArgumentNullException.ThrowIfNull(paths);
         var workspace = new ProjectWorkspaceService();
         var source = new SvWorkflowFileSource(
@@ -698,6 +702,7 @@ public sealed class SvWorkflowService
         EditSession? session,
         IReadOnlyList<SvEncounterSlotFieldUpdate> updates)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(updates);
         var workspace = new ProjectWorkspaceService();
@@ -1118,7 +1123,10 @@ public sealed class SvWorkflowService
 
     public SvStarmobilesEditResult StageStarmobiles(ProjectPaths paths, EditSession? session,
         string revision, IReadOnlyList<SvStarmobileUpdate> updates)
-        => starmobilesService.Stage(paths, session, revision, updates);
+    {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
+        return starmobilesService.Stage(paths, session, revision, updates);
+    }
 
     public SvHabitatCoordinatesWorkflow LoadHabitatCoordinates(
         ProjectPaths paths,
@@ -1210,6 +1218,7 @@ public sealed class SvWorkflowService
         ProjectPaths paths,
         IReadOnlyList<SvModMergerSourceRequest> modSources)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(modSources);
 
@@ -1233,6 +1242,7 @@ public sealed class SvWorkflowService
         string field,
         string value)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return itemsEditSessionService.UpdateField(paths, session, itemId, field, value);
     }
 
@@ -1241,6 +1251,7 @@ public sealed class SvWorkflowService
         EditSession? session,
         IReadOnlyList<SvItemFieldUpdate> updates)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return itemsEditSessionService.UpdateFields(paths, session, updates);
     }
 
@@ -1251,6 +1262,7 @@ public sealed class SvWorkflowService
         string field,
         string value)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return movesEditSessionService.UpdateField(paths, session, moveId, field, value);
     }
 
@@ -1259,6 +1271,7 @@ public sealed class SvWorkflowService
         EditSession? session,
         IReadOnlyList<SvMoveFieldUpdate> updates)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return movesEditSessionService.UpdateFields(paths, session, updates);
     }
 
@@ -1269,6 +1282,7 @@ public sealed class SvWorkflowService
         string value,
         SvTextWorkflowQuery? query = null)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return textEditSessionService.UpdateEntry(paths, session, textKey, value, query);
     }
 
@@ -1279,6 +1293,7 @@ public sealed class SvWorkflowService
         string field,
         string value)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return pokemonEditSessionService.UpdateField(paths, session, personalId, field, value);
     }
 
@@ -1287,6 +1302,7 @@ public sealed class SvWorkflowService
         EditSession? session,
         IReadOnlyList<SvPokemonFieldUpdate> updates)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return pokemonEditSessionService.UpdateFields(paths, session, updates);
     }
 
@@ -1297,6 +1313,7 @@ public sealed class SvWorkflowService
         IReadOnlyList<SvPokemonEvolutionUpdate> evolutionUpdates,
         IReadOnlyList<SvPokemonLearnsetUpdate> learnsetUpdates)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return pokemonEditSessionService.UpdateComposite(
             paths,
             session,
@@ -1314,6 +1331,7 @@ public sealed class SvWorkflowService
         int? moveId,
         int? level)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return pokemonEditSessionService.UpdateLearnset(paths, session, personalId, action, slot, moveId, level);
     }
 
@@ -1329,6 +1347,7 @@ public sealed class SvWorkflowService
         int? form,
         int? level)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return pokemonEditSessionService.UpdateEvolution(
             paths,
             session,
@@ -1350,6 +1369,7 @@ public sealed class SvWorkflowService
         string field,
         string value)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return trainersEditSessionService.UpdateField(paths, session, trainerId, slot, field, value);
     }
 
@@ -1358,6 +1378,7 @@ public sealed class SvWorkflowService
         EditSession? session,
         IReadOnlyList<SvTrainerFieldUpdate> updates)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return trainersEditSessionService.UpdateFields(paths, session, updates);
     }
 
@@ -1369,6 +1390,7 @@ public sealed class SvWorkflowService
         string field,
         string value)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return encountersEditSessionService.UpdateSlotField(paths, session, tableId, slot, field, value);
     }
 
@@ -1377,6 +1399,7 @@ public sealed class SvWorkflowService
         EditSession? session,
         IReadOnlyList<SvEncounterSlotFieldUpdate> updates)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return encountersEditSessionService.UpdateSlotFields(paths, session, updates);
     }
 
@@ -1387,6 +1410,7 @@ public sealed class SvWorkflowService
         string field,
         string value)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return teraRaidsEditSessionService.UpdateField(paths, session, recordId, field, value);
     }
 
@@ -1395,6 +1419,7 @@ public sealed class SvWorkflowService
         EditSession? session,
         IReadOnlyList<SvTeraRaidFieldUpdate> updates)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return teraRaidsEditSessionService.UpdateFields(paths, session, updates);
     }
 
@@ -1406,6 +1431,7 @@ public sealed class SvWorkflowService
         string value,
         string? expectedEncounterId = null)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return staticEncountersEditSessionService.UpdateField(
             paths,
             session,
@@ -1420,6 +1446,7 @@ public sealed class SvWorkflowService
         EditSession? session,
         IReadOnlyList<SvStaticEncounterFieldUpdate> updates)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return staticEncountersEditSessionService.UpdateFields(paths, session, updates);
     }
 
@@ -1430,6 +1457,7 @@ public sealed class SvWorkflowService
         string field,
         string value)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return giftPokemonEditSessionService.UpdateField(paths, session, giftIndex, field, value);
     }
 
@@ -1438,6 +1466,7 @@ public sealed class SvWorkflowService
         EditSession? session,
         IReadOnlyList<SvGiftPokemonFieldUpdate> updates)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return giftPokemonEditSessionService.UpdateFields(paths, session, updates);
     }
 
@@ -1448,6 +1477,7 @@ public sealed class SvWorkflowService
         string field,
         string value)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return tradePokemonEditSessionService.UpdateField(paths, session, tradeIndex, field, value);
     }
 
@@ -1456,6 +1486,7 @@ public sealed class SvWorkflowService
         EditSession? session,
         IReadOnlyList<SvTradePokemonFieldUpdate> updates)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return tradePokemonEditSessionService.UpdateFields(paths, session, updates);
     }
 
@@ -1468,6 +1499,7 @@ public sealed class SvWorkflowService
         string value,
         string? rowId = null)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return shopsEditSessionService.UpdateInventoryItem(paths, session, shopId, slot, field, value, rowId);
     }
 
@@ -1476,6 +1508,7 @@ public sealed class SvWorkflowService
         EditSession? session,
         IReadOnlyList<SvShopInventoryItemUpdate?>? updates)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return shopsEditSessionService.UpdateInventoryItems(paths, session, updates);
     }
 
@@ -1484,6 +1517,7 @@ public sealed class SvWorkflowService
         EditSession? session,
         bool allAvailable)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return tmMachineControlsEditSessionService.StageRecipeAvailability(paths, session, allAvailable);
     }
 
@@ -1492,6 +1526,7 @@ public sealed class SvWorkflowService
         EditSession? session,
         bool alwaysVisible)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return tmMachineControlsEditSessionService.StageMaterialVisibility(paths, session, alwaysVisible);
     }
 
@@ -1503,6 +1538,7 @@ public sealed class SvWorkflowService
         SvHabitatRowBinding binding,
         SvHabitatCoordinateChoice coordinate)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return habitatCoordinatesEditSessionService.StageCoordinate(
             paths,
             session,
@@ -1519,6 +1555,7 @@ public sealed class SvWorkflowService
         string field,
         string value)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return placementEditSessionService.UpdateObjectField(paths, session, objectId, field, value);
     }
 
@@ -1527,6 +1564,7 @@ public sealed class SvWorkflowService
         EditSession? session,
         IReadOnlyList<SvPlacementObjectFieldUpdate> updates)
     {
+        using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         return placementEditSessionService.UpdateObjectFields(paths, session, updates);
     }
 
