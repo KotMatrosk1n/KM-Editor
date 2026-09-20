@@ -1505,6 +1505,11 @@ export const pokemonDexEditorSchema = z.strictObject({
 export const pokemonRecordSchema = z.strictObject({
   abilities: pokemonAbilitySetSchema,
   alphaMove: pokemonAlphaMoveSchema.nullable().optional().default(null),
+  alphaSizes: z.array(z.strictObject({
+    field: z.string(), resourcePath: z.string(), genders: z.array(z.number().int()),
+    scale: z.number().positive(), minimumScale: z.number().positive(), vanillaScale: z.number().positive(),
+    sharedPersonalIds: z.array(z.number().int()), ordinaryScale: z.number().positive()
+  })).optional().default([]),
   baseExperience: z.number().int(),
   baseStats: pokemonBaseStatsSchema,
   catchRate: z.number().int().nonnegative(),

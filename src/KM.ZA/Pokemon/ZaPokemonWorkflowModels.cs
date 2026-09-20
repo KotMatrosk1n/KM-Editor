@@ -163,6 +163,7 @@ public sealed record ZaPokemonRecord(
     ZaPokemonAlphaMove? AlphaMove = null)
 {
     internal ZaPokemonVanillaYieldDefaults? VanillaYieldDefaults { get; init; }
+    public IReadOnlyList<ZaPokemonAlphaSize>? AlphaSizes { get; init; }
 }
 
 internal sealed record ZaPokemonVanillaYieldDefaults(

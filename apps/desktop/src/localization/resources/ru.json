@@ -1,5 +1,11 @@
 {
   "keys": {
+    "pokemon.alphaSize.ordinary": "Середина обычного диапазона: {value}×",
+    "pokemon.alphaSize.help": "Используется масштаб модели из игры. 1× означает исходный размер модели, который может отличаться от обычного размера. Один фиксированный масштаб применяется ко всем альфам с этой настройкой. У других форм могут быть отдельные настройки. Введённые вручную значения округляются до двух знаков после запятой. Существующие значения и значения по умолчанию сохраняют исходную точность.",
+    "pokemon.alphaSize.default": "По умолчанию: {value}×",
+    "pokemon.alphaSize.range": "Текущий диапазон: от {minimum}× до {maximum}×. Изменение заменит его одним фиксированным размером.",
+    "pokemon.alphaSize.shared": "Также влияет на:",
+    "pokemon.alphaSize.restore": "Восстановить по умолчанию",
     "settings.cache.status.awaitingValidation": "Ожидание проверки путей",
     "settings.cache.status.validatingPaths": "Проверка путей",
     "settings.cache.status.validationRequired": "Проверьте пути проекта, чтобы проверить состояние кэша.",
@@ -4325,6 +4331,19 @@
     "editorText.pending.shopSlot": "{name} ({location}), слот #{slot}: {item}"
   },
   "literals": {
+    "Apply Form or Pokédex placement changes before editing alpha size.": "Примените изменения формы или позиции в Покедексе перед редактированием размера альфы.",
+    "Alpha Size": "Размер альфы",
+    "Alpha scale (×)": "Масштаб альфы (×)",
+    "Female alpha scale (×)": "Масштаб альфы самки (×)",
+    "Alpha scale must be a positive finite number.": "Масштаб альфы должен быть положительным конечным числом.",
+    "Alpha size configuration could not be verified.": "Не удалось проверить настройки размера альфы.",
+    "Alpha size catalog could not be verified.": "Не удалось проверить каталог размеров альф.",
+    "Alpha size output could not be written. Check Diagnostics and review again.": "Не удалось записать размер альфы. Проверьте диагностику и повторите проверку изменений.",
+    "Alpha size sources changed after Review. Review the changes again.": "Данные размера альфы изменились после проверки. Проверьте изменения ещё раз.",
+    "Alpha size sources or form bindings changed. Reload Pokemon Data and review again.": "Источники или привязки форм размера альфы изменились. Перезагрузите данные покемонов и повторите проверку.",
+    "Set Pokemon alpha size.": "Задать размер альфы покемона.",
+    "Apply Pokemon alpha size.": "Применить размер альфы покемона.",
+    "Update the output resource descriptor.": "Обновить дескриптор выходных ресурсов.",
     "Trainer Whiteout": "Поражение в бою с тренером",
     "Control trainer whiteout behavior.": "Поведение после поражения в Sword и Shield",
     "Starmobile abilities could not be loaded. Reload the editor before editing abilities.": "Не удалось загрузить способности стармобиля. Перезагрузите редактор перед их изменением.",

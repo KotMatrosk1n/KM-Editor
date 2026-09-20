@@ -1,0 +1,22 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+.alpha-size-group {
+  grid-column: 1 / -1;
+}
+
+.alpha-size-group .field-help {
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
+.alpha-size-details {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.alpha-size-details button {
+  justify-self: start;
+  white-space: normal;
+}

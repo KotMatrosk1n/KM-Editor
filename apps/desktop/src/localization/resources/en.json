@@ -1,5 +1,11 @@
 {
   "keys": {
+    "pokemon.alphaSize.ordinary": "Ordinary midpoint: {value}×",
+    "pokemon.alphaSize.help": "Uses the game’s model scale. 1× is the original model size, which may differ from ordinary size. This sets one fixed scale for all alphas using this configuration. Other forms may have separate settings. Manual edits round to two decimal places. Existing values and defaults keep their original precision.",
+    "pokemon.alphaSize.default": "Default: {value}×",
+    "pokemon.alphaSize.range": "Current range: {minimum}× to {maximum}×. Editing replaces this range with one fixed size.",
+    "pokemon.alphaSize.shared": "Also affects:",
+    "pokemon.alphaSize.restore": "Restore Default",
     "settings.cache.status.awaitingValidation": "Awaiting path validation",
     "settings.cache.status.validatingPaths": "Validating paths",
     "settings.cache.status.validationRequired": "Validate the project paths to check the cache status.",
@@ -4325,6 +4331,19 @@
     "editorText.pending.shopSlot": "{name} ({location}) slot #{slot}: {item}"
   },
   "literals": {
+    "Apply Form or Pokédex placement changes before editing alpha size.": "Apply Form or Pokédex placement changes before editing alpha size.",
+    "Alpha Size": "Alpha Size",
+    "Alpha scale (×)": "Alpha scale (×)",
+    "Female alpha scale (×)": "Female alpha scale (×)",
+    "Alpha scale must be a positive finite number.": "Alpha scale must be a positive finite number.",
+    "Alpha size configuration could not be verified.": "Alpha size configuration could not be verified.",
+    "Alpha size catalog could not be verified.": "Alpha size catalog could not be verified.",
+    "Alpha size output could not be written. Check Diagnostics and review again.": "Alpha size output could not be written. Check Diagnostics and review again.",
+    "Alpha size sources changed after Review. Review the changes again.": "Alpha size sources changed after Review. Review the changes again.",
+    "Alpha size sources or form bindings changed. Reload Pokemon Data and review again.": "Alpha size sources or form bindings changed. Reload Pokemon Data and review again.",
+    "Set Pokemon alpha size.": "Set Pokemon alpha size.",
+    "Apply Pokemon alpha size.": "Apply Pokemon alpha size.",
+    "Update the output resource descriptor.": "Update the output resource descriptor.",
     "Trainer Whiteout": "Trainer Whiteout",
     "Control trainer whiteout behavior.": "Sword and Shield trainer defeat behavior",
     "Starmobile abilities could not be loaded. Reload the editor before editing abilities.": "Starmobile abilities could not be loaded. Reload the editor before editing abilities.",

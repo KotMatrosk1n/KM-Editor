@@ -247,7 +247,14 @@ public sealed record PokemonRecordDto(
     PokemonProvenanceDto Provenance,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SpriteName = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    PokemonAlphaMoveDto? AlphaMove = null);
+    PokemonAlphaMoveDto? AlphaMove = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<PokemonAlphaSizeDto>? AlphaSizes = null);
+
+public sealed record PokemonAlphaSizeDto(
+    string Field, string ResourcePath, IReadOnlyList<int> Genders,
+    float Scale, float MinimumScale, float VanillaScale,
+    IReadOnlyList<int> SharedPersonalIds, float OrdinaryScale);
 
 public sealed record PokemonEditableFieldDto(
     string Field,
