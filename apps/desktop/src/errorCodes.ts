@@ -16,6 +16,25 @@ export const kmErrorCodeSchema = z
   );
 
 export const projectBridgeErrorCodes = {
+  dataTruncated: "KM-BRIDGE-DATA-TRUNCATED",
+  storedJsonInvalid: "KM-BRIDGE-STORED-JSON-INVALID",
+  resourceBusy: "KM-BRIDGE-RESOURCE-BUSY",
+  storageFull: "KM-BRIDGE-STORAGE-FULL",
+  pathTooLong: "KM-BRIDGE-PATH-TOO-LONG",
+
+  workspaceDraftInvalid: "KM-WORKSPACE-DRAFT-INVALID",
+  workspacePersonalStateInvalid: "KM-WORKSPACE-PERSONAL-STATE-INVALID",
+  changeSetInvalid: "KM-CHANGE-SET-INVALID",
+  editSessionContractInvalid: "KM-EDIT-SESSION-CONTRACT-INVALID",
+  outputScopeMismatch: "KM-OUTPUT-SCOPE-MISMATCH",
+  outputReviewExpired: "KM-OUTPUT-REVIEW-EXPIRED",
+  outputOwnershipConflict: "KM-OUTPUT-OWNERSHIP-CONFLICT",
+  outputCheckpointAlreadyCurrent: "KM-OUTPUT-CHECKPOINT-ALREADY-CURRENT",
+  outputPreimageChanged: "KM-OUTPUT-PREIMAGE-CHANGED",
+  outputReviewStateUnverifiable: "KM-OUTPUT-REVIEW-STATE-UNVERIFIABLE",
+  outputStateRevisionChanged: "KM-OUTPUT-STATE-REVISION-CHANGED",
+  outputMetadataUnavailable: "KM-OUTPUT-METADATA-UNAVAILABLE",
+
   raidDensInvalid: "KM-SWSH-RAID-DENS-INVALID",
   trainerWhiteoutInvalid: "KM-SWSH-TRAINER-WHITEOUT-INVALID",
   trainerDynamaxInvalid: "KM-SWSH-TRAINER-DYNAMAX-INVALID",
@@ -242,3 +261,10 @@ export const uiErrorCodes = {
 export function isKmErrorCode(value: unknown): value is KmErrorCode {
   return typeof value === "string" && kmErrorCodePattern.test(value);
 }
+
+export const cacheDiagnosticCodes = {
+  progressStalled: "KM-CACHE-PROGRESS-STALLED",
+  progressTotalChanged: "KM-CACHE-PROGRESS-TOTAL-CHANGED",
+  progressRegressed: "KM-CACHE-PROGRESS-REGRESSED",
+  progressInvalid: "KM-CACHE-PROGRESS-INVALID",
+} as const satisfies Record<string, KmErrorCode>;

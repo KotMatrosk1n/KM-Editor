@@ -16,6 +16,7 @@ import frResource from './resources/fr.json';
 import ruResource from './resources/ru.json';
 import ukResource from './resources/uk.json';
 import zhResource from './resources/zh.json';
+import { editorLiteralPatterns } from './editorLiteralPatterns';
 import {
   isBuiltInLanguageCode,
   isCommunityLocaleId,
@@ -507,6 +508,18 @@ function translateLiteralBodyForLanguage(language: InterfaceLocale, literal: str
   const direct = resource.literals[literal] ?? resourcesByLanguage.en.literals[literal];
   if (direct) {
     return direct;
+  }
+
+  for (const entry of editorLiteralPatterns) {
+    const match = entry.pattern.exec(literal);
+    if (!match) continue;
+    const params = Object.fromEntries(entry.parameters.map((name, index) => [
+      name,
+      entry.translate?.includes(name)
+        ? translateLiteralBodyForLanguage(language, match[index + 1])
+        : match[index + 1]
+    ]));
+    return formatLiteralTemplate(language, entry.template, params);
   }
 
   const hyperTrainingLevelMatch = /^Lv\. (\d+)$/.exec(literal);

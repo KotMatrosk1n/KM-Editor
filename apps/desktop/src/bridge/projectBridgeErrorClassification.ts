@@ -19,6 +19,19 @@ import { ProjectBridgeError } from './projectBridgeError';
 // safety guards. They remain visible to the caller, but they are not evidence
 // that the bridge itself failed unexpectedly.
 const expectedProjectBridgeRejectionCodes = new Set<KmErrorCode>([
+  projectBridgeErrorCodes.workspaceDraftInvalid,
+  projectBridgeErrorCodes.workspacePersonalStateInvalid,
+  projectBridgeErrorCodes.changeSetInvalid,
+  projectBridgeErrorCodes.editSessionContractInvalid,
+  projectBridgeErrorCodes.outputScopeMismatch,
+  projectBridgeErrorCodes.outputReviewExpired,
+  projectBridgeErrorCodes.outputOwnershipConflict,
+  projectBridgeErrorCodes.outputCheckpointAlreadyCurrent,
+  projectBridgeErrorCodes.outputPreimageChanged,
+  projectBridgeErrorCodes.outputReviewStateUnverifiable,
+  projectBridgeErrorCodes.outputStateRevisionChanged,
+  projectBridgeErrorCodes.outputMetadataUnavailable,
+
   ...Object.values(gameplaySettingsErrorCodes),
   ...Object.values(guidedDesignErrorCodes),
   ...Object.values(inGameSettingsPackageErrorCodes),

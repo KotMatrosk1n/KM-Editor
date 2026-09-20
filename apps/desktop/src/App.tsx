@@ -8453,6 +8453,13 @@ export function App({
             setBridgeDiagnostics([
               {
                 domain: 'cache',
+                code: progressTransition.kind === 'stalled'
+                  ? 'KM-CACHE-PROGRESS-STALLED'
+                  : progressTransition.reason === 'total-changed'
+                    ? 'KM-CACHE-PROGRESS-TOTAL-CHANGED'
+                    : progressTransition.reason === 'completed-regressed'
+                      ? 'KM-CACHE-PROGRESS-REGRESSED'
+                      : 'KM-CACHE-PROGRESS-INVALID',
                 message: `The ${getTrinityCacheTitle(paths.selectedGame)} build ${failureDetail}. KM Editor kept the last verified progress instead of accepting an inconsistent result. Retry the cache build.`,
                 severity: 'error'
               }
@@ -33189,9 +33196,9 @@ function SelectedTrainerPanel({
             <span>Cancel</span>
           </button>
           <span className="draft-action-summary">
-            Trainer: {formatDraftSummary(trainerDraftSummary)}
+            {t('editorText.trainerDraftSummary', { summary: translateLiteral(formatDraftSummary(trainerDraftSummary)) })}
             {selectedPokemon
-              ? `; party: ${formatDraftSummary(pokemonDraftSummary)}`
+              ? t('editorText.partyDraftSummary', { summary: translateLiteral(formatDraftSummary(pokemonDraftSummary)) })
               : ''}
             ;{' '}
             {t('editorDrafts.summary.trainers', {
@@ -37283,7 +37290,19 @@ function getTrainerPendingEditDisplayDetails(
     editorLabel,
     fieldLabel: field?.label,
     newValueLabel: formatPendingEditValue(edit.newValue, field),
-    recordLabel
+    recordLabel,
+    recordLocalizationKey: trainerClass
+      ? 'editorText.pending.trainerClass'
+      : edit.field === classBallIdFieldName && trainerId !== null
+        ? 'editorText.pending.trainerClassId'
+        : trainer && trainerPokemon ? 'editorText.pending.trainerSlot' : undefined,
+    recordLocalizationParams: trainerClass
+      ? { name: trainerClass.trainerClass, id: trainerClass.trainerClassId }
+      : edit.field === classBallIdFieldName && trainerId !== null
+        ? { id: trainerId }
+        : trainer && trainerPokemon
+          ? { name: trainer.name, id: trainer.trainerId, slot: formatTrainerSlotNumber(trainerPokemon.slot, editorFamily), species: trainerPokemon.species }
+          : undefined
   });
 }
 
@@ -37305,6 +37324,11 @@ function getShopPendingEditDisplayDetails(
       edit.field === shopSetInventoryFieldName
         ? formatShopInventoryOrderValue(edit.newValue, context)
         : formatPendingEditValue(edit.newValue, field),
+    recordLocalizationKey: shop && edit.field !== shopSetInventoryFieldName && slotItem
+      ? 'editorText.pending.shopSlot' : undefined,
+    recordLocalizationParams: shop && slotItem
+      ? { name: shop.name, location: shop.location, slot: slotItem.slot, item: slotItem.itemName }
+      : undefined,
     recordLabel: shop
       ? `${shop.name} (${shop.location})${
           edit.field !== shopSetInventoryFieldName && slotItem ? ` slot #${slotItem.slot}: ${slotItem.itemName}` : ''
@@ -37358,6 +37382,12 @@ function getEncounterPendingEditDisplayDetails(
     editorLabel,
     fieldLabel: field?.label,
     newValueLabel: formatPendingEditValue(edit.newValue, field),
+    recordLocalizationKey: table && slotRecord
+      ? sharedSpawnerCount > 1 ? 'editorText.pending.encounterSlotShared' : 'editorText.pending.encounterSlot'
+      : undefined,
+    recordLocalizationParams: table && slotRecord
+      ? { location: tableLocation ?? '', type: table.encounterType, version: table.gameVersion, weather: slotRecord.weather, slot: isZaEncounter ? slotRecord.slot + 1 : slotRecord.slot, species: slotRecord.species, count: sharedSpawnerCount }
+      : undefined,
     recordLabel:
       table && slotRecord
         ? `${tableLocation} ${table.encounterType} ${table.gameVersion} ${slotRecord.weather} slot #${
@@ -38565,6 +38595,7 @@ function ShinyLockRemovalConfirmationModal({
   recordLabelPlural: string;
   targetLabel?: string;
 }) {
+  const { t, translateLiteral } = useLocalization();
   const dialogRef = useModalDialog<HTMLDivElement>({
     canClose: !isApplying,
     onClose: onCancel
@@ -38583,15 +38614,13 @@ function ShinyLockRemovalConfirmationModal({
       <section className="modal-panel">
         <div className="panel-heading">
           <ShieldCheck aria-hidden="true" size={18} />
-          <h2 id="shiny-lock-removal-heading">Remove {label} Shiny Lock?</h2>
+          <h2 id="shiny-lock-removal-heading">{t('editorText.shiny.title', { label: translateLiteral(label) })}</h2>
         </div>
         <p className="modal-copy">
-          This will stage shiny lock edits for {affectedCount} {affectedLabel}. Their shiny lock
-          value will be set to {targetLabel}, which lets the game use its normal shiny behavior.
+          {t('editorText.shiny.description', { count: affectedCount, records: translateLiteral(affectedLabel), target: translateLiteral(targetLabel) })}
         </p>
         <p className="modal-copy modal-copy-muted">
-          Records that are already {targetLabel} are skipped. This still uses the normal review and apply
-          flow, so files are not written until you approve the change plan.
+          {t('editorText.shiny.review', { target: translateLiteral(targetLabel) })}
         </p>
         <div className="modal-actions">
           <button className="secondary-button" disabled={isApplying} onClick={onCancel} type="button">
@@ -48455,7 +48484,7 @@ function ZaEncounterGroupBrowser({
         <span>{formatZaEncounterGroupCount(visibleEncounterGroups.length)}</span>
         <span>{formatZaEncounterSpawnerCount(displayedTables.length)}</span>
         <span>
-          {visibleSlotCount} {visibleSlotCount === 1 ? 'slot' : 'slots'} in this view
+          {t('editorText.encounters.slotsInView', { count: visibleSlotCount })}
         </span>
       </div>
 
@@ -48765,13 +48794,13 @@ function EncounterAreaCopyConfirmationModal({
   onConfirm: () => void;
   request: EncounterAreaCopyRequest;
 }) {
+  const { t, translateLiteral } = useLocalization();
   const dialogRef = useModalDialog<HTMLDivElement>({
     canClose: !isApplying,
     onClose: onCancel
   });
-  const conditionLabel = request.conditionLabels.join(', ');
-  const slotLabel = request.updates.length === 1 ? 'slot' : 'slots';
-  const skippedLabel = request.skippedConditionLabels.join(', ');
+  const conditionLabel = request.conditionLabels.map(translateLiteral).join(', ');
+  const skippedLabel = request.skippedConditionLabels.map(translateLiteral).join(', ');
 
   return (
     <div
@@ -48785,25 +48814,21 @@ function EncounterAreaCopyConfirmationModal({
       <section className="modal-panel">
         <div className="panel-heading">
           <ArrowLeftRight aria-hidden="true" size={18} />
-          <h2 id="encounter-area-copy-heading">Apply to {request.targetArea}?</h2>
+          <h2 id="encounter-area-copy-heading">{t('editorText.encounters.copyTitle', { area: request.targetArea })}</h2>
         </div>
         <p className="modal-copy">
-          Copy Pokemon, forms, percentages, and min/max levels from {request.sourceArea} to{' '}
-          {request.targetArea} for {request.sourceLocation}.
+          {t('editorText.encounters.copyDescription', { source: request.sourceArea, target: request.targetArea, location: request.sourceLocation })}
         </p>
         <p className="modal-copy modal-copy-muted">
-          This will update {request.updates.length} matching {slotLabel} across {conditionLabel}.
-          Missing destination conditions or slot numbers are ignored.
+          {t('editorText.encounters.copySummary', { count: request.updates.length, conditions: conditionLabel })}
         </p>
         {request.skippedConditionLabels.length > 0 ? (
-          <p className="modal-copy modal-copy-muted">Skipped: {skippedLabel}.</p>
+          <p className="modal-copy modal-copy-muted">{t('editorText.encounters.skipped', { conditions: skippedLabel })}</p>
         ) : null}
         {request.targetDraftCollisions.length > 0 ? (
           <p className="modal-copy">
             <strong>Unsaved target drafts will be replaced.</strong>{' '}
-            Applying will replace {request.targetDraftCollisions.length}{' '}
-            {request.targetDraftCollisions.length === 1 ? 'draft' : 'drafts'} in{' '}
-            {request.targetArea}. They will remain untouched if staging fails.
+            {t('editorText.encounters.replaceDrafts', { count: request.targetDraftCollisions.length, area: request.targetArea })}
           </p>
         ) : null}
         <div className="modal-actions">
@@ -52780,6 +52805,7 @@ function PlacementObjectGroupBrowser({
   onSelectObject: (objectId: string | null) => void;
   selectedObjectId: string;
 }) {
+  const { t } = useLocalization();
   const subgroups = getPlacementObjectSubgroups(group);
   const isBossBattleGroup = group.map === 'Boss Battles';
   const selectedSubgroup =
@@ -52801,10 +52827,10 @@ function PlacementObjectGroupBrowser({
     <section className="za-placement-object-browser" aria-label="Z-A placement spawner group">
       <div className="sv-encounter-browser-summary">
         <span>{group.label}</span>
-        <span>{group.objects.length} transforms</span>
+        <span>{t('editorText.placement.transforms', { count: group.objects.length })}</span>
         {subgroups.length > 1 ? (
           <span>
-            {subgroups.length} {isBossBattleGroup ? 'battle contexts' : 'locations'}
+            {t(isBossBattleGroup ? 'editorText.placement.contexts' : 'editorText.placement.locations', { count: subgroups.length })}
           </span>
         ) : null}
         <span>{group.map}</span>
@@ -57398,7 +57424,7 @@ function SvModMergerSection({
   preview: SvModMergerPreview | ZaModMergerPreview | null;
   workflow: SvModMergerWorkflow | ZaModMergerWorkflow | null;
 }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const canStage =
     modSources.some((source) => source.isEnabled) &&
     !isStaging &&
@@ -57512,7 +57538,7 @@ function SvModMergerSection({
                     <h3>{sourceRecord?.name ?? getFileName(source.path)}</h3>
                     <p>{source.path}</p>
                     <span className="inline-metric">
-                      {sourceRecord?.fileCount ?? 0} files
+                      {t('text.categories.fileCount', { count: sourceRecord?.fileCount ?? 0 })}
                     </span>
                   </div>
                   <div className="workflow-actions">
@@ -59562,6 +59588,7 @@ function ChangesSection({
 }
 
 function WorkProgressModal({ progress }: { progress: WorkProgressState }) {
+  const { t, translateLiteral } = useLocalization();
   const dialogRef = useModalDialog({
     canClose: false,
     onClose: () => undefined
@@ -59587,7 +59614,7 @@ function WorkProgressModal({ progress }: { progress: WorkProgressState }) {
           progress.totalSteps !== undefined &&
           progress.totalSteps > 1 ? (
             <span className="status-pill status-pill-info">
-              Phase {progress.step} of {progress.totalSteps}
+              {t('editorText.progress.phase', { step: progress.step, total: progress.totalSteps })}
             </span>
           ) : null}
         </div>
@@ -59599,7 +59626,7 @@ function WorkProgressModal({ progress }: { progress: WorkProgressState }) {
         <dl className="work-progress-detail">
           <div>
             <dt>Status</dt>
-            <dd>{isDeterminate ? `${percent}% complete` : 'In progress'}</dd>
+            <dd>{isDeterminate ? t('editorText.progress.percent', { percent: percent ?? 0 }) : translateLiteral('In progress')}</dd>
           </div>
           {progress.step !== undefined &&
           progress.totalSteps !== undefined &&
@@ -59611,7 +59638,7 @@ function WorkProgressModal({ progress }: { progress: WorkProgressState }) {
           ) : null}
         </dl>
         {progress.steps?.length ? (
-          <ol aria-label={`${progress.label} phases`} className="changes-progress work-progress-phases">
+          <ol aria-label={t('editorText.progress.phases', { operation: translateLiteral(progress.label) })} className="changes-progress work-progress-phases">
             {progress.steps.map((step, index) => (
               <li
                 aria-current={step.state === 'active' ? 'step' : undefined}
@@ -59638,6 +59665,7 @@ function SupportSearchConfirmationModal({
   onConfirm: () => void;
   selectedGame: ProjectGame;
 }) {
+  const { t } = useLocalization();
   const dialogRef = useModalDialog({ onClose: onCancel });
   const gameLabel = isPokemonLegendsZAGame(selectedGame) ? 'Z-A' : 'S/V';
 
@@ -59656,8 +59684,7 @@ function SupportSearchConfirmationModal({
           <h2 id="support-search-confirmation-heading">Search for oo2core_8_win64.dll?</h2>
         </div>
         <p className="modal-copy">
-          KM Editor will scan local filesystem roots to find oo2core_8_win64.dll for {gameLabel}
-          project data. This can take a while on large drives.
+          {t('editorText.supportSearch.description', { game: gameLabel })}
         </p>
         <p className="modal-copy modal-copy-muted">
           The search only fills the oo2core_8_win64.dll folder field when a match is found.
@@ -59753,20 +59780,12 @@ function PokemonYieldConfirmationModal({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const { t, translateLiteral } = useLocalization();
   const dialogRef = useModalDialog({ onClose: onCancel });
   const isRestore = action === 'restore';
-  const label = kind === 'exp' ? 'EXP Yield' : 'EV Yield';
-  const fieldDescription = kind === 'exp' ? 'Base EXP yield' : 'EV yield';
-  const removeDescription =
-    kind === 'exp'
-      ? 'Remove EXP Yield will set every Pokemon Base EXP yield to 0. This stages one pending Pokemon change and does not write files until you review and apply it from Changes.'
-      : 'Remove EV Yield will set every EV yield stat on every Pokemon to 0. This stages one pending Pokemon change and does not write files until you review and apply it from Changes.';
-  const restoreDescription =
-    kind === 'exp'
-      ? `Restore ${label} will copy every Pokemon ${fieldDescription} back from vanilla personal data. Any custom EXP yields currently staged or already in the output will be overwritten and are not restorable from KM Editor after these changes are applied.`
-      : 'Restore EV Yield will copy every Pokemon EV yield back from vanilla personal data. Any custom EV yields currently staged or already in the output will be overwritten and are not restorable from KM Editor after these changes are applied.';
-  const title = isRestore ? `Restore ${label}?` : `Remove ${label}?`;
-  const description = isRestore ? restoreDescription : removeDescription;
+  const label = translateLiteral(kind === 'exp' ? 'EXP Yield' : 'EV Yield');
+  const title = t(isRestore ? 'editorText.yield.restoreTitle' : 'editorText.yield.removeTitle', { label });
+  const description = t(isRestore ? 'editorText.yield.restoreDescription' : `editorText.yield.remove.${kind}`, { label });
   const Icon = isRestore ? RefreshCw : Trash2;
   const headingId = `${kind}-yield-confirmation-heading`;
 
@@ -59792,7 +59811,7 @@ function PokemonYieldConfirmationModal({
             type="button"
           >
             <Icon aria-hidden="true" size={16} />
-            <span>{isRestore ? `Confirm Restore ${label}` : `Confirm Remove ${label}`}</span>
+            <span>{t(isRestore ? 'editorText.yield.confirmRestore' : 'editorText.yield.confirmRemove', { label })}</span>
           </button>
           <button className="secondary-button" onClick={onCancel} type="button">
             <X aria-hidden="true" size={16} />

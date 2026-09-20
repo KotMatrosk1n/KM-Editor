@@ -25,6 +25,12 @@ type DiagnosticKeyTranslator = (key: string) => string;
 const identityTranslator: DiagnosticTranslator = (literal) => literal;
 
 const reviewDiagnosticLocalizationKeys: Readonly<Record<string, string>> = {
+  'KM-BRIDGE-DATA-TRUNCATED': 'diagnostics.condition.dataTruncated',
+  'KM-BRIDGE-STORED-JSON-INVALID': 'diagnostics.condition.storedJsonInvalid',
+  'KM-BRIDGE-RESOURCE-BUSY': 'diagnostics.condition.resourceBusy',
+  'KM-BRIDGE-STORAGE-FULL': 'diagnostics.condition.storageFull',
+  'KM-BRIDGE-PATH-TOO-LONG': 'diagnostics.condition.pathTooLong',
+
   'KM-BRIDGE-ACCESS-DENIED': 'diagnostics.review.accessDenied',
   'KM-BRIDGE-RESOURCE-MISSING': 'diagnostics.review.resourceMissing',
   'KM-BRIDGE-DATA-INVALID': 'diagnostics.review.dataInvalid',
@@ -35,6 +41,30 @@ const reviewDiagnosticLocalizationKeys: Readonly<Record<string, string>> = {
 };
 
 const diagnosticLocalizationKeys: Readonly<Record<string, string>> = {
+  'KM-CACHE-PROGRESS-STALLED': 'diagnostics.cache.progressStalled',
+  'KM-CACHE-PROGRESS-TOTAL-CHANGED': 'diagnostics.cache.progressTotalChanged',
+  'KM-CACHE-PROGRESS-REGRESSED': 'diagnostics.cache.progressRegressed',
+  'KM-CACHE-PROGRESS-INVALID': 'diagnostics.cache.progressInvalid',
+
+  'KM-BRIDGE-DATA-TRUNCATED': 'diagnostics.condition.dataTruncated',
+  'KM-BRIDGE-STORED-JSON-INVALID': 'diagnostics.condition.storedJsonInvalid',
+  'KM-BRIDGE-RESOURCE-BUSY': 'diagnostics.condition.resourceBusy',
+  'KM-BRIDGE-STORAGE-FULL': 'diagnostics.condition.storageFull',
+  'KM-BRIDGE-PATH-TOO-LONG': 'diagnostics.condition.pathTooLong',
+
+  'KM-WORKSPACE-DRAFT-INVALID': 'diagnostics.condition.workspaceDraftInvalid',
+  'KM-WORKSPACE-PERSONAL-STATE-INVALID': 'diagnostics.condition.workspacePersonalStateInvalid',
+  'KM-CHANGE-SET-INVALID': 'diagnostics.condition.changeSetInvalid',
+  'KM-EDIT-SESSION-CONTRACT-INVALID': 'diagnostics.condition.editSessionContractInvalid',
+  'KM-OUTPUT-SCOPE-MISMATCH': 'diagnostics.condition.outputScopeMismatch',
+  'KM-OUTPUT-REVIEW-EXPIRED': 'diagnostics.condition.outputReviewExpired',
+  'KM-OUTPUT-OWNERSHIP-CONFLICT': 'diagnostics.condition.outputOwnershipConflict',
+  'KM-OUTPUT-CHECKPOINT-ALREADY-CURRENT': 'diagnostics.condition.outputCheckpointAlreadyCurrent',
+  'KM-OUTPUT-PREIMAGE-CHANGED': 'diagnostics.condition.outputPreimageChanged',
+  'KM-OUTPUT-REVIEW-STATE-UNVERIFIABLE': 'diagnostics.condition.outputReviewStateUnverifiable',
+  'KM-OUTPUT-STATE-REVISION-CHANGED': 'diagnostics.condition.outputStateRevisionChanged',
+  'KM-OUTPUT-METADATA-UNAVAILABLE': 'diagnostics.condition.outputMetadataUnavailable',
+
   'KM-BRIDGE-ACCESS-DENIED': 'outputSafety.diagnostic.accessDenied',
   'KM-BRIDGE-EMPTY-REQUEST': 'outputSafety.diagnostic.dataInvalid',
   'KM-BRIDGE-DATA-INVALID': 'outputSafety.diagnostic.dataInvalid',

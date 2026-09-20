@@ -1617,7 +1617,7 @@ assert.match(
 );
 assert.match(
   workProgressModalText,
-  /status-pill status-pill-info[\s\S]*?Phase \{progress\.step\} of \{progress\.totalSteps\}/u,
+  /status-pill status-pill-info[\s\S]*?t\('editorText\.progress\.phase', \{ step: progress\.step, total: progress\.totalSteps \}\)/u,
   'Long-running output must expose its current phase in the established status pill.'
 );
 assert.match(

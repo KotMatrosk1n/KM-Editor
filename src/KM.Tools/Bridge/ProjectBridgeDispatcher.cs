@@ -922,7 +922,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         {
             return (
                 SerializeFailure(
-                    BridgeErrorCodes.DataInvalid,
+                    BridgeErrorCodes.WorkspaceDraftInvalid,
                     exception.Message,
                     requestId),
                 RequiresDispatcherReset: false);
@@ -931,7 +931,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         {
             return (
                 SerializeFailure(
-                    BridgeErrorCodes.DataInvalid,
+                    BridgeErrorCodes.WorkspacePersonalStateInvalid,
                     exception.Message,
                     requestId),
                 RequiresDispatcherReset: false);
@@ -940,7 +940,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         {
             return (
                 SerializeFailure(
-                    BridgeErrorCodes.DataInvalid,
+                    BridgeErrorCodes.ChangeSetInvalid,
                     exception.Message,
                     requestId),
                 RequiresDispatcherReset: false);
@@ -949,7 +949,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         {
             return (
                 SerializeFailure(
-                    BridgeErrorCodes.DataInvalid,
+                    BridgeErrorCodes.EditSessionContractInvalid,
                     exception.Message,
                     requestId),
                 RequiresDispatcherReset: false);
@@ -1021,7 +1021,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         {
             return (
                 SerializeFailure(
-                    BridgeErrorCodes.OutputConcurrentModification,
+                    BridgeErrorCodes.OutputScopeMismatch,
                     exception.Message,
                     requestId),
                 RequiresDispatcherReset: false);
@@ -1030,7 +1030,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         {
             return (
                 SerializeFailure(
-                    BridgeErrorCodes.OutputConcurrentModification,
+                    BridgeErrorCodes.OutputReviewExpired,
                     exception.Message,
                     requestId),
                 RequiresDispatcherReset: false);
@@ -1048,7 +1048,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         {
             return (
                 SerializeFailure(
-                    BridgeErrorCodes.OutputOwnershipUnproven,
+                    BridgeErrorCodes.OutputOwnershipConflict,
                     exception.Message,
                     requestId),
                 RequiresDispatcherReset: false);
@@ -1075,7 +1075,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         {
             return (
                 SerializeFailure(
-                    BridgeErrorCodes.OutputCheckpointConflict,
+                    BridgeErrorCodes.OutputCheckpointAlreadyCurrent,
                     exception.Message,
                     requestId),
                 RequiresDispatcherReset: false);
@@ -1102,7 +1102,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         {
             return (
                 SerializeFailure(
-                    BridgeErrorCodes.OutputConcurrentModification,
+                    BridgeErrorCodes.OutputPreimageChanged,
                     exception.Message,
                     requestId),
                 RequiresDispatcherReset: false);
@@ -1111,7 +1111,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         {
             return (
                 SerializeFailure(
-                    BridgeErrorCodes.OutputConcurrentModification,
+                    BridgeErrorCodes.OutputReviewStateUnverifiable,
                     exception.Message,
                     requestId),
                 RequiresDispatcherReset: false);
@@ -1120,7 +1120,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         {
             return (
                 SerializeFailure(
-                    BridgeErrorCodes.OutputConcurrentModification,
+                    BridgeErrorCodes.OutputStateRevisionChanged,
                     exception.Message,
                     requestId),
                 RequiresDispatcherReset: false);
@@ -1147,7 +1147,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         {
             return (
                 SerializeFailure(
-                    BridgeErrorCodes.OutputUnsafePath,
+                    BridgeErrorCodes.OutputMetadataUnavailable,
                     exception.Message,
                     requestId),
                 RequiresDispatcherReset: false);
@@ -1198,10 +1198,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         catch (OutputCoordinatorException exception)
         {
             return (
-                SerializeFailure(
-                    BridgeErrorCodes.IoFailed,
-                    exception.Message,
-                    requestId),
+                SerializeOutputFileFailure(exception, exception.Message, requestId, command, selectedGame),
                 RequiresDispatcherReset: false);
         }
         catch (ArgumentException exception) when (IsOutputSafetyCommand(command))
@@ -1222,13 +1219,15 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                     requestId),
                 RequiresDispatcherReset: false);
         }
-        catch (IOException) when (IsOutputSafetyCommand(command))
+        catch (IOException exception) when (IsOutputSafetyCommand(command))
         {
             return (
-                SerializeFailure(
-                    BridgeErrorCodes.IoFailed,
+                SerializeOutputFileFailure(
+                    exception,
                     "The output operation could not complete because an input or output operation failed.",
-                    requestId),
+                    requestId,
+                    command,
+                    selectedGame),
                 RequiresDispatcherReset: false);
         }
         catch (Exception exception) when (!IsFatal(exception))
@@ -8650,6 +8649,25 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         var response = BridgeResponse<TPayload>.Success(payload, requestId);
 
         return JsonSerializer.Serialize(response, BridgeJson.SerializerOptions);
+    }
+
+    private static string SerializeOutputFileFailure(
+        Exception exception,
+        string fallbackMessage,
+        string? requestId,
+        string? command,
+        ProjectGame? selectedGame)
+    {
+        var diagnostic = BridgeUnexpectedFailureClassifier.Classify(exception, command, selectedGame);
+        // Output handlers keep their recovery policy while preserving specific
+        // file causes that would otherwise be hidden by the generic IO response.
+        return diagnostic.Code is BridgeErrorCodes.DataTruncated
+            or BridgeErrorCodes.StoredJsonInvalid
+            or BridgeErrorCodes.ResourceBusy
+            or BridgeErrorCodes.StorageFull
+            or BridgeErrorCodes.PathTooLong
+            ? SerializeFailure(diagnostic.Code, diagnostic.Message, requestId, [diagnostic])
+            : SerializeFailure(BridgeErrorCodes.IoFailed, fallbackMessage, requestId);
     }
 
     private static string SerializeFailure(

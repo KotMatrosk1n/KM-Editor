@@ -54,6 +54,18 @@ try {
   const { isExpectedProjectBridgeRejection } = classificationModule;
   const { ProjectBridgeError } = projectBridgeErrorModule;
   const expectedCodes = [
+    projectBridgeErrorCodes.workspaceDraftInvalid,
+    projectBridgeErrorCodes.workspacePersonalStateInvalid,
+    projectBridgeErrorCodes.changeSetInvalid,
+    projectBridgeErrorCodes.editSessionContractInvalid,
+    projectBridgeErrorCodes.outputScopeMismatch,
+    projectBridgeErrorCodes.outputReviewExpired,
+    projectBridgeErrorCodes.outputOwnershipConflict,
+    projectBridgeErrorCodes.outputCheckpointAlreadyCurrent,
+    projectBridgeErrorCodes.outputPreimageChanged,
+    projectBridgeErrorCodes.outputReviewStateUnverifiable,
+    projectBridgeErrorCodes.outputStateRevisionChanged,
+    projectBridgeErrorCodes.outputMetadataUnavailable,
     ...Object.values(gameplaySettingsErrorCodes),
     ...Object.values(guidedDesignErrorCodes),
     ...Object.values(inGameSettingsPackageErrorCodes),
