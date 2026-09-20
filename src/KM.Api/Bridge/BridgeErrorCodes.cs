@@ -4,6 +4,25 @@ namespace KM.Api.Bridge;
 
 public static class BridgeErrorCodes
 {
+    public const string DataTruncated = "KM-BRIDGE-DATA-TRUNCATED";
+    public const string StoredJsonInvalid = "KM-BRIDGE-STORED-JSON-INVALID";
+    public const string ResourceBusy = "KM-BRIDGE-RESOURCE-BUSY";
+    public const string StorageFull = "KM-BRIDGE-STORAGE-FULL";
+    public const string PathTooLong = "KM-BRIDGE-PATH-TOO-LONG";
+
+    public const string WorkspaceDraftInvalid = "KM-WORKSPACE-DRAFT-INVALID";
+    public const string WorkspacePersonalStateInvalid = "KM-WORKSPACE-PERSONAL-STATE-INVALID";
+    public const string ChangeSetInvalid = "KM-CHANGE-SET-INVALID";
+    public const string EditSessionContractInvalid = "KM-EDIT-SESSION-CONTRACT-INVALID";
+    public const string OutputScopeMismatch = "KM-OUTPUT-SCOPE-MISMATCH";
+    public const string OutputReviewExpired = "KM-OUTPUT-REVIEW-EXPIRED";
+    public const string OutputOwnershipConflict = "KM-OUTPUT-OWNERSHIP-CONFLICT";
+    public const string OutputCheckpointAlreadyCurrent = "KM-OUTPUT-CHECKPOINT-ALREADY-CURRENT";
+    public const string OutputPreimageChanged = "KM-OUTPUT-PREIMAGE-CHANGED";
+    public const string OutputReviewStateUnverifiable = "KM-OUTPUT-REVIEW-STATE-UNVERIFIABLE";
+    public const string OutputStateRevisionChanged = "KM-OUTPUT-STATE-REVISION-CHANGED";
+    public const string OutputMetadataUnavailable = "KM-OUTPUT-METADATA-UNAVAILABLE";
+
     public const string RaidDensInvalid = "KM-SWSH-RAID-DENS-INVALID";
     public const string TrainerWhiteoutInvalid = "KM-SWSH-TRAINER-WHITEOUT-INVALID";
     public const string TrainerDynamaxInvalid = "KM-SWSH-TRAINER-DYNAMAX-INVALID";

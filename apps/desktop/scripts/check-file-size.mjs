@@ -21,6 +21,7 @@ import './check-trainer-naming-contract.mjs';
 import './check-visual-theme-contract.mjs';
 import './check-za-items-tm-stage-contract.mjs';
 import './check-item-icon-catalog.mjs';
+import './check-localization-contract.mjs';
 
 import { readFileSync } from 'node:fs';
 import { checkControlTheme } from './check-control-theme.mjs';

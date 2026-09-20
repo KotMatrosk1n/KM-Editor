@@ -2,7 +2,7 @@
 
 import { createContext, type ReactNode, useContext, useMemo } from 'react';
 import type { ApiDiagnostic } from './bridge/contracts';
-import { desktopErrorCodes, projectBridgeErrorCodes } from './errorCodes';
+import { cacheDiagnosticCodes, desktopErrorCodes, projectBridgeErrorCodes } from './errorCodes';
 import { workbenchCapabilityRegistry } from './workbench/capabilityRegistry';
 import { createSectionLocation, type WorkbenchLocation } from './workbench/workbenchLocation';
 import type { WorkbenchSection } from './workbench/workbenchSections';
@@ -24,6 +24,15 @@ type DiagnosticNavigationContextValue = {
 };
 
 const outputCodes = new Set<string>([
+  projectBridgeErrorCodes.outputScopeMismatch,
+  projectBridgeErrorCodes.outputReviewExpired,
+  projectBridgeErrorCodes.outputOwnershipConflict,
+  projectBridgeErrorCodes.outputCheckpointAlreadyCurrent,
+  projectBridgeErrorCodes.outputPreimageChanged,
+  projectBridgeErrorCodes.outputReviewStateUnverifiable,
+  projectBridgeErrorCodes.outputStateRevisionChanged,
+  projectBridgeErrorCodes.outputMetadataUnavailable,
+
   projectBridgeErrorCodes.outputCheckpointConflict,
   projectBridgeErrorCodes.outputCheckpointNotFound,
   projectBridgeErrorCodes.outputConcurrentModification,
@@ -34,6 +43,12 @@ const outputCodes = new Set<string>([
   projectBridgeErrorCodes.outputUnsafePath
 ]);
 const projectCodes = new Set<string>([
+  projectBridgeErrorCodes.dataTruncated,
+  projectBridgeErrorCodes.storedJsonInvalid,
+  projectBridgeErrorCodes.resourceBusy,
+  projectBridgeErrorCodes.storageFull,
+  projectBridgeErrorCodes.pathTooLong,
+
   projectBridgeErrorCodes.accessDenied,
   projectBridgeErrorCodes.dataInvalid,
   projectBridgeErrorCodes.dataLayoutInvalid,
@@ -54,6 +69,7 @@ const projectCodes = new Set<string>([
   desktopErrorCodes.runtimeUnavailable
 ]);
 const settingsCodes = new Set<string>([
+  ...Object.values(cacheDiagnosticCodes),
   desktopErrorCodes.updateCheckFailed,
   desktopErrorCodes.updateCloseFailed,
   desktopErrorCodes.updateInstallFailed
