@@ -24,6 +24,8 @@ type DiagnosticNavigationContextValue = {
 };
 
 const outputCodes = new Set<string>([
+  projectBridgeErrorCodes.zaPokemonSizePlanStale,
+  projectBridgeErrorCodes.zaPokemonSizeApplyFailed,
   projectBridgeErrorCodes.outputScopeMismatch,
   projectBridgeErrorCodes.outputReviewExpired,
   projectBridgeErrorCodes.outputOwnershipConflict,

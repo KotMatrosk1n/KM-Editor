@@ -44,6 +44,7 @@ internal sealed class ZaWorkflowFileSource
         "avalon",
         "ik_event",
         "ik_message",
+        "ik_pokemon",
         "message",
         "param_ai",
         "world",

@@ -582,6 +582,7 @@ import {
 } from './features/placement/placementUi';
 import { RandomizerSection } from './features/randomizer/RandomizerSection';
 import { formatPokemonEvolutionPendingValue } from './features/pokemon/pokemonPendingEditFormatting';
+import { AlphaSizeDetails, AlphaSizeHelp, alphaSizeDraftState, alphaSizeFields, alphaSizeManualDraft, alphaSizeNumber, alphaSizePrefix } from './features/pokemon/alphaSize';
 import { resolveSpeciesChangeForm } from './features/pokemon/speciesFormDrafts';
 import {
   canonicalTextToEditorText,
@@ -25282,7 +25283,7 @@ function SelectedPokemonPanel({
   dexEditor,
   editSession,
   editorFamily,
-  editableFields,
+  editableFields: baseEditableFields,
   evolutionMethodOptions,
   isEditStarting,
   isPokemonUpdating,
@@ -25355,6 +25356,9 @@ function SelectedPokemonPanel({
   selectedPokemonEvolutionSlot: number | null;
 }) {
   const { t, translateLiteral } = useLocalization();
+  const editableFields = useMemo(() => editorFamily === 'za'
+    ? [...baseEditableFields, ...alphaSizeFields(pokemon)] : baseEditableFields,
+    [baseEditableFields, editorFamily, pokemon]);
   const [learnsetClipboardMenu, setLearnsetClipboardMenu] = useState<{
     left: number;
     move: PokemonLearnsetMove;
@@ -27324,8 +27328,9 @@ function SelectedPokemonPanel({
             <h4>Personal Edit</h4>
             <div className="editable-field-groups">
               {personalFieldGroups.map((group) => (
-                <fieldset className="editable-field-group" key={group.group}>
-                  <legend>{group.group}</legend>
+                <fieldset className={`editable-field-group ${group.group === 'Alpha Size' ? 'alpha-size-group' : ''}`} key={group.group}>
+                  <legend>{translateLiteral(group.group)}</legend>
+                  {group.group === 'Alpha Size' ? <AlphaSizeHelp /> : null}
                   <div className="editable-field-grid">
                     {group.fields.map((field) => {
                       const currentValue = pokemon
@@ -27339,6 +27344,7 @@ function SelectedPokemonPanel({
                       );
 
                       return (
+                        <div key={field.field}>
                         <PokemonPersonalFieldInput
                           currentValue={currentValue}
                           disabled={
@@ -27372,6 +27378,13 @@ function SelectedPokemonPanel({
                             );
                           }}
                         />
+                        {field.field.startsWith(alphaSizePrefix) ? <AlphaSizeDetails
+                          field={field.field} pokemon={pokemon} records={pokemonRecords}
+                          draft={draftValue} disabled={!canEditPokemon || editSession === null}
+                          onRestore={(value) => setPersonalDraftsByPokemonId(current =>
+                            setSparseFieldDraftValue(current, pokemon.personalId, field.field, value, personalDraftDefaults))}
+                        /> : null}
+                        </div>
                       );
                     })}
                   </div>
@@ -37175,6 +37188,17 @@ function getPokemonPendingEditDisplayDetails(
     (candidate) => candidate.personalId === parseOptionalInteger(edit.recordId)
   );
   const fieldKey = edit.field ?? '';
+
+  if (fieldKey.startsWith(alphaSizePrefix)) {
+    const owners = context.pokemonWorkflow?.pokemon.filter(record =>
+      record.alphaSizes?.some(size => size.field === fieldKey)) ?? [];
+    const size = owners[0]?.alphaSizes?.find(size => size.field === fieldKey);
+    return createPendingEditDisplayDetails(edit, {
+      editorLabel, fieldLabel: 'Alpha scale (×)',
+      newValueLabel: size ? `${alphaSizeNumber(Number(edit.newValue))}×` : edit.newValue ?? undefined,
+      recordLabel: owners.map(record => `${record.name} (${record.formLabel})`).join(', ') || undefined
+    });
+  }
 
   if (fieldKey === 'dexPlacement') {
     return createPendingEditDisplayDetails(edit, {
@@ -63960,6 +63984,10 @@ function getHighNibble(value: number) {
 }
 
 function getEditablePersonalFieldValue(pokemon: PokemonRecord, field: string) {
+  if (field.startsWith(alphaSizePrefix)) {
+    const size = pokemon.alphaSizes?.find(candidate => candidate.field === field);
+    return size ? alphaSizeNumber(size.scale) : null;
+  }
   switch (field) {
     case 'hp':
       return pokemon.baseStats.hp;
@@ -65084,6 +65112,9 @@ function getPokemonPersonalFieldDraftState(
   const normalizedValue = draftValue.trim();
   const currentText = currentValue.toString();
 
+  if (field.field.startsWith(alphaSizePrefix)) return alphaSizeDraftState(draftValue,
+    field.valueKind === 'alphaSizeRange' && draftValue !== currentText ? Number.NaN : currentValue);
+
   if (field.valueKind === 'boolean') {
     if (normalizedValue !== '0' && normalizedValue !== '1') {
       return {
@@ -65193,7 +65224,7 @@ function PokemonPersonalFieldInput({
   );
   const { t, translateLiteral } = useLocalization();
   const localizedFieldLabel = translateLiteral(field.label);
-  const localizedHelpText = disabledReason
+  const localizedHelpText = field.field.startsWith(alphaSizePrefix) ? t('pokemon.alphaSize.help') : disabledReason
     ? translateLiteral(disabledReason)
     : getEditableFieldHelp(field, t, {
         domain: 'pokemon',
@@ -65201,7 +65232,7 @@ function PokemonPersonalFieldInput({
         label: localizedFieldLabel,
         optionCount: options.length
       });
-  const localizedHoverText = disabledReason
+  const localizedHoverText = field.field.startsWith(alphaSizePrefix) ? t('pokemon.alphaSize.help') : disabledReason
     ? translateLiteral(disabledReason)
     : getEditableFieldHoverHelp(field, t, {
         domain: 'pokemon',
@@ -65248,8 +65279,10 @@ function PokemonPersonalFieldInput({
             disabled={disabled}
             id={inputId}
             max={field.maximumValue ?? undefined}
-            min={field.minimumValue ?? undefined}
-            onChange={(event) => onChange(event.target.value)}
+            min={field.field.startsWith(alphaSizePrefix) ? 0 : field.minimumValue ?? undefined}
+            onChange={(event) => onChange(field.field.startsWith(alphaSizePrefix)
+              ? alphaSizeManualDraft(event.target.value) : event.target.value)}
+            step={field.field.startsWith(alphaSizePrefix) ? '0.01' : undefined}
             type="number"
             value={draftValue}
           />

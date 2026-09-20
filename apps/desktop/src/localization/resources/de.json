@@ -1,5 +1,11 @@
 {
   "keys": {
+    "pokemon.alphaSize.ordinary": "Normaler Mittelwert: {value}×",
+    "pokemon.alphaSize.help": "Verwendet die Modellskalierung des Spiels. 1× ist die ursprüngliche Modellgröße, die von der normalen Größe abweichen kann. Die feste Skalierung gilt für alle Alphas mit dieser Konfiguration. Andere Formen können eigene Einstellungen haben. Manuelle Eingaben werden auf zwei Nachkommastellen gerundet. Vorhandene Werte und Standardwerte behalten ihre ursprüngliche Genauigkeit.",
+    "pokemon.alphaSize.default": "Standard: {value}×",
+    "pokemon.alphaSize.range": "Aktueller Bereich: {minimum}× bis {maximum}×. Eine Änderung ersetzt ihn durch eine feste Größe.",
+    "pokemon.alphaSize.shared": "Betrifft auch:",
+    "pokemon.alphaSize.restore": "Standard wiederherstellen",
     "settings.cache.status.awaitingValidation": "Pfadprüfung ausstehend",
     "settings.cache.status.validatingPaths": "Pfade werden geprüft",
     "settings.cache.status.validationRequired": "Prüfe die Projektpfade, um den Cachestatus zu prüfen.",
@@ -4325,6 +4331,19 @@
     "editorText.pending.shopSlot": "{name} ({location}), Platz #{slot}: {item}"
   },
   "literals": {
+    "Apply Form or Pokédex placement changes before editing alpha size.": "Wende Änderungen an Form oder Pokédex Position an, bevor du die Alpha Größe bearbeitest.",
+    "Alpha Size": "Alpha Größe",
+    "Alpha scale (×)": "Alpha Skalierung (×)",
+    "Female alpha scale (×)": "Weibliche Alpha Skalierung (×)",
+    "Alpha scale must be a positive finite number.": "Die Alpha Skalierung muss eine positive, endliche Zahl sein.",
+    "Alpha size configuration could not be verified.": "Die Konfiguration der Alpha Größe konnte nicht geprüft werden.",
+    "Alpha size catalog could not be verified.": "Der Katalog der Alpha Größen konnte nicht geprüft werden.",
+    "Alpha size output could not be written. Check Diagnostics and review again.": "Die Alpha Größe konnte nicht gespeichert werden. Prüfe die Diagnose und kontrolliere die Änderungen erneut.",
+    "Alpha size sources changed after Review. Review the changes again.": "Die Quelldaten der Alpha Größe haben sich seit der Prüfung geändert. Prüfe die Änderungen erneut.",
+    "Alpha size sources or form bindings changed. Reload Pokemon Data and review again.": "Die Quelldaten oder Formzuordnungen der Alpha Größe haben sich geändert. Lade die Pokémon Daten neu und prüfe sie erneut.",
+    "Set Pokemon alpha size.": "Alpha Größe des Pokémon festlegen.",
+    "Apply Pokemon alpha size.": "Alpha Größe des Pokémon anwenden.",
+    "Update the output resource descriptor.": "Beschreibung der Ausgaberessourcen aktualisieren.",
     "Trainer Whiteout": "Niederlage gegen Trainer",
     "Control trainer whiteout behavior.": "Verhalten nach Niederlagen in Sword und Shield",
     "Starmobile abilities could not be loaded. Reload the editor before editing abilities.": "Die Fähigkeiten des Starmobils konnten nicht geladen werden. Lade den Editor vor dem Bearbeiten erneut.",

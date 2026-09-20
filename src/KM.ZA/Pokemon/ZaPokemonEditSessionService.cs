@@ -21,7 +21,7 @@ using KM.ZA.Workflows;
 
 namespace KM.ZA.Pokemon;
 
-internal sealed class ZaPokemonEditSessionService
+internal sealed partial class ZaPokemonEditSessionService
 {
     private const string LearnsetFieldPrefix = "learnset";
     private const string EvolutionFieldPrefix = "evolution";
@@ -1515,7 +1515,7 @@ internal sealed class ZaPokemonEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
-        if (session.PendingEdits.Any(IsAlphaMoveEdit))
+        if (session.PendingEdits.Any(edit => IsAlphaMoveEdit(edit) || ZaPokemonAlphaSizeService.IsEdit(edit)))
         {
             pokemonWorkflowService.ClearMemoryCache();
         }
@@ -1597,6 +1597,10 @@ internal sealed class ZaPokemonEditSessionService
         EditSession session,
         ICollection<ValidationDiagnostic> diagnostics)
     {
+        if (session.PendingEdits.Any(ZaPokemonAlphaSizeService.IsEdit)
+            && session.PendingEdits.Any(edit => edit.Domain == ZaEditSessionSupport.PokemonDomain
+                && (IsDexPlacementEdit(edit) || edit.Field == ZaPokemonWorkflowService.FormField)))
+            diagnostics.Add(ZaPokemonAlphaSizeService.Error(ZaPokemonAlphaSizeService.SessionConflict, "alphaSize"));
         var alphaEdits = session.PendingEdits.Where(IsAlphaMoveEdit).ToArray();
         if (alphaEdits.Length == 0)
         {
@@ -1731,6 +1735,8 @@ internal sealed class ZaPokemonEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
+        if (session.PendingEdits.Any(ZaPokemonAlphaSizeService.IsEdit))
+            return CreateSizeChangePlan(paths, session, outputMode);
         var validation = Validate(paths, session);
         if (session.PendingEdits.Any(IsAlphaMoveEdit))
         {
@@ -2117,6 +2123,9 @@ internal sealed class ZaPokemonEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(reviewedPlan);
+
+        if (session.PendingEdits.Any(ZaPokemonAlphaSizeService.IsEdit))
+            return ApplySizeChangePlan(paths, session, reviewedPlan, outputMode);
 
         if (session.PendingEdits.Any(IsAlphaMoveEdit))
         {
@@ -2874,6 +2883,8 @@ internal sealed class ZaPokemonEditSessionService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var normalizedField = field.Trim();
+        if (normalizedField.StartsWith(ZaPokemonAlphaSizeService.FieldPrefix, StringComparison.Ordinal))
+            return ZaPokemonAlphaSizeService.Create(pokemon, normalizedField, value, diagnostics);
         if (string.Equals(
                 normalizedField,
                 ZaPokemonWorkflowService.AlphaMoveField,
@@ -3280,6 +3291,12 @@ internal sealed class ZaPokemonEditSessionService
             return;
         }
 
+        if (ZaPokemonAlphaSizeService.IsEdit(edit))
+        {
+            ZaPokemonAlphaSizeService.Validate(workflow, edit, diagnostics);
+            return;
+        }
+
         if (IsAlphaMoveEdit(edit)
             || string.Equals(
                 edit.Field,
@@ -3565,6 +3582,8 @@ internal sealed class ZaPokemonEditSessionService
 
     private static ZaPokemonWorkflow OverlayPendingEdit(ZaPokemonWorkflow workflow, PendingEdit edit)
     {
+        if (ZaPokemonAlphaSizeService.IsEdit(edit))
+            return ZaPokemonAlphaSizeService.Overlay(workflow, edit);
         if (IsMegaDexSyncEdit(edit))
         {
             return workflow.DexEditor is null
@@ -4422,6 +4441,13 @@ internal sealed class ZaPokemonEditSessionService
         PendingEdit pendingEdit)
     {
         var matchesLoadedSource = false;
+        if (ZaPokemonAlphaSizeService.IsEdit(pendingEdit))
+        {
+            var size = ZaPokemonAlphaSizeService.Find(loadedWorkflow, pendingEdit);
+            matchesLoadedSource = size is not null && size.Scale == size.MinimumScale
+                && float.TryParse(pendingEdit.NewValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var scale)
+                && size.Scale == scale;
+        }
         if (TryParseCompatibilityGroupField(pendingEdit.Field, out var replacementGroupId)
             && int.TryParse(pendingEdit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var replacementPersonalId))
         {

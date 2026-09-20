@@ -342,7 +342,7 @@ internal sealed class ZaPokemonWorkflowService
         bool includeDexEditor = false)
     {
         ArgumentNullException.ThrowIfNull(project);
-        return LoadUncached(project, includeDexEditor);
+        return LoadUncached(project, includeDexEditor, includeAlphaSizes: false);
     }
 
     public void ClearMemoryCache()
@@ -350,7 +350,7 @@ internal sealed class ZaPokemonWorkflowService
         memoryCache.Clear();
     }
 
-    private ZaPokemonWorkflow LoadUncached(OpenedProject project, bool includeDexEditor)
+    private ZaPokemonWorkflow LoadUncached(OpenedProject project, bool includeDexEditor, bool includeAlphaSizes = true)
     {
 
         var diagnostics = new List<ValidationDiagnostic>();
@@ -444,6 +444,8 @@ internal sealed class ZaPokemonWorkflowService
                     innerException: exception);
             }
             pokemon = AttachVanillaYieldDefaults(project, pokemon, labels, tmCatalog);
+            if (includeAlphaSizes)
+                pokemon = ZaPokemonAlphaSizeService.Project(project, fileSource, pokemon, diagnostics);
 
             try
             {
@@ -547,7 +549,9 @@ internal sealed class ZaPokemonWorkflowService
             (source is null ? 0 : 1)
                 + (pokedexSource is null ? 0 : 1)
                 + (pokedexMegaSource is null ? 0 : 1)
-                + (alphaMoveSource is null ? 0 : 1));
+                + (alphaMoveSource is null ? 0 : 1)
+                + pokemon.SelectMany(record => record.AlphaSizes ?? [])
+                    .SelectMany(size => size.EditSources).Select(reference => reference.RelativePath).Distinct().Count());
 
         return new ZaPokemonWorkflow(
             summary,

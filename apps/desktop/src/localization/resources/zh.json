@@ -1,5 +1,11 @@
 {
   "keys": {
+    "pokemon.alphaSize.ordinary": "普通体型中点：{value}×",
+    "pokemon.alphaSize.help": "使用游戏中的模型缩放倍率。1× 是模型原始大小，可能与普通体型不同。使用此配置的所有头目都会采用同一个固定倍率。其他形态可能有独立设置。 手动输入的值会四舍五入至两位小数。现有值和默认值保留原始精度。",
+    "pokemon.alphaSize.default": "默认：{value}×",
+    "pokemon.alphaSize.range": "当前范围：{minimum}× 至 {maximum}×。编辑后将使用单一固定体型。",
+    "pokemon.alphaSize.shared": "同时影响：",
+    "pokemon.alphaSize.restore": "恢复默认值",
     "settings.cache.status.awaitingValidation": "等待验证路径",
     "settings.cache.status.validatingPaths": "正在验证路径",
     "settings.cache.status.validationRequired": "请验证项目路径，以检查缓存状态。",
@@ -4325,6 +4331,19 @@
     "editorText.pending.shopSlot": "{name}（{location}）槽位 #{slot}：{item}"
   },
   "literals": {
+    "Apply Form or Pokédex placement changes before editing alpha size.": "请先应用形态或图鉴位置更改，再编辑头目体型。",
+    "Alpha Size": "头目体型",
+    "Alpha scale (×)": "头目缩放倍率 (×)",
+    "Female alpha scale (×)": "雌性头目缩放倍率 (×)",
+    "Alpha scale must be a positive finite number.": "头目缩放倍率必须是正的有限数值。",
+    "Alpha size configuration could not be verified.": "无法验证头目体型配置。",
+    "Alpha size catalog could not be verified.": "无法验证头目体型目录。",
+    "Alpha size output could not be written. Check Diagnostics and review again.": "无法写入头目体型。请查看诊断并重新审阅。",
+    "Alpha size sources changed after Review. Review the changes again.": "审阅后头目体型源数据已更改。请重新审阅。",
+    "Alpha size sources or form bindings changed. Reload Pokemon Data and review again.": "头目体型源数据或形态关联已更改。请重新加载宝可梦数据并重新审阅。",
+    "Set Pokemon alpha size.": "设置宝可梦头目体型。",
+    "Apply Pokemon alpha size.": "应用宝可梦头目体型。",
+    "Update the output resource descriptor.": "更新输出资源描述符。",
     "Trainer Whiteout": "训练家战败返回",
     "Control trainer whiteout behavior.": "Sword 和 Shield 的训练家战败行为",
     "Starmobile abilities could not be loaded. Reload the editor before editing abilities.": "无法加载天星队车的特性。请重新加载编辑器后再编辑特性。",

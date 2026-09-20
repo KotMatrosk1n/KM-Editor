@@ -19,6 +19,10 @@ import { ProjectBridgeError } from './projectBridgeError';
 // safety guards. They remain visible to the caller, but they are not evidence
 // that the bridge itself failed unexpectedly.
 const expectedProjectBridgeRejectionCodes = new Set<KmErrorCode>([
+  projectBridgeErrorCodes.zaPokemonSizeSelectionInvalid,
+  projectBridgeErrorCodes.zaPokemonSizeBindingInvalid,
+  projectBridgeErrorCodes.zaPokemonSizeSessionConflict,
+  projectBridgeErrorCodes.zaPokemonSizePlanStale,
   projectBridgeErrorCodes.workspaceDraftInvalid,
   projectBridgeErrorCodes.workspacePersonalStateInvalid,
   projectBridgeErrorCodes.changeSetInvalid,

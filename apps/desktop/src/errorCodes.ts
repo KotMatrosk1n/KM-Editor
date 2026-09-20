@@ -16,6 +16,12 @@ export const kmErrorCodeSchema = z
   );
 
 export const projectBridgeErrorCodes = {
+  zaPokemonSizeSourceUnavailable: "KM-ZA-POKEMON-SIZE-SOURCE-UNAVAILABLE",
+  zaPokemonSizeSelectionInvalid: "KM-ZA-POKEMON-SIZE-SELECTION-INVALID",
+  zaPokemonSizeBindingInvalid: "KM-ZA-POKEMON-SIZE-BINDING-INVALID",
+  zaPokemonSizeSessionConflict: "KM-ZA-POKEMON-SIZE-SESSION-CONFLICT",
+  zaPokemonSizePlanStale: "KM-ZA-POKEMON-SIZE-PLAN-STALE",
+  zaPokemonSizeApplyFailed: "KM-ZA-POKEMON-SIZE-APPLY-FAILED",
   dataTruncated: "KM-BRIDGE-DATA-TRUNCATED",
   storedJsonInvalid: "KM-BRIDGE-STORED-JSON-INVALID",
   resourceBusy: "KM-BRIDGE-RESOURCE-BUSY",

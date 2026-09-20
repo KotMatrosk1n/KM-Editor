@@ -54,6 +54,10 @@ try {
   const { isExpectedProjectBridgeRejection } = classificationModule;
   const { ProjectBridgeError } = projectBridgeErrorModule;
   const expectedCodes = [
+    projectBridgeErrorCodes.zaPokemonSizeSelectionInvalid,
+    projectBridgeErrorCodes.zaPokemonSizeBindingInvalid,
+    projectBridgeErrorCodes.zaPokemonSizeSessionConflict,
+    projectBridgeErrorCodes.zaPokemonSizePlanStale,
     projectBridgeErrorCodes.workspaceDraftInvalid,
     projectBridgeErrorCodes.workspacePersonalStateInvalid,
     projectBridgeErrorCodes.changeSetInvalid,

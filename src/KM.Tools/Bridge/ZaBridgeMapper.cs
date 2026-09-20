@@ -1645,7 +1645,10 @@ public static class ZaBridgeMapper
                         : new PokemonProvenanceDto(
                             pokemon.AlphaMove.Provenance.SourceFile,
                             ProjectBridgeMapper.ToDto(pokemon.AlphaMove.Provenance.SourceLayer),
-                            ProjectBridgeMapper.ToDto(pokemon.AlphaMove.Provenance.FileState))));
+                            ProjectBridgeMapper.ToDto(pokemon.AlphaMove.Provenance.FileState))),
+            pokemon.AlphaSizes?.Select(size => new PokemonAlphaSizeDto(size.Field, size.ResourcePath,
+                size.Genders, size.Scale, size.MinimumScale, size.VanillaScale, size.SharedPersonalIds,
+                size.OrdinaryScale)).ToArray());
     }
 
     private static ItemRecordDto ToDto(ZaItemRecord item)
