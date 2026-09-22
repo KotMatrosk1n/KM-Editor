@@ -19,7 +19,7 @@ using System.Text;
 
 namespace KM.ZA.Items;
 
-internal sealed class ZaItemsEditSessionService
+internal sealed partial class ZaItemsEditSessionService
 {
     private const string VerifiedBaseItemRowField = "verifiedBaseItemRow";
     private const string VerifiedBaseItemRowValue = "1";

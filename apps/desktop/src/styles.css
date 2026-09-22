@@ -6313,6 +6313,37 @@ h2 {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
 }
 
+.item-edit-form .item-field-group-wide {
+  grid-column: 1 / -1;
+}
+
+.item-edit-form .item-field-group-wide .editable-field-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr));
+  align-items: start;
+  gap: 10px;
+}
+
+.item-edit-form .item-use-flags-group .editable-field-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  align-items: stretch;
+  gap: 8px 12px;
+}
+
+.item-edit-form .item-use-flags-group .editable-field-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 8px 10px;
+  background: rgb(255 255 255 / 3%);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.item-edit-form .item-use-flags-group .editable-field-control > small {
+  grid-column: 1 / -1;
+}
+
 .move-flags-field-group {
   grid-column: 1 / -1;
 }

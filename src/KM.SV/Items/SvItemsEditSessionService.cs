@@ -12,7 +12,7 @@ using System.Globalization;
 
 namespace KM.SV.Items;
 
-internal sealed class SvItemsEditSessionService
+internal sealed partial class SvItemsEditSessionService
 {
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SvWorkflowFileSource fileSource;

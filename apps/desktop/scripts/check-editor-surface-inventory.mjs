@@ -156,7 +156,7 @@ const editorSurfaceInventory = {
   startingItems: ['src/App.tsx', 'StartingItemsSection', 'raw-local-draft'],
   npcItemGift: ['src/features/npc-item-gift/NpcItemGiftSection.tsx', 'NpcItemGiftSection', 'raw-local-draft'],
   spreadsheetImport: ['src/App.tsx', 'SpreadsheetImportSection', 'utility-input'],
-  modMerger: ['src/App.tsx', 'ModMergerSection', 'utility-input'],
+  modMerger: ['src/features/mod-merger/MergeWorkspace.tsx', 'MergeWorkspace', 'utility-input'],
   fpsPatch: ['src/App.tsx', 'FpsPatchSection', 'choice-local-draft'],
   profanityFilter: ['src/App.tsx', 'ProfanityFilterSection', 'action-only'],
   raidDens: ['src/features/raid-dens/RaidDensSection.tsx', 'RaidDensSection', 'choice-local-draft'],

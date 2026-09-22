@@ -2,6 +2,8 @@
 import { z, type ZodTypeAny } from "zod";
 import { diagnosticErrorCodes, kmErrorCodeSchema } from "../errorCodes";
 export const kmCommandNameValues = [
+  "modMerger.workspace.analyze",
+  "modMerger.workspace.export",
   "project.open",
   "project.validate",
   "project.fileGraph.refresh",
@@ -259,6 +261,8 @@ export const kmCommandNameSchema = z.enum(kmCommandNameValues);
 export type KmCommandName = z.infer<typeof kmCommandNameSchema>;
 
 export const kmCommandNames = {
+  analyzeMergeWorkspace: "modMerger.workspace.analyze",
+  exportMergeWorkspace: "modMerger.workspace.export",
   applyChangePlan: "changePlan.apply",
   captureChangeSetSession: "changeSets.captureSession",
   createChangePlan: "changePlan.create",

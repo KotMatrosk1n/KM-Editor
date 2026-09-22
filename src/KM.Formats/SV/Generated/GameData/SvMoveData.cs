@@ -89,7 +89,10 @@ public struct SvMoveData : IFlatbufferObject
   public bool Unused70 { get { int o = __p.__offset(144); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
   public bool FlagCantUseTwice { get { int o = __p.__offset(146); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
 
-  public static void StartSvMoveData(FlatBufferBuilder builder) { builder.StartTable(72); }
+  public bool Unknown72 { get { int o = __p.__offset(148); return o != 0 && __p.bb.Get(o + __p.bb_pos) != 0; } }
+  public static void AddUnknown72(FlatBufferBuilder builder, bool value) { builder.AddBool(72, value, false); }
+
+  public static void StartSvMoveData(FlatBufferBuilder builder) { builder.StartTable(73); }
   public static void AddMoveId(FlatBufferBuilder builder, ushort moveId) { builder.AddUshort(0, moveId, 0); }
   public static void AddCanUseMove(FlatBufferBuilder builder, bool canUseMove) { builder.AddBool(1, canUseMove, false); }
   public static void AddType(FlatBufferBuilder builder, byte type) { builder.AddByte(2, type, 0); }

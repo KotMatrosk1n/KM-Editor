@@ -137,7 +137,7 @@ export function canAccessWorkflowSectionForHealth(
   canOpenReadOnlyWorkflows: boolean,
   canOpenEditableWorkflows: boolean
 ) {
-  if (section === 'gameplaySettings') {
+  if (section === 'gameplaySettings' || section === 'modMerger') {
     return true;
   }
 
@@ -381,11 +381,7 @@ export function getLoadedWorkflowStateForSection(
     case 'ivScreen':
       return state.ivScreenWorkflow !== null;
     case 'modMerger':
-      return isScarletVioletGame(state.selectedGame)
-        ? state.svModMergerWorkflow !== null
-        : isPokemonLegendsZAGame(state.selectedGame)
-          ? state.zaModMergerWorkflow !== null
-          : state.modMergerWorkflow !== null;
+      return true;
     case 'moves':
       return state.movesWorkflow !== null;
     case 'npcItemGift':

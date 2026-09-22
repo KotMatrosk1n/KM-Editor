@@ -557,11 +557,12 @@ export const workbenchCapabilityRegistry = [
   }),
   workflow({
     description:
-      'Merge matching RomFS files from two mod folders, resolve overlapping byte edits, and write merged files to Output Root.',
+      'Combine mods and choose how differences are resolved.',
     games: allGames,
     icon: GitMerge,
     id: 'modMerger',
-    label: 'Mod Merger'
+    label: 'Mod Merger',
+    standalone: true
   }),
   {
     capabilityKinds: ['navigation', 'command'],

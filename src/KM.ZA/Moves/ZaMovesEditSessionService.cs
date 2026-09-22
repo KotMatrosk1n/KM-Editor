@@ -15,7 +15,7 @@ using System.Text;
 
 namespace KM.ZA.Moves;
 
-internal sealed class ZaMovesEditSessionService
+internal sealed partial class ZaMovesEditSessionService
 {
     private const string BattleVanillaRestoreField = "runtime.restore.battle";
     private const string TimingVanillaRestoreField = "runtime.restore.timing";
