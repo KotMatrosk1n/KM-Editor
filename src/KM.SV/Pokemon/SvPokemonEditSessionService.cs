@@ -13,7 +13,7 @@ using System.Globalization;
 
 namespace KM.SV.Pokemon;
 
-internal sealed class SvPokemonEditSessionService
+internal sealed partial class SvPokemonEditSessionService
 {
     private const string LearnsetFieldPrefix = "learnset";
     private const string EvolutionFieldPrefix = "evolution";

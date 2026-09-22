@@ -66,6 +66,51 @@ public sealed class SwShGfPackFile
 
     public int FileCount => entries.Count;
 
+    public bool TryGetUniqueFileHash(string fileName, out ulong absoluteHash)
+    {
+        var nameHash = HashFnv1a64(Path.GetFileName(fileName));
+        var matches = folders.SelectMany(folder => folder.Files).Where(file => file.HashFnv1aPathFileName == nameHash).ToArray();
+        if (matches.Length != 1 || matches[0].Index < 0 || matches[0].Index >= AbsoluteHashes.Count)
+        {
+            absoluteHash = 0;
+            return false;
+        }
+        absoluteHash = AbsoluteHashes[matches[0].Index].HashFnv1aPathFull;
+        return true;
+    }
+
+    /// <summary>Metadata identity for conservative member merging, excluding payload lengths and locations.</summary>
+    public string MergeMetadataIdentity => System.Text.Json.JsonSerializer.Serialize(new
+    {
+        Version, IsRelocated, AbsoluteHashes,
+        Folders = folders.Select(folder => new { folder.HashFnv1aPathFolderName, folder.Padding, folder.Files }),
+        Entries = entries.Select(entry => new { entry.Level, entry.CompressionType, entry.TypePadding, entry.Padding, entry.Unused }),
+    });
+
+    public byte[] ReadFileByHash(ulong hash, int maximumBytes)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumBytes);
+        var index = FindHashIndex(hash);
+        return GetFile(index, maximumBytes);
+    }
+
+    public void ReplaceFileByHash(ulong hash, byte[] data)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        var index = FindHashIndex(hash);
+        var entry = entries[index];
+        if (data.AsSpan().SequenceEqual(GetOriginalFile(entry))) return;
+        EnsureCanCompress(entry.CompressionType);
+        entries[index] = entry with { DecompressedData = data.ToArray(), Modified = true };
+    }
+
+    private int FindHashIndex(ulong hash)
+    {
+        var matches = AbsoluteHashes.Select((entry, index) => (entry, index)).Where(pair => pair.entry.HashFnv1aPathFull == hash).ToArray();
+        if (matches.Length != 1) throw new InvalidDataException("GFPAK member hash is absent or ambiguous.");
+        return matches[0].index;
+    }
+
     public static SwShGfPackFile Parse(ReadOnlySpan<byte> data)
     {
         try

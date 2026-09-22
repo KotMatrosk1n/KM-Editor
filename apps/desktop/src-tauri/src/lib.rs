@@ -217,6 +217,8 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "modMerger.apply",
     "modMerger.load",
     "modMerger.stage",
+    "modMerger.workspace.analyze",
+    "modMerger.workspace.export",
     "models.assets.stage",
     "models.catalog",
     "models.prepare",
@@ -2551,6 +2553,7 @@ fn project_bridge_request_policy(request_json: &str) -> Option<ProjectBridgeRequ
                     | "models.textures"
                     | "models.properties"
                     | "modMerger.stage"
+                    | "modMerger.workspace.analyze"
                     | "svModMerger.stage"
                     | "zaModMerger.stage"
                     | "researchLab.capabilities"
@@ -2861,6 +2864,7 @@ fn project_bridge_command_requires_exclusive_barrier(command: &str) -> bool {
             | "guidedDesign.import"
             | "inGameSettingsPackage.apply"
             | "modMerger.apply"
+            | "modMerger.workspace.export"
             | "output.checkpoint.create"
             | "output.checkpoint.delete"
             | "output.checkpoint.restore"
@@ -2908,6 +2912,7 @@ fn project_bridge_command_recycles_read_workers(command: &str) -> bool {
             | "gameplaySettings.update.apply"
             | "inGameSettingsPackage.apply"
             | "modMerger.apply"
+            | "modMerger.workspace.export"
             | "output.checkpoint.create"
             | "output.checkpoint.delete"
             | "output.checkpoint.restore"

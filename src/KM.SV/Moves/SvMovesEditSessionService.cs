@@ -11,7 +11,7 @@ using System.Globalization;
 
 namespace KM.SV.Moves;
 
-internal sealed class SvMovesEditSessionService
+internal sealed partial class SvMovesEditSessionService
 {
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SvWorkflowFileSource fileSource;
@@ -869,6 +869,7 @@ internal sealed class SvMovesEditSessionService
     {
         public ushort MoveId { get; init; }
         public bool CanUseMove { get; set; }
+        public bool Unknown72 { get; init; }
         public byte Type { get; set; }
         public byte Quality { get; set; }
         public byte Category { get; set; }
@@ -1014,6 +1015,7 @@ internal sealed class SvMovesEditSessionService
                 Unused69 = row.Unused69,
                 Unused70 = row.Unused70,
                 FlagCantUseTwice = row.FlagCantUseTwice,
+                Unknown72 = row.Unknown72,
             };
 
             if (row.Inflict is { } inflict)
@@ -1032,6 +1034,7 @@ internal sealed class SvMovesEditSessionService
         public Offset<global::SvMoveData> Write(FlatBufferBuilder builder)
         {
             global::SvMoveData.StartSvMoveData(builder);
+            global::SvMoveData.AddUnknown72(builder, Unknown72);
             global::SvMoveData.AddFlagCantUseTwice(builder, FlagCantUseTwice);
             global::SvMoveData.AddUnused70(builder, Unused70);
             global::SvMoveData.AddUnused69(builder, Unused69);

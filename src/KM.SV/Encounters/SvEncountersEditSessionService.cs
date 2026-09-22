@@ -13,7 +13,7 @@ using System.Globalization;
 
 namespace KM.SV.Encounters;
 
-internal sealed class SvEncountersEditSessionService
+internal sealed partial class SvEncountersEditSessionService
 {
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SvWorkflowFileSource fileSource;
@@ -657,10 +657,10 @@ internal sealed class SvEncountersEditSessionService
 
         public Offset<global::EncountPokeData> Write(FlatBufferBuilder builder)
         {
-            var areaOffset = string.IsNullOrEmpty(Area) ? default : builder.CreateString(Area);
-            var locationNameOffset = string.IsNullOrEmpty(LocationName) ? default : builder.CreateString(LocationName);
-            var flagNameOffset = string.IsNullOrEmpty(FlagName) ? default : builder.CreateString(FlagName);
-            var voiceOffset = string.IsNullOrEmpty(PokeVoiceClassification)
+            var areaOffset = Area is null ? default : builder.CreateString(Area);
+            var locationNameOffset = LocationName is null ? default : builder.CreateString(LocationName);
+            var flagNameOffset = FlagName is null ? default : builder.CreateString(FlagName);
+            var voiceOffset = PokeVoiceClassification is null
                 ? default
                 : builder.CreateString(PokeVoiceClassification);
             var timeOffset = Timetable?.Write(builder) ?? default;

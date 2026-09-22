@@ -13,7 +13,7 @@ using System.Globalization;
 
 namespace KM.SV.Trainers;
 
-internal sealed class SvTrainersEditSessionService
+internal sealed partial class SvTrainersEditSessionService
 {
     private const string IsStrongField = "isStrong";
     private const string ChangeGemField = "changeGem";
@@ -1346,6 +1346,7 @@ internal sealed class SvTrainersEditSessionService
         public global::trainer.DataType DataType { get; init; }
         public sbyte MoneyRate { get; set; }
         public bool ChangeGem { get; set; }
+        [System.Text.Json.Serialization.JsonInclude]
         public IReadOnlyList<PokemonRow?> Pokemon { get; private set; } = Array.Empty<PokemonRow?>();
         public bool AiBasic { get; set; }
         public bool AiHigh { get; set; }
@@ -1444,13 +1445,13 @@ internal sealed class SvTrainersEditSessionService
             var pokemonOffsets = Pokemon
                 .Select(pokemon => pokemon?.Write(builder) ?? default)
                 .ToArray();
-            var tridOffset = string.IsNullOrEmpty(Trid) ? default : builder.CreateString(Trid);
-            var nameOffset = string.IsNullOrEmpty(TrNameLabel) ? default : builder.CreateString(TrNameLabel);
-            var typeOffset = string.IsNullOrEmpty(TrainerType) ? default : builder.CreateString(TrainerType);
-            var normal1Offset = string.IsNullOrEmpty(PopupLabelNormal1) ? default : builder.CreateString(PopupLabelNormal1);
-            var normal2Offset = string.IsNullOrEmpty(PopupLabelNormal2) ? default : builder.CreateString(PopupLabelNormal2);
-            var pinch1Offset = string.IsNullOrEmpty(PopupLabelPinch1) ? default : builder.CreateString(PopupLabelPinch1);
-            var pinch2Offset = string.IsNullOrEmpty(PopupLabelPinch2) ? default : builder.CreateString(PopupLabelPinch2);
+            var tridOffset = Trid is null ? default : builder.CreateString(Trid);
+            var nameOffset = TrNameLabel is null ? default : builder.CreateString(TrNameLabel);
+            var typeOffset = TrainerType is null ? default : builder.CreateString(TrainerType);
+            var normal1Offset = PopupLabelNormal1 is null ? default : builder.CreateString(PopupLabelNormal1);
+            var normal2Offset = PopupLabelNormal2 is null ? default : builder.CreateString(PopupLabelNormal2);
+            var pinch1Offset = PopupLabelPinch1 is null ? default : builder.CreateString(PopupLabelPinch1);
+            var pinch2Offset = PopupLabelPinch2 is null ? default : builder.CreateString(PopupLabelPinch2);
 
             return global::trainer.TrdataMain.CreateTrdataMain(
                 builder,
@@ -1492,7 +1493,8 @@ internal sealed class SvTrainersEditSessionService
         public int Level { get; set; }
         public global::BallType BallId { get; init; }
         public global::WazaType WazaType { get; set; }
-        public WazaSetRow?[] Waza { get; } = new WazaSetRow?[4];
+        [System.Text.Json.Serialization.JsonInclude]
+        public WazaSetRow?[] Waza { get; private set; } = new WazaSetRow?[4];
         public global::GemType GemType { get; set; }
         public global::SeikakuType Seikaku { get; set; }
         public global::TokuseiType Tokusei { get; set; }

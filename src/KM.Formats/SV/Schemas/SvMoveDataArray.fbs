@@ -91,6 +91,7 @@ table SvMoveData {
     unused69: bool;
     unused70: bool;
     flag_cant_use_twice: bool;
+    unknown72: bool;
 }
 
 table SvMoveDataArray {

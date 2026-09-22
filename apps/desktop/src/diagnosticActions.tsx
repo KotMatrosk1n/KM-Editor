@@ -2,7 +2,7 @@
 
 import { createContext, type ReactNode, useContext, useMemo } from 'react';
 import type { ApiDiagnostic } from './bridge/contracts';
-import { cacheDiagnosticCodes, desktopErrorCodes, projectBridgeErrorCodes } from './errorCodes';
+import { cacheDiagnosticCodes, desktopErrorCodes, mergeWorkspaceErrorCodes, projectBridgeErrorCodes } from './errorCodes';
 import { workbenchCapabilityRegistry } from './workbench/capabilityRegistry';
 import { createSectionLocation, type WorkbenchLocation } from './workbench/workbenchLocation';
 import type { WorkbenchSection } from './workbench/workbenchSections';
@@ -79,6 +79,7 @@ const settingsCodes = new Set<string>([
 const capabilityByDomain = new Map(
   workbenchCapabilityRegistry.map((capability) => [capability.domain, capability] as const)
 );
+const mergerCodes = new Set<string>(Object.values(mergeWorkspaceErrorCodes));
 
 const defaultContext: DiagnosticNavigationContextValue = {
   navigate: () => undefined,
@@ -139,6 +140,7 @@ export function resolveDiagnosticNavigationAction(
 }
 
 function resolveDestination(diagnostic: ApiDiagnostic): WorkbenchSection | null {
+  if (diagnostic.domain === 'workflow.modMerger' || diagnostic.domain === 'workflow.mod-merger' || (diagnostic.code && mergerCodes.has(diagnostic.code))) return 'modMerger';
   if (diagnostic.domain === 'tool.trainerDynamax' || diagnostic.code === projectBridgeErrorCodes.trainerDynamaxInvalid
     || diagnostic.code === projectBridgeErrorCodes.trainerDynamaxReviewStale) return 'trainerDynamax';
   if (diagnostic.code === projectBridgeErrorCodes.raidDensInvalid || diagnostic.domain === 'workflow.raidDens') {

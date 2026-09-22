@@ -780,6 +780,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.ReadGameModuleCapabilities => DispatchReadGameModuleCapabilities(requestJson),
                 KmCommandNames.QueryGameModule => DispatchQueryGameModule(requestJson),
                 KmCommandNames.SoundStudio => DispatchSoundStudio(requestJson),
+                KmCommandNames.AnalyzeMergeWorkspace => DispatchMergeWorkspace(requestJson, export: false),
+                KmCommandNames.ExportMergeWorkspace => DispatchMergeWorkspace(requestJson, export: true),
                 KmCommandNames.ModelCatalog => DispatchModelPreview(requestJson, prepare: false),
                 KmCommandNames.ModelPrepare => DispatchModelPreview(requestJson, prepare: true),
                 KmCommandNames.ModelTextures => DispatchModelTextures(requestJson, stage: false),
@@ -1402,6 +1404,40 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         try { return SerializeSuccess(SoundStudioBridge.Dispatch(request.Payload), request.RequestId); }
         catch (Exception exception) when (exception is IOException or ArgumentException or InvalidOperationException or UnauthorizedAccessException)
         { throw new BridgeRequestException("Audio sources are unavailable or changed. Reload Sound Studio and check the project sources.", exception, BridgeErrorCodes.AudioSourceUnavailable); }
+    }
+
+    private string DispatchMergeWorkspace(string requestJson, bool export)
+    {
+        var request = DeserializeRequest<MergeWorkspaceRequest>(requestJson);
+        try
+        {
+            var service = new KM.Tools.ModMerging.MergeWorkspaceService();
+            return SerializeSuccess(export ? service.Export(request.Payload) : service.Analyze(request.Payload), request.RequestId);
+        }
+        catch (KM.Tools.ModMerging.MergeInputException exception)
+        {
+            return SerializeFailure(exception.Code, exception.Message, request.RequestId);
+        }
+        catch (OutputCoordinatorException exception)
+        {
+            var code = exception switch
+            {
+                OutputPreimageConflictException or OutputReviewStateConflictException or OutputStateRevisionConflictException => MergeWorkspaceErrorCodes.ReviewStale,
+                OutputOwnershipConflictException => MergeWorkspaceErrorCodes.OutputConflict,
+                OutputRecoveryRequiredException => MergeWorkspaceErrorCodes.OutputRecovery,
+                OutputPathSecurityException => MergeWorkspaceErrorCodes.PathUnsafe,
+                OutputLimitExceededException => MergeWorkspaceErrorCodes.LimitExceeded,
+                _ => MergeWorkspaceErrorCodes.ExportFailed,
+            };
+            return SerializeFailure(code, "The output could not be updated. Review the merger diagnostics before retrying.", request.RequestId);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException
+            or ArgumentException or SharpCompress.Common.SharpCompressException or NotSupportedException or InvalidOperationException or OverflowException or IndexOutOfRangeException)
+        {
+            var message = export ? "The merge could not be exported. Check the output and review again."
+                : "The source could not be analyzed. Check that the archive is complete and readable.";
+            return SerializeFailure(export ? "KM-MERGE-EXPORT-FAILED" : "KM-MERGE-ARCHIVE-UNREADABLE", message, request.RequestId);
+        }
     }
 
     private string DispatchModelPreview(string requestJson, bool prepare)

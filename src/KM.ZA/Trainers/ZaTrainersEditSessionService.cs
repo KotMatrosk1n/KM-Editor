@@ -12,7 +12,7 @@ using System.Globalization;
 
 namespace KM.ZA.Trainers;
 
-internal sealed class ZaTrainersEditSessionService
+internal sealed partial class ZaTrainersEditSessionService
 {
     private const int MeowsticSpeciesId = 678;
 
@@ -1828,6 +1828,7 @@ internal sealed class ZaTrainersEditSessionService
         public byte MoneyRate { get; set; }
         public bool MegaEvolution { get; set; }
         public bool LastHand { get; set; }
+        [System.Text.Json.Serialization.JsonInclude]
         public IReadOnlyList<PokemonRow?> Pokemon { get; private set; } = Array.Empty<PokemonRow?>();
         public bool AiBasic { get; set; }
         public bool AiHigh { get; set; }
@@ -1965,7 +1966,8 @@ internal sealed class ZaTrainersEditSessionService
         public int Item { get; set; }
         public int Level { get; set; }
         public byte BallId { get; init; }
-        public MoveRow?[] Moves { get; } = new MoveRow?[4];
+        [System.Text.Json.Serialization.JsonInclude]
+        public MoveRow?[] Moves { get; private set; } = new MoveRow?[4];
         public int Nature { get; set; }
         public int Ability { get; set; }
         public StatRow? Ivs { get; set; }

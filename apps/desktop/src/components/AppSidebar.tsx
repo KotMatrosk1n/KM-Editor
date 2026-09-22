@@ -132,12 +132,11 @@ export function AppSidebar({
             );
           })}
 
-          {canShowWorkflowNavigation || canShowGameplaySettingsNavigation
-            ? workflowNavigationGroups.map((group) => {
+          {workflowNavigationGroups.map((group) => {
                 if (group.id === 'betaEditors' && (!canShowWorkflowNavigation || !showBetaEditors)) return null;
                 const visibleSectionIds = group.sectionIds.filter(
                   (sectionId) =>
-                    (sectionId === 'gameplaySettings'
+                    (sectionId === 'modMerger' ? true : sectionId === 'gameplaySettings'
                       ? canShowGameplaySettingsNavigation
                       : canShowWorkflowNavigation &&
                         canAccessWorkflowSectionForHealth(
@@ -213,8 +212,7 @@ export function AppSidebar({
                     ) : null}
                   </div>
                 );
-              })
-            : null}
+              })}
         </div>
 
         <div className="sidebar-utility-nav">

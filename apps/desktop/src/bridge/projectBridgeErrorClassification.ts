@@ -2,6 +2,7 @@
 
 import {
   gameplaySettingsErrorCodes,
+  mergeWorkspaceErrorCodes,
   guidedDesignErrorCodes,
   inGameSettingsPackageErrorCodes,
   kmRecipeErrorCodes,
@@ -37,6 +38,7 @@ const expectedProjectBridgeRejectionCodes = new Set<KmErrorCode>([
   projectBridgeErrorCodes.outputMetadataUnavailable,
 
   ...Object.values(gameplaySettingsErrorCodes),
+  ...Object.values(mergeWorkspaceErrorCodes).filter(code => code !== mergeWorkspaceErrorCodes.exportFailed && code !== mergeWorkspaceErrorCodes.outputRecovery),
   ...Object.values(guidedDesignErrorCodes),
   ...Object.values(inGameSettingsPackageErrorCodes),
   ...Object.values(kmRecipeErrorCodes),

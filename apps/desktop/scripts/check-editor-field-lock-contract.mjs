@@ -45,12 +45,12 @@ const auditedTsxSourceFiles = auditedSourceFiles.filter((sourceFile) =>
 // failure rather than silently shrinking the audit.
 assert.equal(
   auditedSourceFiles.length,
-  310,
+  314,
   'Update the field-lock source count only after reviewing every added or removed application file.'
 );
 assert.equal(
   auditedTsxSourceFiles.length,
-  108,
+  110,
   'Update the field-lock TSX count only after reviewing every added or removed editor surface.'
 );
 
@@ -199,14 +199,6 @@ const permittedTransientFieldLocks = new Map([
     'Ange Fight player damage is structurally read-only for an unavailable workflow, a read-only install, or a persisted staged uninstall.'
   ],
   [
-    'src/App.tsx#SvModMergerSection[1]=>src/App.tsx#input:id={`mod-merger-source-enabled-${index}`}[disabled]',
-    'The Scarlet and Violet merger source list is owned while its exact load, stage, or apply transaction is running.'
-  ],
-  [
-    'src/App.tsx#SvModMergerSection[2]=>src/App.tsx#input:id={`mod-merger-source-enabled-${index}`}[disabled]',
-    'The Z-A merger source list is owned while its exact load, stage, or apply transaction is running.'
-  ],
-  [
     'src/App.tsx#SettingsSection[1]=>src/App.tsx#SearchableOptionInput:id="settings-cache-limit"[disabled]=>src/components/SearchableOptionInput.tsx#input:id={inputId}[disabled]',
     'Cache-limit changes are serialized with cache refresh and settings writes so competing disk-cache mutations cannot race.'
   ],
@@ -346,14 +338,7 @@ const permittedTransientFieldLocks = new Map([
     'src/App.tsx#RandomizerSection[1]=>src/features/randomizer/RandomizerSection.tsx#textarea:id="randomizer-shared-seed"[disabled]',
     'Randomizer shared-seed import is immutable while preview or apply owns the submitted options.'
   ],
-  [
-    'src/App.tsx#ModMergerSection[1]=>src/App.tsx#ModMergerFileList[1][disabled]=>src/App.tsx#input[57][disabled]',
-    'Mod Merger file selection is frozen while its source load, stage, or apply transaction owns the plan.'
-  ],
-  [
-    'src/App.tsx#ModMergerSection[1]=>src/App.tsx#ModMergerFileList[2][disabled]=>src/App.tsx#input[57][disabled]',
-    'Mod Merger file selection is frozen while its source load, stage, or apply transaction owns the plan.'
-  ]
+
 ]);
 
 function resolveSymbol(checker, symbol) {
