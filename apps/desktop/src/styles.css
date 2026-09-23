@@ -6828,6 +6828,22 @@ h2 {
   min-height: 34px;
 }
 
+.learnset-relearn-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.learnset-relearn-toggle input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  flex: 0 0 16px;
+  margin: 0;
+}
+
 .learnset-level-cell,
 .learnset-mastery-cell {
   color: var(--color-text);
@@ -6906,6 +6922,13 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.learnset-row > .learnset-level-cell,
+.learnset-row > .learnset-mastery-cell,
+.learnset-row > .learnset-inline-metadata {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .learnset-edit-grid {

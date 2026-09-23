@@ -96,7 +96,10 @@ public sealed record SwShPokemonLearnsetMove(
     int Slot,
     int MoveId,
     string MoveName,
-    int Level);
+    int Level)
+{
+    public string? LevelLabel => Level == 0 ? "Evolution" : null;
+}
 
 public sealed record SwShPokemonCompatibilityGroup(
     string GroupId,

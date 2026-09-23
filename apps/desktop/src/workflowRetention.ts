@@ -67,7 +67,7 @@ const refreshDependentsBySection: Partial<
 > = {
   royalCandy: ['placement'],
   staticEncounters: ['placement'],
-  text: ['placement', 'trainers', 'trainerPools'],
+  text: ['placement', 'trainers', 'trainerPools', 'behavior'],
   trainers: ['trainerPools']
 };
 

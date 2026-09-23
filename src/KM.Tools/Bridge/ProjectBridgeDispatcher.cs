@@ -4395,6 +4395,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         var request = DeserializeRequest<LoadBehaviorWorkflowRequest>(requestJson);
         var paths = request.Payload.Paths
             ?? throw new BridgeRequestException("Behavior load paths are required.");
+        if (ProjectBridgeMapper.ToCore(paths).SelectedGame == ProjectGame.ZA)
+            return SerializeSuccess(ZaBridgeMapper.ToDto(zaWorkflowService.LoadBehavior(ProjectBridgeMapper.ToCore(paths))), request.RequestId);
         var workflow = swShWorkflowService.LoadBehavior(ProjectBridgeMapper.ToCore(paths));
         var response = SwShBridgeMapper.ToDto(workflow);
 
@@ -4409,6 +4411,9 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        if (ProjectBridgeMapper.ToCore(paths).SelectedGame == ProjectGame.ZA)
+            return SerializeSuccess(ZaBridgeMapper.ToDto(zaWorkflowService.UpdateBehavior(ProjectBridgeMapper.ToCore(paths), session,
+                [new KM.ZA.Behavior.ZaBehaviorUpdate(request.Payload.EntryId, request.Payload.Field, request.Payload.Value)])), request.RequestId);
         var result = behaviorEditSessionService.UpdateEntryField(
             ProjectBridgeMapper.ToCore(paths),
             session,
@@ -4428,6 +4433,9 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        if (ProjectBridgeMapper.ToCore(paths).SelectedGame == ProjectGame.ZA)
+            return SerializeSuccess(ZaBridgeMapper.ToDto(zaWorkflowService.UpdateBehavior(ProjectBridgeMapper.ToCore(paths), session,
+                request.Payload.Updates?.Select(u => u is null ? null : new KM.ZA.Behavior.ZaBehaviorUpdate(u.EntryId, u.Field, u.Value)).ToArray())), request.RequestId);
         var updates = request.Payload.Updates?.Select(update => update is null
             ? null
             : new SwShBehaviorFieldUpdate(update.EntryId, update.Field, update.Value)).ToArray();
@@ -6713,7 +6721,9 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         }
 
         if (IsSwordShieldOnlyCommand(command)
-            && !IsSwordShield(selectedGame.Value))
+            && !IsSwordShield(selectedGame.Value)
+            && !(command is KmCommandNames.LoadBehaviorWorkflow or KmCommandNames.UpdateBehaviorEntryField
+                or KmCommandNames.UpdateBehaviorEntryFields && IsPokemonLegendsZA(selectedGame.Value)))
         {
             return SerializeFailure(
                 BridgeErrorCodes.GameMismatch,
@@ -8116,6 +8126,9 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private static bool IsSwordShieldOnlyCommand(string command)
     {
         return command is
+            KmCommandNames.LoadBehaviorWorkflow or
+            KmCommandNames.UpdateBehaviorEntryField or
+            KmCommandNames.UpdateBehaviorEntryFields or
             KmCommandNames.OpenSwShPlacementCatalog or
             KmCommandNames.QuerySwShPlacementCatalog or
             KmCommandNames.LoadSwShPlacementObject or
@@ -8144,9 +8157,6 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.LoadRaidBonusRewardsWorkflow or
             KmCommandNames.UpdateRaidBonusRewardField or
             KmCommandNames.UpdateRaidBonusRewardFields or
-            KmCommandNames.LoadBehaviorWorkflow or
-            KmCommandNames.UpdateBehaviorEntryField or
-            KmCommandNames.UpdateBehaviorEntryFields or
             KmCommandNames.LoadFlagworkSaveWorkflow or
             KmCommandNames.LoadBagHookWorkflow or
             KmCommandNames.StageBagHookInstall or
@@ -8254,6 +8264,9 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private static bool IsPokemonLegendsZAAllowedCommand(string command)
     {
         return command is
+            KmCommandNames.LoadBehaviorWorkflow or
+            KmCommandNames.UpdateBehaviorEntryField or
+            KmCommandNames.UpdateBehaviorEntryFields or
             KmCommandNames.OpenProject or
             KmCommandNames.ValidateProject or
             KmCommandNames.RefreshFileGraph or

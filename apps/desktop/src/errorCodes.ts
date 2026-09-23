@@ -16,6 +16,12 @@ export const kmErrorCodeSchema = z
   );
 
 export const projectBridgeErrorCodes = {
+  zaBehaviorSourceUnavailable: "KM-ZA-BEHAVIOR-SOURCE-UNAVAILABLE",
+  zaBehaviorSelectionInvalid: "KM-ZA-BEHAVIOR-SELECTION-INVALID",
+  zaBehaviorValueInvalid: "KM-ZA-BEHAVIOR-VALUE-INVALID",
+  zaBehaviorSessionInvalid: "KM-ZA-BEHAVIOR-SESSION-INVALID",
+  zaBehaviorPlanStale: "KM-ZA-BEHAVIOR-PLAN-STALE",
+  zaBehaviorApplyFailed: "KM-ZA-BEHAVIOR-APPLY-FAILED",
   zaPokemonSizeSourceUnavailable: "KM-ZA-POKEMON-SIZE-SOURCE-UNAVAILABLE",
   zaPokemonSizeSelectionInvalid: "KM-ZA-POKEMON-SIZE-SELECTION-INVALID",
   zaPokemonSizeBindingInvalid: "KM-ZA-POKEMON-SIZE-BINDING-INVALID",

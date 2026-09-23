@@ -47,6 +47,7 @@ internal sealed class ZaWorkflowFileSource
         "ik_pokemon",
         "message",
         "param_ai",
+        "param_chr",
         "world",
     ];
 

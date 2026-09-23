@@ -45,6 +45,8 @@ export const editorLiteralPatterns: readonly EditorLiteralPattern[] = [
   { pattern: /^KM Editor v([\d.]+) is available\. Install it now\?$/u, template: 'KM Editor v{version} is available. Install it now?', parameters: ['version'] },
   { pattern: /^KM Editor v([\d.]+) is available\. KM Editor will open (.+)\.$/u, template: 'KM Editor v{version} is available. KM Editor will open {release}.', parameters: ['version', 'release'] },
   { pattern: /^Mastery Lv\. (\d+)$/u, template: 'Mastery level {level}', parameters: ['level'] },
+  { pattern: /^(Lv\. 0 \(Evolution\)|Relearn|Lv\. \d+) \/ (Mastery Lv\. \d+)$/u, template: '{condition} / {mastery}', parameters: ['condition', 'mastery'], translate: ['condition', 'mastery'] },
+  { pattern: /^((?:Lv\. 0 \(Evolution\)|Relearn|Lv\. \d+)(?: \/ Mastery Lv\. \d+)?) (.+)$/u, template: '{condition} {move}', parameters: ['condition', 'move'], translate: ['condition'] },
   { pattern: /^Maximum length: (\d+) UTF-8 bytes\.$/u, template: 'Maximum length: {count} UTF-8 bytes.', parameters: ['count'] },
   { pattern: /^(\d+) guaranteed perfect$/u, template: 'Guaranteed perfect IVs: {count}', parameters: ['count'] },
   { pattern: /^Dimension Dungeon ([\d,.]+)$/u, template: 'Dimension Dungeon {index}', parameters: ['index'] },

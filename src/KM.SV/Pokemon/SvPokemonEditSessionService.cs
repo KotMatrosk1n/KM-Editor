@@ -1402,11 +1402,9 @@ internal sealed partial class SvPokemonEditSessionService
                     targetSlot,
                     operation.MoveId ?? 0,
                     SvLabels.Move(operation.MoveId ?? 0),
-                    operation.Level ?? 1,
+                    SvLearnsetLevel.ToDisplayLevel(operation.RawLevel ?? operation.Level ?? 1),
                     operation.RawLevel ?? operation.Level ?? 1,
-                    (operation.RawLevel ?? operation.Level ?? 1) == SvLearnsetLevel.EvolutionRawLevel
-                        ? SvLearnsetLevel.EvolutionLabel
-                        : null);
+                    SvLearnsetLevel.ToLevelLabel(operation.RawLevel ?? operation.Level ?? 1));
                 if (targetSlot < learnset.Count)
                 {
                     learnset[targetSlot] = row;
@@ -2071,31 +2069,9 @@ internal sealed partial class SvPokemonEditSessionService
             targetSlot,
             moveId,
             level,
-            ResolveLearnsetRawLevel(pokemon, normalizedAction, targetSlot, level));
+            level is { } displayLevel ? SvLearnsetLevel.ToRawLevel(displayLevel) : null);
         ValidateLearnsetOperation(operation, pokemon, diagnostics);
         return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) ? null : operation;
-    }
-
-    private static int? ResolveLearnsetRawLevel(
-        SvPokemonRecord pokemon,
-        string action,
-        int targetSlot,
-        int? requestedLevel)
-    {
-        if (requestedLevel is null)
-        {
-            return null;
-        }
-
-        if (action == UpsertAction
-            && targetSlot >= 0
-            && targetSlot < pokemon.Learnset.Count
-            && pokemon.Learnset[targetSlot] is { } existing)
-        {
-            return SvLearnsetLevel.PreserveRawLevel(requestedLevel.Value, existing.RawLevel, existing.Level);
-        }
-
-        return requestedLevel;
     }
 
     private static EvolutionOperation? CreateEvolutionOperation(

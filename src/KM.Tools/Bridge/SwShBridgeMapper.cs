@@ -2437,7 +2437,8 @@ public static class SwShBridgeMapper
             learnsetMove.Slot,
             learnsetMove.MoveId,
             learnsetMove.MoveName,
-            learnsetMove.Level);
+            learnsetMove.Level,
+            LevelLabel: learnsetMove.LevelLabel);
     }
 
     private static PokemonCompatibilityGroupDto ToDto(SwShPokemonCompatibilityGroup group)
