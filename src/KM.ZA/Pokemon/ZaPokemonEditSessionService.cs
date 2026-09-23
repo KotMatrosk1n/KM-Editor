@@ -7600,7 +7600,7 @@ internal sealed partial class ZaPokemonEditSessionService
         return operation.Action switch
         {
             AddAction or UpsertAction =>
-                $"Set {pokemon.Name} learnset slot {operation.Slot} to Lv. {operation.Level} {ZaLabels.Move(operation.MoveId ?? 0)}.",
+                $"Set {pokemon.Name} learnset slot {operation.Slot} to {ZaPokemonWorkflowService.FormatLearnsetLevelLabel(operation.RawLevel ?? operation.Level ?? 1) ?? $"Lv. {operation.Level}"} {ZaLabels.Move(operation.MoveId ?? 0)}.",
             RemoveAction => $"Remove {pokemon.Name} learnset slot {operation.Slot}.",
             MoveUpAction => $"Move {pokemon.Name} learnset slot {operation.Slot} up.",
             MoveDownAction => $"Move {pokemon.Name} learnset slot {operation.Slot} down.",

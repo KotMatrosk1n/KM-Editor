@@ -1119,11 +1119,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     }),
   setBehaviorWorkflow: (behaviorWorkflow) =>
     set((state) => {
-      const selectedBehaviorEntryId = behaviorWorkflow.entries.some(
+      const entries = 'resources' in behaviorWorkflow ? behaviorWorkflow.resources : behaviorWorkflow.entries;
+      const selectedBehaviorEntryId = entries.some(
         (entry) => entry.entryId === state.selectedBehaviorEntryId
       )
         ? state.selectedBehaviorEntryId
-        : (behaviorWorkflow.entries[0]?.entryId ?? null);
+        : (entries[0]?.entryId ?? null);
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'behavior'),

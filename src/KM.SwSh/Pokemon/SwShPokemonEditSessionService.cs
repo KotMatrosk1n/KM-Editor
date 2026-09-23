@@ -3886,9 +3886,9 @@ public sealed class SwShPokemonEditSessionService
         return operation.Action switch
         {
             LearnsetUpsertAction when operation.Slot >= pokemon.Learnset.Count =>
-                $"Add {pokemon.Name} learnset move Lv. {operation.Level} {moveName ?? $"Move {operation.MoveId}"}.",
+                $"Add {pokemon.Name} learnset move {FormatLearnsetLevel(operation.Level)} {moveName ?? $"Move {operation.MoveId}"}.",
             LearnsetUpsertAction =>
-                $"Set {pokemon.Name} learnset slot {operation.Slot} to Lv. {operation.Level} {moveName ?? $"Move {operation.MoveId}"}.",
+                $"Set {pokemon.Name} learnset slot {operation.Slot} to {FormatLearnsetLevel(operation.Level)} {moveName ?? $"Move {operation.MoveId}"}.",
             LearnsetRemoveAction =>
                 $"Remove {pokemon.Name} learnset slot {operation.Slot}{FormatLearnsetMoveSuffix(existingMove)}.",
             LearnsetMoveUpAction =>
@@ -3905,8 +3905,10 @@ public sealed class SwShPokemonEditSessionService
     {
         return move is null
             ? string.Empty
-            : $" (Lv. {move.Level} {move.MoveName})";
+            : $" ({FormatLearnsetLevel(move.Level)} {move.MoveName})";
     }
+
+    private static string FormatLearnsetLevel(int? level) => level == 0 ? "Evolution" : $"Lv. {level}";
 
     private static bool IsPersonalDataEdit(PendingEdit edit)
     {

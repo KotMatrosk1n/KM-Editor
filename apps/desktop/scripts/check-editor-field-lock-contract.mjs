@@ -45,12 +45,12 @@ const auditedTsxSourceFiles = auditedSourceFiles.filter((sourceFile) =>
 // failure rather than silently shrinking the audit.
 assert.equal(
   auditedSourceFiles.length,
-  314,
+  315,
   'Update the field-lock source count only after reviewing every added or removed application file.'
 );
 assert.equal(
   auditedTsxSourceFiles.length,
-  110,
+  111,
   'Update the field-lock TSX count only after reviewing every added or removed editor surface.'
 );
 
@@ -221,6 +221,10 @@ const permittedTransientFieldLocks = new Map([
   [
     'src/App.tsx#SelectedPokemonPanel[1]=>src/App.tsx#input:id={`pokemon-learnset-${pokemon.personalId}-${move.slot}-level`}[disabled]',
     'Learnset row values lock only while a paste or structural reorder owns the slot identities that those drafts address.'
+  ],
+  [
+    'src/App.tsx#SelectedPokemonPanel[1]=>src/App.tsx#input:id={`pokemon-learnset-${pokemon.personalId}-${move.slot}-relearn`}[disabled]',
+    'The Relearn toggle changes the same learnset row level and follows its paste and structural reorder ownership guard.'
   ],
   [
     'src/App.tsx#SelectedPokemonPanel[1]=>src/App.tsx#SearchableOptionInput:id={`pokemon-learnset-${pokemon.personalId}-${move.slot}-move`}[disabled]=>src/components/SearchableOptionInput.tsx#input:id={inputId}[disabled]',

@@ -14,6 +14,7 @@ using KM.Core.Semantics;
 using KM.Formats.ZA;
 using KM.ZA.Data;
 using KM.ZA.AngeFight;
+using KM.ZA.Behavior;
 using KM.ZA.DumpImport;
 using KM.ZA.Encounters;
 using KM.ZA.ExeFs;
@@ -61,6 +62,8 @@ public sealed class ZaWorkflowService
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly ZaCacheManager cacheManager;
+    private readonly ZaBehaviorWorkflowService behaviorWorkflowService;
+    private readonly ZaBehaviorEditSessionService behaviorEditSessionService;
     private readonly ZaWorkflowFileSource fileSource;
     private readonly ZaItemsWorkflowService itemsWorkflowService;
     private readonly ZaPokemonWorkflowService pokemonWorkflowService;
@@ -103,6 +106,8 @@ public sealed class ZaWorkflowService
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.cacheManager = cacheManager ?? new ZaCacheManager();
         fileSource = new ZaWorkflowFileSource(this.cacheManager);
+        behaviorWorkflowService = new ZaBehaviorWorkflowService(fileSource);
+        behaviorEditSessionService = new ZaBehaviorEditSessionService(this.projectWorkspaceService, behaviorWorkflowService, fileSource);
         itemsWorkflowService = new ZaItemsWorkflowService(fileSource);
         pokemonWorkflowService = new ZaPokemonWorkflowService(fileSource);
         movesWorkflowService = new ZaMovesWorkflowService(fileSource);
@@ -1273,6 +1278,7 @@ public sealed class ZaWorkflowService
         return new ZaWorkflowList(
         [
             pokemonWorkflowService.CreateSummary(project),
+            behaviorWorkflowService.CreateSummary(project),
             trainersWorkflowService.CreateSummary(project),
             trainerPoolsWorkflowService.CreateSummary(project),
             fashionCatalogWorkflowService.CreateSummary(project),
@@ -1307,6 +1313,11 @@ public sealed class ZaWorkflowService
         var project = projectWorkspaceService.Open(paths);
         return pokemonWorkflowService.Load(project);
     }
+
+    public ZaBehaviorWorkflow LoadBehavior(ProjectPaths paths) => behaviorWorkflowService.LoadState(projectWorkspaceService.Open(paths)).Workflow;
+
+    public ZaBehaviorEditResult UpdateBehavior(ProjectPaths paths, EditSession? session, IReadOnlyList<ZaBehaviorUpdate?>? updates) =>
+        behaviorEditSessionService.Update(paths, session, updates);
 
     public ZaMovesWorkflow LoadMoves(ProjectPaths paths)
     {
@@ -1920,6 +1931,7 @@ public sealed class ZaWorkflowService
         return domain switch
         {
             ZaEditSessionDomain.ModelTextures => new KM.ZA.Models.ZaModelTextureEditSessionService().Validate(paths, session),
+            ZaEditSessionDomain.Behavior => behaviorEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.Items => itemsEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.Moves => movesEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.Text => textEditSessionService.Validate(paths, session),
@@ -1949,6 +1961,7 @@ public sealed class ZaWorkflowService
         return domain switch
         {
             ZaEditSessionDomain.ModelTextures => new KM.ZA.Models.ZaModelTextureEditSessionService().CreateChangePlan(paths, session, outputMode),
+            ZaEditSessionDomain.Behavior => behaviorEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.Items => itemsEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.Moves => movesEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.Text => textEditSessionService.CreateChangePlan(paths, session, outputMode),
@@ -1979,6 +1992,7 @@ public sealed class ZaWorkflowService
         return domain switch
         {
             ZaEditSessionDomain.ModelTextures => new KM.ZA.Models.ZaModelTextureEditSessionService().ApplyChangePlan(paths, session, reviewedPlan, outputMode),
+            ZaEditSessionDomain.Behavior => behaviorEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.Items => itemsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.Moves => movesEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.Text => textEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
@@ -2360,6 +2374,7 @@ public sealed class ZaWorkflowService
             [] => ZaEditSessionDomain.None,
             [ZaEditSessionSupport.PokemonDomain] => ZaEditSessionDomain.Pokemon,
             [KM.Formats.Models.ModelTextureIntent.Domain] => ZaEditSessionDomain.ModelTextures,
+            [ZaBehaviorSettings.Domain] => ZaEditSessionDomain.Behavior,
             [ZaEditSessionSupport.ItemsDomain] => ZaEditSessionDomain.Items,
             [ZaEditSessionSupport.MovesDomain] => ZaEditSessionDomain.Moves,
             [ZaEditSessionSupport.TextDomain] => ZaEditSessionDomain.Text,
@@ -2406,6 +2421,7 @@ public sealed class ZaWorkflowService
         {
             ZaEditSessionSupport.PokemonDomain => ZaEditSessionDomain.Pokemon,
             KM.Formats.Models.ModelTextureIntent.Domain => ZaEditSessionDomain.ModelTextures,
+            ZaBehaviorSettings.Domain => ZaEditSessionDomain.Behavior,
             ZaEditSessionSupport.ItemsDomain => ZaEditSessionDomain.Items,
             ZaEditSessionSupport.MovesDomain => ZaEditSessionDomain.Moves,
             ZaEditSessionSupport.TextDomain => ZaEditSessionDomain.Text,
@@ -2428,6 +2444,7 @@ public sealed class ZaWorkflowService
     private static bool IsNormalDomain(ZaEditSessionDomain domain)
     {
         return domain is ZaEditSessionDomain.ModelTextures or ZaEditSessionDomain.Items
+            or ZaEditSessionDomain.Behavior
             or ZaEditSessionDomain.Pokemon
             or ZaEditSessionDomain.Moves
             or ZaEditSessionDomain.Text
@@ -2527,6 +2544,7 @@ public sealed class ZaWorkflowService
         return domain switch
         {
             ZaEditSessionDomain.ModelTextures => KM.Formats.Models.ModelTextureIntent.Domain,
+            ZaEditSessionDomain.Behavior => ZaBehaviorSettings.Domain,
             ZaEditSessionDomain.Items => ZaEditSessionSupport.ItemsDomain,
             ZaEditSessionDomain.Pokemon => ZaEditSessionSupport.PokemonDomain,
             ZaEditSessionDomain.Moves => ZaEditSessionSupport.MovesDomain,
@@ -2974,6 +2992,7 @@ public sealed class ZaWorkflowService
     {
         ModelTextures,
         None,
+        Behavior,
         Items,
         Pokemon,
         Moves,

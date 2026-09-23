@@ -15,13 +15,11 @@ internal static class SvLearnsetLevel
 
     public static string? ToLevelLabel(int rawLevel)
     {
-        return rawLevel == EvolutionRawLevel ? EvolutionLabel : null;
+        return rawLevel is EvolutionRawLevel or EvolutionDisplayLevel ? EvolutionLabel : null;
     }
 
-    public static int PreserveRawLevel(int requestedLevel, int existingRawLevel, int existingDisplayLevel)
+    public static int ToRawLevel(int displayLevel)
     {
-        return existingRawLevel == EvolutionRawLevel && requestedLevel == existingDisplayLevel
-            ? existingRawLevel
-            : requestedLevel;
+        return displayLevel == EvolutionDisplayLevel ? EvolutionRawLevel : displayLevel;
     }
 }

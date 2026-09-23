@@ -1,6 +1,7 @@
 import { stageModelAsset, stageModelTexture } from './features/model-viewer/modelTextureBridge';
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import { ZaBehaviorSection } from './features/behavior/ZaBehaviorSection';
 import MergeWorkspace from './features/mod-merger/MergeWorkspace';
 import { AdvancedEditorDetails } from './components/AdvancedEditorDetails';
 import { BetaEditorsSettings } from './features/settings/BetaEditorsSettings';
@@ -125,6 +126,7 @@ import {
   type BehaviorField,
   type BehaviorFieldOption,
   type BehaviorWorkflow,
+  type SwShBehaviorWorkflow,
   type ChangePlan,
   type ChangePlanOutputMode,
   type DynamaxAdventureEditableField,
@@ -5474,7 +5476,8 @@ export function App({
             : null;
         case 'behavior':
           return typeof value === 'string' &&
-            currentState.behaviorWorkflow?.entries.some((entry) => entry.entryId === value)
+            (currentState.behaviorWorkflow && ('resources' in currentState.behaviorWorkflow
+              ? currentState.behaviorWorkflow.resources : currentState.behaviorWorkflow.entries).some((entry) => entry.entryId === value))
             ? () => setSelectedBehaviorEntryId(value)
             : null;
         case 'flagworkSave':
@@ -10943,6 +10946,8 @@ export function App({
     setSwShPlacementRequestDiagnostics([]);
     swShPlacementRecoveryAttemptedRef.current = false;
   }, [isSwordShieldProject, placementWorkflow]);
+
+  const registerBehaviorDraftDirty = useCallback((dirty: boolean) => registerEditorDraftDirty('behavior', dirty), [registerEditorDraftDirty]);
 
   const handleOpenBehaviorWorkflow = async () => {
     await runRetainedWorkflowLoad(
@@ -20656,7 +20661,15 @@ export function App({
             isBehaviorLoading && !behaviorWorkflow ? (
               <WorkflowLoadingPanel label="Behavior" />
             ) : (
-              <BehaviorSection
+              'resources' in (behaviorWorkflow ?? {}) ? (
+                <ZaBehaviorSection workflow={behaviorWorkflow as import('./bridge/contracts').ZaBehaviorWorkflow}
+                  onCancelEditSession={requestCancelEditSession}
+                  editSession={getEditSessionForSection('behavior')} isBehaviorUpdating={isBehaviorUpdating}
+                  isEditStarting={isEditStarting} onStartEditSession={handleStartEditSession}
+                  onSearchChange={handleBehaviorSearchChange} onSelectEntry={handleSelectBehaviorLocation}
+                  onUpdateBehaviorEntryFields={handleUpdateBehaviorEntryFields} onDraftDirtyChange={registerBehaviorDraftDirty}
+                  searchText={behaviorSearchText} selectedEntryId={selectedBehaviorEntryId} />
+              ) : <BehaviorSection
                 editSession={getEditSessionForSection('behavior')}
                 isBehaviorUpdating={isBehaviorUpdating}
                 isEditStarting={isEditStarting}
@@ -20666,7 +20679,7 @@ export function App({
                 onUpdateBehaviorEntryFields={handleUpdateBehaviorEntryFields}
                 searchText={behaviorSearchText}
                 selectedEntryId={selectedBehaviorEntryId}
-                workflow={behaviorWorkflow}
+                workflow={behaviorWorkflow as SwShBehaviorWorkflow | null}
               />
             )
           ) : null}
@@ -24763,6 +24776,15 @@ function SelectedPokemonPanel({
   const [learnsetLevelDraft, setLearnsetLevelDraft] = useState(
     selectedLearnsetMove?.level.toString() ?? ''
   );
+  const learnsetOrdinaryLevelsRef = useRef(new Map<string, string>());
+  const toggleLearnsetRelearn = (slot: number | 'new', value: string, checked: boolean) => {
+    const key = JSON.stringify([ordinaryDraftProject, pokemon?.personalId, slot]);
+    if (checked) {
+      learnsetOrdinaryLevelsRef.current.set(key, value);
+      return '254';
+    }
+    return learnsetOrdinaryLevelsRef.current.get(key) ?? '1';
+  };
   const [newLearnsetDraftsByPokemonId, setNewLearnsetDraftsByPokemonId] = useState<
     Record<string, PokemonLearnsetDraftFields>
   >({});
@@ -25929,6 +25951,7 @@ function SelectedPokemonPanel({
       setLearnsetDraftsByPokemonId({});
       setNewEvolutionDraftsByPokemonId({});
       setNewLearnsetDraftsByPokemonId({});
+      learnsetOrdinaryLevelsRef.current.clear();
       setDexSwapDraftsByPokemonId({});
     });
 
@@ -26514,29 +26537,52 @@ function SelectedPokemonPanel({
                             </span>
                             <span className="learnset-slot-cell">#{move.slot + 1}</span>
                             <div className="path-field learnset-inline-field learnset-level-field">
-                              <FieldLabel
-                                help={t('fieldHelp.catalog.pokemon.learnsetLevel')}
-                                htmlFor={`pokemon-learnset-${pokemon.personalId}-${move.slot}-level`}
-                                label={translateLiteral('Level')}
-                              />
-                              <input
-                                disabled={!canEditLearnsetFields}
-                                id={`pokemon-learnset-${pokemon.personalId}-${move.slot}-level`}
-                                max={learnsetMaximumLevel}
-                                min={0}
-                                onChange={(event) => {
-                                  setLearnsetLevelDraft(event.target.value);
-                                  updateSelectedLearnsetDraft({ level: event.target.value });
-                                }}
-                                type="number"
-                                value={learnsetLevelDraft}
-                              />
+                              {!(editorFamily === 'za' && parseOptionalInteger(learnsetLevelDraft) === 254) ? (
+                                <>
+                                  <FieldLabel
+                                    help={t('fieldHelp.catalog.pokemon.learnsetLevel')}
+                                    htmlFor={`pokemon-learnset-${pokemon.personalId}-${move.slot}-level`}
+                                    label={translateLiteral('Level')}
+                                  />
+                                  <input
+                                    disabled={!canEditLearnsetFields}
+                                    id={`pokemon-learnset-${pokemon.personalId}-${move.slot}-level`}
+                                    max={learnsetMaximumLevel}
+                                    min={0}
+                                    onChange={(event) => {
+                                      setLearnsetLevelDraft(event.target.value);
+                                      updateSelectedLearnsetDraft({ level: event.target.value });
+                                    }}
+                                    type="number"
+                                    value={learnsetLevelDraft}
+                                  />
+                                </>
+                              ) : null}
+                              {editorFamily === 'za' ? (
+                                <label className="learnset-relearn-toggle">
+                                  <input
+                                    checked={parseOptionalInteger(learnsetLevelDraft) === 254}
+                                    disabled={!canEditLearnsetFields}
+                                    id={`pokemon-learnset-${pokemon.personalId}-${move.slot}-relearn`}
+                                    onChange={(event) => {
+                                      const level = toggleLearnsetRelearn(move.slot, learnsetLevelDraft, event.target.checked);
+                                      setLearnsetLevelDraft(level);
+                                      updateSelectedLearnsetDraft({ level });
+                                    }}
+                                    type="checkbox"
+                                  />
+                                  {translateLiteral('Relearn')}
+                                </label>
+                              ) : null}
                             </div>
                             <span
                               className="learnset-inline-metadata"
                               data-localization-ignore="true"
                             >
-                              {displayMove.masteryLabel ?? ''}
+                              {[displayMove.levelLabel, displayMove.masteryLabel]
+                                .filter((label): label is string => label !== null)
+                                .map((label) => translateLiteral(label))
+                                .join(' / ')}
                             </span>
                             <div className="path-field learnset-inline-field learnset-move-field">
                               <FieldLabel
@@ -26669,14 +26715,14 @@ function SelectedPokemonPanel({
                               className="learnset-level-cell"
                               data-localization-ignore="true"
                             >
-                              {displayMove.levelLabel ?? `Lv. ${displayMove.level}`}
+                              {translateLiteral(displayMove.levelLabel ?? `Lv. ${displayMove.level}`)}
                             </span>
                             {displayMove.masteryLabel ? (
                               <span
                                 className="learnset-mastery-cell"
                                 data-localization-ignore="true"
                               >
-                                {displayMove.masteryLabel}
+                                {translateLiteral(displayMove.masteryLabel)}
                               </span>
                             ) : (
                               <span aria-hidden="true" className="learnset-mastery-cell" />
@@ -26777,20 +26823,38 @@ function SelectedPokemonPanel({
                   )}
                 </div>
                 <div className="path-field">
-                  <FieldLabel
-                    help={t('fieldHelp.catalog.pokemon.learnsetLevel')}
-                    htmlFor="pokemon-learnset-new-level"
-                    label={translateLiteral('New level')}
-                  />
-                  <input
-                    disabled={!canEditLearnset}
-                    id="pokemon-learnset-new-level"
-                    max={learnsetMaximumLevel}
-                    min={0}
-                    onChange={(event) => setNewLearnsetLevelDraft(event.target.value)}
-                    type="number"
-                    value={newLearnsetLevelDraft}
-                  />
+                  {!(editorFamily === 'za' && parseOptionalInteger(newLearnsetLevelDraft) === 254) ? (
+                    <>
+                      <FieldLabel
+                        help={t('fieldHelp.catalog.pokemon.learnsetLevel')}
+                        htmlFor="pokemon-learnset-new-level"
+                        label={translateLiteral('New level')}
+                      />
+                      <input
+                        disabled={!canEditLearnset}
+                        id="pokemon-learnset-new-level"
+                        max={learnsetMaximumLevel}
+                        min={0}
+                        onChange={(event) => setNewLearnsetLevelDraft(event.target.value)}
+                        type="number"
+                        value={newLearnsetLevelDraft}
+                      />
+                    </>
+                  ) : null}
+                  {editorFamily === 'za' ? (
+                    <label className="learnset-relearn-toggle">
+                      <input
+                        checked={parseOptionalInteger(newLearnsetLevelDraft) === 254}
+                        disabled={!canEditLearnset}
+                        id="pokemon-learnset-new-relearn"
+                        onChange={(event) => setNewLearnsetLevelDraft(
+                          toggleLearnsetRelearn('new', newLearnsetLevelDraft, event.target.checked)
+                        )}
+                        type="checkbox"
+                      />
+                      {translateLiteral('Relearn')}
+                    </label>
+                  ) : null}
                 </div>
                 <button
                   aria-label="Add learnset row"
@@ -35180,6 +35244,14 @@ function getPendingEditDisplayDetails(
       });
     }
     case 'workflow.behavior': {
+      if (context.behaviorWorkflow && 'resources' in context.behaviorWorkflow) {
+        const resource = context.behaviorWorkflow.resources.find(r => r.entryId === edit.recordId);
+        const field = context.behaviorWorkflow.fields.find(f => f.field === edit.field);
+        return createPendingEditDisplayDetails(edit, { editorLabel,
+          fieldLabel: field?.label ?? (edit.field === 'profile' ? 'Temperament profile' : edit.field === 'initialize' ? 'Initialize standard wild behavior' : 'Restore vanilla'),
+          newValueLabel: context.behaviorWorkflow.profiles.find(p => p.value === edit.newValue)?.label ?? edit.newValue ?? undefined,
+          recordLabel: resource ? `${resource.speciesName} (${resource.entryId})` : edit.recordId ?? undefined });
+      }
       const entry = context.behaviorWorkflow?.entries.find(
         (candidate) => candidate.entryId === edit.recordId
       );
@@ -36712,7 +36784,7 @@ function formatPokemonLearnsetPendingValue(
     case 'upsert': {
       const [moveText, levelText] = splitPokemonOperationValue(value);
       const move = formatPendingOptionValue(moveText, context.pokemonWorkflow?.learnsetMoveOptions);
-      const level = formatPokemonLearnsetLevelText(levelText);
+      const level = formatPokemonLearnsetLevelText(levelText, context.selectedGame);
       return level ? `${level} ${move}` : move;
     }
     case 'moveUp':
@@ -36735,12 +36807,22 @@ function splitPokemonOperationValue(value: string | null | undefined) {
   return text.includes('|') ? text.split('|') : text.split(':');
 }
 
-function formatPokemonLearnsetLevelText(levelText: string | undefined) {
+function formatPokemonLearnsetLevelText(levelText: string | undefined, game: ProjectGame) {
   if (!levelText) {
     return null;
   }
 
-  return parseOptionalInteger(levelText) === 253 ? 'Evolution' : `Lv. ${levelText}`;
+  const rawLevel = parseOptionalInteger(levelText);
+  if (rawLevel === null) {
+    return `Lv. ${levelText}`;
+  }
+
+  const level = game === 'za' ? rawLevel & 0xff : rawLevel;
+  const primary = level === 0 || (!isSwordShieldGame(game) && level === 253)
+    ? 'Lv. 0 (Evolution)'
+    : game === 'za' && level === 254 ? 'Relearn' : `Lv. ${level}`;
+  const mastery = game === 'za' ? (rawLevel >>> 8) & 0xff : 0;
+  return mastery > 0 ? `${primary} / Mastery Lv. ${mastery}` : primary;
 }
 
 function getPokemonCompatibilityPendingFieldLabel(
@@ -50191,7 +50273,7 @@ function BehaviorSection({
   ) => Promise<boolean>;
   searchText: string;
   selectedEntryId: string | null;
-  workflow: BehaviorWorkflow | null;
+  workflow: SwShBehaviorWorkflow | null;
 }) {
   const { translateLiteral } = useLocalization();
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
@@ -58670,11 +58752,11 @@ function getPokemonLearnsetDraftDisplay(
   const levelValue = isIntegerInRange(level, 0, getPokemonLearnsetMaximumLevel(gameFamily))
     ? level
     : move.level;
-  const masteryLabel = getPokemonLearnsetMasteryLabel(move);
+  const masteryLabel = gameFamily === 'za' ? getPokemonLearnsetMasteryLabel(move) : null;
   const levelLabel = getPokemonLearnsetPrimaryLevelLabel(
     move,
     levelValue,
-    levelDraft,
+    gameFamily,
     masteryLabel
   );
   const moveOption = moveId === null
@@ -58707,10 +58789,16 @@ function getPokemonLearnsetMasteryLabel(move: PokemonLearnsetMove): string | nul
 function getPokemonLearnsetPrimaryLevelLabel(
   move: PokemonLearnsetMove,
   levelValue: number,
-  levelDraft: string,
+  gameFamily: EditorUiFamily,
   masteryLabel: string | null
 ): string | null {
-  if (levelValue !== move.level || levelDraft !== move.level.toString()) {
+  if (levelValue === 0 || (gameFamily !== 'swsh' && levelValue === 253)) {
+    return 'Lv. 0 (Evolution)';
+  }
+  if (gameFamily === 'za' && levelValue === 254) {
+    return 'Relearn';
+  }
+  if (levelValue !== move.level) {
     return null;
   }
 
@@ -68766,6 +68854,12 @@ function resolveWorkspaceLocationLabel(
       break;
     }
     case 'behavior': {
+      if (sources.behaviorWorkflow && 'resources' in sources.behaviorWorkflow) {
+        const resource = sources.behaviorWorkflow.resources.find(candidate => candidate.entryId === value);
+        label = resource?.speciesName ?? label;
+        summaryParts = [resource?.speciesName, resource?.entryId];
+        break;
+      }
       const entry = typeof value === 'string'
         ? sources.behaviorWorkflow?.entries.find((candidate) => candidate.entryId === value)
         : null;

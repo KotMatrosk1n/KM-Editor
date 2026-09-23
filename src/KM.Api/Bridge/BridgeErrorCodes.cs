@@ -4,6 +4,12 @@ namespace KM.Api.Bridge;
 
 public static class BridgeErrorCodes
 {
+    public const string ZaBehaviorSourceUnavailable = "KM-ZA-BEHAVIOR-SOURCE-UNAVAILABLE";
+    public const string ZaBehaviorSelectionInvalid = "KM-ZA-BEHAVIOR-SELECTION-INVALID";
+    public const string ZaBehaviorValueInvalid = "KM-ZA-BEHAVIOR-VALUE-INVALID";
+    public const string ZaBehaviorSessionInvalid = "KM-ZA-BEHAVIOR-SESSION-INVALID";
+    public const string ZaBehaviorPlanStale = "KM-ZA-BEHAVIOR-PLAN-STALE";
+    public const string ZaBehaviorApplyFailed = "KM-ZA-BEHAVIOR-APPLY-FAILED";
     public const string DataTruncated = "KM-BRIDGE-DATA-TRUNCATED";
     public const string StoredJsonInvalid = "KM-BRIDGE-STORED-JSON-INVALID";
     public const string ResourceBusy = "KM-BRIDGE-RESOURCE-BUSY";

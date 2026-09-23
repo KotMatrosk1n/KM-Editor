@@ -80,7 +80,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
   {
     id: 'editors',
     label: 'Editors',
-    sectionIds: ['pokemon', 'trainers', 'starmobiles', 'trainerPools', 'moves', 'items', 'placement', 'behavior', 'text']
+    sectionIds: ['pokemon', 'behavior', 'trainers', 'starmobiles', 'trainerPools', 'moves', 'items', 'placement', 'text']
   },
   {
     id: 'encountersPokemonSources',

@@ -314,8 +314,8 @@ export const workbenchCapabilityRegistry = [
     label: 'Placement'
   }),
   workflow({
-    description: 'Symbol encounter behavior profiles, model anchors, collision radii, and source provenance.',
-    games: swordShieldGames,
+    description: 'Game-specific Pokemon behavior settings and source provenance.',
+    games: [...swordShieldGames, 'za'],
     icon: Activity,
     id: 'behavior',
     label: 'Behavior'

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Editing;
+using KM.Api.Behavior;
+using KM.ZA.Behavior;
 using KM.Api.AngeFight;
 using KM.Api.Encounters;
 using KM.Api.GameModules;
@@ -45,6 +47,17 @@ namespace KM.Tools.Bridge;
 
 public static class ZaBridgeMapper
 {
+    public static LoadZaBehaviorWorkflowResponse ToDto(ZaBehaviorWorkflow workflow) => new(ToBehaviorDto(workflow));
+    public static UpdateZaBehaviorResponse ToDto(ZaBehaviorEditResult result) => new(ToBehaviorDto(result.Workflow),
+        EditSessionBridgeMapper.ToDto(result.Session), result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    private static ZaBehaviorWorkflowDto ToBehaviorDto(ZaBehaviorWorkflow workflow) => new("za", ToDto(workflow.Summary),
+        workflow.Resources.Select(r => new ZaBehaviorResourceDto(r.EntryId, r.SpeciesId, r.SpeciesName, r.Form, r.Gender,
+            r.SourceFile, r.SourceLayer, r.Profile, r.IsInitialized, r.Tags, r.Fields,
+            r.VanillaTags, r.VanillaFields, r.VanillaProfile)).ToArray(),
+        workflow.Fields.Select(f => new ZaBehaviorFieldDto(f.Field, f.Label, f.Minimum, f.Maximum, f.StockMinimum, f.StockMaximum)).ToArray(),
+        workflow.Profiles.Select(p => new ZaBehaviorProfileDto(p.Value, p.Label)).ToArray(),
+        workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+
     public static ZaCacheMode ToCore(ZaCacheModeDto mode)
     {
         return mode switch

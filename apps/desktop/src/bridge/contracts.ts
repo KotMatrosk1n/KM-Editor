@@ -5011,13 +5011,33 @@ export const behaviorWorkflowStatsSchema = z.strictObject({
   totalEntryCount: z.number().int().nonnegative(),
 });
 
-export const behaviorWorkflowSchema = z.strictObject({
+export const swShBehaviorWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   entries: z.array(behaviorEntryRecordSchema),
   fields: z.array(behaviorFieldSchema),
   stats: behaviorWorkflowStatsSchema,
   summary: workflowSummarySchema,
 });
+
+export const zaBehaviorWorkflowSchema = z.strictObject({
+  game: z.literal('za'),
+  summary: workflowSummarySchema,
+  diagnostics: z.array(apiDiagnosticSchema),
+  resources: z.array(z.strictObject({
+    entryId: z.string(), speciesId: z.number().int(), speciesName: z.string(),
+    form: z.number().int(), gender: z.number().int(), sourceFile: z.string(), sourceLayer: z.string(),
+      profile: z.string(), isInitialized: z.boolean(), tags: z.array(z.string()), fields: z.record(z.string(), z.string()),
+      vanillaTags: z.array(z.string()), vanillaFields: z.record(z.string(), z.string()), vanillaProfile: z.string()
+  })),
+  fields: z.array(z.strictObject({
+    field: z.string(), label: z.string(), minimum: z.number(), maximum: z.number(),
+    stockMinimum: z.number(), stockMaximum: z.number()
+  })),
+  profiles: z.array(z.strictObject({ value: z.string(), label: z.string() }))
+});
+export type ZaBehaviorWorkflow = z.infer<typeof zaBehaviorWorkflowSchema>;
+export type SwShBehaviorWorkflow = z.infer<typeof swShBehaviorWorkflowSchema>;
+export const behaviorWorkflowSchema = z.union([swShBehaviorWorkflowSchema, zaBehaviorWorkflowSchema]);
 
 export const loadBehaviorWorkflowResponseSchema = z.strictObject({
   workflow: behaviorWorkflowSchema,

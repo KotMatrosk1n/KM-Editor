@@ -179,6 +179,7 @@ const editorSurfaceInventory = {
  * makes an unclassified input-bearing TSX file a test failure.
  */
 const embeddedEditableSurfaceInventory = {
+  zaBehavior: ['src/features/behavior/ZaBehaviorSection.tsx', 'ZaBehaviorSection', 'raw-local-draft'],
   trainerDynamaxRoster: ['src/features/trainer-dynamax/TrainerDynamaxRoster.tsx', 'TrainerDynamaxRoster', 'choice-local-draft'],
   modelViewerPalette: ['src/features/model-viewer/ViewerColorPicker.tsx', 'ViewerColorPicker', 'utility-input'],
   modelViewerLight: ['src/features/model-viewer/ModelLightControls.tsx', 'ModelLightControls', 'utility-input'],
@@ -238,6 +239,7 @@ const allowedPolicies = new Set([
  * cannot be added under a generic policy without choosing its state contract.
  */
 const editorDraftContractInventory = {
+  zaBehavior: 'keyed-exact-submit',
   trainerDynamaxRoster: 'captured-review',
   modelTextureEditor: 'keyed-exact-submit',
   modelMaterialEditor: 'keyed-exact-submit',

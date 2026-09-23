@@ -41,6 +41,13 @@ const reviewDiagnosticLocalizationKeys: Readonly<Record<string, string>> = {
 };
 
 const diagnosticLocalizationKeys: Readonly<Record<string, string>> = {
+  'KM-ZA-BEHAVIOR-SOURCE-UNAVAILABLE': 'behavior.za.diagnostic.sourceUnavailable',
+  'KM-ZA-BEHAVIOR-SELECTION-INVALID': 'behavior.za.diagnostic.selectionInvalid',
+  'KM-ZA-BEHAVIOR-VALUE-INVALID': 'behavior.za.diagnostic.valueInvalid',
+  'KM-ZA-BEHAVIOR-SESSION-INVALID': 'behavior.za.diagnostic.sessionInvalid',
+  'KM-ZA-BEHAVIOR-PLAN-STALE': 'behavior.za.diagnostic.planStale',
+  'KM-ZA-BEHAVIOR-APPLY-FAILED': 'behavior.za.diagnostic.applyFailed',
+
   'KM-CACHE-PROGRESS-STALLED': 'diagnostics.cache.progressStalled',
   'KM-CACHE-PROGRESS-TOTAL-CHANGED': 'diagnostics.cache.progressTotalChanged',
   'KM-CACHE-PROGRESS-REGRESSED': 'diagnostics.cache.progressRegressed',

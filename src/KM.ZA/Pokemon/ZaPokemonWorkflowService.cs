@@ -32,6 +32,8 @@ internal sealed class ZaPokemonWorkflowService
     private const int LearnsetDisplayLevelMask = 0x00FF;
     private const int LearnsetMasteryLevelShift = 8;
     private const int LearnsetMasteryLevelMask = 0xFF00;
+    private const int LearnsetEvolutionLevel = 253;
+    private const int LearnsetRelearnLevel = 254;
 
     public const string HPField = "hp";
     public const string AttackField = "attack";
@@ -1667,28 +1669,31 @@ internal sealed class ZaPokemonWorkflowService
 
     internal static int DecodeLearnsetDisplayLevel(int rawLevel)
     {
-        return rawLevel & LearnsetDisplayLevelMask;
+        var level = rawLevel & LearnsetDisplayLevelMask;
+        return level == LearnsetEvolutionLevel ? 0 : level;
     }
 
     internal static int EncodeLearnsetRawLevel(int displayLevel, int? existingRawLevel)
     {
         return (existingRawLevel.GetValueOrDefault() & LearnsetMasteryLevelMask)
-            | (displayLevel & LearnsetDisplayLevelMask);
+            | (displayLevel == 0 ? LearnsetEvolutionLevel : displayLevel & LearnsetDisplayLevelMask);
     }
 
     internal static string? FormatLearnsetLevelLabel(int rawLevel)
     {
-        if (rawLevel == 0)
+        var level = rawLevel & LearnsetDisplayLevelMask;
+        var condition = level switch
         {
-            return "Evolution or default";
-        }
-
+            0 or LearnsetEvolutionLevel => "Evolution",
+            LearnsetRelearnLevel => "Relearn",
+            _ => null,
+        };
         var masteryLevel = (rawLevel & LearnsetMasteryLevelMask) >> LearnsetMasteryLevelShift;
         return masteryLevel > 0
             ? string.Create(
                 CultureInfo.InvariantCulture,
-                $"Lv. {DecodeLearnsetDisplayLevel(rawLevel)} / Mastery Lv. {masteryLevel}")
-            : null;
+                $"{condition ?? $"Lv. {level}"} / Mastery Lv. {masteryLevel}")
+            : condition;
     }
 
     private static IReadOnlyList<ZaPokemonCompatibilityGroup> AttachVanillaCompatibility(

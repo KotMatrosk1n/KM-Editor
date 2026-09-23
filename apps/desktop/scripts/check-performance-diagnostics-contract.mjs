@@ -54,6 +54,10 @@ try {
   const { isExpectedProjectBridgeRejection } = classificationModule;
   const { ProjectBridgeError } = projectBridgeErrorModule;
   const expectedCodes = [
+    projectBridgeErrorCodes.zaBehaviorSelectionInvalid,
+    projectBridgeErrorCodes.zaBehaviorValueInvalid,
+    projectBridgeErrorCodes.zaBehaviorSessionInvalid,
+    projectBridgeErrorCodes.zaBehaviorPlanStale,
     projectBridgeErrorCodes.zaPokemonSizeSelectionInvalid,
     projectBridgeErrorCodes.zaPokemonSizeBindingInvalid,
     projectBridgeErrorCodes.zaPokemonSizeSessionConflict,
