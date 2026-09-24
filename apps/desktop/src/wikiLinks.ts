@@ -15,6 +15,7 @@ const commonWikiSlugs: Partial<Record<WorkbenchSection, string>> = {
   encounters: 'Wild-Encounters-Editor',
   exefsPatches: 'ExeFS-Patches',
   fairyGymBoosts: 'Fairy-Gym-Boosts',
+  marnieBoosts: 'Marnie-Wyndon-Boosts',
   fashionUnlock: 'Fashion-Unlock',
   flagworkSave: 'Flagwork-and-Save-Viewers',
   fpsPatch: '60FPS-Patch',
@@ -76,6 +77,7 @@ const scarletVioletWikiSlugs: Partial<Record<WorkbenchSection, string>> = {
 
 const pokemonLegendsZAWikiSlugs: Partial<Record<WorkbenchSection, string>> = {
   angeFight: 'Legends-Z-A-Ange-Fight',
+  behavior: 'Legends-Z-A-Behavior-Editor',
   dexLayout: 'Legends-Z-A-Dex-Layout',
   encounters: 'Legends-Z-A-Wild-Encounters-Editor',
   gameDump: 'Legends-Z-A-Game-Dump',
