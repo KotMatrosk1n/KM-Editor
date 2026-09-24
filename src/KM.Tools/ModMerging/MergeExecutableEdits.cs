@@ -137,7 +137,7 @@ internal static class MergeExecutableEdits
         var images = sources.Select(source =>
         {
             CheckImageSize(source.Bytes);
-            if (!NsoRegisteredRegionCompositionVerifier.HasCompatibleLayoutEnvelope(original, source.Bytes))
+            if (!NsoRegisteredRegionCompositionVerifier.HasCompatibleLayoutEnvelope(original, source.Bytes, allowTextGrowth: true))
                 throw new InvalidDataException("Executable builds or layouts differ.");
             var image = NsoFile.Parse(source.Bytes);
             // Restoring only segment data must recover the entire original image, including unknown header and gap data.
@@ -146,6 +146,25 @@ internal static class MergeExecutableEdits
                 throw new InvalidDataException("Executable metadata changes cannot be represented as segment edits.");
             return image;
         }).ToArray();
+        // Compare added code against an empty base region while retaining every source's tail.
+        // The layout preflight has already bounded growth before the next mapped segment.
+        var textLength = images.Select(image => image.Text.DecompressedData.Length)
+            .Append(baseline.Text.DecompressedData.Length).Max();
+        var paddedImageSize = (long)textLength + baseline.Ro.DecompressedData.Length + baseline.Data.DecompressedData.Length;
+        if (paddedImageSize * (images.Length + 1) > 512L * 1024 * 1024)
+            throw new InvalidDataException("Expanded executable images exceed the merge memory limit.");
+        byte[] PadText(NsoFile image)
+        {
+            var text = new byte[textLength];
+            image.Text.DecompressedData.CopyTo(text, 0);
+            return image.Write(textDecompressedData: text);
+        }
+        if (textLength != baseline.Text.DecompressedData.Length)
+        {
+            baseline = NsoFile.Parse(PadText(baseline));
+            images = images.Select(image => image.Text.DecompressedData.Length == textLength
+                ? image : NsoFile.Parse(PadText(image))).ToArray();
+        }
         var result = baseline.Segments.Select(segment => segment.DecompressedData.ToArray()).ToArray();
         for (var segment = 0; segment < result.Length; segment++)
         {

@@ -583,7 +583,7 @@ public sealed class SwShShinyRateEditSessionService
             diagnostics.Add(diagnostic);
         }
 
-        if (!edit.Sources.SequenceEqual(expectedSources))
+        if (!SwShPendingSourceComparison.Matches(edit.Sources, expectedSources))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,

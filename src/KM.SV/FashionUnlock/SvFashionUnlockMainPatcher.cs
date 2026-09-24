@@ -190,10 +190,7 @@ internal static class SvFashionUnlockMainPatcher
 
         var currentText = currentNso.Text.DecompressedData.ToArray();
         var baseText = baseNso.Text.DecompressedData;
-        if (currentText.Length != baseText.Length)
-        {
-            throw new InvalidDataException("Fashion Unlock restore requires current and base main NSO files with matching .text sizes.");
-        }
+        NsoExecutableCompatibility.EnsureCompatibleBaseLayout(baseNso, currentNso, "Fashion Unlock restore");
 
         EnsurePatchRange(currentText, layout);
         EnsurePatchRange(baseText, layout);

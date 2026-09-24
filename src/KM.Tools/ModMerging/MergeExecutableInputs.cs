@@ -47,6 +47,7 @@ internal static class MergeExecutableInputs
     // A loose patch and a replacement image for its build must be reviewed in one address space.
     internal static void ExpandImagePatches(List<MergeInput> inputs, MergeVanilla vanilla, List<MergeIssueDto> issues)
     {
+        UpgradeKnownPatches(inputs, vanilla);
         var images = inputs.SelectMany(input => input.Files.Values).Where(file => file.Path.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase)
             && file.Bytes.Length >= NsoFile.HeaderSize && file.Bytes.AsSpan().StartsWith("NSO0"u8)).ToArray();
         foreach (var patchPath in inputs.SelectMany(input => input.Files.Keys).Where(MergeExecutableEdits.IsPatch).Distinct(StringComparer.OrdinalIgnoreCase).ToArray())
@@ -76,7 +77,8 @@ internal static class MergeExecutableInputs
                 {
                     var candidate = source.Files.TryGetValue(target, out var ownImage) ? ownImage.Bytes : original;
                     MergeExecutableEdits.CheckImageSize(original);
-                    if (!NsoRegisteredRegionCompositionVerifier.HasCompatibleLayoutEnvelope(original, candidate)
+                    MergeExecutableEdits.CheckImageSize(candidate);
+                    if (!NsoRegisteredRegionCompositionVerifier.HasCompatibleLayoutEnvelope(original, candidate, allowTextGrowth: true)
                         || !Convert.ToHexString(original.AsSpan(0x40, 32)).StartsWith(build, StringComparison.OrdinalIgnoreCase))
                         throw new InvalidDataException("The original image does not match the patch target.");
                     var image = NsoFile.Parse(candidate); var baseline = NsoFile.Parse(original);
@@ -88,7 +90,8 @@ internal static class MergeExecutableInputs
                             && memory < (long)image.Segments[slot].Header.MemoryOffset + data[slot].Length, -1);
                         if (segment < 0) throw new InvalidDataException("The patch writes outside the executable segments.");
                         var offset = (int)(memory - image.Segments[segment].Header.MemoryOffset);
-                        if (data[segment][offset] != baseline.Segments[segment].DecompressedData[offset] && data[segment][offset] != value)
+                        var baseData = baseline.Segments[segment].DecompressedData;
+                        if ((offset >= baseData.Length || data[segment][offset] != baseData[offset]) && data[segment][offset] != value)
                             throw new InvalidDataException("A source image and its own patch disagree at the same address.");
                         data[segment][offset] = value;
                     }
@@ -103,6 +106,45 @@ internal static class MergeExecutableInputs
                     issues.Add(new(MergeWorkspaceErrorCodes.PatchInvalid, "error", "A patch cannot be applied to its matching executable image without losing or contradicting source data.", patchPath));
                 }
             }
+        }
+    }
+
+    private static void UpgradeKnownPatches(List<MergeInput> inputs, MergeVanilla vanilla)
+    {
+        var patchPaths = inputs.SelectMany(input => input.Files.Keys).Where(IsBuildPatch).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (patchPaths.Length == 0) return;
+        var baseline = vanilla.Read("exefs/main");
+        if (baseline is null) return;
+        try
+        {
+            MergeExecutableEdits.CheckImageSize(baseline);
+            var build = Convert.ToHexString(NsoFile.Parse(baseline).BuildId);
+            foreach (var path in patchPaths.Where(path => build.StartsWith(Path.GetFileNameWithoutExtension(path), StringComparison.OrdinalIgnoreCase)))
+            {
+                for (var index = 0; index < inputs.Count; index++)
+                {
+                    var source = inputs[index];
+                    if (!source.Files.TryGetValue(path, out var patch)) continue;
+                    var upgraded = KM.SwSh.ExeFs.SwShExecutableMergeSupport.UpgradeKnownPatch(baseline, patch.Bytes);
+                    if (ReferenceEquals(upgraded, patch.Bytes)) continue;
+                    var files = new Dictionary<string, MergeInputFile>(source.Files, StringComparer.OrdinalIgnoreCase)
+                    {
+                        [path] = new(path, upgraded, Convert.ToHexString(SHA256.HashData(upgraded))),
+                    };
+                    inputs[index] = source with { Files = files };
+                }
+            }
+        }
+        catch (Exception exception) when (exception is InvalidDataException or ArgumentException or OverflowException)
+        {
+            // Unverified originals cannot authorize a patch migration. Normal merge validation still applies.
+        }
+
+        static bool IsBuildPatch(string path)
+        {
+            var build = Path.GetFileNameWithoutExtension(path);
+            return path.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase) && MergeExecutableEdits.IsPatch(path)
+                && build.Length is >= 16 and <= 64 && build.Length % 2 == 0 && build.All(Uri.IsHexDigit);
         }
     }
 }

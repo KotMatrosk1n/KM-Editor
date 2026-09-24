@@ -23,6 +23,7 @@ using KM.SwSh.GameModules;
 using KM.SwSh.HyperTraining;
 using KM.SwSh.Items;
 using KM.SwSh.IvScreen;
+using KM.SwSh.MarnieBoosts;
 using KM.SwSh.ModMerger;
 using KM.SwSh.Moves;
 using KM.SwSh.NpcItemGift;
@@ -69,6 +70,7 @@ public sealed class SwShWorkflowService
     private readonly SwShCatchCapWorkflowService catchCapWorkflowService;
     private readonly SwShHyperTrainingWorkflowService hyperTrainingWorkflowService;
     private readonly SwShFairyGymBoostsWorkflowService fairyGymBoostsWorkflowService;
+    private readonly SwShMarnieBoostsService marnieBoostsService;
     private readonly SwShGymUniformRemovalWorkflowService gymUniformRemovalWorkflowService;
     private readonly SwShFashionUnlockWorkflowService fashionUnlockWorkflowService;
     private readonly SwShIvScreenWorkflowService ivScreenWorkflowService;
@@ -142,7 +144,8 @@ public sealed class SwShWorkflowService
         SwShSpreadsheetImportWorkflowService? spreadsheetImportWorkflowService = null,
         SwShModMergerWorkflowService? modMergerWorkflowService = null,
         SwShParsedDataCache? parsedDataCache = null,
-        SwShCacheManager? cacheManager = null)
+        SwShCacheManager? cacheManager = null,
+        SwShMarnieBoostsService? marnieBoostsService = null)
     {
         this.parsedDataCache = parsedDataCache ?? new SwShParsedDataCache();
         this.cacheManager = cacheManager ?? new SwShCacheManager();
@@ -156,6 +159,7 @@ public sealed class SwShWorkflowService
         this.catchCapWorkflowService = catchCapWorkflowService ?? new SwShCatchCapWorkflowService();
         this.hyperTrainingWorkflowService = hyperTrainingWorkflowService ?? new SwShHyperTrainingWorkflowService();
         this.fairyGymBoostsWorkflowService = fairyGymBoostsWorkflowService ?? new SwShFairyGymBoostsWorkflowService();
+        this.marnieBoostsService = marnieBoostsService ?? new SwShMarnieBoostsService(this.projectWorkspaceService);
         this.gymUniformRemovalWorkflowService = gymUniformRemovalWorkflowService ?? new SwShGymUniformRemovalWorkflowService();
         this.fashionUnlockWorkflowService = fashionUnlockWorkflowService ?? new SwShFashionUnlockWorkflowService();
         this.ivScreenWorkflowService = ivScreenWorkflowService ?? new SwShIvScreenWorkflowService();
@@ -221,6 +225,7 @@ public sealed class SwShWorkflowService
             shinyRateWorkflowService.CreateSummary(project),
             typeChartWorkflowService.CreateSummary(project),
             fairyGymBoostsWorkflowService.CreateSummary(project),
+            marnieBoostsService.CreateSummary(project),
             fashionUnlockWorkflowService.CreateSummary(project),
             gymUniformRemovalWorkflowService.CreateSummary(project),
             ivScreenWorkflowService.CreateSummary(project),

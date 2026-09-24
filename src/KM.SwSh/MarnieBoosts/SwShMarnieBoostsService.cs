@@ -10,6 +10,7 @@ using KM.SwSh.Editing;
 using KM.SwSh.FairyGymBoosts;
 using KM.SwSh.HyperTraining;
 using KM.SwSh.Items;
+using KM.SwSh.Workflows;
 
 namespace KM.SwSh.MarnieBoosts;
 
@@ -31,6 +32,24 @@ public sealed class SwShMarnieBoostsService(ProjectWorkspaceService? workspace =
     private const string Record = "marnie-wyndon-boosts";
     private const string Field = "boostSelections";
     private readonly ProjectWorkspaceService workspace = workspace ?? new ProjectWorkspaceService();
+
+    public SwShWorkflowSummary CreateSummary(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        var supported = ProjectGameMetadata.IsSwordShield(project.Paths.SelectedGame);
+        var available = supported && project.Health.CanOpenReadOnlyWorkflows;
+        return new(
+            SwShWorkflowIds.MarnieBoosts,
+            "Marnie Wyndon Boosts",
+            "Edit Marnie cheering outcomes in the three Wyndon battles.",
+            !available ? SwShWorkflowAvailability.Disabled
+                : project.Health.CanOpenEditableWorkflows ? SwShWorkflowAvailability.Available
+                : SwShWorkflowAvailability.ReadOnly,
+            available ? [] : [Error(SourceCode, supported
+                ? "Check the configured Sword or Shield sources."
+                : "Marnie Wyndon Boosts requires Sword or Shield.")]);
+    }
 
     public SwShMarnieBoostsWorkflow Load(ProjectPaths paths)
     {

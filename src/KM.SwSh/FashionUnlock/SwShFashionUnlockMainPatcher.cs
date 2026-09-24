@@ -211,7 +211,7 @@ internal static class SwShFashionUnlockMainPatcher
         var baseNso = NsoFile.Parse(baseMainBytes);
         ValidateRequiredSegmentHashes(currentNso);
         ValidateRequiredSegmentHashes(baseNso);
-        EnsureSameBuildAndLayout(baseNso, currentNso, "Fashion Unlock restore");
+        SwShExeFsMainComparison.EnsureCompatibleBaseLayout(baseNso, currentNso, "Fashion Unlock restore");
         var layout = FindLayout(baseNso.BuildId)
             ?? throw new InvalidDataException("Fashion Unlock restore requires a supported Sword or Shield 1.3.2 base main NSO.");
 
@@ -248,7 +248,7 @@ internal static class SwShFashionUnlockMainPatcher
         var effectiveNso = NsoFile.Parse(effectiveMainBytes);
         ValidateRequiredSegmentHashes(baseNso);
         ValidateRequiredSegmentHashes(effectiveNso);
-        EnsureSameBuildAndLayout(baseNso, effectiveNso, "Fashion Unlock apply");
+        SwShExeFsMainComparison.EnsureCompatibleBaseLayout(baseNso, effectiveNso, "Fashion Unlock apply");
     }
 
     public static bool HasInstalledHook(byte[] mainBytes)

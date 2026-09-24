@@ -233,7 +233,7 @@ internal static class SwShTypeChartMainPatcher
         var baseNso = NsoFile.Parse(baseMainBytes);
         ValidateRequiredSegmentHashes(currentNso);
         ValidateRequiredSegmentHashes(baseNso);
-        EnsureSameBuildAndLayout(baseNso, currentNso, "Type Chart restore");
+        SwShExeFsMainComparison.EnsureCompatibleBaseLayout(baseNso, currentNso, "Type Chart restore");
         var layout = FindLayout(baseNso.BuildId)
             ?? throw new InvalidDataException("Type Chart restore requires a supported Sword/Shield 1.3.2 base main.");
         var ro = currentNso.Ro.DecompressedData.ToArray();
@@ -262,7 +262,7 @@ internal static class SwShTypeChartMainPatcher
         var effectiveNso = NsoFile.Parse(effectiveMainBytes);
         ValidateRequiredSegmentHashes(baseNso);
         ValidateRequiredSegmentHashes(effectiveNso);
-        EnsureSameBuildAndLayout(baseNso, effectiveNso, "Type Chart apply");
+        SwShExeFsMainComparison.EnsureCompatibleBaseLayout(baseNso, effectiveNso, "Type Chart apply");
     }
 
     public static IReadOnlyList<SwShExeFsReservedRegion> ReservedMainRoRegions()

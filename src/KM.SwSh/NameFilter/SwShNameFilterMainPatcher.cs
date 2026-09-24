@@ -205,10 +205,7 @@ internal static class SwShNameFilterMainPatcher
 
         var currentText = currentNso.Text.DecompressedData.ToArray();
         var baseText = baseNso.Text.DecompressedData;
-        if (currentText.Length != baseText.Length)
-        {
-            throw new InvalidDataException("Profanity Filter restore requires current and base main NSO files with matching .text sizes.");
-        }
+        NsoExecutableCompatibility.EnsureCompatibleBaseLayout(baseNso, currentNso, "Profanity Filter restore");
 
         EnsurePatchRange(currentText, definition);
         EnsurePatchRange(baseText, definition);

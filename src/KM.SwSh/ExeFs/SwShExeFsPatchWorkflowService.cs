@@ -297,25 +297,7 @@ public sealed class SwShExeFsPatchWorkflowService
             return false;
         }
 
-        if (!SwShExeFsMainComparison.StableHeaderBytesMatch(source.RawHeader, baseFacts.RawHeader))
-        {
-            mismatch = "stable NSO header metadata differs.";
-            return false;
-        }
-
-        if (source.SegmentLayouts.Count != baseFacts.SegmentLayouts.Count
-            || !source.SegmentLayouts
-                .Zip(baseFacts.SegmentLayouts)
-                .All(pair => pair.First.Name == pair.Second.Name
-                    && pair.First.MemoryOffset == pair.Second.MemoryOffset
-                    && pair.First.DecompressedSize == pair.Second.DecompressedSize))
-        {
-            mismatch = "segment memory offsets or decompressed sizes differ.";
-            return false;
-        }
-
-        mismatch = string.Empty;
-        return true;
+        return SwShExeFsMainComparison.BaseLayoutMatches(baseFacts.RawHeader, source.RawHeader, out mismatch);
     }
 
     private static ExeFsPatchPreflight CreatePatchPreflight(

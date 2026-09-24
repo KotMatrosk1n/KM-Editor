@@ -37,7 +37,7 @@ export default function WelcomeHub({ games, definitions, logo, version, configur
   const busy = isLoading || opening;
   const GameIcon = definitions[game].icon;
   const gameName = translateLiteral(definitions[game].label);
-  const release = content.releases.find(item => item.version === version);
+  const release = content.releases.find(item => item.version === version || item.hotfixVersions?.includes(version));
   const announcements = content.announcements.filter(item => appliesToGame(item.audience, game));
   const featured = announcements.find(item => item.featured);
   const tabs = [{ id: 'news', icon: FileText }, { id: 'start', icon: BookOpen }] as const;

@@ -645,7 +645,8 @@ public sealed class SwShGymUniformRemovalEditSessionService
             edit.Sources,
             CreatePendingSources(project, isUninstall),
             expectedField,
-            diagnostics);
+            diagnostics,
+            isUninstall ? null : ResolveIpsRelativePath(project.Paths));
     }
 
     private IReadOnlyList<ProjectFileReference> CreatePendingSources(
@@ -675,9 +676,10 @@ public sealed class SwShGymUniformRemovalEditSessionService
         IReadOnlyList<ProjectFileReference> actual,
         IReadOnlyList<ProjectFileReference> expected,
         string field,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        string? optionalOutputPath)
     {
-        if (actual.Count == expected.Count && actual.SequenceEqual(expected))
+        if (SwShPendingSourceComparison.Matches(actual, expected, optionalOutputPath))
         {
             return;
         }

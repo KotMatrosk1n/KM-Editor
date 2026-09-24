@@ -210,7 +210,7 @@ public static class SwShStaticGameplaySettingsMainPatcher
             var currentNso = ParseBoundedNso(currentMainBytes, "current", layout);
             ValidateRequiredSegmentHashes(baseNso);
             ValidateRequiredSegmentHashes(currentNso);
-            EnsureSameExecutableEnvelope(baseNso, currentNso);
+            SwShExeFsMainComparison.EnsureCompatibleBaseLayout(baseNso, currentNso, "Gameplay Settings inspection");
             var baseText = baseNso.Text.DecompressedData;
             var currentText = currentNso.Text.DecompressedData;
             ValidateBasePreimages(baseText, layout);
@@ -485,7 +485,7 @@ public static class SwShStaticGameplaySettingsMainPatcher
         var currentNso = ParseBoundedNso(compositionMainBytes, "current", layout);
         ValidateRequiredSegmentHashes(baseNso);
         ValidateRequiredSegmentHashes(currentNso);
-        EnsureSameExecutableEnvelope(baseNso, currentNso);
+        SwShExeFsMainComparison.EnsureCompatibleBaseLayout(baseNso, currentNso, "Gameplay Settings composition");
         var baseText = baseNso.Text.DecompressedData;
         var currentText = currentNso.Text.DecompressedData;
         var text = currentText.ToArray();
@@ -1608,7 +1608,10 @@ public static class SwShStaticGameplaySettingsMainPatcher
             if (fileOffset < NsoFile.HeaderSize
                 || fileOffset < priorFileEnd
                 || memoryOffset != expectedSegments[index].MemoryOffset
-                || decompressedSize != expectedSegments[index].DecompressedSize
+                || (index == 0
+                    ? decompressedSize < expectedSegments[index].DecompressedSize
+                        || (long)memoryOffset + decompressedSize > RoMemoryOffset
+                    : decompressedSize != expectedSegments[index].DecompressedSize)
                 || decompressedSize < 0
                 || decompressedSize > MaximumDecompressedSegmentBytes
                 || compressedSize < 0

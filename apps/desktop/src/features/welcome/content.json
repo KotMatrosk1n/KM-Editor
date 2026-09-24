@@ -3,6 +3,7 @@
   "releases": [
     {
       "version": "2.6.3",
+      "hotfixVersions": ["2.6.4"],
       "summary": {
         "en": "KM Editor 2.6.3 introduces Basic and Advanced mod merging with archive imports and optional package selection. It adds Legends Z-A Behavior and Alpha Size controls, Marnie Wyndon Boosts for Sword and Shield, clearer evolution and relearn moves, and fixes for editing performance, output compatibility and 60 FPS timing."
       },

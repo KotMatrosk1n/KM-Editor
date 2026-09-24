@@ -340,19 +340,10 @@ internal static class SwShExeFsRoyalCandyMainPatcher
 
         var layout = ResolvePatchLayout(currentNso.BuildId, expectedGame);
         _ = ResolvePatchLayout(baseNso.BuildId, expectedGame);
-        if (!currentNso.BuildId.SequenceEqual(baseNso.BuildId)
-            || currentNso.Text.Header.MemoryOffset != baseNso.Text.Header.MemoryOffset
-            || currentNso.Text.Header.DecompressedSize != baseNso.Text.Header.DecompressedSize)
-        {
-            throw new InvalidDataException("Royal Candy ExeFS restore requires current and base main NSO files from the same supported build and .text layout.");
-        }
+        SwShExeFsMainComparison.EnsureCompatibleBaseLayout(baseNso, currentNso, "Royal Candy ExeFS restore");
 
         var currentText = currentNso.Text.DecompressedData.ToArray();
         var baseText = baseNso.Text.DecompressedData;
-        if (currentText.Length != baseText.Length)
-        {
-            throw new InvalidDataException("Royal Candy ExeFS restore requires current and base main NSO files with matching .text sizes.");
-        }
 
         IReadOnlyList<RoyalCandyOwnedCave> ownedCaves = Array.Empty<RoyalCandyOwnedCave>();
         var exactSignature = currentSignature.Kind switch

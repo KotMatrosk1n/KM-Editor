@@ -357,7 +357,7 @@ internal static class SwShShinyRateMainPatcher
         var baseNso = NsoFile.Parse(baseMainBytes);
         ValidateRequiredSegmentHashes(currentNso);
         ValidateRequiredSegmentHashes(baseNso);
-        EnsureSameBuildAndLayout(baseNso, currentNso, "Shiny Rate restore");
+        SwShExeFsMainComparison.EnsureCompatibleBaseLayout(baseNso, currentNso, "Shiny Rate restore");
         var layout = FindLayout(baseNso.BuildId)
             ?? throw new InvalidDataException("Shiny Rate restore requires a supported Sword/Shield 1.3.2 base main.");
         var text = currentNso.Text.DecompressedData.ToArray();
@@ -387,7 +387,7 @@ internal static class SwShShinyRateMainPatcher
         var effectiveNso = NsoFile.Parse(effectiveMainBytes);
         ValidateRequiredSegmentHashes(baseNso);
         ValidateRequiredSegmentHashes(effectiveNso);
-        EnsureSameBuildAndLayout(baseNso, effectiveNso, "Shiny Rate apply");
+        SwShExeFsMainComparison.EnsureCompatibleBaseLayout(baseNso, effectiveNso, "Shiny Rate apply");
     }
 
     public static string FormatTextOffset(int offset)

@@ -707,7 +707,7 @@ public sealed class SwShIvScreenEditSessionService
         string field,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (actual.Count == expected.Count && actual.SequenceEqual(expected))
+        if (SwShPendingSourceComparison.Matches(actual, expected))
         {
             return;
         }

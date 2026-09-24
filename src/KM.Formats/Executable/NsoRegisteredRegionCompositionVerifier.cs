@@ -74,10 +74,12 @@ public static class NsoRegisteredRegionCompositionVerifier
     /// parsing or allocating any candidate segment. The candidate must retain
     /// the Base identity and in-memory segment geometry, and its encoded
     /// segments must occupy a bounded standard text, ro, data file layout.
+    /// Callers that compose segment edits can allow code growth up to the next mapped segment.
     /// </summary>
     public static bool HasCompatibleLayoutEnvelope(
         ReadOnlySpan<byte> retailMain,
-        ReadOnlySpan<byte> candidateMain)
+        ReadOnlySpan<byte> candidateMain,
+        bool allowTextGrowth = false)
     {
         if (retailMain.IsEmpty || candidateMain.IsEmpty)
         {
@@ -92,7 +94,8 @@ public static class NsoRegisteredRegionCompositionVerifier
                     candidateMain,
                     retailMain,
                     retail,
-                    retailOpaque);
+                    retailOpaque,
+                    allowTextGrowth);
         }
         catch (Exception exception) when (exception is
             ArgumentException or
@@ -107,7 +110,8 @@ public static class NsoRegisteredRegionCompositionVerifier
         ReadOnlySpan<byte> candidate,
         ReadOnlySpan<byte> retailBytes,
         NsoFile retail,
-        OpaqueSpans retailOpaque)
+        OpaqueSpans retailOpaque,
+        bool allowTextGrowth = false)
     {
         if (candidate.Length < NsoFile.HeaderSize
             || BinaryPrimitives.ReadUInt32LittleEndian(candidate[0x00..]) != NsoFile.Magic
@@ -118,14 +122,17 @@ public static class NsoRegisteredRegionCompositionVerifier
             return false;
         }
 
-        return CandidateSegmentHeaderMatches(candidate, 0x10, retail.Text)
+        return (allowTextGrowth
+                ? NsoExecutableCompatibility.BaseLayoutMatches(retail.RawHeader, candidate[..NsoFile.HeaderSize].ToArray(), out _)
+                : CandidateSegmentHeaderMatches(candidate, 0x10, retail.Text))
             && CandidateSegmentHeaderMatches(candidate, 0x20, retail.Ro)
             && CandidateSegmentHeaderMatches(candidate, 0x30, retail.Data)
             && CandidateFileLayoutIsSafe(
                 candidate,
                 retailBytes,
                 retail,
-                retailOpaque);
+                retailOpaque,
+                allowTextGrowth);
     }
 
     private static bool CandidateSegmentHeaderMatches(
@@ -143,14 +150,15 @@ public static class NsoRegisteredRegionCompositionVerifier
         ReadOnlySpan<byte> candidate,
         ReadOnlySpan<byte> retailBytes,
         NsoFile retail,
-        OpaqueSpans retailOpaque)
+        OpaqueSpans retailOpaque,
+        bool allowTextGrowth)
     {
         var text = ReadRawSegment(candidate, 0x10, 0x60);
         var ro = ReadRawSegment(candidate, 0x20, 0x64);
         var data = ReadRawSegment(candidate, 0x30, 0x68);
         if (!RawSegmentEncodingIsSafe(
                 text,
-                retail.Text.DecompressedData.Length,
+                allowTextGrowth ? BinaryPrimitives.ReadInt32LittleEndian(candidate[0x18..]) : retail.Text.DecompressedData.Length,
                 retail.Flags.HasFlag(NsoFlags.CompressedText))
             || !RawSegmentEncodingIsSafe(
                 ro,
