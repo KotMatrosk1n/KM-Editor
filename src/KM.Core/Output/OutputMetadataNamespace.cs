@@ -17,10 +17,9 @@ public static class OutputMetadataNamespace
     {
         var normalized = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
         if (!OperatingSystem.IsWindows() || !Directory.Exists(normalized)) return normalized;
-        var expanded = new StringBuilder(32768);
-        var length = GetLongPathName(normalized, expanded, (uint)expanded.Capacity);
-        if (length == 0 || length >= expanded.Capacity) throw new OutputPathSecurityException();
-        return Path.TrimEndingDirectorySeparator(expanded.ToString());
+        var expanded = ExpandExistingWindowsPath(normalized);
+        if (expanded is null) throw new OutputPathSecurityException();
+        return Path.TrimEndingDirectorySeparator(expanded);
     }
 
     public static bool ContainsReservedSegment(string? path)
@@ -64,25 +63,8 @@ public static class OutputMetadataNamespace
                 existingPath = parent;
             }
 
-            var capacity = 512;
-            while (capacity <= 32768)
-            {
-                var expanded = new StringBuilder(capacity);
-                var length = GetLongPathName(existingPath, expanded, (uint)expanded.Capacity);
-                if (length == 0)
-                {
-                    return true;
-                }
-
-                if (length < expanded.Capacity)
-                {
-                    return ContainsReservedSegment(expanded.ToString());
-                }
-
-                capacity = checked((int)length + 1);
-            }
-
-            return true;
+            var expanded = ExpandExistingWindowsPath(existingPath);
+            return expanded is null || ContainsReservedSegment(expanded);
         }
         catch (Exception exception) when (exception is
             IOException or
@@ -114,6 +96,34 @@ public static class OutputMetadataNamespace
         var portableSegment = segment.Trim().TrimEnd(' ', '.');
         return string.Equals(portableSegment, DirectoryName, StringComparison.OrdinalIgnoreCase)
             || string.Equals(portableSegment, OutputWorkspaceStorage.WorkingDirectoryName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? ExpandExistingWindowsPath(string path)
+    {
+        // The native lookup needs an extended path even when managed file APIs
+        // can already read the same location beyond the legacy path limit.
+        var hasDevicePrefix = path.StartsWith(@"\\?\", StringComparison.Ordinal)
+            || path.StartsWith(@"\\.\", StringComparison.Ordinal);
+        var isUnc = !hasDevicePrefix && path.StartsWith(@"\\", StringComparison.Ordinal);
+        var nativePath = hasDevicePrefix ? path
+            : isUnc ? @"\\?\UNC\" + path[2..] : @"\\?\" + path;
+        var capacity = 512;
+        while (capacity <= 32768)
+        {
+            var expanded = new StringBuilder(capacity);
+            var length = GetLongPathName(nativePath, expanded, (uint)expanded.Capacity);
+            if (length == 0) return null;
+            if (length < expanded.Capacity)
+            {
+                var result = expanded.ToString();
+                // Preserve the caller's path form and existing workspace identity.
+                return hasDevicePrefix ? result : isUnc ? @"\\" + result[8..] : result[4..];
+            }
+
+            capacity = checked((int)length + 1);
+        }
+
+        return null;
     }
 
     [DllImport("kernel32.dll", EntryPoint = "GetLongPathNameW", CharSet = CharSet.Unicode, SetLastError = true)]

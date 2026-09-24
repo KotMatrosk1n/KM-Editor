@@ -15,6 +15,7 @@ KM Editor is a Windows desktop modding toolkit for Pokémon Sword and Shield, Po
 
 - Edit Pokémon, trainer teams, moves, items, encounters, and other supported records with names, sprites, search, and controls specific to each game.
 - Control Sword and Shield trainer battle permissions in [Trainer Dynamax](https://github.com/KotMatrosk1n/KM-Editor/wiki/Trainer-Dynamax), loss behavior in [Trainer Whiteout](https://github.com/KotMatrosk1n/KM-Editor/wiki/Trainer-Whiteout), and den interaction in [Raid Dens](https://github.com/KotMatrosk1n/KM-Editor/wiki/Raid-Dens). Trainer Dynamax and Trainer Whiteout are Beta editors.
+- Adjust Sword and Shield cheering outcomes in [Marnie Wyndon Boosts](https://github.com/KotMatrosk1n/KM-Editor/wiki/Marnie-Wyndon-Boosts), or wild temperament and perception in the Legends Z-A [Behavior editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/Legends-Z-A-Behavior-Editor).
 - Edit Team Star bosses in the Scarlet and Violet [Starmobiles editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/Starmobiles-Editor), including supported stats, types, abilities, and moves.
 - Inspect models and animations, recolor textures, edit supported materials, and restore original assets in the [3D Model Editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/3D-Model-Editor) for all five games.
 - Browse and play discovered game recordings in [Sound Studio](https://github.com/KotMatrosk1n/KM-Editor/wiki/Sound-Studio), with seeking, loops, volume controls, and audio meters.
@@ -23,7 +24,21 @@ KM Editor is a Windows desktop modding toolkit for Pokémon Sword and Shield, Po
 
 Supported fields and output rules differ by game. The [wiki](https://github.com/KotMatrosk1n/KM-Editor/wiki) explains each editor's workflow, data model, and limits.
 
+## Mod Merger
+
+Combine existing mods for any of the five supported games into one reviewed output. Open **Mod Merger** from the tools navigation, add mod folders or ZIP, RAR, and 7z archives, then choose your game and a separate output folder.
+
+- **Basic** compares the supplied mods without an original game dump. Identical data combines automatically; differing values require a choice.
+- **Advanced** compares mods against matching original game files, allowing independent edits to the same supported record to combine automatically. Conflicting edits to the same field still require a choice.
+- **Package selection** lets you choose components from mods with multiple or optional packages in a separate dialog, including dependencies and alternatives declared by the author.
+
+Supported game data merges by record and field. Textures, models, audio, and unsupported formats use complete file choices when they differ. Review conflicts before exporting; unresolved choices or changed inputs require another review.
+
+A merge supports up to 64 sources and 64 selected packages. See the [Mod Merger guide](docs/mod-merger.md) for supported formats, executable patches, output layouts, recovery, and size limits.
+
 ## Getting Started
+
+To combine existing mods, open **Mod Merger** from Tools. Basic mode is available before project validation and does not require an original game dump. For game data editing, follow the project setup below.
 
 1. Install the latest Windows release.
 2. Choose your game in the welcome hub, then select **Open** for that game.
@@ -64,6 +79,7 @@ Clean Base RomFS and Base ExeFS inputs remain untouched. Normal edits write to a
 | ------------------------------ | --------------------------------------------------------------------------------------------------------- |
 | Set up a project               | [Project Setup](https://github.com/KotMatrosk1n/KM-Editor/wiki/Project-Setup)                              |
 | Learn the editing workflow     | [Editing Workflow](https://github.com/KotMatrosk1n/KM-Editor/wiki/Editing-Workflow)                       |
+| Combine existing mods         | [Mod Merger](https://github.com/KotMatrosk1n/KM-Editor/wiki/Mod-Merger) |
 | Use Beta Gameplay Settings     | [Gameplay Settings](https://github.com/KotMatrosk1n/KM-Editor/wiki/Gameplay-Settings)                     |
 | Explore Workbench tools        | [Workbench](https://github.com/KotMatrosk1n/KM-Editor/wiki/Workbench)                                    |
 | Inspect output or recover a write | [Output Safety and Recovery](https://github.com/KotMatrosk1n/KM-Editor/wiki/Output-Safety-And-Recovery) |
