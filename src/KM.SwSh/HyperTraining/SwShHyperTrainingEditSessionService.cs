@@ -678,7 +678,7 @@ public sealed class SwShHyperTrainingEditSessionService
         {
             diagnostics.Add(diagnostic);
         }
-        if (!edit.Sources.SequenceEqual(expectedSources))
+        if (!SwShPendingSourceComparison.Matches(edit.Sources, expectedSources))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,

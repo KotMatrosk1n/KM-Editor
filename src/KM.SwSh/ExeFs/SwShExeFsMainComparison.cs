@@ -6,6 +6,12 @@ namespace KM.SwSh.ExeFs;
 
 internal static class SwShExeFsMainComparison
 {
+    internal static void EnsureCompatibleBaseLayout(NsoFile baseline, NsoFile effective, string operation) =>
+        NsoExecutableCompatibility.EnsureCompatibleBaseLayout(baseline, effective, operation);
+
+    internal static bool BaseLayoutMatches(byte[] baseHeader, byte[] effectiveHeader, out string mismatch) =>
+        NsoExecutableCompatibility.BaseLayoutMatches(baseHeader, effectiveHeader, out mismatch);
+
     public static bool IsSemanticallyEquivalentToBase(byte[] candidateBytes, byte[] baseBytes)
     {
         ArgumentNullException.ThrowIfNull(candidateBytes);

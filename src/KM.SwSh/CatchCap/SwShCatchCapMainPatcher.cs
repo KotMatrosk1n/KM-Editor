@@ -328,7 +328,7 @@ internal static class SwShCatchCapMainPatcher
             throw new InvalidDataException("Catch Cap restore requires current and base main NSO files for the same game.");
         }
 
-        EnsureSameBuildAndLayout(currentNso, baseNso, "Catch Cap restore");
+        SwShExeFsMainComparison.EnsureCompatibleBaseLayout(baseNso, currentNso, "Catch Cap restore");
         var mismatch = CreateGameMismatchAnalysis(definition, expectedGame, baseBuildId);
         if (mismatch is not null)
         {

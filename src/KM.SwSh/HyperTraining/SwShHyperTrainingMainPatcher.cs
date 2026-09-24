@@ -256,7 +256,7 @@ internal static class SwShHyperTrainingMainPatcher
         var baseNso = NsoFile.Parse(baseMainBytes);
         ValidateRequiredSegmentHashes(currentNso);
         ValidateRequiredSegmentHashes(baseNso);
-        EnsureSameBuildAndLayout(baseNso, currentNso, "Hyper Training restore");
+        SwShExeFsMainComparison.EnsureCompatibleBaseLayout(baseNso, currentNso, "Hyper Training restore");
         var layout = FindLayout(baseNso.BuildId)
             ?? throw new InvalidDataException("Hyper Training restore requires a supported Sword/Shield 1.3.2 base main.");
         var text = currentNso.Text.DecompressedData.ToArray();
@@ -288,7 +288,7 @@ internal static class SwShHyperTrainingMainPatcher
         var effectiveNso = NsoFile.Parse(effectiveMainBytes);
         ValidateRequiredSegmentHashes(baseNso);
         ValidateRequiredSegmentHashes(effectiveNso);
-        EnsureSameBuildAndLayout(baseNso, effectiveNso, "Hyper Training apply");
+        SwShExeFsMainComparison.EnsureCompatibleBaseLayout(baseNso, effectiveNso, "Hyper Training apply");
     }
 
     private static int ReadSharedMinimumLevel(ReadOnlySpan<byte> text, PatchLayout layout)

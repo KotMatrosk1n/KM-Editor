@@ -181,10 +181,7 @@ internal static class SvHyperspaceBypassMainPatcher
 
         var currentText = currentNso.Text.DecompressedData.ToArray();
         var baseText = baseNso.Text.DecompressedData;
-        if (currentText.Length != baseText.Length)
-        {
-            throw new InvalidDataException("Hyperspace Bypass restore requires current and base main NSO files with matching .text sizes.");
-        }
+        NsoExecutableCompatibility.EnsureCompatibleBaseLayout(baseNso, currentNso, "Hyperspace Bypass restore");
 
         EnsurePatchRange(currentText, layout);
         EnsurePatchRange(baseText, layout);

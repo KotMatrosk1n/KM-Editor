@@ -281,13 +281,14 @@ internal static class SwShGymUniformRemovalMainPatcher
                 definition.Game);
         }
 
-        if (ipsBytes.SequenceEqual(CreateSingleRecordIpsPatch(definition, LegacyIpsEof))
+        if (ipsBytes.SequenceEqual(CreateSingleRecordIpsPatch(definition, Ips32Eof))
+            || ipsBytes.SequenceEqual(CreateSingleRecordIpsPatch(definition, LegacyIpsEof))
             || ipsBytes.SequenceEqual(CreateSplitRecordIpsPatch(definition, Ips32Eof))
             || ipsBytes.SequenceEqual(CreateSplitRecordIpsPatch(definition, LegacyIpsEof)))
         {
             return new SwShGymUniformRemovalIpsAnalysis(
                 SwShGymUniformRemovalIpsArtifactKind.Legacy,
-                "A recognized legacy Gym Uniform Removal IPS is installed. Reinstalling refreshes it to the IPS32 EEOF format Eden accepts.",
+                "A recognized legacy Gym Uniform Removal IPS is present. Reinstalling corrects its executable address and refreshes the patch format.",
                 baseAnalysis.BuildId,
                 baseAnalysis.PatchOffsetHex,
                 "legacy",
@@ -333,7 +334,7 @@ internal static class SwShGymUniformRemovalMainPatcher
         var baseNso = NsoFile.Parse(baseMainBytes);
         ValidateRequiredSegmentHashes(currentNso);
         ValidateRequiredSegmentHashes(baseNso);
-        EnsureSameBuildAndLayout(baseNso, currentNso, "Gym Uniform Removal restore");
+        SwShExeFsMainComparison.EnsureCompatibleBaseLayout(baseNso, currentNso, "Gym Uniform Removal restore");
         var baseBuildId = FormatBuildId(baseNso.BuildId);
         var definition = FindDefinition(baseNso.BuildId)
             ?? throw new InvalidDataException("Gym Uniform Removal restore requires a supported Sword or Shield 1.3.2 base main NSO.");
@@ -345,10 +346,6 @@ internal static class SwShGymUniformRemovalMainPatcher
 
         var currentText = currentNso.Text.DecompressedData.ToArray();
         var baseText = baseNso.Text.DecompressedData;
-        if (currentText.Length != baseText.Length)
-        {
-            throw new InvalidDataException("Gym Uniform Removal restore requires current and base main NSO files with matching .text sizes.");
-        }
 
         EnsurePatchRange(currentText, definition);
         EnsurePatchRange(baseText, definition);
@@ -377,7 +374,7 @@ internal static class SwShGymUniformRemovalMainPatcher
         var effectiveNso = NsoFile.Parse(effectiveMainBytes);
         ValidateRequiredSegmentHashes(baseNso);
         ValidateRequiredSegmentHashes(effectiveNso);
-        EnsureSameBuildAndLayout(baseNso, effectiveNso, "Gym Uniform Removal verification");
+        SwShExeFsMainComparison.EnsureCompatibleBaseLayout(baseNso, effectiveNso, "Gym Uniform Removal verification");
     }
 
     public static bool HasInstalledHook(byte[] mainBytes)
@@ -644,7 +641,9 @@ internal static class SwShGymUniformRemovalMainPatcher
 
     private static byte[] CreateKmIpsPatch(PatchDefinition definition)
     {
-        return CreateSingleRecordIpsPatch(definition, Ips32Eof);
+        return CreateSingleRecordIpsPatch(
+            definition with { PatchOffset = checked(definition.PatchOffset + NsoFile.HeaderSize) },
+            Ips32Eof);
     }
 
     private static byte[] CreateSingleRecordIpsPatch(PatchDefinition definition, ReadOnlySpan<byte> terminator)

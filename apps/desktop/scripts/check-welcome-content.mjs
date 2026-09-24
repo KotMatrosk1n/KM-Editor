@@ -14,7 +14,7 @@ if (!result.success) {
 } else {
   console.log(`Welcome content valid: ${result.data.releases.length} releases, ${result.data.announcements.length} announcements.`);
   const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-  const release = result.data.releases.find(entry => entry.version === version);
+  const release = result.data.releases.find(entry => entry.version === version || entry.hotfixVersions?.includes(version));
   if (!release) {
     console.error(`Welcome content: missing notes for application version ${version}.`);
     process.exitCode = 1;
@@ -26,11 +26,13 @@ if (!result.success) {
     }
     expected.push(`**Full Changelog**: ${comparison?.url ?? ''}`, '');
     try {
-      const notes = readFileSync(new URL(`../../../docs/release-notes/${version}.md`, import.meta.url), 'utf8');
+      const notes = readFileSync(new URL(`../../../docs/release-notes/${release.version}.md`, import.meta.url), 'utf8');
+      const currentNotes = readFileSync(new URL(`../../../docs/release-notes/${version}.md`, import.meta.url), 'utf8');
+      if (!currentNotes.trim()) throw new Error('The application release requires a changelog.');
       if (!comparison || notes.replaceAll('\r\n', '\n').trim() !== expected.join('\n').trim()) {
         throw new Error('The bundled English notes and curated release changelog must match.');
       }
-      console.log(`Welcome release notes match the ${version} changelog.`);
+      console.log(`Welcome highlights for ${version} match the ${release.version} changelog.`);
     } catch {
       console.error(`Welcome content: missing or mismatched docs/release-notes/${version}.md.`);
       process.exitCode = 1;

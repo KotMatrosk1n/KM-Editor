@@ -44,6 +44,8 @@ Build identifiers in patch filenames group patches for the same executable even 
 
 Complete executable images need Advanced mode and the matching original ExeFS files for region comparison. Build identity, segment geometry and unrelated metadata must remain compatible. If a package combines a replacement executable with an IPS patch for that build, the original image is required and the result is written as one merged executable. Basic cannot determine which bytes of a complete executable were intentionally changed.
 
+Compatible code growth is supported when it fits before the next mapped segment without changing the executable identity or other stable layout metadata. Added code participates in the same conflict review as existing code. Vanilla sized images remain supported; no FPS patch is required. With verified matching originals, Advanced mode also corrects recognized legacy Gym Uniform Removal IPS addresses before combining them. Unknown patch payloads are never assigned a guessed correction.
+
 Recognized Sword/Shield executable features use their reserved regions when comparing settings. Shiny Rate modes remain coherent, and Hyper Training uses one minimum level choice across its executable, script and supported dialogue. Advanced mode can supply missing dependent Hyper Training files from the original dump. Unrelated executable features and dialogue entries remain independently mergeable.
 
 ## Game detection and output

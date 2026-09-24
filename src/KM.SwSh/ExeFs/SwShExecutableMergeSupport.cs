@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 using KM.Core.Projects;
 using KM.Formats.Executable;
+using KM.SwSh.GymUniformRemoval;
 using KM.SwSh.HyperTraining;
 using KM.SwSh.ShinyRate;
 
@@ -11,6 +12,21 @@ public sealed record SwShExecutableMergeRegion(string Owner, int Offset, int Len
 /// <summary>Game owned settings and reservations used by executable composition.</summary>
 public static class SwShExecutableMergeSupport
 {
+    public static byte[] UpgradeKnownPatch(byte[] baseline, byte[] patch)
+    {
+        if (GameForBuild(Convert.ToHexString(NsoFile.Parse(baseline).BuildId)) is not { } game) return patch;
+        try
+        {
+            return SwShGymUniformRemovalMainPatcher.AnalyzeIpsArtifact(patch, baseline, game).Kind == SwShGymUniformRemovalIpsArtifactKind.Legacy
+                ? SwShGymUniformRemovalMainPatcher.CreateIpsPatch(baseline, game)
+                : patch;
+        }
+        catch (InvalidDataException)
+        {
+            return patch;
+        }
+    }
+
     public const string HyperScript = "romfs/bin/script/amx/hyper_training.amx";
     public const string HyperDialogue = "romfs/bin/message/English/script/sub_event_007.dat";
 

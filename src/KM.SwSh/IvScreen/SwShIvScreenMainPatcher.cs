@@ -491,7 +491,7 @@ internal static class SwShIvScreenMainPatcher
         var baseNso = NsoFile.Parse(baseMainBytes);
         ValidateRequiredSegmentHashes(currentNso);
         ValidateRequiredSegmentHashes(baseNso);
-        EnsureSameBuildAndLayout(currentNso, baseNso, "IV Screen restore");
+        SwShExeFsMainComparison.EnsureCompatibleBaseLayout(baseNso, currentNso, "IV Screen restore");
 
         var currentBuildId = FormatBuildId(currentNso.BuildId);
         var layout = FindLayout(baseNso.BuildId)
@@ -562,7 +562,7 @@ internal static class SwShIvScreenMainPatcher
         var effectiveNso = NsoFile.Parse(effectiveMainBytes);
         ValidateRequiredSegmentHashes(baseNso);
         ValidateRequiredSegmentHashes(effectiveNso);
-        EnsureSameBuildAndLayout(baseNso, effectiveNso, "IV Screen apply");
+        SwShExeFsMainComparison.EnsureCompatibleBaseLayout(baseNso, effectiveNso, "IV Screen apply");
     }
 
     internal static string? GetApplyPreflightError(
