@@ -6,7 +6,8 @@ import { ProjectBridgeError } from '../../bridge/projectBridgeError';
 import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditorDiagnostics';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useLocalization } from '../../localization';
-import { runMerge, type MergeRequest, type MergeResult, type MergeSource } from './mergeWorkspaceBridge';
+import { runMerge, scanMergePackages, type MergePackageCatalog, type MergeRequest, type MergeResult, type MergeSource } from './mergeWorkspaceBridge';
+import { MergePackageDialog } from './MergePackageDialog';
 import './MergeWorkspace.css';
 import { projectBridge, type ProjectBridge } from '../../bridge/projectBridge';
 import { MergeOutputSafety } from './MergeOutputSafety';
@@ -30,6 +31,13 @@ export default function MergeWorkspace({ paths, active, onExportingChange, armWr
   const [baseExeFs, setBaseExeFs] = useState(saved?.baseExeFs ?? paths.baseExeFsPath ?? '');
   const [supportFolder, setSupportFolder] = useState(saved?.supportFolder ?? paths.pokemonLegendsZASupportFolderPath ?? paths.scarletVioletSupportFolderPath ?? '');
   const [sources, setSources] = useState<MergeSource[]>(saved?.sources ?? []);
+  const [catalogs, setCatalogs] = useState<Record<string, MergePackageCatalog>>({});
+  const [packageQueue, setPackageQueue] = useState<string[]>([]);
+  const [scanning, setScanning] = useState<string[]>([]);
+  const [sourceErrors, setSourceErrors] = useState<Record<string, string>>({});
+  const sourceRef = useRef(sources); sourceRef.current = sources;
+  const mounted = useRef(true);
+  const scanRuns = useRef(new Map<string, number>());
   const [sourcePath, setSourcePath] = useState('');
   const [choices, setChoices] = useState<Record<string, string>>(saved?.choices ?? {});
   const [result, setResult] = useState<MergeResult | null>(null);
@@ -58,6 +66,7 @@ export default function MergeWorkspace({ paths, active, onExportingChange, armWr
     return `${message.startsWith('mergeWorkspace.') ? label('error.generic') : message} (${code})`;
   };
   usePublishCommonEditorDiagnostics(active ? [
+    ...Object.values(sourceErrors).map(code => ({ code, severity: 'error' as const, message: issueMessage(code), domain: 'workflow.modMerger' })),
     ...(result?.issues ?? []).map(issue => ({ ...issue, message: issueMessage(issue.code), domain: 'workflow.modMerger' })),
     ...(error ? [{ code: error, severity: 'error' as const, message: issueMessage(error), domain: 'workflow.modMerger' }] : [])
   ] : []);
@@ -65,9 +74,45 @@ export default function MergeWorkspace({ paths, active, onExportingChange, armWr
   useEffect(() => {
     setDraftSaved(saveMergeDraft({ mode, game, outputMode, outputRoot, baseRomFs, baseExeFs, supportFolder, sources, choices }));
   }, [mode, game, outputMode, outputRoot, baseRomFs, baseExeFs, supportFolder, sources, choices]);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => { if (!active) setPackageQueue([]); }, [active]);
+
+  function invalidateSource(id: string) {
+    const affected = new Set(result?.sources.filter(source => source.id === id || source.parentId === id).map(source => source.id) ?? []);
+    setChoices(current => Object.fromEntries(Object.entries(current).filter(([key]) => result?.conflicts.some(conflict => conflict.id === key
+      && !conflict.values.some(value => affected.has(value.sourceId))))));
+    setResult(null); setReviewed(''); setWritten(null);
+  }
+  async function inspectSource(source: MergeSource, showDialog: boolean) {
+    const run = (scanRuns.current.get(source.id) ?? 0) + 1;
+    scanRuns.current.set(source.id, run);
+    setScanning(current => [...new Set([...current, source.id])]);
+    setSourceErrors(current => { const next = { ...current }; delete next[source.id]; return next; });
+    const current = () => mounted.current && scanRuns.current.get(source.id) === run && sourceRef.current.some(item => item.id === source.id);
+    try {
+      const catalog = await scanMergePackages(source);
+      if (!current()) return;
+      setCatalogs(previous => ({ ...previous, [source.id]: catalog }));
+      if (!catalog.requiresSelection && !showDialog) {
+        setSources(previous => previous.map(item => item.id === source.id ? { ...item, packageIds: catalog.packages.map(item => item.id), packageScanToken: catalog.scanToken, packageCount: catalog.packages.length } : item));
+      } else {
+        setSources(previous => previous.map(item => item.id === source.id ? { ...item, packageCount: catalog.packages.length, packageIds: item.packageIds ?? [] } : item));
+        setPackageQueue(previous => [...new Set([...previous, source.id])]);
+      }
+    } catch (caught) {
+      if (current()) setSourceErrors(previous => ({ ...previous, [source.id]: caught instanceof ProjectBridgeError ? caught.apiError.code : 'KM-MERGE-ARCHIVE-UNREADABLE' }));
+    } finally {
+      if (mounted.current && scanRuns.current.get(source.id) === run) setScanning(previous => previous.filter(id => id !== source.id));
+    }
+  }
 
   function addPaths(values: string[]) {
-    setSources(current => [...current, ...values.filter(value => !current.some(source => source.path === value)).map(path => ({ id: crypto.randomUUID(), path, game: null, layout: null }))]);
+    const additions = [...new Set(values)].filter(value => !sourceRef.current.some(source => source.path === value))
+      .map(path => ({ id: crypto.randomUUID(), path, game: null, layout: null }));
+    if (sourceRef.current.length + additions.length > 64) { setError('KM-MERGE-LIMIT-EXCEEDED'); return; }
+    sourceRef.current = [...sourceRef.current, ...additions];
+    setSources(sourceRef.current);
+    void (async () => { for (const source of additions) { if (!mounted.current) return; await inspectSource(source, false); } })();
     setSourcePath('');
   }
   async function browse(directory: boolean, setter?: (value: string) => void) {
@@ -79,7 +124,7 @@ export default function MergeWorkspace({ paths, active, onExportingChange, armWr
     } catch { setError('KM-MERGE-PICKER-FAILED'); }
   }
   async function execute(exportFiles: boolean) {
-    if (inFlight.current || safetyBusy) return;
+    if (inFlight.current || safetyBusy || scanning.length > 0 || packageQueue.length > 0) return;
     inFlight.current = true;
     const snapshot = requestKey;
     setBusy(exportFiles ? 'export' : 'analyze'); setError(null); setWritten(null);
@@ -94,7 +139,12 @@ export default function MergeWorkspace({ paths, active, onExportingChange, armWr
       if (exportFiles && latestKey.current === snapshot && !response.canExport && !response.issues.some(issue => issue.severity === 'error')
         && response.conflicts.every(conflict => conflict.resolution !== null)) setWritten(response.writtenFiles.length);
     } catch (caught) {
-      if (latestKey.current === snapshot) setError(caught instanceof ProjectBridgeError ? caught.apiError.code : exportFiles ? 'KM-MERGE-EXPORT-FAILED' : 'KM-MERGE-ARCHIVE-UNREADABLE');
+      if (latestKey.current === snapshot) {
+        const code = caught instanceof ProjectBridgeError ? caught.apiError.code : exportFiles ? 'KM-MERGE-EXPORT-FAILED' : 'KM-MERGE-ARCHIVE-UNREADABLE';
+        setError(code); setReviewed('');
+        if (['KM-MERGE-PACKAGES-REQUIRED', 'KM-MERGE-PACKAGES-STALE', 'KM-MERGE-PACKAGE-SELECTION-INVALID'].includes(code))
+          for (const source of sourceRef.current) await inspectSource(source, true);
+      }
     } finally {
       inFlight.current = false; setBusy(null);
       if (exportFiles) onExportingChange(false);
@@ -105,7 +155,17 @@ export default function MergeWorkspace({ paths, active, onExportingChange, armWr
     && `${conflict.file} ${conflict.label}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
   const unresolved = result?.conflicts.filter(conflict => !choices[conflict.id]).length ?? 0;
   const gameOptions = [{ value: '', label: label('automatic') }, ...games.map(value => ({ value, label: translateLiteral(value === 'za' ? 'Pokemon Legends Z-A' : `Pokemon ${value[0]!.toUpperCase()}${value.slice(1)}`) }))];
-  const changeSource = (id: string, update: Partial<MergeSource>) => setSources(current => current.map(source => source.id === id ? { ...source, ...update } : source));
+  const changeSource = (id: string, update: Partial<MergeSource>) => {
+    const source = sourceRef.current.find(source => source.id === id);
+    if (!source) return;
+    const changed = { ...source, ...update };
+    invalidateSource(id);
+    setSources(current => current.map(source => source.id === id ? changed : source));
+    void inspectSource(changed, true);
+  };
+  const blockedPackages = sources.some(source => source.packageIds?.length === 0 || sourceErrors[source.id]) || scanning.length > 0;
+  const dialogSource = sources.find(source => source.id === packageQueue[0]);
+  const dialogCatalog = dialogSource ? catalogs[dialogSource.id] : undefined;
   const prettyLabel = (value: string) => value === 'Complete file' ? label('completeFile') : value === 'Packed archive and descriptor' ? label('packedPair')
     : value.split(' → ').map(part => /^\d{5}$/.test(part) ? `${label('record')} ${Number(part)}` : translateLiteral(part.replace(/([a-z])([A-Z])/g, '$1 $2'))).join(' → ');
   const displayValue = (value: string) => value === 'Removed' ? label('valueRemoved') : formatValue(value);
@@ -157,24 +217,44 @@ export default function MergeWorkspace({ paths, active, onExportingChange, armWr
           <div className="merge-workspace-source-name"><strong data-localization-ignore>{detected?.name ?? source.path.split(/[\\/]/).at(-1)}</strong><small data-localization-ignore>{source.path}</small>
             {detected && <small>{label('detected')}: {gameOptions.find(option => option.value === detected.game)?.label ?? detected.game ?? label('unknown')} · {label(detected.layout)} · {detected.fileCount} {label('files')}</small>}
             {detected && <details><summary>{label('detectionDetails')}</summary>{detected.evidence.map(item => <p className="field-note" key={item}>{label(`evidence.${item}`)}</p>)}</details>}</div>
+          <div className="merge-workspace-package-summary">
+            {scanning.includes(source.id) ? <span role="status">{label('packages.scanning')}</span>
+              : <><span>{source.packageCount ? `${source.packageIds?.length ?? 0} / ${source.packageCount} ${label('packages.selected')}` : label('packages.inspectHelp')}</span>
+                <button type="button" disabled={busy !== null || safetyBusy} onClick={() => void inspectSource(source, true)}>{source.packageIds?.length === 0 ? label('packages.title') : label('packages.manage')}</button></>}
+            {sourceErrors[source.id] && <p role="alert" className="field-error">{issueMessage(sourceErrors[source.id]!)}</p>}
+          </div>
           <SearchableOptionInput ariaLabel={label('sourceGame')} disabled={false} value={source.game ?? ''} options={gameOptions} isFiniteCatalog
             onChange={value => changeSource(source.id, { game: value || null })} />
           <SearchableOptionInput ariaLabel={label('sourceLayout')} disabled={false} value={source.layout ?? ''} options={['', 'standalone', 'trinity', 'bypass', 'independent'].map(value => ({ value, label: label(value || 'automatic') }))} isFiniteCatalog
             onChange={value => changeSource(source.id, { layout: value || null })} />
-          <button type="button" aria-label={`${label('remove')} ${detected?.name ?? source.path}`} onClick={() => setSources(current => current.filter(candidate => candidate.id !== source.id))}>{label('remove')}</button>
+          <button type="button" aria-label={`${label('remove')} ${detected?.name ?? source.path}`} onClick={() => {
+            invalidateSource(source.id);
+            sourceRef.current = sourceRef.current.filter(candidate => candidate.id !== source.id); setSources(sourceRef.current);
+            setPackageQueue(current => current.filter(id => id !== source.id));
+            setScanning(current => current.filter(id => id !== source.id)); scanRuns.current.delete(source.id);
+          }}>{label('remove')}</button>
         </article>;
       })}</div>
     </fieldset>
     <div className="merge-workspace-review-bar" role="group" aria-label={label('review')}>
-      <button type="button" className="primary-button" disabled={safetyBusy || busy !== null || sources.length === 0 || !outputRoot.trim()}
+      <button type="button" className="primary-button" disabled={safetyBusy || busy !== null || blockedPackages || sources.length === 0 || !outputRoot.trim()}
         onClick={() => void execute(false)}>{busy === 'analyze' ? label('analyzing') : label('review')}</button>
       <button type="button" disabled={safetyBusy || busy !== null || sources.length === 0} onClick={() => {
-        setSources([]); setChoices({}); setResult(null); setReviewed(''); setWritten(null); setError(null);
+        sourceRef.current = []; setSources([]); setChoices({}); setResult(null); setReviewed(''); setWritten(null); setError(null);
+        setPackageQueue([]); setCatalogs({}); setScanning([]); setSourceErrors({}); scanRuns.current.clear();
       }}>{label('clear')}</button>
       <span role="status">{result ? `${result.files.length} ${label('files')} · ${unresolved} ${label('unresolved')}${isCurrent ? '' : ` · ${label('needsReview')}`}` : label('readyToAnalyze')}</span>
-      <button type="button" className="primary-button" disabled={safetyBusy || busy !== null || !isCurrent || !result?.canExport}
+      <button type="button" className="primary-button" disabled={safetyBusy || busy !== null || blockedPackages || !isCurrent || !result?.canExport}
         onClick={() => void execute(true)}>{busy === 'export' ? label('exporting') : label('export')}</button>
     </div>
+    {active && dialogSource && dialogCatalog && <MergePackageDialog key={`${dialogSource.id}-${dialogCatalog.scanToken}`} catalog={dialogCatalog}
+      initial={dialogSource.packageScanToken === dialogCatalog.scanToken ? dialogSource.packageIds : undefined}
+      changed={Boolean(dialogSource.packageScanToken && dialogSource.packageScanToken !== dialogCatalog.scanToken)}
+      onCancel={() => setPackageQueue(current => current.slice(1))} onConfirm={ids => {
+        invalidateSource(dialogSource.id); setError(null);
+        setSources(current => current.map(source => source.id === dialogSource.id ? { ...source, packageIds: ids, packageScanToken: dialogCatalog.scanToken, packageCount: dialogCatalog.packages.length } : source));
+        setPackageQueue(current => current.slice(1));
+      }} />}
     {error && <p role="alert" className="field-error">{issueMessage(error)}</p>}
     {result?.issues.map((issue, index) => <p key={`${issue.code}-${index}`} className={issue.severity === 'error' ? 'field-error' : 'field-note'}>
       {issueMessage(issue.code)} {issue.file && <code data-localization-ignore>{issue.file}</code>}</p>)}

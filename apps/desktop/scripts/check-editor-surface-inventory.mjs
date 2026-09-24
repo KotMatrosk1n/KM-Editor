@@ -179,6 +179,7 @@ const editorSurfaceInventory = {
  * makes an unclassified input-bearing TSX file a test failure.
  */
 const embeddedEditableSurfaceInventory = {
+  mergePackages: ['src/features/mod-merger/MergePackageDialog.tsx', 'MergePackageDialog', 'choice-local-draft'],
   zaBehavior: ['src/features/behavior/ZaBehaviorSection.tsx', 'ZaBehaviorSection', 'raw-local-draft'],
   trainerDynamaxRoster: ['src/features/trainer-dynamax/TrainerDynamaxRoster.tsx', 'TrainerDynamaxRoster', 'choice-local-draft'],
   modelViewerPalette: ['src/features/model-viewer/ViewerColorPicker.tsx', 'ViewerColorPicker', 'utility-input'],
@@ -290,6 +291,7 @@ const editorDraftContractInventory = {
   inGameSettingsPackage: 'captured-review',
   researchAnnotations: 'keyed-exact-submit',
   semanticMerge: 'captured-snapshot',
+  mergePackages: 'captured-snapshot',
   personalizationSettings: 'immediate-choice',
   betaEditorsSettings: 'immediate-choice',
   processMemorySettings: 'immediate-choice',

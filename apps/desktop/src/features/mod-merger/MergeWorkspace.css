@@ -37,6 +37,46 @@
 .merge-workspace pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; max-height: 250px; overflow: auto; font-size: 0.85rem; }
 .merge-workspace-original { padding: 10px; margin-bottom: 12px; background: rgb(255 255 255 / 3%); border-radius: 6px; }
 .merge-workspace-pagination { justify-content: space-between; }
+.merge-workspace-package-summary { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.merge-workspace-package-summary span { flex: 1; }
+.merge-workspace-package-summary p { flex-basis: 100%; margin: 0; }
+.merge-package-backdrop { position: fixed; inset: 0; z-index: 1600; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / 65%); }
+.merge-package-dialog { width: min(1100px, 100%); max-height: calc(100dvh - 32px); min-height: 0; box-sizing: border-box;
+  display: flex; flex-direction: column; background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: 0 18px 70px rgb(0 0 0 / 50%); }
+.merge-package-dialog > header, .merge-package-dialog > footer { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 16px 20px; flex-shrink: 0; }
+.merge-package-dialog > header { border-bottom: 1px solid var(--color-border); }
+.merge-package-dialog > footer { border-top: 1px solid var(--color-border); }
+.merge-package-dialog > header > div, .merge-package-dialog > footer > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.merge-package-dialog h2, .merge-package-dialog > header p, .merge-package-dialog > footer p { margin: 0; }
+.merge-package-dialog > header p { margin-top: 6px; color: var(--color-text-soft); }
+.merge-package-dialog > header > div { max-height: 20dvh; overflow: auto; }
+.merge-package-dialog > footer > div { max-height: 25dvh; overflow: auto; }
+.merge-package-body { padding: 0 20px 20px; overflow: auto; min-height: 0; scrollbar-gutter: stable; }
+.merge-package-toolbar { display: flex; gap: 12px; flex-wrap: wrap; margin: 14px 0; }
+.merge-package-toolbar input { flex: 1; min-width: min(100%, 200px); }
+.merge-package-row { padding: 14px; border: 1px solid var(--color-border); border-radius: 8px; margin-top: 10px; min-width: 0; overflow-wrap: anywhere; }
+.merge-package-choice { display: flex; gap: 12px; align-items: start; cursor: pointer; }
+.merge-package-choice > input, .merge-package-none > input { flex: 0 0 auto; margin-top: 4px; }
+.merge-package-choice > span { display: grid; gap: 5px; min-width: 0; }
+.merge-package-choice small { color: var(--color-text-soft); }
+.merge-package-row p { margin: 10px 0; }
+.merge-package-row details { margin-top: 12px; }
+.merge-package-dialog summary { cursor: pointer; overflow-wrap: anywhere; }
+.merge-package-dialog fieldset { min-inline-size: 0; margin: 16px 0 0; border: 1px solid var(--color-border); border-radius: 8px; }
+.merge-package-dialog legend { max-width: 100%; overflow-wrap: anywhere; }
+.merge-package-none { display: flex; align-items: start; gap: 12px; }
+.merge-package-files { padding-left: 22px; max-height: 240px; overflow: auto; }
+.merge-package-files code { white-space: pre-wrap; overflow-wrap: anywhere; }
+.merge-package-documents { margin-top: 20px; }
+.merge-package-documents details { margin: 12px 0; }
+.merge-package-documents pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; overflow: auto; }
+.merge-package-dialog [hidden] { display: none; }
+@media (max-width: 600px) {
+  .merge-package-backdrop { padding: 6px; }
+  .merge-package-dialog { max-height: calc(100dvh - 12px); }
+  .merge-package-dialog > header, .merge-package-dialog > footer { padding: 12px; }
+  .merge-package-body { padding: 0 12px 12px; }
+}
 .merge-workspace fieldset { min-inline-size: 0; }
 /* Use the actual editor width, including sidebar and display scaling effects. */
 @container km-merge (min-width: 64rem) {

@@ -55,8 +55,16 @@ public sealed class MergeWorkspaceService
         var files = new List<MergeFileDto>();
         var inputs = new List<MergeInput>();
         var remaining = MergeInputs.MaximumBytes;
+        var inputFiles = 0;
         foreach (var source in request.Sources)
-            inputs.Add(MergeInputs.Read(source, ref remaining));
+        {
+            inputs.AddRange(MergePackages.ReadSelected(source, ref remaining, out var sourceFiles));
+            inputFiles += sourceFiles;
+            if (inputFiles > MergeInputs.MaximumFiles)
+                throw new MergeInputException(MergeWorkspaceErrorCodes.LimitExceeded, "The combined sources contain too many files.");
+        }
+        if (inputs.Count > 64)
+            throw new MergeInputException(MergeWorkspaceErrorCodes.LimitExceeded, "Select at most 64 packages across the mod sources.");
         if (inputs.Sum(input => input.Files.Count) > MergeInputs.MaximumFiles)
             throw new MergeInputException(MergeWorkspaceErrorCodes.LimitExceeded, "The combined sources contain too many files.");
         MergeExecutableInputs.NormalizeBuildNames(inputs);
@@ -356,7 +364,8 @@ public sealed class MergeWorkspaceService
         if (packedDescriptor is null && sourceDescriptors.Length > 1)
         {
             var preserving = sourceDescriptors.Select(input => KM.Formats.TrinityMergeDescriptor.RemoveFileHashes(input.Files[Descriptor].Bytes, hashes)).ToArray();
-            if (preserving.Any(bytes => !bytes.AsSpan().SequenceEqual(preserving[0])))
+            if (preserving.Any(bytes => !bytes.AsSpan().SequenceEqual(preserving[0]))
+                && !preserving.All(KM.Formats.TrinityMergeDescriptor.HasOnlyKnownFields))
             {
                 var choice = resolveDescriptor(sourceDescriptors.Select((input, index) =>
                     new MergeValueDto(input.Info.Id, input.Info.Name, Fingerprint(preserving[index]))).ToArray());

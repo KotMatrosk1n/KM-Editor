@@ -216,6 +216,7 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "ivScreen.uninstall.stage",
     "modMerger.apply",
     "modMerger.load",
+    "modMerger.packages.scan",
     "modMerger.stage",
     "modMerger.workspace.analyze",
     "modMerger.workspace.export",
@@ -2554,6 +2555,7 @@ fn project_bridge_request_policy(request_json: &str) -> Option<ProjectBridgeRequ
                     | "models.properties"
                     | "modMerger.stage"
                     | "modMerger.workspace.analyze"
+                    | "modMerger.packages.scan"
                     | "svModMerger.stage"
                     | "zaModMerger.stage"
                     | "researchLab.capabilities"

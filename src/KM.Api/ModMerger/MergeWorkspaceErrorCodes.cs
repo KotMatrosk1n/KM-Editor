@@ -8,6 +8,10 @@ public static class MergeWorkspaceErrorCodes
     public const string DescriptorMismatch = "KM-MERGE-DESCRIPTOR-MISMATCH";
     public const string DescriptorRequired = "KM-MERGE-DESCRIPTOR-REQUIRED";
     public const string DuplicatePath = "KM-MERGE-DUPLICATE-PATH";
+    public const string PackagesRequired = "KM-MERGE-PACKAGES-REQUIRED";
+    public const string PackagesStale = "KM-MERGE-PACKAGES-STALE";
+    public const string PackageManifestInvalid = "KM-MERGE-PACKAGE-MANIFEST-INVALID";
+    public const string PackageSelectionInvalid = "KM-MERGE-PACKAGE-SELECTION-INVALID";
     public const string ExportFailed = "KM-MERGE-EXPORT-FAILED";
     public const string FormatOpaque = "KM-MERGE-FORMAT-OPAQUE";
     public const string PatchInvalid = "KM-MERGE-PATCH-INVALID";

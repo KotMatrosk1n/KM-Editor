@@ -9,7 +9,9 @@ const schema = z.object({
   outputMode: z.enum(['standalone', 'trinity', 'bypass']), outputRoot: path,
   baseRomFs: path, baseExeFs: path, supportFolder: path,
   sources: z.array(z.object({ id: z.string().max(80), path, game: game.nullable(),
-    layout: z.enum(['standalone', 'trinity', 'bypass', 'independent']).nullable() })).max(64),
+    layout: z.enum(['standalone', 'trinity', 'bypass', 'independent']).nullable(),
+    packageIds: z.array(z.string().max(80)).max(64).nullable().optional(), packageScanToken: z.string().max(80).nullable().optional(),
+    packageCount: z.number().int().min(1).max(64).optional() })).max(64),
   choices: z.record(z.string().max(80), z.string().max(80))
 });
 export type MergeDraft = z.infer<typeof schema>;
