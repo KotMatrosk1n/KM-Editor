@@ -4397,6 +4397,7 @@
     "mergeWorkspace.error.KM-MERGE-REVIEW-STALE": "Les sources, les choix ou la sortie ont changé. Vérifiez à nouveau la fusion.",
     "mergeWorkspace.error.KM-MERGE-EXPORT-FAILED": "L’exportation a échoué. Vérifiez les diagnostics et la fusion avant de réessayer.",
     "mergeWorkspace.error.KM-MERGE-FORMAT-OPAQUE": "Choisissez un fichier complet. KM ne peut pas combiner ses champs individuels de façon fiable.",
+    "mergeWorkspace.error.KM-MERGE-SEMANTIC-INVALID": "Les réglages sélectionnés sont incohérents ou dépassent les limites autorisées. Choisissez un réglage cohérent provenant d’une source ou corrigez le mod source avant la fusion.",
     "mergeWorkspace.error.KM-MERGE-PATCH-INVALID": "Ce correctif exécutable est incorrect, dépasse les limites prises en charge ou modifie la structure cible. Corrigez-le ou retirez-le avant la fusion.",
     "mergeWorkspace.error.KM-MERGE-EXECUTABLE-BASE-REQUIRED": "Pour fusionner des exécutables complets par zones, utilisez le mode avancé avec le dossier ExeFS original correspondant. Sinon, choisissez un exécutable complet.",
     "mergeWorkspace.error.KM-MERGE-DESCRIPTOR-REQUIRED": "La sortie autonome nécessite un descripteur compatible. Utilisez le mode avancé ou un autre format.",
@@ -4515,9 +4516,34 @@
     "mergeWorkspace.error.KM-MERGE-PACKAGE-MANIFEST-INVALID": "Le manifeste des paquets est invalide. Corrigez ses déclarations avant l’importation.",
     "mergeWorkspace.error.KM-MERGE-PACKAGE-SELECTION-INVALID": "Vérifiez les paquets requis, les dépendances et les groupes d’alternatives.",
     "mergeWorkspace.packages.added": "Également sélectionnés",
-    "mergeWorkspace.packages.removed": "Également désélectionnés"
+    "mergeWorkspace.packages.removed": "Également désélectionnés",
+    "marnieBoosts.title": "Bonus de Rosemary à Winscor",
+    "marnieBoosts.subtitle": "Modifiez les encouragements de Rosemary dans les trois combats de Winscor.",
+    "marnieBoosts.readOnly": "Ouvrez des sources compatibles Épée ou Bouclier et configurez un dossier de sortie.",
+    "marnieBoosts.failed": "Les effets n’ont pas pu être préparés. Consultez les diagnostics et réessayez.",
+    "marnieBoosts.draft": "Modifications non préparées",
+    "marnieBoosts.staged": "Six résultats de réponse préparés",
+    "marnieBoosts.clean": "Aucune modification non préparée",
+    "marnieBoosts.battle": "Combat {number}",
+    "marnieBoosts.bounds": "Choisissez aucun effet, ou augmentez ou diminuez la Vitesse, les deux attaques ou les deux défenses d’un ou deux niveaux. Chaque réponse est indépendante.",
+    "marnieBoosts.restoreHelp": "Rétablir les valeurs d’origine réinitialise les six réponses. Préparez puis appliquez les modifications pour mettre à jour la sortie.",
+    "marnieBoosts.outcomes": "Résultats des réponses",
+    "workbench.section.marnie-boosts.label": "Bonus de Rosemary à Winscor",
+    "workbench.section.marnie-boosts.description": "Modifiez les encouragements de Rosemary dans les trois combats de Winscor.",
+    "marnieBoosts.diagnostic.source": "Les données d’encouragement sont indisponibles ou incompatibles. Vérifiez les séquences d’origine et le dossier de sortie.",
+    "marnieBoosts.diagnostic.selection": "Choisissez un résultat pris en charge pour chacune des six réponses.",
+    "marnieBoosts.diagnostic.session": "Les encouragements préparés ne sont pas valides. Préparez à nouveau les effets.",
+    "marnieBoosts.diagnostic.stale": "Les sources ou la sortie des encouragements ont changé. Vérifiez à nouveau les modifications.",
+    "marnieBoosts.diagnostic.apply": "Les encouragements n’ont pas pu être appliqués. Vérifiez les sources et le dossier de sortie, puis examinez à nouveau les modifications."
   },
   "literals": {
+    "Answer outcome 3": "Effet de la réponse 3",
+    "Answer outcome 2": "Effet de la réponse 2",
+    "Answer outcome 1": "Effet de la réponse 1",
+    "Party and Pokemon count": "Équipe et nombre de Pokémon",
+    "Level range": "Plage de niveaux",
+    "EV allocation": "Répartition des EV",
+    "Pokemon identity": "Pokémon et forme",
     "Apply Form or Pokédex placement changes before editing alpha size.": "Appliquez les changements de forme ou de position dans le Pokédex avant de modifier la taille alpha.",
     "Alpha Size": "Taille alpha",
     "Alpha scale (×)": "Échelle alpha (×)",
@@ -8733,6 +8759,8 @@
     "Gentle (variant 4)": "Doux (variante 4)",
     "Sluggish": "Lent",
     "Apply reviewed Behavior settings.": "Appliquer les paramètres de comportement vérifiés.",
-    "Register Behavior output resources.": "Enregistrer les ressources de sortie du comportement."
+    "Register Behavior output resources.": "Enregistrer les ressources de sortie du comportement.",
+    "Marnie Wyndon Boosts": "Bonus de Rosemary à Winscor",
+    "Edit Marnie cheering outcomes in the three Wyndon battles.": "Modifiez les encouragements de Rosemary dans les trois combats de Winscor."
   }
 }

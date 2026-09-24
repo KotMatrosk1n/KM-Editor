@@ -4397,6 +4397,7 @@
     "mergeWorkspace.error.KM-MERGE-REVIEW-STALE": "来源、选择或输出已更改。请重新检查合并结果。",
     "mergeWorkspace.error.KM-MERGE-EXPORT-FAILED": "导出失败。请查看输出诊断并重新检查后再试。",
     "mergeWorkspace.error.KM-MERGE-FORMAT-OPAQUE": "请为此格式选择完整文件。KM 无法安全合并其中的单独字段。",
+    "mergeWorkspace.error.KM-MERGE-SEMANTIC-INVALID": "所选设置不一致或超出允许范围。请从同一来源选择一致的设置，或在合并前修复源模组。",
     "mergeWorkspace.error.KM-MERGE-PATCH-INVALID": "此可执行文件补丁格式有误、超出支持的限制或更改了目标布局。请先修复或移除它再合并。",
     "mergeWorkspace.error.KM-MERGE-EXECUTABLE-BASE-REQUIRED": "要按区域合并完整的可执行文件，请使用高级模式并选择匹配的原始 ExeFS 文件夹。否则，请选择一个完整文件。",
     "mergeWorkspace.error.KM-MERGE-DESCRIPTOR-REQUIRED": "独立运行输出需要兼容的描述文件。请使用高级模式或选择其他输出格式。",
@@ -4515,9 +4516,34 @@
     "mergeWorkspace.error.KM-MERGE-PACKAGE-MANIFEST-INVALID": "组件清单无效。请修正声明后再导入。",
     "mergeWorkspace.error.KM-MERGE-PACKAGE-SELECTION-INVALID": "请检查必需组件、依赖项和备选组。",
     "mergeWorkspace.packages.added": "同时选中",
-    "mergeWorkspace.packages.removed": "同时取消选择"
+    "mergeWorkspace.packages.removed": "同时取消选择",
+    "marnieBoosts.title": "玛俐宫门市能力变化",
+    "marnieBoosts.subtitle": "编辑宫门市三场战斗中玛俐助威的效果。",
+    "marnieBoosts.readOnly": "打开兼容的剑或盾源文件并设置输出文件夹后即可编辑。",
+    "marnieBoosts.failed": "无法暂存助威效果。请检查诊断信息后重试。",
+    "marnieBoosts.draft": "未暂存的更改",
+    "marnieBoosts.staged": "已暂存六个回答的效果",
+    "marnieBoosts.clean": "没有未暂存的更改",
+    "marnieBoosts.battle": "第 {number} 场战斗",
+    "marnieBoosts.bounds": "可选择无效果，或让速度、攻击和特攻、防御和特防上升或下降一级或两级。每个回答可独立设置。",
+    "marnieBoosts.restoreHelp": "恢复原版会重置全部六个回答。暂存并应用更改后即可更新输出。",
+    "marnieBoosts.outcomes": "回答效果",
+    "workbench.section.marnie-boosts.label": "玛俐宫门市能力变化",
+    "workbench.section.marnie-boosts.description": "编辑宫门市三场战斗中玛俐助威的效果。",
+    "marnieBoosts.diagnostic.source": "助威数据不可用或不兼容。请检查原始序列和输出文件夹。",
+    "marnieBoosts.diagnostic.selection": "请为六个回答分别选择一个受支持的效果。",
+    "marnieBoosts.diagnostic.session": "已暂存的助威更改无效。请重新暂存效果。",
+    "marnieBoosts.diagnostic.stale": "助威源文件或输出已更改。请重新检查更改。",
+    "marnieBoosts.diagnostic.apply": "无法应用助威输出。请检查源文件和输出文件夹，然后重新检查更改。"
   },
   "literals": {
+    "Answer outcome 3": "回答效果 3",
+    "Answer outcome 2": "回答效果 2",
+    "Answer outcome 1": "回答效果 1",
+    "Party and Pokemon count": "队伍与宝可梦数量",
+    "Level range": "等级范围",
+    "EV allocation": "努力值分配",
+    "Pokemon identity": "宝可梦与形态",
     "Apply Form or Pokédex placement changes before editing alpha size.": "请先应用形态或图鉴位置更改，再编辑头目体型。",
     "Alpha Size": "头目体型",
     "Alpha scale (×)": "头目缩放倍率 (×)",
@@ -8733,6 +8759,8 @@
     "Gentle (variant 4)": "温和（变体 4）",
     "Sluggish": "迟钝",
     "Apply reviewed Behavior settings.": "应用已审核的行为设置。",
-    "Register Behavior output resources.": "注册行为输出资源。"
+    "Register Behavior output resources.": "注册行为输出资源。",
+    "Marnie Wyndon Boosts": "玛俐宫门市能力变化",
+    "Edit Marnie cheering outcomes in the three Wyndon battles.": "编辑宫门市三场战斗中玛俐助威的效果。"
   }
 }

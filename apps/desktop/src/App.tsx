@@ -459,8 +459,10 @@ import {
   FashionCatalogSection,
   type FashionCatalogFieldEditInput
 } from './features/fashion-catalog/FashionCatalogSection';
+import { MarnieBoostsSection } from './features/marnie-boosts/MarnieBoostsSection';
 import { RaidDensSection } from './features/raid-dens/RaidDensSection';
 import { TrainerWhiteoutSection } from './features/trainer-whiteout/TrainerWhiteoutSection';
+import { encodeMarnieBoostSelections, getMarnieBoostPendingSelections, type MarnieBoostsWorkflow } from './bridge/marnieBoostsContracts';
 import { type RaidDensWorkflow } from './bridge/raidDensContracts';
 import { type TrainerWhiteoutWorkflow, type TrainerWhiteoutChange } from './bridge/trainerWhiteoutContracts';
 import { StarmobilesSection } from './features/starmobiles/StarmobilesSection';
@@ -3233,18 +3235,23 @@ export function App({
   const [isFashionCatalogLoading, setIsFashionCatalogLoading] = useState(false);
   const [isFashionCatalogStaging, setIsFashionCatalogStaging] = useState(false);
   const starmobilesWorkflow = useWorkbenchStore(state => state.starmobilesWorkflow);
+  const marnieBoostsWorkflow = useWorkbenchStore(state => state.marnieBoostsWorkflow);
   const raidDensWorkflow = useWorkbenchStore(state => state.raidDensWorkflow);
   const trainerWhiteoutWorkflow = useWorkbenchStore(state => state.trainerWhiteoutWorkflow);
   const setStarmobilesWorkflow = useWorkbenchStore(state => state.setStarmobilesWorkflow);
+  const setMarnieBoostsWorkflow = useWorkbenchStore(state => state.setMarnieBoostsWorkflow);
   const setRaidDensWorkflow = useWorkbenchStore(state => state.setRaidDensWorkflow);
   const setTrainerWhiteoutWorkflow = useWorkbenchStore(state => state.setTrainerWhiteoutWorkflow);
   const [isStarmobilesLoading, setIsStarmobilesLoading] = useState(false);
+  const [isMarnieBoostsLoading, setIsMarnieBoostsLoading] = useState(false);
   const [isRaidDensLoading, setIsRaidDensLoading] = useState(false);
   const [isTrainerWhiteoutLoading, setIsTrainerWhiteoutLoading] = useState(false);
   const [isStarmobilesStaging, setIsStarmobilesStaging] = useState(false);
+  const [isMarnieBoostsStaging, setIsMarnieBoostsStaging] = useState(false);
   const [isRaidDensStaging, setIsRaidDensStaging] = useState(false);
   const [isTrainerWhiteoutStaging, setIsTrainerWhiteoutStaging] = useState(false);
   const starmobilesGenerationRef = useRef(0);
+  const marnieBoostsGenerationRef = useRef(0);
   const raidDensGenerationRef = useRef(0);
   const trainerWhiteoutGenerationRef = useRef(0);
   const [isHabitatCoordinatesLoading, setIsHabitatCoordinatesLoading] = useState(false);
@@ -4157,6 +4164,7 @@ export function App({
           fashionCatalogWorkflow,
           habitatCoordinatesWorkflow,
           starmobilesWorkflow,
+          marnieBoostsWorkflow,
           raidDensWorkflow,
           trainerWhiteoutWorkflow,
           fashionUnlockWorkflow,
@@ -4203,6 +4211,7 @@ export function App({
       fashionCatalogWorkflow,
       habitatCoordinatesWorkflow,
       starmobilesWorkflow,
+      marnieBoostsWorkflow,
       raidDensWorkflow,
       trainerWhiteoutWorkflow,
       fashionUnlockWorkflow,
@@ -4316,6 +4325,7 @@ export function App({
     encountersWorkflow, exeFsPatchWorkflow, fairyGymBoostsWorkflow, fashionCatalogWorkflow,
     habitatCoordinatesWorkflow,
     starmobilesWorkflow,
+    marnieBoostsWorkflow,
     raidDensWorkflow,
     trainerWhiteoutWorkflow,
     fashionUnlockWorkflow,
@@ -4438,6 +4448,8 @@ export function App({
     (isDirty: boolean) => registerEditorDraftDirty('fashionCatalog', isDirty),
     [registerEditorDraftDirty]
   );
+  const handleMarnieBoostsDirtyChange = useCallback(
+    (dirty: boolean) => registerEditorDraftDirty('marnieBoosts', dirty), [registerEditorDraftDirty]);
   const handleRaidDensDirtyChange = useCallback(
     (dirty: boolean) => registerEditorDraftDirty('raidDens', dirty), [registerEditorDraftDirty]);
   const handleTrainerWhiteoutDirtyChange = useCallback(
@@ -10419,6 +10431,49 @@ export function App({
     );
   };
 
+  const handleOpenMarnieBoostsWorkflow = async () => {
+    const generation = marnieBoostsGenerationRef.current;
+    await runRetainedWorkflowLoad('marnieBoosts', setIsMarnieBoostsLoading,
+      () => bridge.loadMarnieBoosts({ paths: createProjectPaths(draftPaths) }),
+      response => setMarnieBoostsWorkflow(response.workflow),
+      () => generation === marnieBoostsGenerationRef.current);
+  };
+
+  const handleStageMarnieBoosts = async (selections: FairyGymBoostSelection[]) => {
+    const activeSession = getEditSessionForSection('marnieBoosts');
+    if (!activeSession) return false;
+    let accepted = false;
+    marnieBoostsGenerationRef.current += 1;
+    setIsMarnieBoostsStaging(true);
+    prepareScopedEditorPanelAction('marnieBoosts');
+    try {
+      await runEditSessionMutation(async session => {
+        const response = await bridge.stageMarnieBoosts({ paths: createProjectPaths(draftPaths), session, selections });
+        const edits = response.session.pendingEdits.filter(edit => edit.domain === 'workflow.marnieBoosts');
+        const pendingSelections = getMarnieBoostPendingSelections(response.session);
+        const acknowledged = edits.length === 0
+          ? encodeMarnieBoostSelections(response.workflow.selections) === encodeMarnieBoostSelections(selections)
+          : pendingSelections !== null && encodeMarnieBoostSelections(pendingSelections) === encodeMarnieBoostSelections(selections);
+        const matches = response.workflow.canEdit && response.workflow.detectedGame === draftPaths.selectedGame &&
+          response.session.sessionId === activeSession.sessionId && acknowledged;
+        const diagnostics = [...response.diagnostics, ...response.workflow.diagnostics];
+        if (!matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error'))
+          diagnostics.push({ severity: 'error', domain: 'workflow.marnieBoosts', code: 'KM-SWSH-MARNIE-SESSION-INVALID', message: t('marnieBoosts.failed') });
+        const didSucceed = matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error');
+        return { ...response, diagnostics, didSucceed, session: didSucceed ? response.session : session };
+      }, response => {
+        setScopedEditorPanelDiagnostics('marnieBoosts', response.diagnostics);
+        if (response.didSucceed) {
+          accepted = true;
+          setMarnieBoostsWorkflow(response.workflow);
+          setEditSessionSection('marnieBoosts');
+        }
+      }, activeSession);
+    } catch (error) { setScopedEditorPanelDiagnostics('marnieBoosts', toBridgeDiagnostics(error)); }
+    finally { setIsMarnieBoostsStaging(false); }
+    return accepted;
+  };
+
   const handleOpenRaidDensWorkflow = async () => {
     const generation = raidDensGenerationRef.current;
     await runRetainedWorkflowLoad('raidDens', setIsRaidDensLoading,
@@ -12273,6 +12328,9 @@ export function App({
         case 'fashionCatalog':
           if (!currentState.fashionCatalogWorkflow) await handleOpenFashionCatalogWorkflow();
           break;
+        case 'marnieBoosts':
+          if (!currentState.marnieBoostsWorkflow) await handleOpenMarnieBoostsWorkflow();
+          break;
         case 'raidDens':
           if (!currentState.raidDensWorkflow) await handleOpenRaidDensWorkflow();
           break;
@@ -12652,6 +12710,9 @@ export function App({
           void handleOpenFashionCatalogWorkflow();
         }
         break;
+      case 'marnieBoosts':
+        if (!marnieBoostsWorkflow && !isMarnieBoostsLoading) { markLazyLoadStarted(); void handleOpenMarnieBoostsWorkflow(); }
+        break;
       case 'raidDens':
         if (!raidDensWorkflow && !isRaidDensLoading) { markLazyLoadStarted(); void handleOpenRaidDensWorkflow(); }
         break;
@@ -12912,6 +12973,7 @@ export function App({
     fashionCatalogWorkflow,
     habitatCoordinatesWorkflow,
     starmobilesWorkflow,
+    marnieBoostsWorkflow,
     raidDensWorkflow,
     trainerWhiteoutWorkflow,
     fashionUnlockWorkflow,
@@ -12941,6 +13003,7 @@ export function App({
     isFashionCatalogLoading,
     isHabitatCoordinatesLoading,
     isStarmobilesLoading,
+    isMarnieBoostsLoading,
     isRaidDensLoading,
     isTrainerWhiteoutLoading,
     isFashionUnlockLoading,
@@ -18200,6 +18263,7 @@ export function App({
       'fashionCatalog',
       'habitatCoordinates',
       'starmobiles',
+      'marnieBoosts',
       'raidDens',
       'trainerWhiteout',
       'giftPokemon',
@@ -18251,6 +18315,7 @@ export function App({
       fashionCatalog: setIsFashionCatalogLoading,
       habitatCoordinates: setIsHabitatCoordinatesLoading,
       starmobiles: setIsStarmobilesLoading,
+      marnieBoosts: setIsMarnieBoostsLoading,
       raidDens: setIsRaidDensLoading,
       trainerWhiteout: setIsTrainerWhiteoutLoading,
       fashionUnlock: setIsFashionUnlockLoading,
@@ -18454,6 +18519,12 @@ export function App({
           }
         }
       );
+    }
+    if (marnieBoostsWorkflow && refreshSections.has('marnieBoosts')) {
+      reloadTasks.push(async () => {
+        const response = await bridge.loadMarnieBoosts({ paths });
+        if (canCommitRefresh()) setMarnieBoostsWorkflow(response.workflow);
+      });
     }
     if (raidDensWorkflow && refreshSections.has('raidDens')) {
       reloadTasks.push(async () => {
@@ -21044,6 +21115,16 @@ export function App({
               status={fpsPatchStatus}
             />
           ) : null}
+          {activeSection === 'marnieBoosts' ? (
+            isMarnieBoostsLoading && !marnieBoostsWorkflow ? <WorkflowLoadingPanel label={t('marnieBoosts.title')} /> :
+              <MarnieBoostsSection workflow={marnieBoostsWorkflow} session={getEditSessionForSection('marnieBoosts')}
+                key={getEditSessionForSection('marnieBoosts')?.sessionId ?? 'viewing'}
+                isStaging={isMarnieBoostsStaging} isEditing={getEditSessionForSection('marnieBoosts') !== null}
+                isEditStarting={isEditStarting} onStartEditSession={handleStartEditSession}
+                onCancelEditSession={requestCancelEditSession} onStage={handleStageMarnieBoosts}
+                onDirtyStateChange={handleMarnieBoostsDirtyChange} onRefresh={handleOpenMarnieBoostsWorkflow}
+                isLoading={isMarnieBoostsLoading} panelOutput={getOutputSafeScopedEditorPanelOutput('marnieBoosts')} />
+          ) : null}
           {activeSection === 'raidDens' ? (
             isRaidDensLoading && !raidDensWorkflow ? <WorkflowLoadingPanel label={t('raidDens.title')} /> :
               <RaidDensSection workflow={raidDensWorkflow} session={getEditSessionForSection('raidDens')}
@@ -21183,6 +21264,7 @@ export function App({
               editSession={editSession}
               pendingEditContext={{
                 starmobilesWorkflow,
+                marnieBoostsWorkflow,
                 raidDensWorkflow,
                 trainerWhiteoutWorkflow,
                 angeFightWorkflow,
@@ -34926,6 +35008,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.fairyGymBoosts': 'Fairy Gym Boosts',
     'workflow.fashionCatalog': 'Fashion Catalog',
     'workflow.habitatCoordinates': 'Habitat Coordinates',
+    'workflow.marnieBoosts': 'Marnie Wyndon Boosts',
     'workflow.raidDens': 'Raid Dens',
     'workflow.trainerWhiteout': 'Trainer Whiteout',
     'workflow.starmobiles': 'Starmobiles',
@@ -34987,6 +35070,7 @@ function getPendingEditSection(edit: PendingEdit): WorkbenchSection | null {
     'workflow.fairyGymBoosts': 'fairyGymBoosts',
     'workflow.fashionCatalog': 'fashionCatalog',
     'workflow.habitatCoordinates': 'habitatCoordinates',
+    'workflow.marnieBoosts': 'marnieBoosts',
     'workflow.raidDens': 'raidDens',
     'workflow.trainerWhiteout': 'trainerWhiteout',
     'workflow.starmobiles': 'starmobiles',
@@ -35379,6 +35463,11 @@ function getPendingEditDisplayDetails(
         fieldLabel: edit.field === 'gifts' ? 'NPC gifts' : undefined,
         newValueLabel: formatNpcItemGiftPendingValue(edit.newValue),
         recordLabel: 'One NPC'
+      });
+    case 'workflow.marnieBoosts':
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel, recordLocalizationKey: 'marnieBoosts.title', fieldLocalizationKey: 'marnieBoosts.outcomes',
+        newValueLocalizationKey: 'marnieBoosts.staged'
       });
     case 'workflow.raidDens':
       return createPendingEditDisplayDetails(edit, {
@@ -56755,6 +56844,7 @@ function SelectedSpreadsheetImportPanel({
 type PendingEdit = EditSession['pendingEdits'][number];
 
 export type PendingEditContext = {
+  marnieBoostsWorkflow?: MarnieBoostsWorkflow | null;
   raidDensWorkflow?: RaidDensWorkflow | null;
   trainerWhiteoutWorkflow?: TrainerWhiteoutWorkflow | null;
   starmobilesWorkflow?: StarmobilesWorkflow | null;

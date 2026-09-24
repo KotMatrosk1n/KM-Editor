@@ -4397,6 +4397,7 @@
     "mergeWorkspace.error.KM-MERGE-REVIEW-STALE": "Sources, choices or output changed. Review the merge again.",
     "mergeWorkspace.error.KM-MERGE-EXPORT-FAILED": "Export failed. Check the output diagnostics and review again before retrying.",
     "mergeWorkspace.error.KM-MERGE-FORMAT-OPAQUE": "Choose a complete file for this format. KM cannot safely combine its individual fields.",
+    "mergeWorkspace.error.KM-MERGE-SEMANTIC-INVALID": "The selected settings are inconsistent or exceed their allowed bounds. Choose a coherent source setting or repair the source mod before merging.",
     "mergeWorkspace.error.KM-MERGE-PATCH-INVALID": "This executable patch is malformed, exceeds supported limits, or changes the target layout. Repair or remove it before merging.",
     "mergeWorkspace.error.KM-MERGE-EXECUTABLE-BASE-REQUIRED": "To combine complete executable images by region, use Advanced mode with the matching original ExeFS folder. Otherwise, choose one complete image.",
     "mergeWorkspace.error.KM-MERGE-DESCRIPTOR-REQUIRED": "Standalone output needs a compatible descriptor. Use Advanced mode or choose another output format.",
@@ -4515,9 +4516,34 @@
     "mergeWorkspace.error.KM-MERGE-PACKAGE-MANIFEST-INVALID": "The package manifest is invalid. Correct its declarations before importing.",
     "mergeWorkspace.error.KM-MERGE-PACKAGE-SELECTION-INVALID": "Check the required packages, dependencies and alternative groups.",
     "mergeWorkspace.packages.added": "Also selected",
-    "mergeWorkspace.packages.removed": "Also deselected"
+    "mergeWorkspace.packages.removed": "Also deselected",
+    "marnieBoosts.title": "Marnie Wyndon Boosts",
+    "marnieBoosts.subtitle": "Edit Marnie cheering outcomes in the three Wyndon battles.",
+    "marnieBoosts.readOnly": "Open compatible Sword or Shield sources and configure an output folder to edit cheering outcomes.",
+    "marnieBoosts.failed": "The cheering outcomes could not be staged. Review Diagnostics and try again.",
+    "marnieBoosts.draft": "Unstaged changes",
+    "marnieBoosts.staged": "Six answer outcomes staged",
+    "marnieBoosts.clean": "No unstaged changes",
+    "marnieBoosts.battle": "Battle {number}",
+    "marnieBoosts.bounds": "Choose no effect, or raise or lower Speed, both attack stats, or both defense stats by one or two stages. Each answer is independent.",
+    "marnieBoosts.restoreHelp": "Restore to Vanilla resets all six answers. Stage and apply the changes to update your output.",
+    "marnieBoosts.outcomes": "Answer outcomes",
+    "workbench.section.marnie-boosts.label": "Marnie Wyndon Boosts",
+    "workbench.section.marnie-boosts.description": "Edit Marnie cheering outcomes in the three Wyndon battles.",
+    "marnieBoosts.diagnostic.source": "Cheering data is unavailable or incompatible. Check the original sequences and output folder.",
+    "marnieBoosts.diagnostic.selection": "Choose one supported outcome for each of the six answers.",
+    "marnieBoosts.diagnostic.session": "The staged cheering changes are invalid. Stage the outcomes again.",
+    "marnieBoosts.diagnostic.stale": "Cheering sources or output changed. Review the changes again.",
+    "marnieBoosts.diagnostic.apply": "Cheering output could not be applied. Check the sources and output folder, then review again."
   },
   "literals": {
+    "Answer outcome 3": "Answer outcome 3",
+    "Answer outcome 2": "Answer outcome 2",
+    "Answer outcome 1": "Answer outcome 1",
+    "Party and Pokemon count": "Party and Pokemon count",
+    "Level range": "Level range",
+    "EV allocation": "EV allocation",
+    "Pokemon identity": "Pokemon identity",
     "Apply Form or Pokédex placement changes before editing alpha size.": "Apply Form or Pokédex placement changes before editing alpha size.",
     "Alpha Size": "Alpha Size",
     "Alpha scale (×)": "Alpha scale (×)",
@@ -8733,6 +8759,8 @@
     "Gentle (variant 4)": "Gentle (variant 4)",
     "Sluggish": "Sluggish",
     "Apply reviewed Behavior settings.": "Apply reviewed Behavior settings.",
-    "Register Behavior output resources.": "Register Behavior output resources."
+    "Register Behavior output resources.": "Register Behavior output resources.",
+    "Marnie Wyndon Boosts": "Marnie Wyndon Boosts",
+    "Edit Marnie cheering outcomes in the three Wyndon battles.": "Edit Marnie cheering outcomes in the three Wyndon battles."
   }
 }

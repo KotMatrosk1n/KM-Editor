@@ -7,6 +7,8 @@ import { type LoadTrainerDynamaxRequest, type LoadTrainerDynamaxResponse,
 
 import { type LoadStarmobilesRequest, type LoadStarmobilesResponse, type StageStarmobilesRequest, type StageStarmobilesResponse,
   loadStarmobilesRequestSchema, loadStarmobilesResponseSchema, stageStarmobilesRequestSchema, stageStarmobilesResponseSchema } from './starmobilesContracts';
+import { type LoadMarnieBoostsRequest, type LoadMarnieBoostsResponse, type StageMarnieBoostsRequest, type StageMarnieBoostsResponse,
+  loadMarnieBoostsRequestSchema, loadMarnieBoostsResponseSchema, stageMarnieBoostsRequestSchema, stageMarnieBoostsResponseSchema } from './marnieBoostsContracts';
 import { type LoadRaidDensRequest, type LoadRaidDensResponse, type StageRaidDensRequest, type StageRaidDensResponse,
   loadRaidDensRequestSchema, loadRaidDensResponseSchema, stageRaidDensRequestSchema, stageRaidDensResponseSchema } from './raidDensContracts';
 import { type LoadTrainerWhiteoutRequest, type LoadTrainerWhiteoutResponse, type StageTrainerWhiteoutRequest, type StageTrainerWhiteoutResponse,
@@ -838,9 +840,11 @@ export type ProjectBridge = {
     request: StageTmMaterialVisibilityRequest,
   ) => Promise<StageTmMaterialVisibilityResponse>;
   loadStarmobiles: (request: LoadStarmobilesRequest) => Promise<LoadStarmobilesResponse>;
+  loadMarnieBoosts: (request: LoadMarnieBoostsRequest) => Promise<LoadMarnieBoostsResponse>;
   loadRaidDens: (request: LoadRaidDensRequest) => Promise<LoadRaidDensResponse>;
   loadTrainerWhiteout: (request: LoadTrainerWhiteoutRequest) => Promise<LoadTrainerWhiteoutResponse>;
   stageStarmobiles: (request: StageStarmobilesRequest) => Promise<StageStarmobilesResponse>;
+  stageMarnieBoosts: (request: StageMarnieBoostsRequest) => Promise<StageMarnieBoostsResponse>;
   stageRaidDens: (request: StageRaidDensRequest) => Promise<StageRaidDensResponse>;
   stageTrainerWhiteout: (request: StageTrainerWhiteoutRequest) => Promise<StageTrainerWhiteoutResponse>;
   loadHabitatCoordinates: (
@@ -1669,12 +1673,16 @@ export function createProjectBridge(
     },
     loadStarmobiles: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadStarmobiles,
       loadStarmobilesRequestSchema.parse(request), loadStarmobilesResponseSchema),
+    loadMarnieBoosts: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadMarnieBoosts,
+      loadMarnieBoostsRequestSchema.parse(request), loadMarnieBoostsResponseSchema),
     loadRaidDens: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadRaidDens,
       loadRaidDensRequestSchema.parse(request), loadRaidDensResponseSchema),
     loadTrainerWhiteout: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadTrainerWhiteout,
       loadTrainerWhiteoutRequestSchema.parse(request), loadTrainerWhiteoutResponseSchema),
     stageStarmobiles: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageStarmobiles,
       stageStarmobilesRequestSchema.parse(request), stageStarmobilesResponseSchema),
+    stageMarnieBoosts: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageMarnieBoosts,
+      stageMarnieBoostsRequestSchema.parse(request), stageMarnieBoostsResponseSchema),
     stageRaidDens: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageRaidDens,
       stageRaidDensRequestSchema.parse(request), stageRaidDensResponseSchema),
     stageTrainerWhiteout: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageTrainerWhiteout,

@@ -18,7 +18,8 @@ public static class StructuralMerge
         JsonNode? original,
         IReadOnlyList<MergeCandidate> candidates,
         bool compareOriginal,
-        Func<MergeDifference, string?> resolve)
+        Func<MergeDifference, string?> resolve,
+        Func<string, JsonNode?, IReadOnlyList<MergeCandidate>, bool>? requiresWholeValue = null)
     {
         var remaining = MaximumNodes;
         return Visit(original, compareOriginal, candidates, "", 0).Value;
@@ -34,7 +35,8 @@ public static class StructuralMerge
             if (edits.All(value => value.Exists == edits[0].Exists && JsonNode.DeepEquals(value.Value, edits[0].Value)))
                 return (edits[0].Value?.DeepClone(), edits[0].Exists);
 
-            if (edits.All(value => value.Value is JsonObject) && (baseline is JsonObject || baseline is null))
+            if (edits.All(value => value.Value is JsonObject) && (baseline is JsonObject || baseline is null)
+                && requiresWholeValue?.Invoke(key, baseline, edits) != true)
             {
                 var result = new JsonObject();
                 var names = edits.SelectMany(value => ((JsonObject)value.Value!).Select(pair => pair.Key))

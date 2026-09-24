@@ -26,6 +26,10 @@ Confirmed package selections are saved with the merger draft. Changing a selecti
 
 Every selected payload file is included in the inventory. Supported game tables merge by record and field. Supported tables include Pokémon, items, moves, trainers, gifts, trades, raids, rewards, encounters and shops, with additional behavior, placement, fashion and battle parameter formats depending on the game. Game text entries also merge separately. Trainer party slots and move slots can be compared separately. Ordered lists such as learnsets are compared as a unit.
 
+Related settings stay together during review. Trainer species and form are selected as one identity. Marnie and Fairy Gym answer outcomes keep their effect and direction together. Trainer EV edits and Scarlet/Violet encounter level bounds combine automatically when the result is valid; incompatible combinations require a coherent source choice. Invalid selected totals and bounds block export. Sword/Shield trainer party choices also keep the separate Pokemon count consistent.
+
+Z-A Behavior resources support independent sight, hearing and home range changes. Temperament tags are selected together. Resources with unsupported sense entries retain complete file review. Direct Trinity imports preserve their resource directories, including Behavior paths and unknown directories in an explicitly selected direct layout.
+
 Unknown formats, unsupported table extensions and incompatible record layouts retain their complete bytes. When their contents differ, choose a complete file. The merger does not infer a safe binary edit from arbitrary differing bytes. Textures, audio and models use complete asset choices. Other formats without a preserving structural writer also require a complete file choice. Unknown table extensions are reported explicitly.
 
 Supported GFPAK containers can combine independent member changes. Sword and Shield resident encounter, nest and reward members also support field comparison. Packed Trinity data and its descriptor stay paired. Overlaps with supplied loose paths are inspected before those paths are exposed in the output. Packed Trinity inputs currently require Standalone output. Members without recoverable filenames cannot be converted into named loose files. Conflicting packed containers require a complete package choice. Differences in descriptor metadata can also require a complete descriptor choice.
@@ -34,11 +38,13 @@ Use the file list and search to locate conflicts. Select values individually or 
 
 ## Executable patches
 
-IPS and IPS32 files combine by target address in both modes. Patch records and RLE runs are decoded before comparison, so identical overlapping writes combine without conflict. Differing overlapping writes are grouped into address ranges for review. A choice changes only the conflicting range and retains independent writes from both sources.
+IPS and IPS32 files combine by target address in both modes. Patch records and RLE runs are decoded before comparison. Related writes within an executable word or a recognized Sword/Shield feature are reviewed together, so choices cannot splice incompatible instructions or modes. A complete setting that agrees with identical partial writes combines automatically. Independent writes outside the selected setting are retained.
 
 Build identifiers in patch filenames group patches for the same executable even when they arrive in different folders. Shortened identifiers are expanded only when they match one supplied full identifier. PCHTXT binary sections compile into IPS32 using their build identifier, enabled state, offset shifts and byte order. Disabled sections remain inactive. Unknown directives, mixed build collections and unsupported patch layout changes block export rather than being ignored.
 
 Complete executable images need Advanced mode and the matching original ExeFS files for region comparison. Build identity, segment geometry and unrelated metadata must remain compatible. If a package combines a replacement executable with an IPS patch for that build, the original image is required and the result is written as one merged executable. Basic cannot determine which bytes of a complete executable were intentionally changed.
+
+Recognized Sword/Shield executable features use their reserved regions when comparing settings. Shiny Rate modes remain coherent, and Hyper Training uses one minimum level choice across its executable, script and supported dialogue. Advanced mode can supply missing dependent Hyper Training files from the original dump. Unrelated executable features and dialogue entries remain independently mergeable.
 
 ## Game detection and output
 

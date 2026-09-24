@@ -265,8 +265,10 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "trainerDynamax.load",
     "trainerDynamax.review",
     "trainerDynamax.apply",
+    "marnieBoosts.load",
     "raidDens.load",
     "trainerWhiteout.load",
+    "marnieBoosts.stage",
     "raidDens.stage",
     "trainerWhiteout.stage",
     "profanityFilter.restore",
@@ -2827,6 +2829,7 @@ fn is_project_bridge_workflow_load_command(command: &str) -> bool {
             | "pokemon.load"
             | "profanityFilter.load"
             | "trainerDynamax.load"
+            | "marnieBoosts.load"
             | "raidDens.load"
             | "trainerWhiteout.load"
             | "raidBattles.load"
@@ -2978,6 +2981,7 @@ fn is_replay_safe_edit_session_command(command: &str) -> bool {
             | "gymUniformRemoval.uninstall.stage"
             | "habitatCoordinates.coordinate.stage"
             | "starmobiles.fields.stage"
+            | "marnieBoosts.stage"
             | "raidDens.stage"
             | "trainerWhiteout.stage"
             | "hyperTraining.stage"

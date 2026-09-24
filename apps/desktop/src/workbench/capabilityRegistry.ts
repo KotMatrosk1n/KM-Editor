@@ -433,6 +433,10 @@ export const workbenchCapabilityRegistry = [
     label: 'Fairy Gym Boosts'
   }),
   workflow({
+    description: 'Edit Marnie cheering outcomes in the three Wyndon battles.',
+    games: swordShieldGames, icon: Sparkles, id: 'marnieBoosts', label: 'Marnie Wyndon Boosts'
+  }),
+  workflow({
     description:
       'Advanced ExeFS editor that unlocks fashion ownership checks without editing the save file.',
     games: ['sword', 'shield', 'scarlet', 'violet'],

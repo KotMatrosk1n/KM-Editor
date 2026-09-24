@@ -12,8 +12,13 @@ namespace KM.Tools.ModMerging;
 internal static class MergeFormats
 {
     public static MergeDocument? Read(string game, string path, byte[] bytes)
+        => ReadRaw(game, path, bytes) is { } document ? MergeSemanticFields.Wrap(document) : null;
+
+    private static MergeDocument? ReadRaw(string game, string path, byte[] bytes)
     {
         if (bytes.Length > 64 * 1024 * 1024) return null;
+        if (MergeInputs.Family(game) == "za" && path.StartsWith("romfs/param_chr/data/character/pokemon/wild_single/", StringComparison.OrdinalIgnoreCase))
+            return KM.ZA.Behavior.ZaBehaviorMergeDocument.Read(bytes);
         if (MergeFixedRecords.Read(game, path, bytes) is { } fixedDocument) return fixedDocument;
         if (MergeSwShStructured.Read(game, path, bytes) is { } swshDocument) return swshDocument;
         if (MergeSchemaCatalog.Read(game, path, bytes) is { } schemaDocument) return schemaDocument;

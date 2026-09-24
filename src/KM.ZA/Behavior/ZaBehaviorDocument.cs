@@ -12,6 +12,8 @@ internal sealed class ZaBehaviorDocument
     private readonly int reaction;
     public string[] Tags { get; }
     public float[] Values { get; }
+    internal string OpaqueIdentity => Vector(Field(reaction, 4, 5), 1024).Length == 0
+        ? "empty-senses" : throw new NotSupportedException("Behavior sense entries require a complete resource choice.");
 
     public ZaBehaviorDocument(byte[] bytes)
     {

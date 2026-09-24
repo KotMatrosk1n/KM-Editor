@@ -4397,6 +4397,7 @@
     "mergeWorkspace.error.KM-MERGE-REVIEW-STALE": "Джерела, вибір або результат змінилися. Перевірте об’єднання знову.",
     "mergeWorkspace.error.KM-MERGE-EXPORT-FAILED": "Експорт не виконано. Перевірте діагностику результату та повторіть перевірку.",
     "mergeWorkspace.error.KM-MERGE-FORMAT-OPAQUE": "Виберіть файл цілком. KM не може безпечно об’єднати окремі поля цього формату.",
+    "mergeWorkspace.error.KM-MERGE-SEMANTIC-INVALID": "Вибрані налаштування несумісні або виходять за допустимі межі. Виберіть узгоджене налаштування з одного джерела або виправте початковий мод перед об’єднанням.",
     "mergeWorkspace.error.KM-MERGE-PATCH-INVALID": "Патч виконуваного файлу пошкоджений, перевищує допустимі межі або змінює структуру цільового файлу. Виправте або видаліть його перед об’єднанням.",
     "mergeWorkspace.error.KM-MERGE-EXECUTABLE-BASE-REQUIRED": "Для об’єднання повних виконуваних файлів за областями використовуйте розширений режим із відповідною початковою папкою ExeFS. Інакше виберіть один повний файл.",
     "mergeWorkspace.error.KM-MERGE-DESCRIPTOR-REQUIRED": "Автономний результат потребує сумісного дескриптора. Використайте розширений режим або інший формат.",
@@ -4515,9 +4516,34 @@
     "mergeWorkspace.error.KM-MERGE-PACKAGE-MANIFEST-INVALID": "Маніфест пакетів недійсний. Виправте його перед імпортом.",
     "mergeWorkspace.error.KM-MERGE-PACKAGE-SELECTION-INVALID": "Перевірте обов’язкові пакети, залежності та групи варіантів.",
     "mergeWorkspace.packages.added": "Також вибрано",
-    "mergeWorkspace.packages.removed": "Також вимкнено"
+    "mergeWorkspace.packages.removed": "Також вимкнено",
+    "marnieBoosts.title": "Посилення Марні у Віндоні",
+    "marnieBoosts.subtitle": "Змініть ефекти підтримки Марні у трьох боях у Віндоні.",
+    "marnieBoosts.readOnly": "Відкрийте сумісні вихідні файли Sword або Shield та вкажіть папку виводу.",
+    "marnieBoosts.failed": "Не вдалося підготувати ефекти. Перевірте діагностику та спробуйте ще раз.",
+    "marnieBoosts.draft": "Непідготовлені зміни",
+    "marnieBoosts.staged": "Підготовлено ефекти шести відповідей",
+    "marnieBoosts.clean": "Немає непідготовлених змін",
+    "marnieBoosts.battle": "Бій {number}",
+    "marnieBoosts.bounds": "Виберіть відсутність ефекту або підвищення чи зниження швидкості, обох атак або обох захистів на один чи два ступені. Кожна відповідь незалежна.",
+    "marnieBoosts.restoreHelp": "Відновлення оригіналу скидає всі шість відповідей. Підготуйте та застосуйте зміни, щоб оновити вивід.",
+    "marnieBoosts.outcomes": "Ефекти відповідей",
+    "workbench.section.marnie-boosts.label": "Посилення Марні у Віндоні",
+    "workbench.section.marnie-boosts.description": "Змініть ефекти підтримки Марні у трьох боях у Віндоні.",
+    "marnieBoosts.diagnostic.source": "Дані підтримки недоступні або несумісні. Перевірте оригінальні послідовності та папку виводу.",
+    "marnieBoosts.diagnostic.selection": "Виберіть підтримуваний ефект для кожної з шести відповідей.",
+    "marnieBoosts.diagnostic.session": "Підготовлені зміни підтримки недійсні. Підготуйте ефекти знову.",
+    "marnieBoosts.diagnostic.stale": "Вихідні дані або вивід підтримки змінилися. Перевірте зміни знову.",
+    "marnieBoosts.diagnostic.apply": "Не вдалося застосувати ефекти підтримки. Перевірте вихідні дані та папку виводу й повторіть перевірку."
   },
   "literals": {
+    "Answer outcome 3": "Ефект відповіді 3",
+    "Answer outcome 2": "Ефект відповіді 2",
+    "Answer outcome 1": "Ефект відповіді 1",
+    "Party and Pokemon count": "Команда й кількість покемонів",
+    "Level range": "Діапазон рівнів",
+    "EV allocation": "Розподіл EV",
+    "Pokemon identity": "Покемон і форма",
     "Apply Form or Pokédex placement changes before editing alpha size.": "Застосуйте зміни форми або позиції в Покедексі перед редагуванням розміру альфи.",
     "Alpha Size": "Розмір альфи",
     "Alpha scale (×)": "Масштаб альфи (×)",
@@ -8733,6 +8759,8 @@
     "Gentle (variant 4)": "Спокійний (варіант 4)",
     "Sluggish": "Млявий",
     "Apply reviewed Behavior settings.": "Застосувати перевірені налаштування поведінки.",
-    "Register Behavior output resources.": "Зареєструвати вихідні ресурси поведінки."
+    "Register Behavior output resources.": "Зареєструвати вихідні ресурси поведінки.",
+    "Marnie Wyndon Boosts": "Посилення Марні у Віндоні",
+    "Edit Marnie cheering outcomes in the three Wyndon battles.": "Змініть ефекти підтримки Марні у трьох боях у Віндоні."
   }
 }

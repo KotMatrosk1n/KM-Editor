@@ -37,6 +37,8 @@ using KM.Api.Pokemon;
 using KM.Api.ProfanityFilter;
 using KM.Api.TrainerDynamax;
 using KM.SwSh.TrainerDynamax;
+using KM.Api.MarnieBoosts;
+using KM.SwSh.MarnieBoosts;
 using KM.Api.RaidDens;
 using KM.Api.TrainerWhiteout;
 using KM.SwSh.RaidDens;
@@ -199,6 +201,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private readonly SwShSpreadsheetImportExecutionService spreadsheetImportExecutionService;
     private readonly SwShModMergerWorkflowService modMergerWorkflowService;
     private readonly SwShFpsPatchService fpsPatchService;
+    private readonly SwShMarnieBoostsService marnieBoostsService;
     private readonly SwShRaidDensService raidDensService;
     private readonly SwShTrainerWhiteoutService trainerWhiteoutService;
     private readonly SwShProfanityFilterService profanityFilterService;
@@ -325,6 +328,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         this.spreadsheetImportExecutionService = spreadsheetImportExecutionService ?? new SwShSpreadsheetImportExecutionService(this.projectWorkspaceService);
         this.modMergerWorkflowService = modMergerWorkflowService ?? new SwShModMergerWorkflowService(this.projectWorkspaceService);
         this.fpsPatchService = fpsPatchService ?? new SwShFpsPatchService(this.projectWorkspaceService);
+        marnieBoostsService = new SwShMarnieBoostsService(this.projectWorkspaceService);
         raidDensService = new SwShRaidDensService(this.projectWorkspaceService);
         trainerWhiteoutService = new SwShTrainerWhiteoutService(this.projectWorkspaceService);
         this.profanityFilterService = profanityFilterService ?? new SwShProfanityFilterService(this.projectWorkspaceService);
@@ -742,8 +746,10 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.LoadFpsPatch => DispatchLoadFpsPatch(requestJson),
                 KmCommandNames.ApplyFpsPatch => DispatchApplyFpsPatch(requestJson),
                 KmCommandNames.RestoreFpsPatch => DispatchRestoreFpsPatch(requestJson),
+                KmCommandNames.LoadMarnieBoosts => DispatchLoadMarnieBoosts(requestJson),
                 KmCommandNames.LoadRaidDens => DispatchLoadRaidDens(requestJson),
                 KmCommandNames.LoadTrainerWhiteout => DispatchLoadTrainerWhiteout(requestJson),
+                KmCommandNames.StageMarnieBoosts => DispatchStageMarnieBoosts(requestJson),
                 KmCommandNames.StageRaidDens => DispatchStageRaidDens(requestJson),
                 KmCommandNames.StageTrainerWhiteout => DispatchStageTrainerWhiteout(requestJson),
                 KmCommandNames.LoadProfanityFilter => DispatchLoadProfanityFilter(requestJson),
@@ -5437,6 +5443,31 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchLoadMarnieBoosts(string requestJson)
+    {
+        var request = DeserializeRequest<LoadMarnieBoostsRequest>(requestJson);
+        return SerializeSuccess(new LoadMarnieBoostsResponse(ToDto(marnieBoostsService.Load(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths)))), request.RequestId);
+    }
+
+    private string DispatchStageMarnieBoosts(string requestJson)
+    {
+        var request = DeserializeRequest<StageMarnieBoostsRequest>(requestJson);
+        if (request.Payload.Selections is null || request.Payload.Selections.Any(value => value is null))
+            return SerializeFailure(SwShMarnieBoostsService.SelectionCode, "Choose all six cheering outcomes.", request.RequestId);
+        var result = marnieBoostsService.Stage(ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.Selections.Select(value => new SwShFairyGymBoostSelection(value.BoostId, value.EffectId, value.ResultKind)).ToArray(),
+            request.Payload.Session is null ? null : EditSessionBridgeMapper.ToCore(request.Payload.Session));
+        return SerializeSuccess(new StageMarnieBoostsResponse(ToDto(result.Workflow), EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray()), request.RequestId);
+    }
+
+    private static MarnieBoostsWorkflowDto ToDto(SwShMarnieBoostsWorkflow workflow) => new(
+        workflow.CanEdit, workflow.DetectedGame is null ? null : ProjectBridgeMapper.ToDto(workflow.DetectedGame.Value),
+        workflow.Selections.Select(value => new FairyGymBoostSelectionDto(value.BoostId, value.EffectId, value.ResultKind)).ToArray(),
+        workflow.Sources.Select(value => new MarnieBoostSourceDto(value.Path, value.Status, value.Layer)).ToArray(),
+        workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+
     private string DispatchLoadRaidDens(string requestJson)
     {
         var request = DeserializeRequest<LoadRaidDensRequest>(requestJson);
@@ -6131,6 +6162,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             EditSessionDomain.ShinyRate => shinyRateEditSessionService.Validate(paths, session),
             EditSessionDomain.TypeChart => typeChartEditSessionService.Validate(paths, session),
             EditSessionDomain.FairyGymBoosts => fairyGymBoostsEditSessionService.Validate(paths, session),
+            EditSessionDomain.MarnieBoosts => marnieBoostsService.Validate(paths, session),
             EditSessionDomain.RaidDens => raidDensService.Validate(paths, session),
             EditSessionDomain.TrainerWhiteout => trainerWhiteoutService.Validate(paths, session),
             EditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.Validate(paths, session),
@@ -6178,6 +6210,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             EditSessionDomain.ShinyRate => shinyRateEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.TypeChart => typeChartEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.FairyGymBoosts => fairyGymBoostsEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.MarnieBoosts => marnieBoostsService.CreateChangePlan(paths, session),
             EditSessionDomain.RaidDens => raidDensService.CreateChangePlan(paths, session),
             EditSessionDomain.TrainerWhiteout => trainerWhiteoutService.CreateChangePlan(paths, session),
             EditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.CreateChangePlan(paths, session),
@@ -6226,6 +6259,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             EditSessionDomain.ShinyRate => shinyRateEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.TypeChart => typeChartEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.FairyGymBoosts => fairyGymBoostsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.MarnieBoosts => marnieBoostsService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.RaidDens => raidDensService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.TrainerWhiteout => trainerWhiteoutService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
@@ -6526,6 +6560,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             "workflow.hyperTraining" => EditSessionDomain.HyperTraining,
             "workflow.shinyRate" => EditSessionDomain.ShinyRate,
             "workflow.typeChart" => EditSessionDomain.TypeChart,
+            "workflow.marnieBoosts" => EditSessionDomain.MarnieBoosts,
             "workflow.raidDens" => EditSessionDomain.RaidDens,
             "workflow.trainerWhiteout" => EditSessionDomain.TrainerWhiteout,
             "workflow.fairyGymBoosts" => EditSessionDomain.FairyGymBoosts,
@@ -6555,6 +6590,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     {
         return domain is
             EditSessionDomain.BattleCafeRewards or
+            EditSessionDomain.MarnieBoosts or
             EditSessionDomain.RaidDens or
             EditSessionDomain.TrainerWhiteout or
             EditSessionDomain.ModelTextures or
@@ -6605,6 +6641,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             EditSessionDomain.HyperTraining => "workflow.hyperTraining",
             EditSessionDomain.ShinyRate => "workflow.shinyRate",
             EditSessionDomain.TypeChart => "workflow.typeChart",
+            EditSessionDomain.MarnieBoosts => "workflow.marnieBoosts",
             EditSessionDomain.RaidDens => "workflow.raidDens",
             EditSessionDomain.TrainerWhiteout => "workflow.trainerWhiteout",
             EditSessionDomain.FairyGymBoosts => "workflow.fairyGymBoosts",
@@ -6689,6 +6726,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             ["workflow.hyperTraining"] => EditSessionDomain.HyperTraining,
             ["workflow.shinyRate"] => EditSessionDomain.ShinyRate,
             ["workflow.typeChart"] => EditSessionDomain.TypeChart,
+            ["workflow.marnieBoosts"] => EditSessionDomain.MarnieBoosts,
             ["workflow.raidDens"] => EditSessionDomain.RaidDens,
             ["workflow.trainerWhiteout"] => EditSessionDomain.TrainerWhiteout,
             ["workflow.fairyGymBoosts"] => EditSessionDomain.FairyGymBoosts,
@@ -8180,8 +8218,10 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.StageHyperTraining or
             KmCommandNames.LoadShinyRateWorkflow or
             KmCommandNames.StageShinyRate or
+            KmCommandNames.LoadMarnieBoosts or
             KmCommandNames.LoadRaidDens or
             KmCommandNames.LoadTrainerWhiteout or
+            KmCommandNames.StageMarnieBoosts or
             KmCommandNames.StageRaidDens or
             KmCommandNames.StageTrainerWhiteout or
             KmCommandNames.LoadFairyGymBoostsWorkflow or
@@ -8781,6 +8821,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         HyperTraining,
         ShinyRate,
         TypeChart,
+        MarnieBoosts,
         RaidDens,
         TrainerWhiteout,
         FairyGymBoosts,

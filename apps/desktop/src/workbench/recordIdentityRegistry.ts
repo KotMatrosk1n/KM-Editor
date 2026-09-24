@@ -121,6 +121,7 @@ const registrations = {
   fpsPatch: operationScoped('fpsPatch'),
   profanityFilter: operationScoped('profanityFilter'),
   trainerDynamax: operationScoped('trainerDynamax'),
+  marnieBoosts: fixedSchemaSlot('marnieBoosts', 'Wyndon cheering answer outcomes'),
   raidDens: fixedSchemaSlot('raidDens', 'den interaction dispatch'),
   trainerWhiteout: intrinsic('trainerWhiteout', 'stored trainer ID'),
   randomizer: operationScoped('randomizer'),
