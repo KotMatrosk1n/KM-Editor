@@ -101,6 +101,8 @@ public sealed class MergeWorkspaceService
         var resolutions = request.Choices.ToDictionary(choice => choice.ConflictId, choice => choice.SourceId, StringComparer.Ordinal);
         using var vanilla = new MergeVanilla(request, game ?? "unknown");
         MergeExecutableInputs.ExpandImagePatches(inputs, vanilla, issues);
+        if (MergeInputs.Family(game ?? "") == "swsh")
+            MergeLinkedSettings.PrepareHyperTraining(inputs, vanilla, issues, (path, label, values) => AddConflict(path, label, "setting", "100", values));
         if (request.Mode == "advanced" && vanilla.Read("exefs/main.npdm") is { } npdm
             && MergeInputs.DetectNpdm(npdm) is { } baseGame && game is not null && !MergeInputs.Compatible(game, baseGame))
             issues.Add(new(MergeWorkspaceErrorCodes.GameMismatch, "error", "The original game dump belongs to a different game."));
@@ -130,6 +132,7 @@ public sealed class MergeWorkspaceService
             if (path.Equals(PackedData, StringComparison.OrdinalIgnoreCase) && packedInputs.Length > 0) continue;
             if (path.Equals(Descriptor, StringComparison.OrdinalIgnoreCase) && MergeInputs.Family(game ?? "") is "sv" or "za") continue;
             var candidates = inputs.Where(input => input.Files.ContainsKey(path)).Select(input => (Input: input, File: input.Files[path])).ToArray();
+            MergeDocument? ReadDocument(byte[] data) => MergeLinkedSettings.WithPartyCount(path, MergeFormats.Read(game ?? "unknown", path, data), inputs);
             var original = vanilla.Read(path);
             if (request.Mode == "advanced" && original is null && candidates.Length > 1 && !MergeExecutableEdits.IsPatch(path))
                 issues.Add(new(MergeWorkspaceErrorCodes.BaseMissing, "warning", "This file was not found in the original dump. Its differences require Basic mode review.", path));
@@ -148,7 +151,7 @@ public sealed class MergeWorkspaceService
                 {
                     kind = "executable";
                     merged = MergeExecutableEdits.CombinePatches(active.Select(candidate => new MergeExecutableEdits.Source(candidate.Input.Info.Id,
-                        candidate.Input.Info.Name, candidate.File.Bytes)).ToArray(), (region, values) => AddConflict(path, region, kind, null, values));
+                        candidate.Input.Info.Name, candidate.File.Bytes)).ToArray(), (region, values) => AddConflict(path, region, kind, null, values), Path.GetFileNameWithoutExtension(path));
                 }
                 catch (InvalidDataException)
                 {
@@ -176,8 +179,8 @@ public sealed class MergeWorkspaceService
                     }
                     if (merged is null)
                     {
-                        var documents = active.Select(candidate => MergeFormats.Read(game ?? "unknown", path, candidate.File.Bytes)).ToArray();
-                        var baseline = original is null ? null : MergeFormats.Read(game ?? "unknown", path, original);
+                        var documents = active.Select(candidate => ReadDocument(candidate.File.Bytes)).ToArray();
+                        var baseline = original is null ? null : ReadDocument(original);
                         if (documents.All(document => document is not null) && (original is null || baseline is not null))
                         {
                             if (documents.Any(document => document!.LayoutIdentity != documents[0]!.LayoutIdentity)
@@ -191,9 +194,9 @@ public sealed class MergeWorkspaceService
                                         inputs.Single(input => input.Info.Id == candidate.SourceId).Info.Name,
                                         candidate.Exists ? DisplayValue(candidate.Value, kind, difference.Key) : "Removed")).ToArray();
                                     return AddConflict(path, difference.Key, kind, difference.OriginalExists ? DisplayValue(difference.Original, kind, difference.Key) : null, values, JsonSerializer.Serialize(difference));
-                                });
+                                }, MergeSemanticFields.RequiresWholeValue);
                             merged = (baseline ?? documents[0]!).Write(node!);
-                            var verified = MergeFormats.Read(game ?? "unknown", path, merged);
+                            var verified = ReadDocument(merged);
                             if (verified is null || !JsonNode.DeepEquals(verified.Content, node))
                                 throw new InvalidDataException("The reconstructed file differs from the selected records.");
                         }
@@ -210,18 +213,31 @@ public sealed class MergeWorkspaceService
                 {
                     if (!issues.Any(issue => issue.Code == MergeWorkspaceErrorCodes.FormatOpaque && issue.File == path))
                         issues.Add(new(MergeWorkspaceErrorCodes.FormatOpaque, "warning", "Field merging is unavailable for this file's structure. Review the complete file choice.", path));
-                    var choice = AddConflict(path, "", "file", original is null ? null : Fingerprint(original),
+                    var choice = AddConflict(path, path.StartsWith("romfs/bin/trainer/trainer_poke/", StringComparison.OrdinalIgnoreCase) ? "Party and Pokemon count" : "", "file", original is null ? null : Fingerprint(original),
                         active.Select(candidate => new MergeValueDto(candidate.Input.Info.Id, candidate.Input.Info.Name,
                             candidate.File.Bytes.Length + " bytes · " + candidate.File.Hash[..12])).ToArray());
                     merged = active.FirstOrDefault(candidate => candidate.Input.Info.Id == choice).File?.Bytes ?? active[0].File.Bytes;
                 }
             }
+            if (path.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var document = MergeFormats.Read(game ?? "unknown", path, merged);
+                    if (document?.Kind is "trainers" or "encounters" or "battle-sequences"
+                        && !MergeSemanticFields.IsValid(document.Content, original is null ? null : MergeFormats.Read(game ?? "unknown", path, original)?.Content))
+                        issues.Add(new(MergeWorkspaceErrorCodes.SemanticInvalid, "error", "The selected fields exceed a supported total or have inconsistent bounds. Choose a valid source value or repair the source mod.", path));
+                }
+                catch (Exception e) when (e is InvalidDataException or ArgumentException or IndexOutOfRangeException or OverflowException or JsonException or NotSupportedException or InvalidOperationException or System.Reflection.TargetInvocationException)
+                { /* Complete files with unknown structures remain opaque. */ }
+            }
             var outputPath = request.OutputMode == "trinity" && path.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase) ? path[6..] : path;
             if (!output.TryAdd(outputPath, merged))
                 throw new MergeInputException(MergeWorkspaceErrorCodes.DuplicatePath, "Output layout conversion creates a duplicate file path.");
-            var unresolved = conflicts.Skip(before).Any(conflict => conflict.Resolution is null);
-            files.Add(new(path, kind, unresolved ? "conflict" : conflicts.Count > before ? "resolved" : "combined", conflicts.Count - before, merged.Length));
+            var pathConflicts = conflicts.Where(conflict => conflict.File == path).ToArray();
+            files.Add(new(path, kind, pathConflicts.Any(conflict => conflict.Resolution is null) ? "conflict" : pathConflicts.Length > 0 ? "resolved" : "combined", pathConflicts.Length, merged.Length));
         }
+        if (MergeInputs.Family(game ?? "") == "swsh") MergeLinkedSettings.CompleteTrainerParties(inputs, vanilla, output, files, issues);
         if (game is not null && MergeInputs.Family(game) is "sv" or "za")
             PrepareDescriptor(request, game, inputs, output, issues, vanilla, packedDescriptor,
                 romFsMembership?.Entries.Where(entry => !entry.IsDirectory && !ownedFiles.Any(owned => owned.Path == entry.Path

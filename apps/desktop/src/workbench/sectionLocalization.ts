@@ -63,6 +63,7 @@ export const workbenchSectionLocalization = {
   modMerger: { label: 'workbench.section.mod-merger.label', description: 'workbench.section.mod-merger.description' },
   fpsPatch: { label: 'workbench.section.fps-patch.label', description: 'workbench.section.fps-patch.description' },
   profanityFilter: { label: 'workbench.section.profanity-filter.label', description: 'workbench.section.profanity-filter.description' },
+  marnieBoosts: { label: 'workbench.section.marnie-boosts.label', description: 'workbench.section.marnie-boosts.description' },
   raidDens: { label: 'workbench.section.raid-dens.label', description: 'workbench.section.raid-dens.description' },
   trainerWhiteout: { label: 'workbench.section.trainer-whiteout.label', description: 'workbench.section.trainer-whiteout.description' },
   trainerDynamax: { label: 'workbench.section.trainer-dynamax.label', description: 'workbench.section.trainer-dynamax.description' },

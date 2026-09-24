@@ -170,8 +170,10 @@ public static class KmCommandNames
     public const string LoadFpsPatch = "fpsPatch.load";
     public const string ApplyFpsPatch = "fpsPatch.apply";
     public const string RestoreFpsPatch = "fpsPatch.restore";
+    public const string LoadMarnieBoosts = "marnieBoosts.load";
     public const string LoadRaidDens = "raidDens.load";
     public const string LoadTrainerWhiteout = "trainerWhiteout.load";
+    public const string StageMarnieBoosts = "marnieBoosts.stage";
     public const string StageRaidDens = "raidDens.stage";
     public const string StageTrainerWhiteout = "trainerWhiteout.stage";
     public const string LoadProfanityFilter = "profanityFilter.load";

@@ -379,18 +379,20 @@ export function FairyGymBoostsSection({
   );
 }
 
-function FairyGymBoostCard({
+export function FairyGymBoostCard({
   boost,
   disabled,
   onChange,
   selection,
-  translateLiteral
+  translateLiteral,
+  showAnswerRole = true
 }: {
   boost: FairyGymBoostRecord;
   disabled: boolean;
   onChange: (boostId: string, value: string) => void;
   selection: FairyGymBoostSelection;
   translateLiteral: (literal: string) => string;
+  showAnswerRole?: boolean;
 }) {
   const { t } = useLocalization();
   const outcomeInputId = `fairy-gym-outcome-${boost.boostId}`;
@@ -399,9 +401,9 @@ function FairyGymBoostCard({
       <div className="fairy-gym-boost-card-heading">
         <div>
           <div className="fairy-gym-answer-row">
-            <span className={`fairy-gym-answer-role is-${boost.defaultResultKind}`}>
+            {showAnswerRole ? <span className={`fairy-gym-answer-role is-${boost.defaultResultKind}`}>
               {translateLiteral(formatAnswerRole(boost.defaultResultKind))}
-            </span>
+            </span> : null}
             <span className="fairy-gym-answer-choice">Answer {boost.answerChoice}</span>
           </div>
           <h3 data-localization-ignore="true">{boost.questionText}</h3>
@@ -559,7 +561,7 @@ function getOrderedDraftSelections(
   return orderedBoosts.map((boost) => drafts[boost.boostId] ?? fallbackById.get(boost.boostId)!);
 }
 
-function parseOutcomeValue(value: string): Pick<FairyGymBoostSelection, 'effectId' | 'resultKind'> {
+export function parseOutcomeValue(value: string): Pick<FairyGymBoostSelection, 'effectId' | 'resultKind'> {
   const [effectIdText, resultKind] = value.split(':');
   const effectId = Number.parseInt(effectIdText ?? '', 10);
   return isSupportedFairyGymBoostOutcome(effectId, resultKind)

@@ -37,6 +37,7 @@ export const workbenchSections = [
   'typeChart',
   'angeFight',
   'fairyGymBoosts',
+  'marnieBoosts',
   'fashionUnlock',
   'gymUniformRemoval',
   'hyperspaceBypass',

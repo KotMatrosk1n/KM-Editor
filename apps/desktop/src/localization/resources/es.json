@@ -4397,6 +4397,7 @@
     "mergeWorkspace.error.KM-MERGE-REVIEW-STALE": "Las fuentes, elecciones o salida han cambiado. Revisa la combinación de nuevo.",
     "mergeWorkspace.error.KM-MERGE-EXPORT-FAILED": "La exportación falló. Comprueba los diagnósticos y revisa antes de reintentar.",
     "mergeWorkspace.error.KM-MERGE-FORMAT-OPAQUE": "Elige un archivo completo. KM no puede combinar sus campos individuales con seguridad.",
+    "mergeWorkspace.error.KM-MERGE-SEMANTIC-INVALID": "Los ajustes seleccionados son incompatibles o superan los límites permitidos. Elige un ajuste coherente de una fuente o corrige el mod de origen antes de combinar.",
     "mergeWorkspace.error.KM-MERGE-PATCH-INVALID": "Este parche del ejecutable está dañado, supera los límites admitidos o cambia la estructura del destino. Repáralo o elimínalo antes de combinar.",
     "mergeWorkspace.error.KM-MERGE-EXECUTABLE-BASE-REQUIRED": "Para combinar ejecutables completos por regiones, usa el modo avanzado con la carpeta ExeFS original correspondiente. De lo contrario, elige un ejecutable completo.",
     "mergeWorkspace.error.KM-MERGE-DESCRIPTOR-REQUIRED": "La salida independiente necesita un descriptor compatible. Usa el modo avanzado u otro formato.",
@@ -4515,9 +4516,34 @@
     "mergeWorkspace.error.KM-MERGE-PACKAGE-MANIFEST-INVALID": "El manifiesto de paquetes no es válido. Corrígelo antes de importar.",
     "mergeWorkspace.error.KM-MERGE-PACKAGE-SELECTION-INVALID": "Revisa los paquetes obligatorios, dependencias y grupos de alternativas.",
     "mergeWorkspace.packages.added": "También seleccionados",
-    "mergeWorkspace.packages.removed": "También desmarcados"
+    "mergeWorkspace.packages.removed": "También desmarcados",
+    "marnieBoosts.title": "Bonificaciones de Roxy en Ciudad Puntera",
+    "marnieBoosts.subtitle": "Edita los efectos de los ánimos de Roxy en los tres combates de Ciudad Puntera.",
+    "marnieBoosts.readOnly": "Abre fuentes compatibles de Espada o Escudo y configura una carpeta de salida.",
+    "marnieBoosts.failed": "No se pudieron preparar los efectos. Revisa Diagnósticos e inténtalo de nuevo.",
+    "marnieBoosts.draft": "Cambios sin preparar",
+    "marnieBoosts.staged": "Seis resultados de respuesta preparados",
+    "marnieBoosts.clean": "No hay cambios sin preparar",
+    "marnieBoosts.battle": "Combate {number}",
+    "marnieBoosts.bounds": "Elige ningún efecto, o sube o baja la Velocidad, ambos ataques o ambas defensas en uno o dos niveles. Cada respuesta es independiente.",
+    "marnieBoosts.restoreHelp": "Restaurar valores originales restablece las seis respuestas. Prepara y aplica los cambios para actualizar la salida.",
+    "marnieBoosts.outcomes": "Resultados de respuestas",
+    "workbench.section.marnie-boosts.label": "Bonificaciones de Roxy en Ciudad Puntera",
+    "workbench.section.marnie-boosts.description": "Edita los efectos de los ánimos de Roxy en los tres combates de Ciudad Puntera.",
+    "marnieBoosts.diagnostic.source": "Los datos de los ánimos no están disponibles o son incompatibles. Revisa las secuencias originales y la carpeta de salida.",
+    "marnieBoosts.diagnostic.selection": "Elige un resultado compatible para cada una de las seis respuestas.",
+    "marnieBoosts.diagnostic.session": "Los cambios preparados no son válidos. Prepara los efectos de nuevo.",
+    "marnieBoosts.diagnostic.stale": "Las fuentes o la salida han cambiado. Revisa los cambios de nuevo.",
+    "marnieBoosts.diagnostic.apply": "No se pudo aplicar la salida de los ánimos. Revisa las fuentes y la carpeta de salida y vuelve a revisar los cambios."
   },
   "literals": {
+    "Answer outcome 3": "Efecto de la respuesta 3",
+    "Answer outcome 2": "Efecto de la respuesta 2",
+    "Answer outcome 1": "Efecto de la respuesta 1",
+    "Party and Pokemon count": "Equipo y cantidad de Pokémon",
+    "Level range": "Rango de niveles",
+    "EV allocation": "Distribución de EV",
+    "Pokemon identity": "Pokémon y forma",
     "Apply Form or Pokédex placement changes before editing alpha size.": "Aplica los cambios de forma o de ubicación en la Pokédex antes de editar el tamaño alfa.",
     "Alpha Size": "Tamaño alfa",
     "Alpha scale (×)": "Escala alfa (×)",
@@ -8733,6 +8759,8 @@
     "Gentle (variant 4)": "Dócil (variante 4)",
     "Sluggish": "Lento",
     "Apply reviewed Behavior settings.": "Aplicar los ajustes de comportamiento revisados.",
-    "Register Behavior output resources.": "Registrar los recursos de salida del comportamiento."
+    "Register Behavior output resources.": "Registrar los recursos de salida del comportamiento.",
+    "Marnie Wyndon Boosts": "Bonificaciones de Roxy en Ciudad Puntera",
+    "Edit Marnie cheering outcomes in the three Wyndon battles.": "Edita los efectos de los ánimos de Roxy en los tres combates de Ciudad Puntera."
   }
 }

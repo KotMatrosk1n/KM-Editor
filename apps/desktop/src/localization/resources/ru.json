@@ -4397,6 +4397,7 @@
     "mergeWorkspace.error.KM-MERGE-REVIEW-STALE": "Источники, выбор или результат изменились. Проверьте объединение заново.",
     "mergeWorkspace.error.KM-MERGE-EXPORT-FAILED": "Экспорт не выполнен. Проверьте диагностику результата и повторите проверку.",
     "mergeWorkspace.error.KM-MERGE-FORMAT-OPAQUE": "Выберите файл целиком. KM не может безопасно объединить отдельные поля этого формата.",
+    "mergeWorkspace.error.KM-MERGE-SEMANTIC-INVALID": "Выбранные настройки несовместимы или выходят за допустимые пределы. Выберите согласованную настройку из одного источника или исправьте исходный мод перед объединением.",
     "mergeWorkspace.error.KM-MERGE-PATCH-INVALID": "Патч исполняемого файла повреждён, превышает допустимые пределы или меняет структуру целевого файла. Исправьте или удалите его перед объединением.",
     "mergeWorkspace.error.KM-MERGE-EXECUTABLE-BASE-REQUIRED": "Для объединения полных исполняемых файлов по областям используйте расширенный режим с соответствующей исходной папкой ExeFS. Иначе выберите один полный файл.",
     "mergeWorkspace.error.KM-MERGE-DESCRIPTOR-REQUIRED": "Автономному результату нужен совместимый дескриптор. Используйте расширенный режим или другой формат.",
@@ -4515,9 +4516,34 @@
     "mergeWorkspace.error.KM-MERGE-PACKAGE-MANIFEST-INVALID": "Манифест пакетов недействителен. Исправьте его перед импортом.",
     "mergeWorkspace.error.KM-MERGE-PACKAGE-SELECTION-INVALID": "Проверьте обязательные пакеты, зависимости и группы вариантов.",
     "mergeWorkspace.packages.added": "Также выбрано",
-    "mergeWorkspace.packages.removed": "Также отключено"
+    "mergeWorkspace.packages.removed": "Также отключено",
+    "marnieBoosts.title": "Усиления Марни в Уиндоне",
+    "marnieBoosts.subtitle": "Измените эффекты поддержки Марни в трёх боях в Уиндоне.",
+    "marnieBoosts.readOnly": "Откройте совместимые исходные файлы Sword или Shield и укажите папку вывода.",
+    "marnieBoosts.failed": "Не удалось подготовить эффекты. Проверьте диагностику и повторите попытку.",
+    "marnieBoosts.draft": "Неподготовленные изменения",
+    "marnieBoosts.staged": "Подготовлены эффекты шести ответов",
+    "marnieBoosts.clean": "Нет неподготовленных изменений",
+    "marnieBoosts.battle": "Бой {number}",
+    "marnieBoosts.bounds": "Выберите отсутствие эффекта либо повышение или снижение скорости, обеих атак или обеих защит на одну или две ступени. Каждый ответ независим.",
+    "marnieBoosts.restoreHelp": "Восстановление оригинала сбрасывает все шесть ответов. Подготовьте и примените изменения, чтобы обновить вывод.",
+    "marnieBoosts.outcomes": "Эффекты ответов",
+    "workbench.section.marnie-boosts.label": "Усиления Марни в Уиндоне",
+    "workbench.section.marnie-boosts.description": "Измените эффекты поддержки Марни в трёх боях в Уиндоне.",
+    "marnieBoosts.diagnostic.source": "Данные поддержки недоступны или несовместимы. Проверьте исходные последовательности и папку вывода.",
+    "marnieBoosts.diagnostic.selection": "Выберите поддерживаемый эффект для каждого из шести ответов.",
+    "marnieBoosts.diagnostic.session": "Подготовленные изменения поддержки недопустимы. Подготовьте эффекты заново.",
+    "marnieBoosts.diagnostic.stale": "Исходные данные или вывод поддержки изменились. Проверьте изменения заново.",
+    "marnieBoosts.diagnostic.apply": "Не удалось применить эффекты поддержки. Проверьте исходные данные и папку вывода, затем повторите проверку."
   },
   "literals": {
+    "Answer outcome 3": "Эффект ответа 3",
+    "Answer outcome 2": "Эффект ответа 2",
+    "Answer outcome 1": "Эффект ответа 1",
+    "Party and Pokemon count": "Команда и число покемонов",
+    "Level range": "Диапазон уровней",
+    "EV allocation": "Распределение EV",
+    "Pokemon identity": "Покемон и форма",
     "Apply Form or Pokédex placement changes before editing alpha size.": "Примените изменения формы или позиции в Покедексе перед редактированием размера альфы.",
     "Alpha Size": "Размер альфы",
     "Alpha scale (×)": "Масштаб альфы (×)",
@@ -8733,6 +8759,8 @@
     "Gentle (variant 4)": "Спокойный (вариант 4)",
     "Sluggish": "Медлительный",
     "Apply reviewed Behavior settings.": "Применить проверенные настройки поведения.",
-    "Register Behavior output resources.": "Зарегистрировать выходные ресурсы поведения."
+    "Register Behavior output resources.": "Зарегистрировать выходные ресурсы поведения.",
+    "Marnie Wyndon Boosts": "Усиления Марни в Уиндоне",
+    "Edit Marnie cheering outcomes in the three Wyndon battles.": "Измените эффекты поддержки Марни в трёх боях в Уиндоне."
   }
 }

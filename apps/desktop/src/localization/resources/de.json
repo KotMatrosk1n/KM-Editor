@@ -4397,6 +4397,7 @@
     "mergeWorkspace.error.KM-MERGE-REVIEW-STALE": "Quellen, Auswahl oder Ausgabe wurden geändert. Prüfen Sie die Zusammenführung erneut.",
     "mergeWorkspace.error.KM-MERGE-EXPORT-FAILED": "Export fehlgeschlagen. Prüfen Sie die Ausgabediagnose und die Zusammenführung erneut.",
     "mergeWorkspace.error.KM-MERGE-FORMAT-OPAQUE": "Wählen Sie eine vollständige Datei. Einzelne Felder dieses Formats können nicht sicher kombiniert werden.",
+    "mergeWorkspace.error.KM-MERGE-SEMANTIC-INVALID": "Die gewählten Einstellungen sind widersprüchlich oder überschreiten ihre zulässigen Grenzen. Wähle eine zusammengehörige Quelleinstellung oder repariere den Quellmod vor dem Zusammenführen.",
     "mergeWorkspace.error.KM-MERGE-PATCH-INVALID": "Dieser ausführbare Patch ist fehlerhaft, überschreitet die unterstützten Grenzen oder ändert das Ziellayout. Reparieren oder entfernen Sie ihn vor dem Zusammenführen.",
     "mergeWorkspace.error.KM-MERGE-EXECUTABLE-BASE-REQUIRED": "Um vollständige ausführbare Dateien nach Bereichen zusammenzuführen, verwenden Sie den erweiterten Modus mit dem passenden ursprünglichen ExeFS-Ordner. Andernfalls wählen Sie eine vollständige Datei.",
     "mergeWorkspace.error.KM-MERGE-DESCRIPTOR-REQUIRED": "Eigenständige Ausgabe benötigt einen kompatiblen Deskriptor. Nutzen Sie den erweiterten Modus oder ein anderes Ausgabeformat.",
@@ -4515,9 +4516,34 @@
     "mergeWorkspace.error.KM-MERGE-PACKAGE-MANIFEST-INVALID": "Das Paketmanifest ist ungültig. Korrigieren Sie die Angaben vor dem Import.",
     "mergeWorkspace.error.KM-MERGE-PACKAGE-SELECTION-INVALID": "Prüfen Sie erforderliche Pakete, Abhängigkeiten und Alternativgruppen.",
     "mergeWorkspace.packages.added": "Zusätzlich ausgewählt",
-    "mergeWorkspace.packages.removed": "Zusätzlich abgewählt"
+    "mergeWorkspace.packages.removed": "Zusätzlich abgewählt",
+    "marnieBoosts.title": "Marys Boosts in Score City",
+    "marnieBoosts.subtitle": "Bearbeite Marys Anfeuerungseffekte in den drei Kämpfen in Score City.",
+    "marnieBoosts.readOnly": "Öffne kompatible Schwert- oder Schild-Quelldaten und richte einen Ausgabeordner ein.",
+    "marnieBoosts.failed": "Die Effekte konnten nicht vorgemerkt werden. Prüfe die Diagnose und versuche es erneut.",
+    "marnieBoosts.draft": "Nicht vorgemerkte Änderungen",
+    "marnieBoosts.staged": "Sechs Antwortergebnisse vorgemerkt",
+    "marnieBoosts.clean": "Keine nicht vorgemerkten Änderungen",
+    "marnieBoosts.battle": "Kampf {number}",
+    "marnieBoosts.bounds": "Wähle keinen Effekt oder erhöhe oder senke Initiative, beide Angriffswerte oder beide Verteidigungswerte um eine oder zwei Stufen. Jede Antwort ist unabhängig.",
+    "marnieBoosts.restoreHelp": "Original wiederherstellen setzt alle sechs Antworten zurück. Merke die Änderungen vor und wende sie an, um die Ausgabe zu aktualisieren.",
+    "marnieBoosts.outcomes": "Antwortergebnisse",
+    "workbench.section.marnie-boosts.label": "Marys Boosts in Score City",
+    "workbench.section.marnie-boosts.description": "Bearbeite Marys Anfeuerungseffekte in den drei Kämpfen in Score City.",
+    "marnieBoosts.diagnostic.source": "Die Anfeuerungsdaten fehlen oder sind inkompatibel. Prüfe die Originalsequenzen und den Ausgabeordner.",
+    "marnieBoosts.diagnostic.selection": "Wähle für jede der sechs Antworten ein unterstütztes Ergebnis.",
+    "marnieBoosts.diagnostic.session": "Die vorgemerkten Anfeuerungseffekte sind ungültig. Merke sie erneut vor.",
+    "marnieBoosts.diagnostic.stale": "Die Anfeuerungsquellen oder die Ausgabe wurden geändert. Prüfe die Änderungen erneut.",
+    "marnieBoosts.diagnostic.apply": "Die Anfeuerungseffekte konnten nicht angewendet werden. Prüfe Quellen und Ausgabeordner und überprüfe die Änderungen erneut."
   },
   "literals": {
+    "Answer outcome 3": "Antwortwirkung 3",
+    "Answer outcome 2": "Antwortwirkung 2",
+    "Answer outcome 1": "Antwortwirkung 1",
+    "Party and Pokemon count": "Team und Pokémon-Anzahl",
+    "Level range": "Levelbereich",
+    "EV allocation": "EV-Verteilung",
+    "Pokemon identity": "Pokémon und Form",
     "Apply Form or Pokédex placement changes before editing alpha size.": "Wende Änderungen an Form oder Pokédex Position an, bevor du die Alpha Größe bearbeitest.",
     "Alpha Size": "Alpha Größe",
     "Alpha scale (×)": "Alpha Skalierung (×)",
@@ -8733,6 +8759,8 @@
     "Gentle (variant 4)": "Sanft (Variante 4)",
     "Sluggish": "Träge",
     "Apply reviewed Behavior settings.": "Geprüfte Verhaltenseinstellungen anwenden.",
-    "Register Behavior output resources.": "Ausgaberessourcen für Verhalten registrieren."
+    "Register Behavior output resources.": "Ausgaberessourcen für Verhalten registrieren.",
+    "Marnie Wyndon Boosts": "Marys Boosts in Score City",
+    "Edit Marnie cheering outcomes in the three Wyndon battles.": "Bearbeite Marys Anfeuerungseffekte in den drei Kämpfen in Score City."
   }
 }

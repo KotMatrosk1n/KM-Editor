@@ -69,7 +69,7 @@ internal static class MergeExecutableEdits
         output.Write("EEOF"u8); return output.ToArray();
     }
 
-    internal static byte[] CombinePatches(IReadOnlyList<Source> sources, Resolve resolve)
+    internal static byte[] CombinePatches(IReadOnlyList<Source> sources, Resolve resolve, string? build = null)
     {
         long expanded = 0;
         var patches = sources.Select(source =>
@@ -78,6 +78,7 @@ internal static class MergeExecutableEdits
             if ((expanded += patch.Count) > 4_000_000) throw new InvalidDataException("Combined executable patches exceed the merge limit.");
             return patch;
         }).ToArray();
+        if (build is not null) return CombinePatchGroups(sources, patches, resolve, build);
         var merged = new SortedDictionary<uint, byte>();
         var conflicts = new List<(uint Address, int[] Sources)>();
         foreach (var address in patches.SelectMany(patch => patch.Keys).Distinct().Order())
@@ -89,6 +90,41 @@ internal static class MergeExecutableEdits
         ResolveRegions(conflicts, sources, (source, address) => patches[source][address], (address, value) => merged[address] = value, resolve);
         var output = WritePatch(merged);
         if (!ReadPatch(output).SequenceEqual(merged)) throw new InvalidDataException("Reconstructed patch differs from the reviewed writes.");
+        return output;
+    }
+
+    private static byte[] CombinePatchGroups(IReadOnlyList<Source> sources, SortedDictionary<uint, byte>[] patches, Resolve resolve, string build)
+    {
+        var groups = MergeExecutableGroups.Read(build);
+        var byWord = new Dictionary<uint, int>();
+        for (var index = 0; index < groups.Length; index++)
+            foreach (var range in groups[index].Ranges)
+                for (var offset = range.Offset; offset < range.Offset + range.Length; offset += 4)
+                    byWord[checked((uint)offset + NsoFile.HeaderSize)] = index;
+        var buckets = patches.SelectMany(p => p.Keys).Distinct().Order().GroupBy(address =>
+            byWord.TryGetValue(address & ~3u, out var index) ? (long)index : (long)(address & ~3u) + groups.Length);
+        var result = new SortedDictionary<uint, byte>();
+        foreach (var bucket in buckets)
+        {
+            var addresses = bucket.ToArray();
+            var writers = Enumerable.Range(0, patches.Length).Where(s => addresses.Any(patches[s].ContainsKey)).ToArray();
+            var consistent = addresses.All(address => writers.Where(s => patches[s].ContainsKey(address)).Select(s => patches[s][address]).Distinct().Count() == 1);
+            // A source covering the whole setting agrees with any identical partial writes.
+            if (consistent && writers.Any(s => addresses.All(patches[s].ContainsKey)))
+            {
+                foreach (var address in addresses) result[address] = patches[writers.First(s => patches[s].ContainsKey(address))][address];
+                continue;
+            }
+            var label = bucket.Key < groups.Length ? groups[(int)bucket.Key].Label : $"0x{addresses[0] & ~3u:X8}";
+            var values = writers.Select(s => new MergeValueDto(sources[s].Id, sources[s].Name,
+                string.Join(" ", addresses.Where(patches[s].ContainsKey).Take(32).Select(a => $"{a:X8}:{patches[s][a]:X2}"))
+                + " SHA-256 " + Convert.ToHexStringLower(SHA256.HashData(addresses.Where(patches[s].ContainsKey).SelectMany(a => BitConverter.GetBytes(a).Append(patches[s][a])).ToArray())))).ToArray();
+            var choice = resolve(label, values);
+            var selected = writers.FirstOrDefault(s => sources[s].Id == choice, writers[0]);
+            foreach (var address in addresses.Where(patches[selected].ContainsKey)) result[address] = patches[selected][address];
+        }
+        var output = WritePatch(result);
+        if (!ReadPatch(output).SequenceEqual(result)) throw new InvalidDataException("Reconstructed patch differs from the reviewed settings.");
         return output;
     }
 
@@ -116,31 +152,55 @@ internal static class MergeExecutableEdits
             var index = segment;
             var baseSegment = baseline.Segments[index];
             var data = images.Select(image => image.Segments[index].DecompressedData).ToArray();
-            var conflicts = new List<(uint Address, int[] Sources)>();
-            for (var offset = 0; offset < result[index].Length; offset++)
+            var covered = new bool[(result[index].Length + 3) / 4];
+            if (index == 0)
             {
-                var first = -1; var different = false;
-                for (var source = 0; source < data.Length; source++)
+                foreach (var group in MergeExecutableGroups.Read(Convert.ToHexString(baseline.BuildId)))
                 {
-                    if (data[source][offset] == baseSegment.DecompressedData[offset]) continue;
-                    if (first < 0) first = source;
-                    else if (data[source][offset] != data[first][offset]) different = true;
-                }
-                if (first < 0) continue;
-                result[index][offset] = data[first][offset];
-                if (different)
-                {
-                    if (conflicts.Count >= MaximumPatchBytes) throw new InvalidDataException("Executable conflicts exceed the review limit.");
-                    conflicts.Add(((uint)offset, Enumerable.Range(0, data.Length).Where(source => data[source][offset] != baseSegment.DecompressedData[offset]).ToArray()));
+                    // Reservations for expanded images may lie beyond an unexpanded image.
+                    // Layout compatibility was already checked before composing any bytes.
+                    var ranges = group.Ranges.Where(r => r.Offset >= 0 && r.Offset <= result[index].Length - r.Length).ToArray();
+                    if (ranges.Length == 0) continue;
+                    Select(group.Label, ranges);
+                    foreach (var range in ranges)
+                        for (var offset = range.Offset; offset < range.Offset + range.Length; offset += 4) covered[offset / 4] = true;
                 }
             }
-            ResolveRegions(conflicts, sources, (source, address) => data[source][address], (address, value) => result[index][address] = value,
-                (region, values) => resolve(baseSegment.Name + "/" + region, values), (uint)baseSegment.Header.MemoryOffset);
+            for (var offset = 0; offset < result[index].Length; offset += 4)
+            {
+                if (covered[offset / 4]) continue;
+                var length = Math.Min(4, result[index].Length - offset);
+                var changed = false;
+                for (var source = 0; source < data.Length; source++)
+                    if (!data[source].AsSpan(offset, length).SequenceEqual(baseSegment.DecompressedData.AsSpan(offset, length))) { changed = true; break; }
+                if (changed) Select(baseSegment.Name + $"/0x{baseSegment.Header.MemoryOffset + offset:X8}", [new(offset, length)]);
+            }
+
+            void Select(string label, MergeExecutableGroups.Range[] ranges)
+            {
+                bool Equal(byte[] a, byte[] b) => ranges.All(r => a.AsSpan(r.Offset, r.Length).SequenceEqual(b.AsSpan(r.Offset, r.Length)));
+                var changed = Enumerable.Range(0, data.Length).Where(s => !Equal(data[s], baseSegment.DecompressedData)).ToArray();
+                if (changed.Length == 0) return;
+                var selected = changed[0];
+                if (changed.Any(s => !Equal(data[s], data[selected])))
+                {
+                    string Display(int s)
+                    {
+                        var bytes = ranges.SelectMany(r => data[s].Skip(r.Offset).Take(r.Length)).ToArray();
+                        return bytes.Length <= 64 ? Convert.ToHexString(bytes) : "SHA-256 " + Convert.ToHexStringLower(SHA256.HashData(bytes));
+                    }
+                    var choice = resolve(label, changed.Select(s => new MergeValueDto(sources[s].Id, sources[s].Name, Display(s))).ToArray());
+                    selected = changed.FirstOrDefault(s => sources[s].Id == choice, selected);
+                }
+                foreach (var range in ranges) data[selected].AsSpan(range.Offset, range.Length).CopyTo(result[index].AsSpan(range.Offset));
+            }
         }
         var output = baseline.Write(result[0], result[1], result[2]);
         var verified = NsoFile.Parse(output);
         if (!verified.Segments.Select((segment, index) => segment.DecompressedData.AsSpan().SequenceEqual(result[index])).All(equal => equal))
             throw new InvalidDataException("Reconstructed executable differs from the reviewed regions.");
+        if (!KM.SwSh.ExeFs.SwShExecutableMergeSupport.IsValid(original, output))
+            throw new InvalidDataException("Executable settings are inconsistent.");
         return output;
     }
 

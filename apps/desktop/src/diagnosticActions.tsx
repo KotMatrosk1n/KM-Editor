@@ -143,6 +143,7 @@ function resolveDestination(diagnostic: ApiDiagnostic): WorkbenchSection | null 
   if (diagnostic.domain === 'workflow.modMerger' || diagnostic.domain === 'workflow.mod-merger' || (diagnostic.code && mergerCodes.has(diagnostic.code))) return 'modMerger';
   if (diagnostic.domain === 'tool.trainerDynamax' || diagnostic.code === projectBridgeErrorCodes.trainerDynamaxInvalid
     || diagnostic.code === projectBridgeErrorCodes.trainerDynamaxReviewStale) return 'trainerDynamax';
+  if (diagnostic.domain === 'workflow.marnieBoosts' || diagnostic.code?.startsWith('KM-SWSH-MARNIE-')) return 'marnieBoosts';
   if (diagnostic.code === projectBridgeErrorCodes.raidDensInvalid || diagnostic.domain === 'workflow.raidDens') {
     return 'raidDens';
   }

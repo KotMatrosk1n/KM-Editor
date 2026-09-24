@@ -41,6 +41,12 @@ const reviewDiagnosticLocalizationKeys: Readonly<Record<string, string>> = {
 };
 
 const diagnosticLocalizationKeys: Readonly<Record<string, string>> = {
+  'KM-SWSH-MARNIE-SOURCE-INVALID': 'marnieBoosts.diagnostic.source',
+  'KM-SWSH-MARNIE-SELECTION-INVALID': 'marnieBoosts.diagnostic.selection',
+  'KM-SWSH-MARNIE-SESSION-INVALID': 'marnieBoosts.diagnostic.session',
+  'KM-SWSH-MARNIE-PLAN-STALE': 'marnieBoosts.diagnostic.stale',
+  'KM-SWSH-MARNIE-APPLY-FAILED': 'marnieBoosts.diagnostic.apply',
+
   'KM-ZA-BEHAVIOR-SOURCE-UNAVAILABLE': 'behavior.za.diagnostic.sourceUnavailable',
   'KM-ZA-BEHAVIOR-SELECTION-INVALID': 'behavior.za.diagnostic.selectionInvalid',
   'KM-ZA-BEHAVIOR-VALUE-INVALID': 'behavior.za.diagnostic.valueInvalid',

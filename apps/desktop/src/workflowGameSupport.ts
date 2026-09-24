@@ -39,6 +39,7 @@ import { type FashionUnlockWorkflow } from './bridge/fashionUnlockContracts';
 import { type FashionCatalogWorkflow } from './bridge/fashionCatalogContracts';
 import { type GymUniformRemovalWorkflow } from './bridge/gymUniformRemovalContracts';
 import { type StarmobilesWorkflow } from './bridge/starmobilesContracts';
+import { type MarnieBoostsWorkflow } from './bridge/marnieBoostsContracts';
 import { type RaidDensWorkflow } from './bridge/raidDensContracts';
 import { type TrainerWhiteoutWorkflow } from './bridge/trainerWhiteoutContracts';
 import { type HabitatCoordinatesWorkflow } from './bridge/habitatCoordinatesContracts';
@@ -118,6 +119,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
       'dexLayout',
       'angeFight',
       'fairyGymBoosts',
+      'marnieBoosts',
       'fashionUnlock',
       'gymUniformRemoval',
       'hyperspaceBypass',
@@ -173,6 +175,7 @@ export const sharedStagedEditorSectionIds = new Set<WorkbenchSection>([
   'pokemon',
   'trainers',
   'starmobiles',
+  'marnieBoosts',
   'raidDens',
   'trainerWhiteout',
   'moves',
@@ -198,6 +201,7 @@ export const sharedStagedEditorDomains = new Set([
   'workflow.pokemon',
   'workflow.trainers',
   'workflow.starmobiles',
+  'workflow.marnieBoosts',
   'workflow.raidDens',
   'workflow.trainerWhiteout',
   'workflow.moves',
@@ -282,6 +286,7 @@ export type LoadedWorkflowStateBySection = {
   tmMachineControlsWorkflow: TmMachineControlsWorkflow | null;
   habitatCoordinatesWorkflow: HabitatCoordinatesWorkflow | null;
   starmobilesWorkflow: StarmobilesWorkflow | null;
+  marnieBoostsWorkflow: MarnieBoostsWorkflow | null;
   raidDensWorkflow: RaidDensWorkflow | null;
   trainerWhiteoutWorkflow: TrainerWhiteoutWorkflow | null;
   spreadsheetImportWorkflow: SpreadsheetImportWorkflow | null;
@@ -410,6 +415,8 @@ export function getLoadedWorkflowStateForSection(
       return state.tmMachineControlsWorkflow !== null;
     case 'starmobiles':
       return state.starmobilesWorkflow !== null;
+    case 'marnieBoosts':
+      return state.marnieBoostsWorkflow !== null;
     case 'raidDens':
       return state.raidDensWorkflow !== null;
     case 'trainerWhiteout':

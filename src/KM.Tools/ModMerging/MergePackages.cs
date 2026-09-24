@@ -140,12 +140,12 @@ internal static class MergePackages
                 }
                 continue;
             }
-            var root = declared?.Root ?? boundary?.Root ?? Parent(file.Path);
+            var root = declared?.Root ?? boundary?.Root ?? (explicitLoosePayload ? "" : Parent(file.Path));
             if (!buckets.TryGetValue(root, out var bucket))
             {
                 if (buckets.Count == MaximumPackages) throw new MergeInputException(MergeWorkspaceErrorCodes.LimitExceeded, "The source contains too many packages.");
                 buckets[root] = bucket = new(StringComparer.OrdinalIgnoreCase);
-                evidence[root] = declared is not null ? "manifest" : boundary?.Evidence ?? "unclassified";
+                evidence[root] = declared is not null ? "manifest" : boundary?.Evidence ?? (explicitLoosePayload ? "directLayout" : "unclassified");
             }
             bucket.Add(file.Path, file);
         }
@@ -228,7 +228,7 @@ internal static class MergePackages
         if (index >= 0) return (string.Join('/', parts.Take(index)), "installationRoot");
         index = Array.FindIndex(parts, MergeInputs.IsRoot);
         if (index >= 0) return (string.Join('/', parts.Take(index)), "virtualRoot");
-        if (Path.GetExtension(path).ToLowerInvariant() is ".ips" or ".pchtxt") return (Parent(path), "patchFiles");
+        if (Path.GetExtension(path).ToLowerInvariant() is ".ips" or ".ips32" or ".pchtxt") return (Parent(path), "patchFiles");
         return null;
     }
 

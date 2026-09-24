@@ -7,6 +7,7 @@ using KM.Core.Output;
 using KM.Core.Projects;
 using KM.SwSh.Editing;
 using KM.SwSh.ExeFs;
+using KM.SwSh.MarnieBoosts;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -219,6 +220,11 @@ public sealed class SwShFpsPatchService
             var source = File.ReadAllBytes(sourcePath);
             var generated = ConvertManagedRomFsFile(normalized, source);
             var output = File.ReadAllBytes(outputPath);
+            if (SwShMarnieBoostsPatcher.Paths.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+            {
+                return SwShMarnieBoostsPatcher.TryRestoreOutcomes(normalized, source, output, out var comparable)
+                    && (comparable.SequenceEqual(generated) || MatchesLegacyTimingOutput(normalized, source, comparable));
+            }
             if (output.SequenceEqual(generated))
             {
                 return true;
@@ -382,9 +388,9 @@ public sealed class SwShFpsPatchService
 
         foreach (var preparedDelete in preparedRomFsDeletes.Concat(preparedLegacyDeletes))
         {
-            mutations.Add(SwShOutputFileMutation.DeleteLegacyAdoption(
-                preparedDelete.RelativePath,
-                preparedDelete.ReviewedPreimage));
+            mutations.Add(preparedDelete.Contents is { } restored
+                ? SwShOutputFileMutation.Write(preparedDelete.RelativePath, restored, preparedDelete.ReviewedPreimage)
+                : SwShOutputFileMutation.DeleteLegacyAdoption(preparedDelete.RelativePath, preparedDelete.ReviewedPreimage));
             committedFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, preparedDelete.RelativePath));
         }
 
@@ -542,9 +548,9 @@ public sealed class SwShFpsPatchService
 
         foreach (var preparedDelete in preparedRomFsDeletes.Concat(preparedLegacyDeletes))
         {
-            mutations.Add(SwShOutputFileMutation.DeleteLegacyAdoption(
-                preparedDelete.RelativePath,
-                preparedDelete.ReviewedPreimage));
+            mutations.Add(preparedDelete.Contents is { } restored
+                ? SwShOutputFileMutation.Write(preparedDelete.RelativePath, restored, preparedDelete.ReviewedPreimage)
+                : SwShOutputFileMutation.DeleteLegacyAdoption(preparedDelete.RelativePath, preparedDelete.ReviewedPreimage));
             committedFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, preparedDelete.RelativePath));
         }
 
@@ -864,15 +870,25 @@ public sealed class SwShFpsPatchService
             if (File.Exists(targetPath))
             {
                 var existing = File.ReadAllBytes(targetPath);
+                var comparable = existing;
+                if (SwShMarnieBoostsPatcher.Paths.Contains(sourceFile.RelativePath, StringComparer.OrdinalIgnoreCase))
+                {
+                    if (!SwShMarnieBoostsPatcher.TryRestoreOutcomes(sourceFile.RelativePath, sourceBytes, existing, out comparable)
+                        || !(comparable.SequenceEqual(sourceBytes) || comparable.SequenceEqual(generated)
+                            || MatchesLegacyTimingOutput(sourceFile.RelativePath, sourceBytes, comparable)))
+                        throw new InvalidDataException("The cheering sequence contains unsupported changes outside the supported timing and outcome fields.");
+                    generated = SwShMarnieBoostsPatcher.PreserveOutcomes(generated, existing);
+                    generatedHash = ComputeSha256(generated);
+                }
                 if (existing.SequenceEqual(generated))
                 {
                     ownedFileHashes[sourceFile.RelativePath] = generatedHash;
                     return;
                 }
 
-                if (!existing.SequenceEqual(sourceBytes)
+                if (!comparable.SequenceEqual(sourceBytes)
                     && !MatchesManifestOwnedOutput(sourceFile.RelativePath, existing, manifestHashes)
-                    && !MatchesLegacyTimingOutput(sourceFile.RelativePath, sourceBytes, existing))
+                    && !MatchesLegacyTimingOutput(sourceFile.RelativePath, sourceBytes, comparable))
                 {
                     diagnostics.Add(CreateDiagnostic(
                         DiagnosticSeverity.Error,
@@ -1121,6 +1137,34 @@ public sealed class SwShFpsPatchService
                 {
                     Code = RestorePreflightBlockedDiagnosticCode,
                 });
+                continue;
+            }
+
+            // These files share ownership with the cheering editor. Never delete its outcomes,
+            // even when a historical manifest happens to match the entire combined file.
+            if (SwShMarnieBoostsPatcher.Paths.Contains(relativePath, StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    if (sourceFile is null) throw new InvalidDataException();
+                    var vanilla = File.ReadAllBytes(sourceFile.SourcePath);
+                    if (!SwShMarnieBoostsPatcher.TryRestoreOutcomes(relativePath, vanilla, outputBytes, out var comparable))
+                        throw new InvalidDataException();
+                    if (comparable.SequenceEqual(vanilla)) continue;
+                    var generated = ConvertManagedRomFsFile(relativePath, vanilla);
+                    if (!comparable.SequenceEqual(generated) && !MatchesLegacyTimingOutput(relativePath, vanilla, comparable))
+                        throw new InvalidDataException();
+                    var restored = SwShMarnieBoostsPatcher.PreserveOutcomes(vanilla, outputBytes);
+                    preparedDeletes.Add(new(relativePath, ToOutputFileState(outputBytes),
+                        restored.SequenceEqual(vanilla) ? null : restored));
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
+                {
+                    diagnostics.Add(CreateDiagnostic(DiagnosticSeverity.Warning,
+                        "Cheering sequence timing could not be safely restored. Its output was preserved.",
+                        file: relativePath, expected: "Readable original sequence and supported timing and cheering outcomes") with
+                        { Code = OwnedOutputChangedDiagnosticCode });
+                }
                 continue;
             }
 
@@ -1506,12 +1550,17 @@ public sealed class SwShFpsPatchService
                 continue;
             }
 
-            var state = outputBytes.SequenceEqual(preparedSource.GeneratedBytes)
+            var comparableOutput = outputBytes;
+            var sharedCheering = SwShMarnieBoostsPatcher.Paths.Contains(sourceFile.RelativePath, StringComparer.OrdinalIgnoreCase);
+            var supportedCheering = !sharedCheering || SwShMarnieBoostsPatcher.TryRestoreOutcomes(
+                sourceFile.RelativePath, preparedSource.SourceBytes, outputBytes, out comparableOutput);
+            var state = !supportedCheering ? ManagedRomFsFileState.Conflict
+                : comparableOutput.SequenceEqual(preparedSource.GeneratedBytes)
                 ? ManagedRomFsFileState.Patched
-                : outputBytes.SequenceEqual(preparedSource.SourceBytes)
+                : comparableOutput.SequenceEqual(preparedSource.SourceBytes)
                     ? ManagedRomFsFileState.NotInstalled
-                    : MatchesManifestOwnedOutput(sourceFile.RelativePath, outputBytes, manifestHashes)
-                        || MatchesLegacyTimingOutput(sourceFile.RelativePath, preparedSource.SourceBytes, outputBytes)
+                    : (!sharedCheering && MatchesManifestOwnedOutput(sourceFile.RelativePath, outputBytes, manifestHashes))
+                        || MatchesLegacyTimingOutput(sourceFile.RelativePath, preparedSource.SourceBytes, comparableOutput)
                         ? ManagedRomFsFileState.StaleOwned
                         : ManagedRomFsFileState.Conflict;
             inspectedFiles.Add(new InspectedRomFsFile(sourceFile.RelativePath, componentId, state));
@@ -2814,10 +2863,16 @@ public sealed class SwShFpsPatchService
 
             try
             {
-                var currentHash = ComputeSha256(File.ReadAllBytes(targetPath));
+                var currentBytes = File.ReadAllBytes(targetPath);
+                var currentHash = ComputeSha256(currentBytes);
                 ownedHashes[relativePath] = previousHash;
                 if (!string.Equals(currentHash, previousHash, StringComparison.OrdinalIgnoreCase))
                 {
+                    if (MatchesSharedCheeringTiming(paths, relativePath, currentBytes))
+                    {
+                        ownedHashes[relativePath] = currentHash;
+                        continue;
+                    }
                     diagnostics.Add(CreateDiagnostic(
                         DiagnosticSeverity.Warning,
                         "A recorded KM-owned animation timing output changed and remains recorded but was preserved.",
@@ -2846,6 +2901,25 @@ public sealed class SwShFpsPatchService
         }
 
         return ownedHashes;
+    }
+
+    private static bool MatchesSharedCheeringTiming(ProjectPaths paths, string relativePath, byte[] output)
+    {
+        if (!SwShMarnieBoostsPatcher.Paths.Contains(relativePath, StringComparer.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(paths.BaseRomFsPath)) return false;
+        try
+        {
+            var sourcePath = ResolveBaseRomFsPath(paths.BaseRomFsPath, relativePath);
+            if (sourcePath is null) return false;
+            var source = File.ReadAllBytes(sourcePath);
+            return SwShMarnieBoostsPatcher.TryRestoreOutcomes(relativePath, source, output, out var comparable)
+                && (comparable.SequenceEqual(ConvertManagedRomFsFile(relativePath, source))
+                    || MatchesLegacyTimingOutput(relativePath, source, comparable));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            return false;
+        }
     }
 
     private static FpsPatchManifest CreateManifest(
@@ -2977,7 +3051,8 @@ public sealed class SwShFpsPatchService
 
     private sealed record PreparedRomFsDelete(
         string RelativePath,
-        OutputFileState ReviewedPreimage);
+        OutputFileState ReviewedPreimage,
+        byte[]? Contents = null);
 
     private sealed record PreparedRomFsSource(
         byte[] SourceBytes,

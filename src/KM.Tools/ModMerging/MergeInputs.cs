@@ -243,11 +243,11 @@ internal static partial class MergeInputs
         if (root >= 0) return (segments[root].Equals("exefs", StringComparison.OrdinalIgnoreCase) ? "exefs/" : "romfs/") + string.Join('/', segments[(root + 1)..]);
         // Direct Trinity packages contain virtual RomFS paths. Metadata and miscellaneous attachments retain their paths.
         return segments[0].ToLowerInvariant() is "arc" or "bin" or "world" or "avalon" or "ik_pokemon" or "ik_message" or "ik_event"
-            or "message" or "param_ai" or "audio" or "system" or "system_resource" or "demo" or "event" ? "romfs/" + path : path;
+              or "message" or "param_ai" or "param_chr" or "audio" or "system" or "system_resource" or "demo" or "event" ? "romfs/" + path : path;
     }
 
     internal static bool IsRoot(string segment) => segment.ToLowerInvariant() is "romfs" or "exefs" or "trinity-mod-manager-romfs"
-        or "arc" or "bin" or "world" or "avalon" or "ik_pokemon" or "ik_message" or "ik_event" or "message" or "param_ai"
+        or "arc" or "bin" or "world" or "avalon" or "ik_pokemon" or "ik_message" or "ik_event" or "message" or "param_ai" or "param_chr"
         or "audio" or "system" or "system_resource" or "demo" or "event";
 
     internal static string? DetectNpdm(byte[] bytes)

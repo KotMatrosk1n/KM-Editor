@@ -14,6 +14,7 @@ public static class MergeWorkspaceErrorCodes
     public const string PackageSelectionInvalid = "KM-MERGE-PACKAGE-SELECTION-INVALID";
     public const string ExportFailed = "KM-MERGE-EXPORT-FAILED";
     public const string FormatOpaque = "KM-MERGE-FORMAT-OPAQUE";
+    public const string SemanticInvalid = "KM-MERGE-SEMANTIC-INVALID";
     public const string PatchInvalid = "KM-MERGE-PATCH-INVALID";
     public const string ExecutableBaseRequired = "KM-MERGE-EXECUTABLE-BASE-REQUIRED";
     public const string GameMismatch = "KM-MERGE-GAME-MISMATCH";
