@@ -781,6 +781,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.QueryGameModule => DispatchQueryGameModule(requestJson),
                 KmCommandNames.SoundStudio => DispatchSoundStudio(requestJson),
                 KmCommandNames.AnalyzeMergeWorkspace => DispatchMergeWorkspace(requestJson, export: false),
+                KmCommandNames.ScanMergePackages => DispatchMergePackages(requestJson),
                 KmCommandNames.ExportMergeWorkspace => DispatchMergeWorkspace(requestJson, export: true),
                 KmCommandNames.ModelCatalog => DispatchModelPreview(requestJson, prepare: false),
                 KmCommandNames.ModelPrepare => DispatchModelPreview(requestJson, prepare: true),
@@ -1404,6 +1405,17 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         try { return SerializeSuccess(SoundStudioBridge.Dispatch(request.Payload), request.RequestId); }
         catch (Exception exception) when (exception is IOException or ArgumentException or InvalidOperationException or UnauthorizedAccessException)
         { throw new BridgeRequestException("Audio sources are unavailable or changed. Reload Sound Studio and check the project sources.", exception, BridgeErrorCodes.AudioSourceUnavailable); }
+    }
+
+    private string DispatchMergePackages(string requestJson)
+    {
+        var request = DeserializeRequest<MergePackageScanRequest>(requestJson);
+        try { return SerializeSuccess(new KM.Tools.ModMerging.MergePackageService().Scan(request.Payload), request.RequestId); }
+        catch (KM.Tools.ModMerging.MergeInputException exception)
+        { return SerializeFailure(exception.Code, exception.Message, request.RequestId); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException
+            or ArgumentException or SharpCompress.Common.SharpCompressException or NotSupportedException or InvalidOperationException or OverflowException or IndexOutOfRangeException)
+        { return SerializeFailure(MergeWorkspaceErrorCodes.ArchiveUnreadable, "The package source could not be scanned. Check that it is complete and readable.", request.RequestId); }
     }
 
     private string DispatchMergeWorkspace(string requestJson, bool export)

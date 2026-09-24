@@ -8,6 +8,7 @@ namespace KM.Api.Bridge;
 public static class KmCommandNames
 {
     public const string AnalyzeMergeWorkspace = "modMerger.workspace.analyze";
+    public const string ScanMergePackages = "modMerger.packages.scan";
     public const string ExportMergeWorkspace = "modMerger.workspace.export";
     public const string OpenProject = "project.open";
     public const string ValidateProject = "project.validate";

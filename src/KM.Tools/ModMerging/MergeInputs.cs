@@ -24,9 +24,12 @@ internal static partial class MergeInputs
     internal const long MaximumBytes = 1024L * 1024 * 1024;
 
     public static MergeInput Read(MergeSourceDto source, ref long remaining)
+        => Normalize(source, ReadRaw(source.Path, ref remaining));
+
+    internal static Dictionary<string, MergeInputFile> ReadRaw(string inputPath, ref long remaining)
     {
         var raw = new Dictionary<string, MergeInputFile>(StringComparer.OrdinalIgnoreCase);
-        var sourcePath = Path.GetFullPath(source.Path);
+        var sourcePath = Path.GetFullPath(inputPath);
         RejectLinks(sourcePath);
         if (Directory.Exists(sourcePath))
         {
@@ -55,6 +58,12 @@ internal static partial class MergeInputs
                 Add(reader.Entry.Key ?? "", entry, reader.Entry.Size, raw, ref remaining);
             }
         }
+        return raw;
+    }
+
+    internal static MergeInput Normalize(MergeSourceDto source, Dictionary<string, MergeInputFile> raw)
+    {
+        var sourcePath = Path.GetFullPath(source.Path);
         var sourceFolder = Directory.Exists(sourcePath) ? new DirectoryInfo(sourcePath) : null;
         var selectedRoot = sourceFolder?.Name.ToLowerInvariant();
         var folderGame = sourceFolder is null ? null : DetectTitle(sourceFolder.Name)
@@ -106,7 +115,7 @@ internal static partial class MergeInputs
                     }
                     catch (InvalidDataException exception) { throw new MergeInputException(MergeWorkspaceErrorCodes.PatchInvalid, exception.Message); }
                 }
-                throw new MergeInputException(MergeWorkspaceErrorCodes.DuplicatePath, "This source contains different installation alternatives for the same file. Add one alternative at a time.");
+                throw new MergeInputException(MergeWorkspaceErrorCodes.DuplicatePath, "Different files inside a package map to the same installation path. Check its contents and package boundaries.");
             }
             files[normalized] = payload with { Path = normalized };
         }
@@ -120,11 +129,17 @@ internal static partial class MergeInputs
             game = executableGame;
             evidence.Add("executable");
         }
-        var family = files.Keys.Any(path => path.StartsWith("romfs/ik_pokemon/", StringComparison.OrdinalIgnoreCase)
-                || path.StartsWith("romfs/ik_message/", StringComparison.OrdinalIgnoreCase)) ? "za"
-            : files.Keys.Any(path => path.StartsWith("romfs/bin/pml/", StringComparison.OrdinalIgnoreCase)) ? "swsh"
-            : files.Keys.Any(path => path.StartsWith("romfs/world/data/encount", StringComparison.OrdinalIgnoreCase) || path.StartsWith("romfs/world/data/item/itemdata/", StringComparison.OrdinalIgnoreCase)) ? "sv"
-            : null;
+        var families = files.Keys.Select(path => path.StartsWith("romfs/ik_pokemon/", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("romfs/ik_message/", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("romfs/world/ik_data/", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("romfs/world/exl/", StringComparison.OrdinalIgnoreCase) ? "za"
+            : path.StartsWith("romfs/bin/pml/", StringComparison.OrdinalIgnoreCase) ? "swsh"
+            : path.StartsWith("romfs/world/data/encount", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("romfs/world/data/item/itemdata/", StringComparison.OrdinalIgnoreCase) ? "sv" : null)
+            .OfType<string>().Distinct().ToArray();
+        if (families.Length > 1)
+            throw new MergeInputException(MergeWorkspaceErrorCodes.MixedGames, "A package contains data paths from different game families.");
+        var family = families.FirstOrDefault();
         if (family is not null)
         {
             if (game is not null && Family(game) != family)
@@ -180,7 +195,7 @@ internal static partial class MergeInputs
         }
     }
 
-    private static void Add(string path, Stream stream, long size, Dictionary<string, MergeInputFile> files, ref long remaining)
+    internal static void Add(string path, Stream stream, long size, Dictionary<string, MergeInputFile> files, ref long remaining)
     {
         path = SafePath(path);
         if (files.Count >= MaximumFiles || size < 0 || size > OutputLimits.MaximumWriteBytesPerMutation || size > remaining)
@@ -206,7 +221,7 @@ internal static partial class MergeInputs
     {
         var normalized = path.Replace('\\', '/');
         var segments = normalized.Split('/');
-        if (string.IsNullOrWhiteSpace(path) || Path.IsPathRooted(normalized) || segments.Any(segment =>
+        if (string.IsNullOrWhiteSpace(path) || path.Length > 4096 || Path.IsPathRooted(normalized) || segments.Any(segment =>
                 segment.Length == 0 || segment is "." or ".." || segment.EndsWith('.') || segment.EndsWith(' ')
                 || segment.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || DeviceName().IsMatch(segment)))
             throw new MergeInputException(MergeWorkspaceErrorCodes.PathUnsafe, "A source contains an unsafe or ambiguous file path.");
@@ -220,7 +235,7 @@ internal static partial class MergeInputs
                 throw new MergeInputException(MergeWorkspaceErrorCodes.PathUnsafe, "Merge inputs and output must use physical folders and files.");
     }
 
-    private static string NormalizePackagePath(string path)
+    internal static string NormalizePackagePath(string path)
     {
         var segments = path.Split('/');
         var root = Array.FindIndex(segments, segment => segment.Equals("romfs", StringComparison.OrdinalIgnoreCase)
@@ -231,7 +246,7 @@ internal static partial class MergeInputs
             or "message" or "param_ai" or "audio" or "system" or "system_resource" or "demo" or "event" ? "romfs/" + path : path;
     }
 
-    private static bool IsRoot(string segment) => segment.ToLowerInvariant() is "romfs" or "exefs" or "trinity-mod-manager-romfs"
+    internal static bool IsRoot(string segment) => segment.ToLowerInvariant() is "romfs" or "exefs" or "trinity-mod-manager-romfs"
         or "arc" or "bin" or "world" or "avalon" or "ik_pokemon" or "ik_message" or "ik_event" or "message" or "param_ai"
         or "audio" or "system" or "system_resource" or "demo" or "event";
 
@@ -247,7 +262,7 @@ internal static partial class MergeInputs
     internal static string Family(string game) => game switch { "sword" or "shield" or "swsh" => "swsh", "scarlet" or "violet" or "sv" => "sv", "za" => "za", _ => "unknown" };
     internal static bool Compatible(string first, string second) => first == second || Family(first) == Family(second)
         && (first is "swsh" or "sv" || second is "swsh" or "sv");
-    private static string? DetectTitle(string segment)
+    internal static string? DetectTitle(string segment)
     {
         var info = ProjectGameMetadata.All.FirstOrDefault(game => game.TitleId.ToString("X16").Equals(segment, StringComparison.OrdinalIgnoreCase));
         return info?.Game.ToString().ToLowerInvariant();

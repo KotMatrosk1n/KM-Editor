@@ -6,6 +6,53 @@ namespace KM.Formats;
 /// <summary>Removes routing entries without rebuilding or discarding unknown descriptor tables.</summary>
 public static class TrinityMergeDescriptor
 {
+    /// <summary>Allows semantic comparison only when every reachable descriptor table has a known schema.</summary>
+    public static bool HasOnlyKnownFields(byte[] source)
+    {
+        try
+        {
+            if (source.Length > 64 * 1024 * 1024) return false;
+            var root = ReadInt(source, 0);
+            if (!KnownTable(root, 4)) return false;
+            foreach (var slot in new[] { 8, 10 })
+            {
+                var field = Field(root, slot);
+                if (field == 0) continue;
+                var vector = checked(field + ReadInt(source, field));
+                var count = ReadInt(source, vector);
+                if (count < 0 || count > 1_000_000 || (long)vector + 4 + count * 4L > source.Length) return false;
+                for (var index = 0; index < count; index++)
+                {
+                    var entry = checked(vector + 4 + index * 4);
+                    var table = checked(entry + ReadInt(source, entry));
+                    if (!KnownTable(table, 2)) return false;
+                    if (slot == 8 && Field(table, 6) is var unknown && unknown != 0
+                        && !KnownTable(checked(unknown + ReadInt(source, unknown)), 0)) return false;
+                }
+            }
+            return true;
+
+            bool KnownTable(int table, int fields)
+            {
+                var vtable = checked(table - ReadInt(source, table));
+                var length = ReadUshort(source, vtable);
+                if (length < 4 || length % 2 != 0 || (long)vtable + length > source.Length) return false;
+                for (var offset = 4 + fields * 2; offset < length; offset += 2)
+                    if (ReadUshort(source, checked(vtable + offset)) != 0) return false;
+                return true;
+            }
+            int Field(int table, int slot)
+            {
+                var vtable = checked(table - ReadInt(source, table));
+                if (slot >= ReadUshort(source, vtable)) return 0;
+                var offset = ReadUshort(source, checked(vtable + slot));
+                return offset == 0 ? 0 : checked(table + offset);
+            }
+        }
+        catch (Exception exception) when (exception is ArgumentException or OverflowException or IndexOutOfRangeException)
+        { return false; }
+    }
+
     public static byte[] RemoveFileHashes(byte[] source, IReadOnlySet<ulong> removed)
     {
         if (source.Length > 64 * 1024 * 1024) throw new InvalidDataException("Descriptor exceeds the supported size.");

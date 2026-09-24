@@ -2,6 +2,20 @@
 
 Mod Merger is available from the tools navigation before a game project is verified. Add mod folders or ZIP, RAR and 7z archives, choose the game and output folder, then review the merge before exporting.
 
+## Bundled and optional packages
+
+Import scans each source before comparing its game files. A single recognized package is added automatically. Sources with multiple packages open a selection dialog. Choose the components to include, inspect their files and documentation, then confirm. The main page retains one compact entry per source with its selected package count. Use **Manage packages** to change the selection later.
+
+Discovery recognizes installation folders, direct game data paths, executable patches, title folders and nested archives outside game payload folders. RomFS and ExeFS belonging to the same package stay together. Package boundaries are identified before game paths are normalized, so optional components can provide different versions of the same game file without making the entire archive invalid. An archive inside a game payload remains a game file. Unrecognized layouts require an explicit selection.
+
+Folder names alone do not establish that a package is required, optional or mutually exclusive. Without an author manifest, multiple detected packages start unselected. Shared paths are shown as overlaps and assessed during the normal merge review. They do not automatically make two components mutually exclusive. Basic still requires choices between differing supplied values; Advanced can combine independent changes against the original game files.
+
+An optional `km-mod.json` author manifest can declare required components, dependencies, recommended selections, game editions and alternative groups. Dependencies are included when selecting a package. Changing an alternative can deselect packages that depend on the old choice, with the adjustment shown in the dialog. Required packages cannot be removed. Alternative groups use radio buttons and can require a selection. Invalid declarations, cyclic dependencies and incompatible required alternatives block import until corrected. See [Package manifests](mod-package-manifests.md) for the format.
+
+Documentation outside game payloads is displayed as plain text when supported and is excluded from merged game output. Documents never execute commands or alter selections. Explicit direct payload layouts preserve their files, including text files. File and document previews are bounded; the selected package still includes its complete payload.
+
+Confirmed package selections are saved with the merger draft. Changing a selection clears affected conflict choices and requires a fresh merge review. Changed source contents require another scan and confirmation. When optional components are removed after an export, the next review identifies obsolete merger owned output and adjusts the descriptor. Unrelated output remains protected.
+
 ## Basic and Advanced
 
 **Basic** does not require an original game dump. It compares the supplied mods. Identical data and files present in only one source combine automatically. When sources contain different values for the same field, choose the value to keep. Without the original data, the merger cannot know whether a value was intentionally edited or was simply included unchanged in a mod.
@@ -10,7 +24,7 @@ Mod Merger is available from the tools navigation before a game project is verif
 
 ## Files and conflicts
 
-Every input file is included in the inventory. Supported game tables merge by record and field. Supported tables include Pokémon, items, moves, trainers, gifts, trades, raids, rewards, encounters and shops, with additional behavior, placement, fashion and battle parameter formats depending on the game. Game text entries also merge separately. Trainer party slots and move slots can be compared separately. Ordered lists such as learnsets are compared as a unit.
+Every selected payload file is included in the inventory. Supported game tables merge by record and field. Supported tables include Pokémon, items, moves, trainers, gifts, trades, raids, rewards, encounters and shops, with additional behavior, placement, fashion and battle parameter formats depending on the game. Game text entries also merge separately. Trainer party slots and move slots can be compared separately. Ordered lists such as learnsets are compared as a unit.
 
 Unknown formats, unsupported table extensions and incompatible record layouts retain their complete bytes. When their contents differ, choose a complete file. The merger does not infer a safe binary edit from arbitrary differing bytes. Textures, audio and models use complete asset choices. Other formats without a preserving structural writer also require a complete file choice. Unknown table extensions are reported explicitly.
 
@@ -44,4 +58,4 @@ The draft retains the inputs, settings and choices locally. A fresh review is re
 
 ## Limits
 
-A merge accepts up to 64 sources, 100,000 input files, 1 GiB of expanded input and 256 MiB per file. An export supports up to 2,048 file changes and 1 GiB of output. Original comparison data and conflict previews also have bounded memory limits. Larger packages must be divided into smaller groups. Structural table comparison has additional format limits; complete file review is used when safe field reconstruction is unavailable. Executable patches support up to 1,000,000 expanded write bytes per source patch and 4,000,000 per combined patch. PCHTXT sources are limited to 8 MiB. Executable images are limited to 128 MiB of decoded segments each and 512 MiB across a comparison.
+A merge accepts up to 64 sources and 64 selected packages, 100,000 input files, 1 GiB of expanded input and 256 MiB per file. Each source can contain up to 64 discovered packages and three nested archive levels. Nested expansion shares the input byte budget. An export supports up to 2,048 file changes and 1 GiB of output. Original comparison data and conflict previews also have bounded memory limits. Larger packages must be divided into smaller groups. Structural table comparison has additional format limits; complete file review is used when safe field reconstruction is unavailable. Executable patches support up to 1,000,000 expanded write bytes per source patch and 4,000,000 per combined patch. PCHTXT sources are limited to 8 MiB. Executable images are limited to 128 MiB of decoded segments each and 512 MiB across a comparison.
