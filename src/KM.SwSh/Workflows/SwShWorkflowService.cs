@@ -24,6 +24,7 @@ using KM.SwSh.HyperTraining;
 using KM.SwSh.Items;
 using KM.SwSh.IvScreen;
 using KM.SwSh.MarnieBoosts;
+using KM.SwSh.HeldItemChance;
 using KM.SwSh.ModMerger;
 using KM.SwSh.Moves;
 using KM.SwSh.NpcItemGift;
@@ -71,6 +72,7 @@ public sealed class SwShWorkflowService
     private readonly SwShHyperTrainingWorkflowService hyperTrainingWorkflowService;
     private readonly SwShFairyGymBoostsWorkflowService fairyGymBoostsWorkflowService;
     private readonly SwShMarnieBoostsService marnieBoostsService;
+    private readonly SwShHeldItemChanceService heldItemChanceService;
     private readonly SwShGymUniformRemovalWorkflowService gymUniformRemovalWorkflowService;
     private readonly SwShFashionUnlockWorkflowService fashionUnlockWorkflowService;
     private readonly SwShIvScreenWorkflowService ivScreenWorkflowService;
@@ -160,6 +162,7 @@ public sealed class SwShWorkflowService
         this.hyperTrainingWorkflowService = hyperTrainingWorkflowService ?? new SwShHyperTrainingWorkflowService();
         this.fairyGymBoostsWorkflowService = fairyGymBoostsWorkflowService ?? new SwShFairyGymBoostsWorkflowService();
         this.marnieBoostsService = marnieBoostsService ?? new SwShMarnieBoostsService(this.projectWorkspaceService);
+        this.heldItemChanceService = new SwShHeldItemChanceService(this.projectWorkspaceService);
         this.gymUniformRemovalWorkflowService = gymUniformRemovalWorkflowService ?? new SwShGymUniformRemovalWorkflowService();
         this.fashionUnlockWorkflowService = fashionUnlockWorkflowService ?? new SwShFashionUnlockWorkflowService();
         this.ivScreenWorkflowService = ivScreenWorkflowService ?? new SwShIvScreenWorkflowService();
@@ -226,6 +229,7 @@ public sealed class SwShWorkflowService
             typeChartWorkflowService.CreateSummary(project),
             fairyGymBoostsWorkflowService.CreateSummary(project),
             marnieBoostsService.CreateSummary(project),
+            heldItemChanceService.CreateSummary(project),
             fashionUnlockWorkflowService.CreateSummary(project),
             gymUniformRemovalWorkflowService.CreateSummary(project),
             ivScreenWorkflowService.CreateSummary(project),

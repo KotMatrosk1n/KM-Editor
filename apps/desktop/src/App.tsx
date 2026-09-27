@@ -460,8 +460,11 @@ import {
   type FashionCatalogFieldEditInput
 } from './features/fashion-catalog/FashionCatalogSection';
 import { MarnieBoostsSection } from './features/marnie-boosts/MarnieBoostsSection';
+import { WildHeldItems, WildHeldItemsActions, effectiveHeldItems, type WildHeldItemUpdate } from './features/held-item-chance/WildHeldItems';
+import { HeldItemChanceSection } from './features/held-item-chance/HeldItemChanceSection';
 import { RaidDensSection } from './features/raid-dens/RaidDensSection';
 import { TrainerWhiteoutSection } from './features/trainer-whiteout/TrainerWhiteoutSection';
+import { encodeHeldItemRates, getHeldItemPendingRates, type HeldItemChanceWorkflow } from './bridge/heldItemChanceContracts';
 import { encodeMarnieBoostSelections, getMarnieBoostPendingSelections, type MarnieBoostsWorkflow } from './bridge/marnieBoostsContracts';
 import { type RaidDensWorkflow } from './bridge/raidDensContracts';
 import { type TrainerWhiteoutWorkflow, type TrainerWhiteoutChange } from './bridge/trainerWhiteoutContracts';
@@ -3236,22 +3239,27 @@ export function App({
   const [isFashionCatalogStaging, setIsFashionCatalogStaging] = useState(false);
   const starmobilesWorkflow = useWorkbenchStore(state => state.starmobilesWorkflow);
   const marnieBoostsWorkflow = useWorkbenchStore(state => state.marnieBoostsWorkflow);
+  const heldItemChanceWorkflow = useWorkbenchStore(state => state.heldItemChanceWorkflow);
   const raidDensWorkflow = useWorkbenchStore(state => state.raidDensWorkflow);
   const trainerWhiteoutWorkflow = useWorkbenchStore(state => state.trainerWhiteoutWorkflow);
   const setStarmobilesWorkflow = useWorkbenchStore(state => state.setStarmobilesWorkflow);
   const setMarnieBoostsWorkflow = useWorkbenchStore(state => state.setMarnieBoostsWorkflow);
+  const setHeldItemChanceWorkflow = useWorkbenchStore(state => state.setHeldItemChanceWorkflow);
   const setRaidDensWorkflow = useWorkbenchStore(state => state.setRaidDensWorkflow);
   const setTrainerWhiteoutWorkflow = useWorkbenchStore(state => state.setTrainerWhiteoutWorkflow);
   const [isStarmobilesLoading, setIsStarmobilesLoading] = useState(false);
   const [isMarnieBoostsLoading, setIsMarnieBoostsLoading] = useState(false);
+  const [isHeldItemChanceLoading, setIsHeldItemChanceLoading] = useState(false);
   const [isRaidDensLoading, setIsRaidDensLoading] = useState(false);
   const [isTrainerWhiteoutLoading, setIsTrainerWhiteoutLoading] = useState(false);
   const [isStarmobilesStaging, setIsStarmobilesStaging] = useState(false);
   const [isMarnieBoostsStaging, setIsMarnieBoostsStaging] = useState(false);
+  const [isHeldItemChanceStaging, setIsHeldItemChanceStaging] = useState(false);
   const [isRaidDensStaging, setIsRaidDensStaging] = useState(false);
   const [isTrainerWhiteoutStaging, setIsTrainerWhiteoutStaging] = useState(false);
   const starmobilesGenerationRef = useRef(0);
   const marnieBoostsGenerationRef = useRef(0);
+  const heldItemChanceGenerationRef = useRef(0);
   const raidDensGenerationRef = useRef(0);
   const trainerWhiteoutGenerationRef = useRef(0);
   const [isHabitatCoordinatesLoading, setIsHabitatCoordinatesLoading] = useState(false);
@@ -4165,6 +4173,7 @@ export function App({
           habitatCoordinatesWorkflow,
           starmobilesWorkflow,
           marnieBoostsWorkflow,
+          heldItemChanceWorkflow,
           raidDensWorkflow,
           trainerWhiteoutWorkflow,
           fashionUnlockWorkflow,
@@ -4212,6 +4221,7 @@ export function App({
       habitatCoordinatesWorkflow,
       starmobilesWorkflow,
       marnieBoostsWorkflow,
+      heldItemChanceWorkflow,
       raidDensWorkflow,
       trainerWhiteoutWorkflow,
       fashionUnlockWorkflow,
@@ -4326,6 +4336,7 @@ export function App({
     habitatCoordinatesWorkflow,
     starmobilesWorkflow,
     marnieBoostsWorkflow,
+    heldItemChanceWorkflow,
     raidDensWorkflow,
     trainerWhiteoutWorkflow,
     fashionUnlockWorkflow,
@@ -4450,6 +4461,8 @@ export function App({
   );
   const handleMarnieBoostsDirtyChange = useCallback(
     (dirty: boolean) => registerEditorDraftDirty('marnieBoosts', dirty), [registerEditorDraftDirty]);
+  const handleHeldItemChanceDirtyChange = useCallback(
+    (dirty: boolean) => registerEditorDraftDirty('heldItemChance', dirty), [registerEditorDraftDirty]);
   const handleRaidDensDirtyChange = useCallback(
     (dirty: boolean) => registerEditorDraftDirty('raidDens', dirty), [registerEditorDraftDirty]);
   const handleTrainerWhiteoutDirtyChange = useCallback(
@@ -10474,6 +10487,49 @@ export function App({
     return accepted;
   };
 
+  const handleOpenHeldItemChanceWorkflow = async () => {
+    const generation = heldItemChanceGenerationRef.current;
+    await runRetainedWorkflowLoad('heldItemChance', setIsHeldItemChanceLoading,
+      () => bridge.loadHeldItemChance({ paths: createProjectPaths(draftPaths) }),
+      response => setHeldItemChanceWorkflow(response.workflow),
+      () => generation === heldItemChanceGenerationRef.current);
+  };
+
+  const handleStageHeldItemChance = async (rates: number[]) => {
+    const activeSession = getEditSessionForSection('heldItemChance');
+    if (!activeSession) return false;
+    let accepted = false;
+    heldItemChanceGenerationRef.current += 1;
+    setIsHeldItemChanceStaging(true);
+    prepareScopedEditorPanelAction('heldItemChance');
+    try {
+      await runEditSessionMutation(async session => {
+        const response = await bridge.stageHeldItemChance({ paths: createProjectPaths(draftPaths), session, rates });
+        const edits = response.session.pendingEdits.filter(edit => edit.domain === 'workflow.heldItemChance');
+        const pendingRates = getHeldItemPendingRates(response.session);
+        const acknowledged = edits.length === 0
+          ? encodeHeldItemRates(response.workflow.rates) === encodeHeldItemRates(rates)
+          : pendingRates !== null && encodeHeldItemRates(pendingRates) === encodeHeldItemRates(rates);
+        const matches = response.workflow.canEdit && response.workflow.detectedGame === draftPaths.selectedGame &&
+          response.session.sessionId === activeSession.sessionId && acknowledged;
+        const diagnostics = [...response.diagnostics, ...response.workflow.diagnostics];
+        if (!matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error'))
+          diagnostics.push({ severity: 'error', domain: 'workflow.heldItemChance', code: 'KM-SWSH-HELD-ITEM-SESSION-INVALID', message: t('heldItemChance.failed') });
+        const didSucceed = matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error');
+        return { ...response, diagnostics, didSucceed, session: didSucceed ? response.session : session };
+      }, response => {
+        setScopedEditorPanelDiagnostics('heldItemChance', response.diagnostics);
+        if (response.didSucceed) {
+          accepted = true;
+          setHeldItemChanceWorkflow(response.workflow);
+          setEditSessionSection('heldItemChance');
+        }
+      }, activeSession);
+    } catch (error) { setScopedEditorPanelDiagnostics('heldItemChance', toBridgeDiagnostics(error)); }
+    finally { setIsHeldItemChanceStaging(false); }
+    return accepted;
+  };
+
   const handleOpenRaidDensWorkflow = async () => {
     const generation = raidDensGenerationRef.current;
     await runRetainedWorkflowLoad('raidDens', setIsRaidDensLoading,
@@ -12331,6 +12387,9 @@ export function App({
         case 'marnieBoosts':
           if (!currentState.marnieBoostsWorkflow) await handleOpenMarnieBoostsWorkflow();
           break;
+        case 'heldItemChance':
+          if (!currentState.heldItemChanceWorkflow) await handleOpenHeldItemChanceWorkflow();
+          break;
         case 'raidDens':
           if (!currentState.raidDensWorkflow) await handleOpenRaidDensWorkflow();
           break;
@@ -12713,6 +12772,9 @@ export function App({
       case 'marnieBoosts':
         if (!marnieBoostsWorkflow && !isMarnieBoostsLoading) { markLazyLoadStarted(); void handleOpenMarnieBoostsWorkflow(); }
         break;
+      case 'heldItemChance':
+        if (!heldItemChanceWorkflow && !isHeldItemChanceLoading) { markLazyLoadStarted(); void handleOpenHeldItemChanceWorkflow(); }
+        break;
       case 'raidDens':
         if (!raidDensWorkflow && !isRaidDensLoading) { markLazyLoadStarted(); void handleOpenRaidDensWorkflow(); }
         break;
@@ -12807,6 +12869,10 @@ export function App({
         }
         break;
       case 'encounters':
+        if (selectedGame === 'sword' || selectedGame === 'shield') {
+          if (!pokemonWorkflow && !isPokemonLoading) { markLazyLoadStarted(); void handleOpenPokemonWorkflow(); }
+          if (!heldItemChanceWorkflow && !isHeldItemChanceLoading) { markLazyLoadStarted(); void handleOpenHeldItemChanceWorkflow(); }
+        }
         if (!encountersWorkflow && !isEncountersLoading) {
           markLazyLoadStarted();
           void handleOpenEncountersWorkflow();
@@ -12974,6 +13040,7 @@ export function App({
     habitatCoordinatesWorkflow,
     starmobilesWorkflow,
     marnieBoostsWorkflow,
+    heldItemChanceWorkflow,
     raidDensWorkflow,
     trainerWhiteoutWorkflow,
     fashionUnlockWorkflow,
@@ -13004,6 +13071,7 @@ export function App({
     isHabitatCoordinatesLoading,
     isStarmobilesLoading,
     isMarnieBoostsLoading,
+    isHeldItemChanceLoading,
     isRaidDensLoading,
     isTrainerWhiteoutLoading,
     isFashionUnlockLoading,
@@ -14983,6 +15051,33 @@ export function App({
     } finally {
       setIsPokemonUpdating(false);
     }
+  };
+
+  const handleStageWildHeldItems = async (updates: WildHeldItemUpdate[]) => {
+    const activeSession = getEditSessionForSection('encounters');
+    if (!activeSession || updates.length === 0 || updates.some(update => !['heldItem1', 'heldItem2', 'heldItem3'].includes(update.field))) return false;
+    setIsPokemonUpdating(true);
+    let accepted = false;
+    try {
+      await runEditSessionMutation(async session => {
+        const response = await bridge.updatePokemonComposite({ paths: createProjectPaths(draftPaths), session,
+          fieldUpdates: updates, evolutionUpdates: [], learnsetUpdates: [] });
+        const acknowledged = response.session.sessionId === activeSession.sessionId && updates.every(update => {
+          const row = response.workflow.pokemon.find(row => row.personalId === update.personalId);
+          return row && effectiveHeldItems(row, response.session)[Number(update.field.slice(-1)) - 1] === Number(update.value);
+        });
+        const diagnostics = [...response.diagnostics, ...response.workflow.diagnostics];
+        if (!acknowledged && !diagnostics.some(value => value.severity === 'error'))
+          diagnostics.push({ severity: 'error', domain: 'workflow.pokemon', field: 'heldItem1', message: t('heldItemChance.wildFailed') });
+        const didSucceed = acknowledged && !diagnostics.some(value => value.severity === 'error');
+        return { ...response, diagnostics, didSucceed, session: didSucceed ? response.session : session };
+      }, response => {
+        setEditValidationDiagnostics(response.diagnostics);
+        if (response.didSucceed) { setPokemonWorkflow(response.workflow); accepted = true; }
+      }, activeSession);
+    } catch (error) { setBridgeDiagnostics(toBridgeDiagnostics(error)); }
+    finally { setIsPokemonUpdating(false); }
+    return accepted;
   };
 
   const handleUpdatePokemonFields = async (
@@ -18265,6 +18360,7 @@ export function App({
       'habitatCoordinates',
       'starmobiles',
       'marnieBoosts',
+      'heldItemChance',
       'raidDens',
       'trainerWhiteout',
       'giftPokemon',
@@ -18317,6 +18413,7 @@ export function App({
       habitatCoordinates: setIsHabitatCoordinatesLoading,
       starmobiles: setIsStarmobilesLoading,
       marnieBoosts: setIsMarnieBoostsLoading,
+      heldItemChance: setIsHeldItemChanceLoading,
       raidDens: setIsRaidDensLoading,
       trainerWhiteout: setIsTrainerWhiteoutLoading,
       fashionUnlock: setIsFashionUnlockLoading,
@@ -18525,6 +18622,12 @@ export function App({
       reloadTasks.push(async () => {
         const response = await bridge.loadMarnieBoosts({ paths });
         if (canCommitRefresh()) setMarnieBoostsWorkflow(response.workflow);
+      });
+    }
+    if (heldItemChanceWorkflow && refreshSections.has('heldItemChance')) {
+      reloadTasks.push(async () => {
+        const response = await bridge.loadHeldItemChance({ paths });
+        if (canCommitRefresh()) setHeldItemChanceWorkflow(response.workflow);
       });
     }
     if (raidDensWorkflow && refreshSections.has('raidDens')) {
@@ -20534,6 +20637,7 @@ export function App({
                 workflow={encountersWorkflow}
               />
             ) : (
+              <WildHeldItemsActions.Provider value={{ onStage: handleStageWildHeldItems, isStaging: isPokemonUpdating }}>
               <SwShEncountersSection
                 editSession={getEditSessionForSection('encounters')}
                 isEditStarting={isEditStarting}
@@ -20551,6 +20655,7 @@ export function App({
                 selectedTableId={selectedEncounterTableId}
                 workflow={encountersWorkflow}
               />
+              </WildHeldItemsActions.Provider>
             )
           ) : null}
           {activeSection === 'teraRaids' ? (
@@ -21126,6 +21231,16 @@ export function App({
                 onDirtyStateChange={handleMarnieBoostsDirtyChange} onRefresh={handleOpenMarnieBoostsWorkflow}
                 isLoading={isMarnieBoostsLoading} panelOutput={getOutputSafeScopedEditorPanelOutput('marnieBoosts')} />
           ) : null}
+          {activeSection === 'heldItemChance' ? (
+            isHeldItemChanceLoading && !heldItemChanceWorkflow ? <WorkflowLoadingPanel label={t('heldItemChance.title')} /> :
+              <HeldItemChanceSection workflow={heldItemChanceWorkflow} session={getEditSessionForSection('heldItemChance')}
+                key={getEditSessionForSection('heldItemChance')?.sessionId ?? 'viewing'}
+                isStaging={isHeldItemChanceStaging} isEditing={getEditSessionForSection('heldItemChance') !== null}
+                isEditStarting={isEditStarting} onStartEditSession={handleStartEditSession}
+                onCancelEditSession={requestCancelEditSession} onStage={handleStageHeldItemChance}
+                onDirtyStateChange={handleHeldItemChanceDirtyChange} onRefresh={handleOpenHeldItemChanceWorkflow}
+                isLoading={isHeldItemChanceLoading} panelOutput={getOutputSafeScopedEditorPanelOutput('heldItemChance')} />
+          ) : null}
           {activeSection === 'raidDens' ? (
             isRaidDensLoading && !raidDensWorkflow ? <WorkflowLoadingPanel label={t('raidDens.title')} /> :
               <RaidDensSection workflow={raidDensWorkflow} session={getEditSessionForSection('raidDens')}
@@ -21266,6 +21381,7 @@ export function App({
               pendingEditContext={{
                 starmobilesWorkflow,
                 marnieBoostsWorkflow,
+                heldItemChanceWorkflow,
                 raidDensWorkflow,
                 trainerWhiteoutWorkflow,
                 angeFightWorkflow,
@@ -35010,6 +35126,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.fashionCatalog': 'Fashion Catalog',
     'workflow.habitatCoordinates': 'Habitat Coordinates',
     'workflow.marnieBoosts': 'Marnie Wyndon Boosts',
+    'workflow.heldItemChance': 'Held Item Chance',
     'workflow.raidDens': 'Raid Dens',
     'workflow.trainerWhiteout': 'Trainer Whiteout',
     'workflow.starmobiles': 'Starmobiles',
@@ -35072,6 +35189,7 @@ function getPendingEditSection(edit: PendingEdit): WorkbenchSection | null {
     'workflow.fashionCatalog': 'fashionCatalog',
     'workflow.habitatCoordinates': 'habitatCoordinates',
     'workflow.marnieBoosts': 'marnieBoosts',
+    'workflow.heldItemChance': 'heldItemChance',
     'workflow.raidDens': 'raidDens',
     'workflow.trainerWhiteout': 'trainerWhiteout',
     'workflow.starmobiles': 'starmobiles',
@@ -35469,6 +35587,11 @@ function getPendingEditDisplayDetails(
       return createPendingEditDisplayDetails(edit, {
         editorLabel, recordLocalizationKey: 'marnieBoosts.title', fieldLocalizationKey: 'marnieBoosts.outcomes',
         newValueLocalizationKey: 'marnieBoosts.staged'
+      });
+    case 'workflow.heldItemChance':
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel, recordLocalizationKey: 'heldItemChance.title', fieldLocalizationKey: 'heldItemChance.rates',
+        newValueLabel: edit.newValue ?? ''
       });
     case 'workflow.raidDens':
       return createPendingEditDisplayDetails(edit, {
@@ -44426,6 +44549,8 @@ function SelectedEncounterPanel({
     Record<string, Record<string, string>>
   >({});
   const pokemonWorkflow = useWorkbenchStore((state) => state.pokemonWorkflow);
+  const heldItemChanceWorkflow = useWorkbenchStore(state => state.heldItemChanceWorkflow);
+  const [wildHeldItemsDirty, setWildHeldItemsDirty] = useState(false);
   const [zaSlotDraftsBySlotKey, setZaSlotDraftsBySlotKey] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -44966,7 +45091,7 @@ function SelectedEncounterPanel({
   );
   useRegisterEditorDraftDirty(
     'encounters',
-    countFieldDraftRecords(draftsBySlotKey) +
+    wildHeldItemsDirty || countFieldDraftRecords(draftsBySlotKey) +
       countFieldDraftRecords(zaSlotDraftsBySlotKey) +
       countFieldDraftRecords(zaAppearanceDraftsByTableId) +
       countFieldDraftRecords(levelDraftsByScopeKey) +
@@ -45835,6 +45960,11 @@ function SelectedEncounterPanel({
             />
           ) : null}
 
+          {editorFamily === 'swsh' ? <WildHeldItems key={editSession?.sessionId ?? 'viewing'}
+            workflow={pokemonWorkflow} chances={heldItemChanceWorkflow} session={editSession}
+            speciesId={encounterSlot?.speciesId ?? null} form={encounterSlot?.form ?? null}
+            recordId={encounterSlot ? `${table.tableId}#${encounterSlot.slot}` : null}
+            onDirtyStateChange={setWildHeldItemsDirty} /> : null}
           <div className="encounter-edit-form">
             {!isSvEncounterTable && !isZaEncounterTable && areaTabs.length > 0 ? (
               <div
@@ -56869,6 +56999,7 @@ type PendingEdit = EditSession['pendingEdits'][number];
 
 export type PendingEditContext = {
   marnieBoostsWorkflow?: MarnieBoostsWorkflow | null;
+  heldItemChanceWorkflow?: HeldItemChanceWorkflow | null;
   raidDensWorkflow?: RaidDensWorkflow | null;
   trainerWhiteoutWorkflow?: TrainerWhiteoutWorkflow | null;
   starmobilesWorkflow?: StarmobilesWorkflow | null;

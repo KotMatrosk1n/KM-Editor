@@ -122,6 +122,7 @@ const registrations = {
   profanityFilter: operationScoped('profanityFilter'),
   trainerDynamax: operationScoped('trainerDynamax'),
   marnieBoosts: fixedSchemaSlot('marnieBoosts', 'Wyndon cheering answer outcomes'),
+  heldItemChance: fixedSchemaSlot('heldItemChance', 'Global normal and boosted held item percentages'),
   raidDens: fixedSchemaSlot('raidDens', 'den interaction dispatch'),
   trainerWhiteout: intrinsic('trainerWhiteout', 'stored trainer ID'),
   randomizer: operationScoped('randomizer'),

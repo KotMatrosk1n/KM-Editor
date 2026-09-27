@@ -12,6 +12,7 @@ using KM.SwSh.IvScreen;
 using KM.SwSh.NameFilter;
 using KM.SwSh.ShinyRate;
 using KM.SwSh.TypeChart;
+using KM.SwSh.HeldItemChance;
 
 namespace KM.SwSh.RuntimeSettings;
 
@@ -49,6 +50,7 @@ public static class SwShKnownExecutableCompositionVerifier
                 || !NormalizeFps(retail, ref normalized, expectedGame, ref recognizedTransformation)
                 || !NormalizeShinyRate(retail, ref normalized, expectedGame, ref recognizedTransformation)
                 || !NormalizeTypeChart(retail, ref normalized, expectedGame, ref recognizedTransformation)
+                || !NormalizeHeldItemChance(retail, ref normalized, expectedGame, ref recognizedTransformation)
                 || !NormalizeFashionUnlock(retail, ref normalized, expectedGame, ref recognizedTransformation)
                 || !NormalizeGymUniformRemoval(retail, ref normalized, expectedGame, ref recognizedTransformation)
                 || !NormalizeNameFilter(retail, ref normalized, expectedGame, ref recognizedTransformation))
@@ -209,6 +211,17 @@ public static class SwShKnownExecutableCompositionVerifier
         }
 
         return analysis.Kind == SwShTypeChartMainKind.Vanilla;
+    }
+
+    private static bool NormalizeHeldItemChance(byte[] retail, ref byte[] normalized,
+        ProjectGame expectedGame, ref bool recognizedTransformation)
+    {
+        var original = SwShHeldItemChancePatcher.Rates(NsoFile.Parse(retail));
+        var current = SwShHeldItemChancePatcher.Rates(NsoFile.Parse(normalized));
+        if (original.SequenceEqual(current)) return true;
+        normalized = SwShHeldItemChancePatcher.Apply(retail, normalized, expectedGame, original);
+        recognizedTransformation = true;
+        return true;
     }
 
     private static bool NormalizeFashionUnlock(

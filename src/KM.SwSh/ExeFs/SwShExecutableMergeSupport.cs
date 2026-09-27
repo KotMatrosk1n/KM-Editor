@@ -4,6 +4,7 @@ using KM.Formats.Executable;
 using KM.SwSh.GymUniformRemoval;
 using KM.SwSh.HyperTraining;
 using KM.SwSh.ShinyRate;
+using KM.SwSh.HeldItemChance;
 
 namespace KM.SwSh.ExeFs;
 
@@ -54,6 +55,9 @@ public static class SwShExecutableMergeSupport
             .Select(r => new SwShExecutableMergeRegion(r.Owner, r.StartOffset!.Value, r.Length!.Value)).ToArray();
     }
 
+    public static IReadOnlyList<SwShExecutableMergeRegion> RoRegions(string build) => GameForBuild(build) is null ? [] :
+        [new("Held Item Chance", SwShHeldItemChancePatcher.RateOffset, 6)];
+
     public static int? HyperLevel(string path, byte[] bytes)
     {
         if (path.Equals("exefs/main", StringComparison.OrdinalIgnoreCase))
@@ -85,6 +89,14 @@ public static class SwShExecutableMergeSupport
     public static bool IsValid(byte[] original, byte[] merged)
     {
         if (GameForBuild(Convert.ToHexString(NsoFile.Parse(original).BuildId)) is not { } game) return true;
+        var originalRates = SwShHeldItemChancePatcher.Rates(NsoFile.Parse(original));
+        var mergedRates = SwShHeldItemChancePatcher.Rates(NsoFile.Parse(merged));
+        if (!originalRates.SequenceEqual(mergedRates))
+        {
+            if (!SwShHeldItemChancePatcher.AreValid(mergedRates)) return false;
+            try { _ = SwShHeldItemChancePatcher.Read(merged, game); }
+            catch (InvalidDataException) { return false; }
+        }
         var shinyBase = SwShShinyRateMainPatcher.Analyze(original, game);
         var shiny = SwShShinyRateMainPatcher.Analyze(merged, game);
         if (shinyBase.Kind is SwShShinyRateMainKind.Default or SwShShinyRateMainKind.FixedRolls or SwShShinyRateMainKind.AlwaysShiny

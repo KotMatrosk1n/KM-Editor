@@ -114,6 +114,25 @@ public sealed partial class SwShEditableDumpProvider
                 return new(session with { PendingEdits = session.PendingEdits
                     .Where(edit => edit.Domain != "workflow.text" || !selected.Contains(edit.RecordId!)).Concat(changes).ToArray() }, []);
             }
+            case "heldItemChance":
+            {
+                var diagnostics = new List<KM.Core.Diagnostics.ValidationDiagnostic>();
+                var pending = session.PendingEdits.Where(edit => edit.Domain == KM.SwSh.HeldItemChance.SwShHeldItemChanceService.Domain).ToArray();
+                var rates = pending.Length > 0
+                    ? KM.SwSh.HeldItemChance.SwShHeldItemChanceService.Decode(session with { PendingEdits = pending }, diagnostics)
+                    : documents[category].Records.Single().Fields.Select(field => int.Parse(field.Value, CultureInfo.InvariantCulture)).ToArray();
+                if (diagnostics.Count > 0) return new(session, diagnostics);
+                foreach (var update in updates) rates[Array.IndexOf(HeldItemRateFields, update.Field.Target)] = int.Parse(update.Value, CultureInfo.InvariantCulture);
+                for (var group = 0; group < 2; group++)
+                    if (rates.Skip(group * 3).Take(3).Sum() > 100)
+                        foreach (var update in updates.Where(update => Array.IndexOf(HeldItemRateFields, update.Field.Target) / 3 == group))
+                            diagnostics.Add(new(KM.Core.Diagnostics.DiagnosticSeverity.Error,
+                                "These three held item percentages must total 100% or less.", Field: update.Field.Target)
+                                { Code = KM.SwSh.HeldItemChance.SwShHeldItemChanceService.RatesCode });
+                if (diagnostics.Count > 0) return new(session, diagnostics);
+                var result = new KM.SwSh.HeldItemChance.SwShHeldItemChanceService().Stage(activePaths, rates, session);
+                return new(result.Session, result.Diagnostics);
+            }
             case "typeChart":
             {
                 var data = documents[category];

@@ -38,6 +38,7 @@ export const workbenchSections = [
   'angeFight',
   'fairyGymBoosts',
   'marnieBoosts',
+  'heldItemChance',
   'fashionUnlock',
   'gymUniformRemoval',
   'hyperspaceBypass',

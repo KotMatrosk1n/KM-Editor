@@ -10,6 +10,7 @@ namespace KM.SwSh.GameDump;
 
 public sealed partial class SwShEditableDumpProvider : IEditableDumpProvider
 {
+    private static readonly string[] HeldItemRateFields = ["normal_slot_1", "normal_slot_2", "normal_slot_3", "boosted_slot_1", "boosted_slot_2", "boosted_slot_3"];
     private readonly ProjectPaths paths;
     private readonly SwShWorkflowService workflow;
     private ProjectPaths activePaths;
@@ -196,6 +197,20 @@ public sealed partial class SwShEditableDumpProvider : IEditableDumpProvider
                     var record = new DumpRecord(text.TextKey, text.Label, category, text.TextKey);
                     record.Fields.Add(new("text", "value", text.Value, "text", Editable: text.CanEdit));
                     records.Add(record);
+                }
+                break;
+            }
+            case "heldItemChance":
+            {
+                var data = new KM.SwSh.HeldItemChance.SwShHeldItemChanceService().Load(activePaths);
+                diagnostics = data.Diagnostics;
+                if (data.Rates.Count == 6)
+                {
+                    var record = new DumpRecord("global-held-items", "Global held item percentages", category, "global-held-items");
+                    for (var index = 0; index < 6; index++)
+                        record.Fields.Add(new(HeldItemRateFields[index], HeldItemRateFields[index], Value(data.Rates[index]), Minimum: 0, Maximum: 100));
+                    records.Add(record);
+                    sourceFileCount = 1;
                 }
                 break;
             }
