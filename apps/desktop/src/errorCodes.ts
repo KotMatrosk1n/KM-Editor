@@ -58,6 +58,11 @@ export const projectBridgeErrorCodes = {
   outputStateRevisionChanged: "KM-OUTPUT-STATE-REVISION-CHANGED",
   outputMetadataUnavailable: "KM-OUTPUT-METADATA-UNAVAILABLE",
 
+  heldItemChanceSourceInvalid: "KM-SWSH-HELD-ITEM-SOURCE-INVALID",
+  heldItemChanceRatesInvalid: "KM-SWSH-HELD-ITEM-RATES-INVALID",
+  heldItemChanceSessionInvalid: "KM-SWSH-HELD-ITEM-SESSION-INVALID",
+  heldItemChancePlanStale: "KM-SWSH-HELD-ITEM-PLAN-STALE",
+  heldItemChanceApplyFailed: "KM-SWSH-HELD-ITEM-APPLY-FAILED",
   marnieBoostsSourceInvalid: "KM-SWSH-MARNIE-SOURCE-INVALID",
   marnieBoostsSelectionInvalid: "KM-SWSH-MARNIE-SELECTION-INVALID",
   marnieBoostsSessionInvalid: "KM-SWSH-MARNIE-SESSION-INVALID",

@@ -328,6 +328,15 @@ public sealed class SwShGameDumpService
                     return new GameDumpCategoryData<KM.SwSh.Behavior.SwShBehaviorEntryRecord>(workflow.Entries, workflow.Diagnostics);
                 }),
             GameDumpWriter.CreateTableCategory(
+                SwShWorkflowIds.HeldItemChance,
+                "Held Item Chance",
+                "Global normal and boosted held item percentages. Each set of three must total at most 100%.",
+                paths =>
+                {
+                    var data = new KM.SwSh.HeldItemChance.SwShHeldItemChanceService().Load(paths);
+                    return new GameDumpCategoryData<KM.SwSh.HeldItemChance.SwShHeldItemChanceWorkflow>([data], data.Diagnostics);
+                }),
+            GameDumpWriter.CreateTableCategory(
                 SwShWorkflowIds.TypeChart,
                 "Type Chart",
                 "Type-effectiveness cells, vanilla values, build metadata, and provenance.",

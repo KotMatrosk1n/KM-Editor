@@ -62,6 +62,12 @@ public sealed class DumpYamlImporter(IEditableDumpProvider provider)
                     "Type Chart is staged as one complete table. Apply or discard the other pending chart before importing this document.", updates[0].Location));
                 return Result(original, staged: false);
             }
+            if (category == "heldItemChance" && current.PendingEdits.Any(edit => edit.Domain == "workflow.heldItemChance"))
+            {
+                issues.Add(new("KM-DUMP-YAML-EDITOR-REJECTED",
+                    "Held Item Chance is staged as one complete setting. Apply or discard the other pending chances before importing this document.", updates[0].Location));
+                return Result(original, staged: false);
+            }
             var staged = provider.Stage(category, updates, current);
             var failures = staged.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToArray();
             if (failures.Length > 0)

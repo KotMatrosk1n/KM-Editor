@@ -1,0 +1,32 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+.held-item-chance, .held-item-rate-groups, .held-item-rate-group, .wild-held-items {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.held-item-rate-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 25rem), 1fr));
+  gap: 1rem;
+  margin-block: 1rem;
+}
+.held-item-rate-group {
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: .75rem;
+}
+.held-item-rate-group legend { font-weight: 600; padding-inline: .4rem; }
+.held-item-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  gap: .8rem;
+}
+.held-item-rate-field { display: grid; min-width: 0; gap: .4rem; }
+.held-item-rate-input { display: flex; align-items: center; gap: .4rem; min-width: 0; }
+.held-item-rate-input input { width: 100%; min-width: 0; }
+.held-item-total { font-weight: 600; }
+.held-item-notes p, .wild-held-items p, .held-item-rate-group p { overflow-wrap: anywhere; }
+.wild-held-items { margin-block: 1rem; }
+.wild-held-items .held-item-slot-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
+.wild-held-items .held-item-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-block: .8rem; }

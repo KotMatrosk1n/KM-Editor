@@ -172,9 +172,9 @@ internal static class MergeExecutableEdits
             var baseSegment = baseline.Segments[index];
             var data = images.Select(image => image.Segments[index].DecompressedData).ToArray();
             var covered = new bool[(result[index].Length + 3) / 4];
-            if (index == 0)
+            if (index is 0 or 1)
             {
-                foreach (var group in MergeExecutableGroups.Read(Convert.ToHexString(baseline.BuildId)))
+                foreach (var group in MergeExecutableGroups.Read(Convert.ToHexString(baseline.BuildId), ro: index == 1))
                 {
                     // Reservations for expanded images may lie beyond an unexpanded image.
                     // Layout compatibility was already checked before composing any bytes.

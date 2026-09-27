@@ -159,6 +159,7 @@ const editorSurfaceInventory = {
   modMerger: ['src/features/mod-merger/MergeWorkspace.tsx', 'MergeWorkspace', 'utility-input'],
   fpsPatch: ['src/App.tsx', 'FpsPatchSection', 'choice-local-draft'],
   profanityFilter: ['src/App.tsx', 'ProfanityFilterSection', 'action-only'],
+  heldItemChance: ['src/features/held-item-chance/HeldItemChanceSection.tsx', 'HeldItemChanceSection', 'raw-local-draft'],
   marnieBoosts: ['src/features/marnie-boosts/MarnieBoostsSection.tsx', 'MarnieBoostsSection', 'choice-local-draft'],
   raidDens: ['src/features/raid-dens/RaidDensSection.tsx', 'RaidDensSection', 'choice-local-draft'],
   trainerWhiteout: ['src/features/trainer-whiteout/TrainerWhiteoutSection.tsx', 'TrainerWhiteoutSection', 'choice-local-draft'],
@@ -180,6 +181,7 @@ const editorSurfaceInventory = {
  * makes an unclassified input-bearing TSX file a test failure.
  */
 const embeddedEditableSurfaceInventory = {
+  wildHeldItems: ['src/features/held-item-chance/WildHeldItems.tsx', 'WildHeldItems', 'choice-local-draft'],
   mergePackages: ['src/features/mod-merger/MergePackageDialog.tsx', 'MergePackageDialog', 'choice-local-draft'],
   zaBehavior: ['src/features/behavior/ZaBehaviorSection.tsx', 'ZaBehaviorSection', 'raw-local-draft'],
   trainerDynamaxRoster: ['src/features/trainer-dynamax/TrainerDynamaxRoster.tsx', 'TrainerDynamaxRoster', 'choice-local-draft'],
@@ -241,6 +243,8 @@ const allowedPolicies = new Set([
  * cannot be added under a generic policy without choosing its state contract.
  */
 const editorDraftContractInventory = {
+  heldItemChance: 'source-reconciled-exact-submit',
+  wildHeldItems: 'keyed-exact-submit',
   zaBehavior: 'keyed-exact-submit',
   trainerDynamaxRoster: 'captured-review',
   modelTextureEditor: 'keyed-exact-submit',

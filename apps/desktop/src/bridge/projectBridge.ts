@@ -9,6 +9,8 @@ import { type LoadStarmobilesRequest, type LoadStarmobilesResponse, type StageSt
   loadStarmobilesRequestSchema, loadStarmobilesResponseSchema, stageStarmobilesRequestSchema, stageStarmobilesResponseSchema } from './starmobilesContracts';
 import { type LoadMarnieBoostsRequest, type LoadMarnieBoostsResponse, type StageMarnieBoostsRequest, type StageMarnieBoostsResponse,
   loadMarnieBoostsRequestSchema, loadMarnieBoostsResponseSchema, stageMarnieBoostsRequestSchema, stageMarnieBoostsResponseSchema } from './marnieBoostsContracts';
+import { type LoadHeldItemChanceRequest, type LoadHeldItemChanceResponse, type StageHeldItemChanceRequest, type StageHeldItemChanceResponse,
+  loadHeldItemChanceRequestSchema, loadHeldItemChanceResponseSchema, stageHeldItemChanceRequestSchema, stageHeldItemChanceResponseSchema } from './heldItemChanceContracts';
 import { type LoadRaidDensRequest, type LoadRaidDensResponse, type StageRaidDensRequest, type StageRaidDensResponse,
   loadRaidDensRequestSchema, loadRaidDensResponseSchema, stageRaidDensRequestSchema, stageRaidDensResponseSchema } from './raidDensContracts';
 import { type LoadTrainerWhiteoutRequest, type LoadTrainerWhiteoutResponse, type StageTrainerWhiteoutRequest, type StageTrainerWhiteoutResponse,
@@ -841,10 +843,12 @@ export type ProjectBridge = {
   ) => Promise<StageTmMaterialVisibilityResponse>;
   loadStarmobiles: (request: LoadStarmobilesRequest) => Promise<LoadStarmobilesResponse>;
   loadMarnieBoosts: (request: LoadMarnieBoostsRequest) => Promise<LoadMarnieBoostsResponse>;
+  loadHeldItemChance: (request: LoadHeldItemChanceRequest) => Promise<LoadHeldItemChanceResponse>;
   loadRaidDens: (request: LoadRaidDensRequest) => Promise<LoadRaidDensResponse>;
   loadTrainerWhiteout: (request: LoadTrainerWhiteoutRequest) => Promise<LoadTrainerWhiteoutResponse>;
   stageStarmobiles: (request: StageStarmobilesRequest) => Promise<StageStarmobilesResponse>;
   stageMarnieBoosts: (request: StageMarnieBoostsRequest) => Promise<StageMarnieBoostsResponse>;
+  stageHeldItemChance: (request: StageHeldItemChanceRequest) => Promise<StageHeldItemChanceResponse>;
   stageRaidDens: (request: StageRaidDensRequest) => Promise<StageRaidDensResponse>;
   stageTrainerWhiteout: (request: StageTrainerWhiteoutRequest) => Promise<StageTrainerWhiteoutResponse>;
   loadHabitatCoordinates: (
@@ -1675,6 +1679,8 @@ export function createProjectBridge(
       loadStarmobilesRequestSchema.parse(request), loadStarmobilesResponseSchema),
     loadMarnieBoosts: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadMarnieBoosts,
       loadMarnieBoostsRequestSchema.parse(request), loadMarnieBoostsResponseSchema),
+    loadHeldItemChance: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadHeldItemChance,
+      loadHeldItemChanceRequestSchema.parse(request), loadHeldItemChanceResponseSchema),
     loadRaidDens: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadRaidDens,
       loadRaidDensRequestSchema.parse(request), loadRaidDensResponseSchema),
     loadTrainerWhiteout: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadTrainerWhiteout,
@@ -1683,6 +1689,8 @@ export function createProjectBridge(
       stageStarmobilesRequestSchema.parse(request), stageStarmobilesResponseSchema),
     stageMarnieBoosts: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageMarnieBoosts,
       stageMarnieBoostsRequestSchema.parse(request), stageMarnieBoostsResponseSchema),
+    stageHeldItemChance: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageHeldItemChance,
+      stageHeldItemChanceRequestSchema.parse(request), stageHeldItemChanceResponseSchema),
     stageRaidDens: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageRaidDens,
       stageRaidDensRequestSchema.parse(request), stageRaidDensResponseSchema),
     stageTrainerWhiteout: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageTrainerWhiteout,

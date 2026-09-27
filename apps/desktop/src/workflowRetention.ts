@@ -41,6 +41,7 @@ export const workflowStoreKeyBySection = {
   habitatCoordinates: 'habitatCoordinatesWorkflow',
   starmobiles: 'starmobilesWorkflow',
   marnieBoosts: 'marnieBoostsWorkflow',
+  heldItemChance: 'heldItemChanceWorkflow',
   raidDens: 'raidDensWorkflow',
   trainerWhiteout: 'trainerWhiteoutWorkflow',
   spreadsheetImport: 'spreadsheetImportWorkflow',
@@ -66,6 +67,8 @@ export const storedRetainedWorkflowSections = Object.keys(
 const refreshDependentsBySection: Partial<
   Record<RetainedWorkflowSection, readonly RetainedWorkflowSection[]>
 > = {
+  encounters: ['pokemon', 'heldItemChance'],
+  heldItemChance: ['encounters'],
   royalCandy: ['placement'],
   staticEncounters: ['placement'],
   text: ['placement', 'trainers', 'trainerPools', 'behavior'],
@@ -123,6 +126,7 @@ const pendingEditSectionByDomain: Readonly<Record<string, RetainedWorkflowSectio
   'workflow.habitatCoordinates': 'habitatCoordinates',
   'workflow.starmobiles': 'starmobiles',
   'workflow.marnieBoosts': 'marnieBoosts',
+  'workflow.heldItemChance': 'heldItemChance',
   'workflow.raidDens': 'raidDens',
   'workflow.trainerWhiteout': 'trainerWhiteout',
   'workflow.spreadsheetImport': 'spreadsheetImport',
@@ -290,6 +294,11 @@ export function selectWorkflowSectionsToEvict(
         isRetainedWorkflowSection(section) && loadedSections.has(section)
     )
   );
+
+  if (protectedSections.has('encounters')) {
+    if (loadedSections.has('pokemon')) pinnedSections.add('pokemon');
+    if (loadedSections.has('heldItemChance')) pinnedSections.add('heldItemChance');
+  }
 
   let recentCount = 0;
   for (let index = recency.length - 1; index >= 0 && recentCount < minimumRecent; index -= 1) {

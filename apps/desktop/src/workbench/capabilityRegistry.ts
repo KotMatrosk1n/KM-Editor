@@ -437,6 +437,10 @@ export const workbenchCapabilityRegistry = [
     games: swordShieldGames, icon: Sparkles, id: 'marnieBoosts', label: 'Marnie Wyndon Boosts'
   }),
   workflow({
+    description: 'Set global normal and boosted wild held item percentages.',
+    games: swordShieldGames, icon: Sparkles, id: 'heldItemChance', label: 'Held Item Chance'
+  }),
+  workflow({
     description:
       'Advanced ExeFS editor that unlocks fashion ownership checks without editing the save file.',
     games: ['sword', 'shield', 'scarlet', 'violet'],

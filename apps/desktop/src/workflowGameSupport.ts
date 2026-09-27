@@ -40,6 +40,7 @@ import { type FashionCatalogWorkflow } from './bridge/fashionCatalogContracts';
 import { type GymUniformRemovalWorkflow } from './bridge/gymUniformRemovalContracts';
 import { type StarmobilesWorkflow } from './bridge/starmobilesContracts';
 import { type MarnieBoostsWorkflow } from './bridge/marnieBoostsContracts';
+import { type HeldItemChanceWorkflow } from './bridge/heldItemChanceContracts';
 import { type RaidDensWorkflow } from './bridge/raidDensContracts';
 import { type TrainerWhiteoutWorkflow } from './bridge/trainerWhiteoutContracts';
 import { type HabitatCoordinatesWorkflow } from './bridge/habitatCoordinatesContracts';
@@ -120,6 +121,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
       'angeFight',
       'fairyGymBoosts',
       'marnieBoosts',
+      'heldItemChance',
       'fashionUnlock',
       'gymUniformRemoval',
       'hyperspaceBypass',
@@ -176,6 +178,7 @@ export const sharedStagedEditorSectionIds = new Set<WorkbenchSection>([
   'trainers',
   'starmobiles',
   'marnieBoosts',
+  'heldItemChance',
   'raidDens',
   'trainerWhiteout',
   'moves',
@@ -202,6 +205,7 @@ export const sharedStagedEditorDomains = new Set([
   'workflow.trainers',
   'workflow.starmobiles',
   'workflow.marnieBoosts',
+  'workflow.heldItemChance',
   'workflow.raidDens',
   'workflow.trainerWhiteout',
   'workflow.moves',
@@ -287,6 +291,7 @@ export type LoadedWorkflowStateBySection = {
   habitatCoordinatesWorkflow: HabitatCoordinatesWorkflow | null;
   starmobilesWorkflow: StarmobilesWorkflow | null;
   marnieBoostsWorkflow: MarnieBoostsWorkflow | null;
+  heldItemChanceWorkflow: HeldItemChanceWorkflow | null;
   raidDensWorkflow: RaidDensWorkflow | null;
   trainerWhiteoutWorkflow: TrainerWhiteoutWorkflow | null;
   spreadsheetImportWorkflow: SpreadsheetImportWorkflow | null;
@@ -415,6 +420,8 @@ export function getLoadedWorkflowStateForSection(
       return state.tmMachineControlsWorkflow !== null;
     case 'starmobiles':
       return state.starmobilesWorkflow !== null;
+    case 'heldItemChance':
+      return state.heldItemChanceWorkflow !== null;
     case 'marnieBoosts':
       return state.marnieBoostsWorkflow !== null;
     case 'raidDens':
