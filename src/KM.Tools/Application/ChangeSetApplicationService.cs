@@ -4350,6 +4350,7 @@ public sealed class ChangeSetApplicationService
             ValidateOptionalText(edit.Field, "pending edit field", MaximumFieldLength);
             ValidateOptionalText(edit.NewValue, "pending edit value", MaximumValueLength);
             ValidateOptionalText(edit.Owner, "pending edit owner", MaximumIdLength);
+            ValidateOptionalText(edit.ImportOwner, "pending edit import owner", MaximumIdLength);
             foreach (var source in edit.Sources)
             {
                 ValidateRelativePath(source.RelativePath, "pending edit source");

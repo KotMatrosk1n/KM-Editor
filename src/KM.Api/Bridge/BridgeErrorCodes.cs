@@ -4,6 +4,17 @@ namespace KM.Api.Bridge;
 
 public static class BridgeErrorCodes
 {
+    public const string DumpYamlSyntax = "KM-DUMP-YAML-SYNTAX";
+    public const string DumpYamlDuplicate = "KM-DUMP-YAML-DUPLICATE";
+    public const string DumpYamlSource = "KM-DUMP-YAML-SOURCE";
+    public const string DumpYamlCategory = "KM-DUMP-YAML-CATEGORY";
+    public const string DumpYamlHeader = "KM-DUMP-YAML-HEADER";
+    public const string DumpYamlRecord = "KM-DUMP-YAML-RECORD";
+    public const string DumpYamlField = "KM-DUMP-YAML-FIELD";
+    public const string DumpYamlValue = "KM-DUMP-YAML-VALUE";
+    public const string DumpYamlReadonly = "KM-DUMP-YAML-READONLY";
+    public const string DumpYamlStale = "KM-DUMP-YAML-STALE";
+    public const string DumpYamlEditorRejected = "KM-DUMP-YAML-EDITOR-REJECTED";
     public const string ZaBehaviorSourceUnavailable = "KM-ZA-BEHAVIOR-SOURCE-UNAVAILABLE";
     public const string ZaBehaviorSelectionInvalid = "KM-ZA-BEHAVIOR-SELECTION-INVALID";
     public const string ZaBehaviorValueInvalid = "KM-ZA-BEHAVIOR-VALUE-INVALID";

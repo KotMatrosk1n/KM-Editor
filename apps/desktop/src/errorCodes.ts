@@ -16,6 +16,17 @@ export const kmErrorCodeSchema = z
   );
 
 export const projectBridgeErrorCodes = {
+  dumpYamlSyntax: "KM-DUMP-YAML-SYNTAX",
+  dumpYamlDuplicate: "KM-DUMP-YAML-DUPLICATE",
+  dumpYamlSource: "KM-DUMP-YAML-SOURCE",
+  dumpYamlCategory: "KM-DUMP-YAML-CATEGORY",
+  dumpYamlHeader: "KM-DUMP-YAML-HEADER",
+  dumpYamlRecord: "KM-DUMP-YAML-RECORD",
+  dumpYamlField: "KM-DUMP-YAML-FIELD",
+  dumpYamlValue: "KM-DUMP-YAML-VALUE",
+  dumpYamlReadonly: "KM-DUMP-YAML-READONLY",
+  dumpYamlStale: "KM-DUMP-YAML-STALE",
+  dumpYamlEditorRejected: "KM-DUMP-YAML-EDITOR-REJECTED",
   zaBehaviorSourceUnavailable: "KM-ZA-BEHAVIOR-SOURCE-UNAVAILABLE",
   zaBehaviorSelectionInvalid: "KM-ZA-BEHAVIOR-SELECTION-INVALID",
   zaBehaviorValueInvalid: "KM-ZA-BEHAVIOR-VALUE-INVALID",

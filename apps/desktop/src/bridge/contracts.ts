@@ -525,6 +525,8 @@ export const kmCommandNames = {
 export const apiDiagnosticSeveritySchema = z.enum(["info", "warning", "error"]);
 
 export const apiDiagnosticSchema = z.strictObject({
+  sourceLine: z.number().int().positive().nullable().optional(),
+  sourceColumn: z.number().int().positive().nullable().optional(),
   code: kmErrorCodeSchema.nullish(),
   domain: z.string().nullable().optional(),
   expected: z.string().nullable().optional(),
@@ -861,6 +863,7 @@ const pendingEditAssociationIdSchema = z
   .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/u);
 
 export const pendingEditSchema = z.strictObject({
+  importOwner: z.string().max(128).nullable().optional(),
   association: z
     .strictObject({
       changeSetId: pendingEditAssociationIdSchema,

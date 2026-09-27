@@ -32,7 +32,7 @@ public sealed class SvGameDumpService
                 var summary = summaries.GetValueOrDefault(definition.Id);
                 var isAvailable = summary?.Availability is SvWorkflowAvailability.ReadOnly or SvWorkflowAvailability.Available;
                 var diagnostics = summary?.Diagnostics ?? [];
-                return definition.ToCategory(isAvailable, diagnostics);
+                return DumpYamlWriter.WithYaml(definition.ToCategory(isAvailable, diagnostics));
             })
             .ToArray();
 
@@ -121,7 +121,10 @@ public sealed class SvGameDumpService
             var definition = definitions[selection.CategoryId];
             try
             {
-                var result = definition.Write(paths, transaction.StagingFolder, selection);
+                var result = selection.Format == GameDumpFormat.Yaml
+                    ? DumpYamlWriter.WriteCategory(new SvEditableDumpProvider(paths, workflowService), transaction.StagingFolder, selection,
+                        [paths.GameTextLanguage])
+                    : definition.Write(paths, transaction.StagingFolder, selection);
                 categoryResults[selection.CategoryId] = result;
                 diagnostics.AddRange(result.Diagnostics);
                 writtenFiles.AddRange(result.WrittenFiles);

@@ -75,6 +75,8 @@ Clean Base RomFS and Base ExeFS inputs remain untouched. Normal edits write to a
 
 ## Learn More
 
+The [editable YAML Game Dump guide](docs/game-dump-yaml.md) explains category exports, editable fields, import validation and source error locations for all supported games.
+
 | What do you need?              | Start here                                                                                                |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------- |
 | Set up a project               | [Project Setup](https://github.com/KotMatrosk1n/KM-Editor/wiki/Project-Setup)                              |

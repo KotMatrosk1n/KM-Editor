@@ -81,7 +81,7 @@ public static class EditSessionBridgeMapper
             edit.Field,
             edit.NewValue,
             edit.Owner,
-            ToCore(edit.Association));
+            ToCore(edit.Association)) { ImportOwner = edit.ImportOwner };
     }
 
     public static ChangePlanDto ToDto(ChangePlan changePlan)
@@ -172,7 +172,7 @@ public static class EditSessionBridgeMapper
             edit.Field,
             edit.NewValue,
             edit.Owner,
-            ToDto(edit.Association));
+            ToDto(edit.Association)) { ImportOwner = edit.ImportOwner };
     }
 
     public static PendingEdit ToPendingEditCore(PendingEditDto edit)
@@ -205,7 +205,7 @@ public static class EditSessionBridgeMapper
             edit.Field,
             edit.NewValue,
             edit.Owner,
-            ToCore(edit.Association));
+            ToCore(edit.Association)) { ImportOwner = edit.ImportOwner };
     }
 
     private static PendingEditAssociationDto? ToDto(PendingEditAssociation? association)

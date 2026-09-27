@@ -85,6 +85,8 @@ public static class BridgeDiagnosticSanitizer
             SanitizeOptional(diagnostic.Expected))
         {
             Code = SanitizeCode(diagnostic.Code),
+            SourceLine = diagnostic.SourceLine,
+            SourceColumn = diagnostic.SourceColumn,
         };
     }
 
@@ -101,6 +103,8 @@ public static class BridgeDiagnosticSanitizer
             SanitizeOptional(diagnostic.Expected))
         {
             Code = SanitizeCode(diagnostic.Code),
+            SourceLine = diagnostic.SourceLine,
+            SourceColumn = diagnostic.SourceColumn,
         };
     }
 

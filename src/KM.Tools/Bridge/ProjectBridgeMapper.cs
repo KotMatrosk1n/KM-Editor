@@ -74,6 +74,8 @@ public static class ProjectBridgeMapper
             sanitized.Expected)
         {
             Code = sanitized.Code,
+            SourceLine = sanitized.SourceLine,
+            SourceColumn = sanitized.SourceColumn,
         };
     }
 
@@ -160,6 +162,7 @@ public static class ProjectBridgeMapper
             GameDumpFormat.TxtAndJson => GameDumpFormatDto.TxtAndJson,
             GameDumpFormat.Raw => GameDumpFormatDto.Raw,
             GameDumpFormat.RawAndJson => GameDumpFormatDto.RawAndJson,
+            GameDumpFormat.Yaml => GameDumpFormatDto.Yaml,
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, null),
         };
     }
@@ -176,6 +179,7 @@ public static class ProjectBridgeMapper
             GameDumpFormatDto.TxtAndJson => GameDumpFormat.TxtAndJson,
             GameDumpFormatDto.Raw => GameDumpFormat.Raw,
             GameDumpFormatDto.RawAndJson => GameDumpFormat.RawAndJson,
+            GameDumpFormatDto.Yaml => GameDumpFormat.Yaml,
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, null),
         };
     }

@@ -1712,7 +1712,7 @@ internal sealed partial class ZaMovesEditSessionService
             TimingFieldTargetsRecord(moveId, timing, field, out var parsedMember)
             && string.Equals(parsedMember, member, StringComparison.Ordinal));
 
-    private static string? GetEditableValue(ZaMoveRecord move, string field)
+    internal static string? GetEditableValue(ZaMoveRecord move, string field)
     {
         if (string.Equals(field, ZaMovesWorkflowService.FlinchField, StringComparison.Ordinal))
         {

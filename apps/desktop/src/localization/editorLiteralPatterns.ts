@@ -10,6 +10,8 @@ type EditorLiteralPattern = {
 };
 
 export const editorLiteralPatterns: readonly EditorLiteralPattern[] = [
+  { pattern: /^Value is outside the allowed range \((.+) to (.+)\)\.$/u, template: 'Value is outside the allowed range ({minimum} to {maximum}).', parameters: ['minimum', 'maximum'], translate: ['minimum', 'maximum'] },
+  { pattern: /^The '(.+)' field is missing or is not a text value\.$/u, template: "The '{field}' field is missing or is not a text value.", parameters: ['field'] },
   { pattern: /^Output root creation requires Base RomFS and Base ExeFS to validate for (.+)\.$/u, template: 'Validate Base RomFS and Base ExeFS for {game} before creating the output root.', parameters: ['game'] },
   { pattern: /^(.+), slot (\d+) - (.+)$/u, template: '{name}, slot {slot} - {field}', parameters: ['name', 'slot', 'field'], translate: ['field'] },
   { pattern: /^(.+) \(pending changes\)$/u, template: '{name} (pending changes)', parameters: ['name'] },

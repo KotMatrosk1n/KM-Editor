@@ -14,4 +14,6 @@ public sealed record ValidationDiagnostic(
     /// A stable KM-prefixed semantic identifier; the human message may evolve independently.
     /// </summary>
     public string? Code { get; init; }
+    public int? SourceLine { get; init; }
+    public int? SourceColumn { get; init; }
 }

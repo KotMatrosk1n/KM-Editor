@@ -21,6 +21,7 @@ public enum GameDumpFormat
     TxtAndJson,
     Raw,
     RawAndJson,
+    Yaml,
 }
 
 public sealed record GameDumpCategory(

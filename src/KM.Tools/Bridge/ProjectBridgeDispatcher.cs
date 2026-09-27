@@ -5113,11 +5113,11 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     {
         var request = DeserializeRequest<LoadSpreadsheetImportWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        object response = IsPokemonLegendsZA(paths)
+        var response = YamlDumpImportBridge.WithYaml(IsPokemonLegendsZA(paths)
             ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadDumpImport(paths))
             : IsScarletViolet(paths)
                 ? SvBridgeMapper.ToDto(svWorkflowService.LoadDumpImport(paths))
-                : SwShBridgeMapper.ToDto(swShWorkflowService.LoadSpreadsheetImport(paths));
+                : SwShBridgeMapper.ToDto(swShWorkflowService.LoadSpreadsheetImport(paths)));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -5129,7 +5129,22 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        object response = IsPokemonLegendsZA(paths)
+        if (YamlDumpImportBridge.IsYaml(request.Payload.SourcePath))
+        {
+            KM.Core.GameDump.IEditableDumpProvider provider = IsPokemonLegendsZA(paths)
+                ? new KM.ZA.GameDump.ZaEditableDumpProvider(paths, zaWorkflowService)
+                : IsScarletViolet(paths)
+                    ? new KM.SV.GameDump.SvEditableDumpProvider(paths, svWorkflowService)
+                    : new KM.SwSh.GameDump.SwShEditableDumpProvider(paths, swShWorkflowService);
+            var importWorkflow = IsPokemonLegendsZA(paths)
+                ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadDumpImport(paths)).Workflow
+                : IsScarletViolet(paths)
+                    ? SvBridgeMapper.ToDto(svWorkflowService.LoadDumpImport(paths)).Workflow
+                    : SwShBridgeMapper.ToDto(swShWorkflowService.LoadSpreadsheetImport(paths)).Workflow;
+            return SerializeSuccess(YamlDumpImportBridge.Preview(provider, paths.SelectedGame!.Value.ToString().ToLowerInvariant(),
+                request.Payload.SourcePath, session, importWorkflow), request.RequestId);
+        }
+        PreviewSpreadsheetImportResponse response = IsPokemonLegendsZA(paths)
             ? ZaBridgeMapper.ToDto(zaWorkflowService.PreviewDumpImport(
                 paths,
                 request.Payload.ProfileId,
@@ -5147,7 +5162,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                     request.Payload.SourcePath,
                     session));
 
-        return SerializeSuccess(response, request.RequestId);
+        return SerializeSuccess(response with { Workflow = YamlDumpImportBridge.WithYaml(response.Workflow) }, request.RequestId);
     }
 
     private string DispatchLoadModMergerWorkflow(string requestJson)

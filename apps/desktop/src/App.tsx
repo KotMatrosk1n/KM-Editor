@@ -13100,7 +13100,8 @@ export function App({
 
           setSpreadsheetImportWorkflow(response.workflow);
           setSpreadsheetImportPreview(response.preview);
-          setEditSessionSection(response.session && activeSectionIsEditor ? activeSection : null);
+          setEditSessionSection(response.session?.pendingEdits.some((edit) => edit.domain === 'workflow.typeChart')
+            ? 'typeChart' : response.session && activeSectionIsEditor ? activeSection : null);
           setEditValidationDiagnostics(response.diagnostics);
         }
       );
@@ -56552,12 +56553,15 @@ function SpreadsheetImportSection({
 }) {
   const { t, translateLiteral } = useLocalization();
   const [rowFilter, setRowFilter] = useState<'accepted' | 'all' | 'rejected'>('all');
+  const [previewPage, setPreviewPage] = useState(0);
+  useEffect(() => setPreviewPage(0), [preview, rowFilter]);
   const importProfiles = workflow?.profiles ?? [];
   const previewProfile = preview
     ? (importProfiles.find((profile) => profile.profileId === preview.profileId) ?? null)
     : null;
   const previewRequestProfile =
-    importProfiles.find((profile) => profile.status === 'available') ??
+    importProfiles.find((profile) => profile.status === 'available' &&
+      (profile.profileId === 'game-dump-yaml') === /\.ya?ml$/iu.test(sourcePath.trim())) ??
     importProfiles[0] ??
     null;
   const canPreview =
@@ -56571,8 +56575,10 @@ function SpreadsheetImportSection({
     ) ?? [];
   const importPendingEditCount =
     editSession?.pendingEdits.filter(
-      (edit) => edit.owner === dumpImporterItemsPriceOwner
+      (edit) => edit.owner === dumpImporterItemsPriceOwner || edit.importOwner?.startsWith('workflow.dump-import.yaml:')
     ).length ?? 0;
+  const previewPageSize = 100;
+  const visiblePreviewRows = filteredPreviewRows.slice(previewPage * previewPageSize, (previewPage + 1) * previewPageSize);
   const importProgressSteps = [
     { complete: sourcePath.trim().length > 0, label: 'Source' },
     { complete: preview !== null, label: 'Preview' },
@@ -56591,7 +56597,7 @@ function SpreadsheetImportSection({
           <h2 className="context-help-heading" id="spreadsheet-import-heading">
             <span>Dump Importer</span>
             <ContextHelp label={translateLiteral('Dump Importer')}>
-              {t('dumpImporter.sourceHelp')}
+              {t('dumpImporter.yamlHelp')}
             </ContextHelp>
           </h2>
         </div>
@@ -56642,17 +56648,17 @@ function SpreadsheetImportSection({
               <div className="spreadsheet-source-panel">
                 <div className="path-field">
                   <FieldLabel
-                    help={t('dumpImporter.sourceHelp')}
+                    help={t('dumpImporter.yamlHelp')}
                     htmlFor="dump-import-source-path"
-                    label={translateLiteral('CSV, TSV, or JSON source path')}
+                    label={t('dumpImporter.sourcePath')}
                   />
                   <div className="spreadsheet-source-input-row">
                     <input
-                      aria-label="CSV, TSV, or JSON source path"
+                      aria-label={t('dumpImporter.sourcePath')}
                       data-localization-ignore="true"
                       id="dump-import-source-path"
                       onChange={(event) => onSourcePathChange(event.target.value)}
-                      placeholder={translateLiteral('items.csv, items.tsv, or items.json')}
+                      placeholder="trainers-en-0001.yaml"
                       type="text"
                       value={sourcePath}
                     />
@@ -56683,7 +56689,7 @@ function SpreadsheetImportSection({
                 </button>
               </div>
               <p className="spreadsheet-import-replacement-note">
-                {t('dumpImporter.previewReplacement')}
+                {t('dumpImporter.yamlReplacement')}
               </p>
 
               {preview ? (
@@ -56713,15 +56719,15 @@ function SpreadsheetImportSection({
                   </div>
                   <div className="exefs-table" role="table" aria-label="Dump import preview">
                     <div className="exefs-row spreadsheet-preview-row exefs-row-heading" role="row">
-                      <span role="columnheader">Row</span>
+                      <span role="columnheader">{preview?.profileId === 'game-dump-yaml' ? t('dumpImporter.line') : translateLiteral('Row')}</span>
                       <span role="columnheader">Status</span>
                       <span role="columnheader">Record</span>
                       <span role="columnheader">Summary</span>
                     </div>
-                    {filteredPreviewRows.map((row) => (
+                    {visiblePreviewRows.map((row) => (
                       <div
                         className="exefs-row spreadsheet-preview-row"
-                        key={row.rowNumber}
+                        key={`${row.rowNumber}:${row.recordId}:${row.summary}`}
                         role="row"
                       >
                         <span role="cell">{row.rowNumber}</span>
@@ -56731,10 +56737,26 @@ function SpreadsheetImportSection({
                           </span>
                         </span>
                         <span role="cell">{row.recordId || 'n/a'}</span>
-                        <span role="cell">{row.summary}</span>
+                        <div role="cell">{row.summary}
+                          {row.diagnostics.map((diagnostic, index) => (
+                            <p key={index}>{formatDiagnosticMessage(diagnostic, translateLiteral, t)}</p>
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </div>
+                  {preview.rows.length === 0 && preview.rejectedRowCount === 0 ? (
+                    <p className="empty-copy">{t('dumpImporter.noChanges')}</p>
+                  ) : null}
+                  {filteredPreviewRows.length > previewPageSize ? (
+                    <nav className="text-page-bar" aria-label={t('text.pagination.ariaLabel')}>
+                      <button className="secondary-button" disabled={previewPage === 0}
+                        onClick={() => setPreviewPage((page) => page - 1)} type="button">{t('text.pagination.previous')}</button>
+                      <span>{previewPage + 1} / {Math.ceil(filteredPreviewRows.length / previewPageSize)}</span>
+                      <button className="secondary-button" disabled={(previewPage + 1) * previewPageSize >= filteredPreviewRows.length}
+                        onClick={() => setPreviewPage((page) => page + 1)} type="button">{t('text.pagination.next')}</button>
+                    </nav>
+                  ) : null}
                 </>
               ) : null}
             </div>
@@ -56762,6 +56784,8 @@ function SelectedSpreadsheetImportPanel({
   preview: SpreadsheetImportPreview | null;
   profile: SpreadsheetImportProfileRecord | null;
 }) {
+  const { t } = useLocalization();
+  const isYaml = profile?.profileId === 'game-dump-yaml';
   return (
     <aside aria-label="Selected dump import provenance" className="encounter-inspector">
       <div className="panel-heading">
@@ -56774,7 +56798,7 @@ function SelectedSpreadsheetImportPanel({
           <dl className="item-provenance-list">
             <div>
               <dt>Import category</dt>
-              <dd>{profile.name}</dd>
+              <dd>{isYaml ? t('dumpImporter.yamlProfile') : profile.name}</dd>
             </div>
             <div>
               <dt>Status</dt>
@@ -56782,11 +56806,11 @@ function SelectedSpreadsheetImportPanel({
             </div>
             <div>
               <dt>Target</dt>
-              <dd>{profile.targetWorkflow}</dd>
+              <dd>{isYaml ? t('dumpImporter.fromHeader') : profile.targetWorkflow}</dd>
             </div>
             <div>
               <dt>Source file</dt>
-              <dd>{profile.provenance.sourceFile}</dd>
+              <dd>{isYaml ? preview?.sourcePath : profile.provenance.sourceFile}</dd>
             </div>
             <div>
               <dt>Layer</dt>
@@ -68370,6 +68394,7 @@ function getPendingEditContentSignature(editSession: EditSession | null) {
     field: edit.field,
     newValue: edit.newValue,
     owner: edit.owner,
+    importOwner: edit.importOwner,
     recordId: edit.recordId,
     summary: edit.summary,
     sources: edit.sources.map((source) => ({
@@ -68460,6 +68485,7 @@ function getEditSessionSignature(editSession: EditSession | null) {
       field: edit.field,
       newValue: edit.newValue,
       owner: edit.owner,
+      importOwner: edit.importOwner,
       recordId: edit.recordId,
       summary: edit.summary,
       sources: edit.sources.map((source) => ({

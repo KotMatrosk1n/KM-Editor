@@ -40,7 +40,7 @@ public sealed class ZaGameDumpService
                 var summary = summaries.GetValueOrDefault(summaryId);
                 var isAvailable = summary?.Availability is ZaWorkflowAvailability.ReadOnly or ZaWorkflowAvailability.Available;
                 var diagnostics = summary?.Diagnostics ?? [];
-                return definition.ToCategory(isAvailable, diagnostics);
+                return DumpYamlWriter.WithYaml(definition.ToCategory(isAvailable, diagnostics));
             })
             .ToArray();
 
@@ -129,7 +129,10 @@ public sealed class ZaGameDumpService
             var definition = definitions[selection.CategoryId];
             try
             {
-                var result = definition.Write(paths, transaction.StagingFolder, selection);
+                var result = selection.Format == GameDumpFormat.Yaml
+                    ? DumpYamlWriter.WriteCategory(new ZaEditableDumpProvider(paths, workflowService), transaction.StagingFolder, selection,
+                        selection.CategoryId == ZaWorkflowIds.Text ? ResolveRequestedTextLanguages(paths, selection, diagnostics) : [paths.GameTextLanguage ?? "en"])
+                    : definition.Write(paths, transaction.StagingFolder, selection);
                 categoryResults[selection.CategoryId] = result;
                 diagnostics.AddRange(result.Diagnostics);
                 writtenFiles.AddRange(result.WrittenFiles);
@@ -188,6 +191,13 @@ public sealed class ZaGameDumpService
     {
         return
         [
+            GameDumpWriter.CreateTableCategory(
+                "behavior", "Behavior", "Wild Pokemon temperament, perception and home range.",
+                paths =>
+                {
+                    var workflow = workflowService.LoadBehavior(paths);
+                    return new GameDumpCategoryData<KM.ZA.Behavior.ZaBehaviorResource>(workflow.Resources, workflow.Diagnostics);
+                }),
             GameDumpWriter.CreateTableCategory(
                 ZaWorkflowIds.Pokemon,
                 "Pokemon",
