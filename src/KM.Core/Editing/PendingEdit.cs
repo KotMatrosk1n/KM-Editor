@@ -12,7 +12,12 @@ public sealed record PendingEdit(
     string? Field = null,
     string? NewValue = null,
     string? Owner = null,
-    PendingEditAssociation? Association = null);
+    PendingEditAssociation? Association = null)
+{
+    // Import bookkeeping must not replace workflow ownership used to validate specialized edits.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? ImportOwner { get; init; }
+}
 
 /// <summary>
 /// Versioned authoring ownership for a pending edit. This is deliberately

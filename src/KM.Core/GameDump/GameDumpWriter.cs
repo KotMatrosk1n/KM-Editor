@@ -805,6 +805,12 @@ public static class GameDumpWriter
         }
 
         var extension = Path.GetExtension(segments[1]);
+        if (string.Equals(extension, ".yaml", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Equals(segments[0], categoryId, StringComparison.Ordinal)
+                && System.Text.RegularExpressions.Regex.IsMatch(segments[1],
+                    "^" + System.Text.RegularExpressions.Regex.Escape(categoryId) + @"-[A-Za-z0-9_-]+-[0-9]{4,}\.yaml$");
+        }
         return string.Equals(
                 Path.GetFileNameWithoutExtension(segments[1]),
                 SanitizePathComponent(categoryId),
@@ -823,6 +829,9 @@ public static class GameDumpWriter
         {
             return false;
         }
+
+        if (format == GameDumpFormat.Yaml)
+            return files.Count > 0 && files.All(file => string.Equals(Path.GetExtension(file.RelativePath), ".yaml", StringComparison.OrdinalIgnoreCase));
 
         string[] expectedExtensions = format switch
         {

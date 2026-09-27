@@ -22,6 +22,7 @@ public enum GameDumpFormatDto
     TxtAndJson,
     Raw,
     RawAndJson,
+    Yaml,
 }
 
 public sealed record LoadGameDumpWorkflowRequest(ProjectPathsDto Paths);

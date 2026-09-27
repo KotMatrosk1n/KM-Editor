@@ -1149,6 +1149,8 @@ function formatGameDumpFormat(
   translateLiteral: (literal: string) => string
 ) {
   switch (format) {
+    case 'yaml':
+      return 'YAML';
     case 'tsv':
       return 'TSV';
     case 'csv':

@@ -12,7 +12,8 @@ export const gameDumpFormatSchema = z.enum([
   'txt',
   'txtAndJson',
   'raw',
-  'rawAndJson'
+  'rawAndJson',
+  'yaml'
 ]);
 
 export const gameDumpSelectionSchema = z.strictObject({

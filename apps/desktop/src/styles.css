@@ -11122,6 +11122,11 @@ h2 {
   min-width: 554px;
 }
 
+.spreadsheet-preview-row [role='cell'] {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .spreadsheet-source-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

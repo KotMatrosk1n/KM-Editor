@@ -58,7 +58,11 @@ public sealed record PendingEditDto(
     string? Field = null,
     string? NewValue = null,
     string? Owner = null,
-    PendingEditAssociationDto? Association = null);
+    PendingEditAssociationDto? Association = null)
+{
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? ImportOwner { get; init; }
+}
 
 public sealed record PendingEditAssociationDto(
     int Version,

@@ -41,6 +41,17 @@ const reviewDiagnosticLocalizationKeys: Readonly<Record<string, string>> = {
 };
 
 const diagnosticLocalizationKeys: Readonly<Record<string, string>> = {
+  'KM-DUMP-YAML-SYNTAX': 'dumpImporter.yaml.syntax',
+  'KM-DUMP-YAML-DUPLICATE': 'dumpImporter.yaml.duplicate',
+  'KM-DUMP-YAML-SOURCE': 'dumpImporter.yaml.source',
+  'KM-DUMP-YAML-CATEGORY': 'dumpImporter.yaml.category',
+  'KM-DUMP-YAML-HEADER': 'dumpImporter.yaml.header',
+  'KM-DUMP-YAML-RECORD': 'dumpImporter.yaml.record',
+  'KM-DUMP-YAML-FIELD': 'dumpImporter.yaml.field',
+  'KM-DUMP-YAML-VALUE': 'dumpImporter.yaml.value',
+  'KM-DUMP-YAML-READONLY': 'dumpImporter.yaml.readonly',
+  'KM-DUMP-YAML-STALE': 'dumpImporter.yaml.stale',
+  'KM-DUMP-YAML-EDITOR-REJECTED': 'dumpImporter.yaml.editorRejected',
   'KM-SWSH-MARNIE-SOURCE-INVALID': 'marnieBoosts.diagnostic.source',
   'KM-SWSH-MARNIE-SELECTION-INVALID': 'marnieBoosts.diagnostic.selection',
   'KM-SWSH-MARNIE-SESSION-INVALID': 'marnieBoosts.diagnostic.session',
@@ -272,6 +283,19 @@ export function formatDiagnosticSummary(
     localizedDiagnosticCodeMessage(diagnostic, translateKey) ??
       translateLiteral(diagnostic.message)
   );
+  if (diagnostic.sourceLine != null && diagnostic.code?.startsWith('KM-DUMP-YAML-')) {
+    const template = translateKey?.('dumpImporter.yamlLocation') ?? '{file}, line {line}, column {column}, field {field}';
+    const location = template.replace('{file}', () => diagnostic.file ?? '')
+      .replace('{line}', () => String(diagnostic.sourceLine))
+      .replace('{column}', () => String(diagnostic.sourceColumn ?? 1))
+      .replace('{field}', () => diagnostic.field ?? '');
+    // Retain the precise backend reason as well as the translated category and location.
+    const prefix = `${diagnostic.file}, line ${diagnostic.sourceLine}, column ${diagnostic.sourceColumn ?? 1}, field '${diagnostic.field}': `;
+    const reason = diagnostic.message.startsWith(prefix) ? diagnostic.message.slice(prefix.length) : diagnostic.message;
+    const localizedReason = normalizeSentence(translateLiteral(reason));
+    return localizedReason === message || diagnostic.code === 'KM-DUMP-YAML-CATEGORY'
+      ? `${location}: ${message}` : `${location}: ${message} ${localizedReason}`;
+  }
   if (!isChangePlanReviewDiagnostic(diagnostic)) {
     return message;
   }
