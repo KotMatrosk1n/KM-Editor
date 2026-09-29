@@ -4641,7 +4641,12 @@
     "heldItemChance.diagnostic.stale": "源文件或携带道具概率在审查后发生变化。请重新审查输出。",
     "heldItemChance.diagnostic.apply": "无法写入携带道具概率。请检查源文件和输出目录的访问权限，然后重新审查并应用。",
     "workbench.section.held-item-chance.label": "携带道具概率",
-    "workbench.section.held-item-chance.description": "设置剑／盾 1.3.2 的全局携带道具概率。在野生遭遇或宝可梦编辑器中单独选择道具。"
+    "workbench.section.held-item-chance.description": "设置剑／盾 1.3.2 的全局携带道具概率。在野生遭遇或宝可梦编辑器中单独选择道具。",
+    "titanRecovery.planned": "本次输出将修复未被外部修改、视为由 KM Editor 2.6.4 或更早版本生成的旧文件。保留受支持的宝主及派帕宝可梦替换，并禁用派帕五支宝主搭档队伍的太晶化。",
+    "titanRecovery.source": "无法安全修复旧版宝主或派帕输出。请检查原始数据和受影响的输出文件，然后重新审查。",
+    "titanRecovery.unsupported": "旧版宝主或派帕宝可梦替换使用了不受支持的种类或形态。请选择受支持的基础形态，然后重新审查。",
+    "titanRecovery.stale": "已审查的宝主或派帕修复内容发生了变化。请在应用前重新审查输出。",
+    "titanRecovery.apply": "无法提交宝主或派帕修复。请查看输出诊断，然后重新审查。"
   },
   "literals": {
     "Invalid YAML syntax. Check indentation, quotes and list markers.": "YAML 语法无效。请检查缩进、引号和列表标记。",

@@ -4,6 +4,11 @@ namespace KM.Api.Bridge;
 
 public static class BridgeErrorCodes
 {
+    public const string SvTitanRecoveryPlanned = "KM-SV-TITAN-RECOVERY-PLANNED";
+    public const string SvTitanRecoverySourceInvalid = "KM-SV-TITAN-RECOVERY-SOURCE-INVALID";
+    public const string SvTitanRecoveryUnsupported = "KM-SV-TITAN-RECOVERY-UNSUPPORTED";
+    public const string SvTitanRecoveryStale = "KM-SV-TITAN-RECOVERY-STALE";
+    public const string SvTitanRecoveryApplyFailed = "KM-SV-TITAN-RECOVERY-APPLY-FAILED";
     public const string DumpYamlSyntax = "KM-DUMP-YAML-SYNTAX";
     public const string DumpYamlDuplicate = "KM-DUMP-YAML-DUPLICATE";
     public const string DumpYamlSource = "KM-DUMP-YAML-SOURCE";

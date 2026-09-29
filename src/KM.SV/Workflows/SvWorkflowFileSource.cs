@@ -982,6 +982,15 @@ internal sealed class SvWorkflowFileSource
             .ToArray();
     }
 
+    internal static string? GetCurrentLooseOutputRelativePath(ProjectPaths paths, string virtualPath)
+    {
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath)) return null;
+        var normalized = NormalizeVirtualPath(virtualPath);
+        var selected = SelectLatestLooseOutput(CombineGraphPath(paths.OutputRootPath, normalized),
+            CombineGraphPath(paths.OutputRootPath, ToRelativePath(normalized)));
+        return selected is null ? null : selected.Value.IsStandalone ? ToRelativePath(normalized) : normalized;
+    }
+
     internal static DeferredOutputBatch BeginDeferredOutputBatch(
         ProjectPaths paths,
         SvOutputMode outputMode,
@@ -1109,12 +1118,6 @@ internal sealed class SvWorkflowFileSource
 
         if (activeDeferredOutputBatch is { IsCommitting: false } deferredBatch)
         {
-            if (normalizedOutputMutations.Length > 0)
-            {
-                throw new InvalidOperationException(
-                    "Explicit output mutations cannot join a normal Scarlet/Violet deferred batch.");
-            }
-
             deferredBatch.Stage(
                 paths,
                 outputMode,
@@ -1122,6 +1125,7 @@ internal sealed class SvWorkflowFileSource
                 normalizedDeletes,
                 applyContext,
                 revalidateReviewedState);
+            deferredBatch.StageStandalone(normalizedOutputMutations, applyContext);
             return null;
         }
 
@@ -1332,7 +1336,7 @@ internal sealed class SvWorkflowFileSource
                 && ownedRecord.Claims.All(claim =>
                     claim.GameFamily == ownership.GameFamily
                     && claim.Address == ownership.Address
-                    && claim.PreservationRule == ownership.PreservationRule
+                    && (claim.PreservationRule == ownership.PreservationRule || SvLegacyTitanRecovery.IsExclusion(claim))
                     && claim.OwnerId.Value is "workflow.sv.output" or "workflow.sv.mixed");
             var ownershipClaims = new[] { ownership };
             if ((isComposedExecutable || isSharedDescriptorWrite || isSharedControlWrite || isLegacyDataOwnership)
@@ -1353,6 +1357,15 @@ internal sealed class SvWorkflowFileSource
                         .Append(ownership)
                         .Distinct()
                         .ToArray();
+            }
+
+            if (mutation.Bytes is not null && SvLegacyTitanRecovery.NeedsExclusion(relativePath.Value))
+            {
+                // This claim travels with inventory, journals and checkpoints. It
+                // survives receipt pruning and excludes output from legacy recovery.
+                ownershipClaims = ownershipClaims
+                    .Concat(ownedRecord?.Claims.Where(SvLegacyTitanRecovery.IsExclusion) ?? [])
+                    .Append(SvLegacyTitanRecovery.CreateExclusion(ownershipClaims[0])).Distinct().ToArray();
             }
 
             var bytes = mutation.Bytes;
@@ -1502,6 +1515,7 @@ internal sealed class SvWorkflowFileSource
             .Where(context => context is not null)
             .SelectMany(context => context!.Origins)
             .Concat(contextForPlan.Origins)
+            .Append(new OutputApplyOrigin(OutputApplyOriginKind.Workflow, SvLegacyTitanRecovery.CurrentWriter))
             .Concat(outputMutations
                 .Select(mutation => mutation.OwnershipActor)
                 .Where(actor => actor is not null)
@@ -2614,6 +2628,7 @@ internal sealed class SvWorkflowFileSource
         private readonly Dictionary<string, SvWorkflowFileWrite> writes = new(
             StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> deletes = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, SvStandaloneOutputMutation> standaloneMutations = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> reviewedTargets;
         private readonly IReadOnlyDictionary<string, OutputFileState> reviewedStates;
         private bool disposed;
@@ -2667,7 +2682,7 @@ internal sealed class SvWorkflowFileSource
 
         internal bool IsCommitting { get; private set; }
 
-        internal bool HasPendingMutations => writes.Count > 0 || deletes.Count > 0;
+        internal bool HasPendingMutations => writes.Count > 0 || deletes.Count > 0 || standaloneMutations.Count > 0;
 
         internal bool Matches(ProjectPaths candidate)
         {
@@ -2733,6 +2748,22 @@ internal sealed class SvWorkflowFileSource
             }
         }
 
+        internal void StageStandalone(IReadOnlyList<SvStandaloneOutputMutation> mutations, SvOutputApplyContext? context)
+        {
+            ThrowIfUnavailable();
+            foreach (var mutation in mutations)
+            {
+                // Legacy data recovery may accompany one advanced editor. Other
+                // explicit targets must keep their own transactional workflow.
+                if (!mutation.RelativePath.Equals("exefs/main", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("This explicit output target cannot join a deferred S/V batch.");
+                EnsureReviewedTarget(mutation.RelativePath);
+                if (!standaloneMutations.TryAdd(mutation.RelativePath,
+                    mutation with { ApplyContext = mutation.ApplyContext ?? context ?? applyContext }))
+                    throw new OutputReviewStateConflictException();
+            }
+        }
+
         internal OutputApplyResult? Commit(Func<bool>? revalidateReviewedState = null)
         {
             ThrowIfUnavailable();
@@ -2773,7 +2804,7 @@ internal sealed class SvWorkflowFileSource
                     paths,
                     writes.Values.OrderBy(write => write.VirtualPath, StringComparer.Ordinal).ToArray(),
                     deletes.Order(StringComparer.Ordinal).ToArray(),
-                    Array.Empty<SvStandaloneOutputMutation>(),
+                    standaloneMutations.Values.ToArray(),
                     OutputMode,
                     applyContext,
                     revalidateReviewedState: null);
@@ -2803,6 +2834,7 @@ internal sealed class SvWorkflowFileSource
             {
                 writes.Clear();
                 deletes.Clear();
+                standaloneMutations.Clear();
             }
         }
 

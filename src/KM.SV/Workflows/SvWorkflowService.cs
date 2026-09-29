@@ -39,7 +39,7 @@ using System.Text;
 
 namespace KM.SV.Workflows;
 
-public sealed class SvWorkflowService
+public sealed partial class SvWorkflowService
 {
     private const int MaximumSemanticSourceFiles = 128;
     private const int MaximumSemanticSourceBytesPerFile = 64 * 1024 * 1024;
@@ -1632,9 +1632,24 @@ public sealed class SvWorkflowService
         using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
 
         var domain = GetDomain(session);
-        return domain == SvEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
+        var validation = domain == SvEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
             ? ValidateNormalDomains(paths, session, domains)
             : ValidateSingleDomain(paths, session, domain);
+        if (!validation.IsValid && validation.Diagnostics.Any(diagnostic => diagnostic.Code == "KM-SV-TRAINER-PARTNER-TERA-UNSUPPORTED")
+            && SupportsLegacyRecovery(session, domain))
+        {
+            using var outputLock = SvWorkflowFileSource.AcquireOutputLock(paths);
+            var mode = session.AuthoringBinding?.OutputMode switch
+            {
+                "trinityModManager" => SvOutputMode.TrinityModManager,
+                "trinityBypass" => SvOutputMode.TrinityBypass,
+                _ => SvOutputMode.Standalone,
+            };
+            var recovery = CreateLegacyRecoverySnapshot(paths, session, mode);
+            if (recovery is not null)
+                return new(session, recovery.Plan.CanApply, recovery.Plan.Diagnostics);
+        }
+        return validation;
     }
 
     public ChangePlan CreateChangePlan(
@@ -1646,6 +1661,11 @@ public sealed class SvWorkflowService
         using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         projectWorkspaceService.ClearMemoryCache();
         var domain = GetDomain(session);
+        if (SupportsLegacyRecovery(session, domain))
+        {
+            var recovery = CreateLegacyRecoverySnapshot(paths, session, outputMode);
+            if (recovery is not null) return recovery.Plan;
+        }
         return domain == SvEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
             ? CreateNormalDomainChangePlan(paths, session, domains, outputMode)
             : CreateSingleDomainChangePlan(paths, session, domain, outputMode);
@@ -1663,6 +1683,12 @@ public sealed class SvWorkflowService
             using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
             projectWorkspaceService.ClearMemoryCache();
             var domain = GetDomain(session);
+            if (SupportsLegacyRecovery(session, domain))
+            {
+                var recovery = CreateLegacyRecoverySnapshot(paths, session, outputMode);
+                if (recovery is not null)
+                    return ApplyLegacyRecovery(paths, session, changePlan, outputMode, recovery);
+            }
             if (domain == SvEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains))
             {
                 return ApplyNormalDomainChangePlan(paths, session, changePlan, domains, outputMode);
