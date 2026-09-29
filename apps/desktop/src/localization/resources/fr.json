@@ -4641,7 +4641,12 @@
     "heldItemChance.diagnostic.stale": "Les sources ou probabilités ont changé depuis la vérification. Vérifiez à nouveau la sortie.",
     "heldItemChance.diagnostic.apply": "Impossible d’écrire la sortie. Vérifiez l’accès aux sources et à la sortie, puis vérifiez et appliquez à nouveau.",
     "workbench.section.held-item-chance.label": "Probabilité d’objet tenu",
-    "workbench.section.held-item-chance.description": "Définissez les probabilités globales des objets tenus pour Épée et Bouclier 1.3.2. Choisissez les objets dans Rencontres sauvages ou dans l’éditeur de Pokémon."
+    "workbench.section.held-item-chance.description": "Définissez les probabilités globales des objets tenus pour Épée et Bouclier 1.3.2. Choisissez les objets dans Rencontres sauvages ou dans l’éditeur de Pokémon.",
+    "titanRecovery.planned": "Cette sortie réparera les fichiers KM Editor inchangés considérés comme provenant de la version 2.6.4 ou antérieure. Les remplacements compatibles des Dominants et de Pepper sont conservés et la Téracristallisation est désactivée pour ses cinq équipes de soutien.",
+    "titanRecovery.source": "La sortie ancienne des Dominants ou de Pepper n’a pas pu être réparée de manière sûre. Vérifiez les données d’origine et la sortie concernée, puis relancez la vérification.",
+    "titanRecovery.unsupported": "Un ancien remplacement d’un Dominant ou de Pepper utilise une identité ou une forme non prise en charge. Sélectionnez une forme de base compatible et relancez la vérification.",
+    "titanRecovery.stale": "La réparation vérifiée des Dominants ou de Pepper a changé. Vérifiez à nouveau la sortie avant de l’appliquer.",
+    "titanRecovery.apply": "La réparation des Dominants ou de Pepper n’a pas pu être enregistrée. Consultez les diagnostics de sortie et relancez la vérification."
   },
   "literals": {
     "Invalid YAML syntax. Check indentation, quotes and list markers.": "Syntaxe YAML invalide. Vérifiez l’indentation, les guillemets et les marqueurs de liste.",

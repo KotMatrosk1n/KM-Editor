@@ -4641,7 +4641,12 @@
     "heldItemChance.diagnostic.stale": "Quellen oder Trageitem-Chancen wurden seit der Prüfung geändert. Prüfe die Ausgabe erneut.",
     "heldItemChance.diagnostic.apply": "Trageitem-Chancen konnten nicht geschrieben werden. Prüfe den Zugriff auf Quellen und Ausgabe und prüfe und wende erneut an.",
     "workbench.section.held-item-chance.label": "Trageitem-Chance",
-    "workbench.section.held-item-chance.description": "Lege die globalen Trageitem-Chancen für Schwert und Schild 1.3.2 fest. Die Items wählst du unter Wilde Begegnungen oder im Pokémon-Editor."
+    "workbench.section.held-item-chance.description": "Lege die globalen Trageitem-Chancen für Schwert und Schild 1.3.2 fest. Die Items wählst du unter Wilde Begegnungen oder im Pokémon-Editor.",
+    "titanRecovery.planned": "Diese Ausgabe repariert unveränderte KM Editor Dateien, die als Ausgabe aus Version 2.6.4 oder älter gelten. Unterstützte Ersetzungen für Herrscher und Peppers Pokémon bleiben erhalten. Die Terakristallisierung wird für seine fünf Partnerteams deaktiviert.",
+    "titanRecovery.source": "Die ältere Ausgabe für Herrscher oder Pepper konnte nicht sicher repariert werden. Prüfe die Originaldaten und die betroffene Ausgabe und führe die Prüfung erneut aus.",
+    "titanRecovery.unsupported": "Eine ältere Ersetzung für einen Herrscher oder Pepper verwendet eine nicht unterstützte Identität oder Form. Wähle eine unterstützte Grundform und prüfe erneut.",
+    "titanRecovery.stale": "Die geprüfte Reparatur für Herrscher oder Pepper hat sich geändert. Prüfe die Ausgabe vor dem Anwenden erneut.",
+    "titanRecovery.apply": "Die Reparatur für Herrscher oder Pepper konnte nicht gespeichert werden. Prüfe die Ausgabediagnosen und führe die Prüfung erneut aus."
   },
   "literals": {
     "Invalid YAML syntax. Check indentation, quotes and list markers.": "Ungültige YAML-Syntax. Prüfe Einrückung, Anführungszeichen und Listenmarkierungen.",

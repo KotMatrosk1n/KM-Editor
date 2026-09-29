@@ -61,6 +61,43 @@ internal sealed class SvTitanSwapperDocument
 
     public byte[] Write(IReadOnlyDictionary<string, IReadOnlyDictionary<string, int>> values) => Serialize(values);
 
+    internal byte[] RecoverLegacy(SvTitanSwapperDocument baseline, string edition, out bool changed)
+    {
+        var legacy = new Dictionary<string, EventBattlePokemon>(StringComparer.Ordinal);
+        foreach (var encounter in Encounters.Where(entry => entry.Edition == "both" || entry.Edition == edition))
+        {
+            var current = records[encounter.Label];
+            var original = baseline.records[encounter.Label];
+            var pokemon = current.PokeData!.Value;
+            var originalPokemon = original.PokeData!.Value;
+            if (pokemon.DevId == originalPokemon.DevId && pokemon.FormId == originalPokemon.FormId) continue;
+            // Event labels use development IDs, while StorySpecies is the display index.
+            if ((int)originalPokemon.DevId != int.Parse(encounter.Label.AsSpan(5, 3), System.Globalization.CultureInfo.InvariantCulture))
+                throw new InvalidDataException("The original Titan identity is not supported.");
+            if (!records.ContainsKey(Prefix + encounter.Label) && (pokemon.FormId != 0 || pokemon.Level is < 1 or > 100))
+                throw new NotSupportedException("Legacy Titan replacements require form 0 and a level from 1 to 100.");
+            legacy.Add(encounter.Label, current);
+        }
+        changed = legacy.Count > 0;
+        if (!changed) return [];
+
+        var builder = new FlatBufferBuilder(32768);
+        var offsets = new List<Offset<EventBattlePokemon>>();
+        for (var i = 0; i < table.ValuesLength; i++)
+        {
+            var row = table.Values(i)!.Value;
+            offsets.Add(WriteRow(builder, legacy.ContainsKey(row.Label!) ? baseline.records[row.Label!] : row,
+                row.Label!, null));
+        }
+        foreach (var (label, row) in legacy)
+            if (!records.ContainsKey(Prefix + label))
+                offsets.Add(WriteRow(builder, row, Prefix + label, null));
+        var vector = EventBattlePokemonArray.CreateValuesVector(builder, offsets.ToArray());
+        EventBattlePokemonArray.FinishEventBattlePokemonArrayBuffer(builder,
+            EventBattlePokemonArray.CreateEventBattlePokemonArray(builder, vector));
+        return builder.SizedByteArray();
+    }
+
     private byte[] Serialize(IReadOnlyDictionary<string, IReadOnlyDictionary<string, int>>? values)
     {
         var builder = new FlatBufferBuilder(32768);

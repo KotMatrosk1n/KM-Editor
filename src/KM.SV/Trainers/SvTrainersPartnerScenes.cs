@@ -151,4 +151,71 @@ internal sealed partial class SvTrainersEditSessionService
     }
 
     private sealed record PartnerSceneWrite(string VirtualPath, byte[] Bytes, IReadOnlyList<ProjectFileReference> Sources);
+
+    internal static IEnumerable<string> LegacyPartnerScenePaths()
+    {
+        foreach (var index in Enumerable.Range(1, 5))
+        foreach (var edition in new[] { 0, 1 })
+        {
+            yield return $"world/scene/parts/field/field_contents/nushi/{GetPartnerScene($"pepper_nusi_{index:D2}")}_{edition}.trscn";
+            if (index == 5)
+                yield return $"world/scene/parts/event/event_scenario/main_scenario/nushi_dragon_020_/nushi_dragon_020_pre_start_{edition}.trsog";
+        }
+    }
+
+    internal void PrepareLegacyPartnerRecovery(OpenedProject project, SvWorkflowFileSource files,
+        List<SvWorkflowFileWrite> writes, List<ProjectFileReference> sources, Func<string, bool> canRecover)
+    {
+        var source = SvLegacyTitanRecovery.ReadLayered(files, project, SvDataPaths.TrainerDataArray);
+        if (source is null) return;
+        var baseline = files.ReadBase(project, SvDataPaths.TrainerDataArray);
+        var rows = ReadRows(source.Bytes);
+        var originalRows = ReadRows(baseline.Bytes);
+        var changedTable = false;
+        foreach (var row in rows.Where(row => GetPartnerScene(row.Trid) is not null))
+        {
+            var original = originalRows.Single(candidate => candidate.Trid == row.Trid);
+            if (rows.Count(candidate => candidate.Trid == row.Trid) != 1)
+                throw new InvalidDataException("The Titan partner identity is ambiguous.");
+            var lead = row.Pokemon[0];
+            var originalLead = original.Pokemon[0];
+            if (lead is null || originalLead is null) throw new InvalidDataException("Missing Titan partner lead.");
+            if (row.ChangeGem && !original.ChangeGem)
+            {
+                row.ChangeGem = false;
+                changedTable = true;
+            }
+            if (lead.DevId == originalLead.DevId && lead.FormId == originalLead.FormId) continue;
+            if ((int)lead.DevId <= 0 || lead.FormId != 0)
+                throw new NotSupportedException("Legacy Titan partner recovery requires an occupied base form.");
+            var scene = GetPartnerScene(row.Trid);
+            foreach (var edition in new[] { 0, 1 })
+            {
+                AddScene($"world/scene/parts/field/field_contents/nushi/{scene}_{edition}.trscn", "frend_partner");
+                if (row.Trid == "pepper_nusi_05")
+                    AddScene($"world/scene/parts/event/event_scenario/main_scenario/nushi_dragon_020_/nushi_dragon_020_pre_start_{edition}.trsog", "sushi_battle_frend_partner");
+            }
+            void AddScene(string path, string actor)
+            {
+                if (!canRecover(path)) return;
+                var current = files.Read(project, path);
+                var bytes = SvTrainerPartnerSceneWriter.WriteSpecies(current.Bytes, actor, (ushort)lead.DevId);
+                if (bytes.AsSpan().SequenceEqual(current.Bytes)) return;
+                sources.Add(SvWorkflowFileSource.CreateReference(current));
+                writes.Add(new(path, bytes));
+            }
+        }
+        if (changedTable)
+        {
+            var table = global::trainer.TrdataMainArray.GetRootAsTrdataMainArray(new Google.FlatBuffers.ByteBuffer(source.Bytes));
+            KM.Formats.FlatBufferMergeGuard.Validate(table);
+            KM.Formats.FlatBufferMergeGuard.ValidateRoundTrip(table, WriteRows(ReadRows(source.Bytes)));
+            writes.Add(new(SvDataPaths.TrainerDataArray, WriteRows(rows)));
+        }
+        if (writes.Count > 0)
+        {
+            sources.Add(SvWorkflowFileSource.CreateReference(source));
+            sources.Add(SvWorkflowFileSource.CreateReference(baseline));
+        }
+    }
 }

@@ -4641,7 +4641,12 @@
     "heldItemChance.diagnostic.stale": "Sources or held item chance settings changed since review. Review the output again.",
     "heldItemChance.diagnostic.apply": "Held item chance output could not be written. Check source and output access, then review and apply again.",
     "workbench.section.held-item-chance.label": "Held Item Chance",
-    "workbench.section.held-item-chance.description": "Set the global held item chances for Sword and Shield 1.3.2. Choose the items separately in Wild Encounters or the Pokémon editor."
+    "workbench.section.held-item-chance.description": "Set the global held item chances for Sword and Shield 1.3.2. Choose the items separately in Wild Encounters or the Pokémon editor.",
+    "titanRecovery.planned": "This output will recover unchanged KM Editor output treated as legacy from 2.6.4 or earlier. Supported Titan and Arven replacements are retained, and Terastallization is disabled for the five Titan partner teams.",
+    "titanRecovery.source": "Older Titan or Arven output could not be recovered safely. Check the original data and affected output, then review again.",
+    "titanRecovery.unsupported": "An older Titan or Arven replacement uses an unsupported identity or form. Select a supported base form and review again.",
+    "titanRecovery.stale": "The reviewed Titan or Arven recovery has changed. Review the output again before applying.",
+    "titanRecovery.apply": "Titan or Arven recovery could not be committed. Check the output diagnostics and review again."
   },
   "literals": {
     "Invalid YAML syntax. Check indentation, quotes and list markers.": "Invalid YAML syntax. Check indentation, quotes and list markers.",
