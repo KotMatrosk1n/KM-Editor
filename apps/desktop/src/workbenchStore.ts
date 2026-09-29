@@ -45,6 +45,7 @@ import { type FashionUnlockWorkflow } from './bridge/fashionUnlockContracts';
 import { type FashionCatalogWorkflow } from './bridge/fashionCatalogContracts';
 import { type GymUniformRemovalWorkflow } from './bridge/gymUniformRemovalContracts';
 import { type StarmobilesWorkflow } from './bridge/starmobilesContracts';
+import { type TitanSwapperWorkflow } from './bridge/titanSwapperContracts';
 import { type MarnieBoostsWorkflow } from './bridge/marnieBoostsContracts';
 import { type HeldItemChanceWorkflow } from './bridge/heldItemChanceContracts';
 import { type RaidDensWorkflow } from './bridge/raidDensContracts';
@@ -194,6 +195,7 @@ type WorkbenchState = {
   tmMachineControlsWorkflow: TmMachineControlsWorkflow | null;
   habitatCoordinatesWorkflow: HabitatCoordinatesWorkflow | null;
   starmobilesWorkflow: StarmobilesWorkflow | null;
+  titanSwapperWorkflow: TitanSwapperWorkflow | null;
   marnieBoostsWorkflow: MarnieBoostsWorkflow | null;
   heldItemChanceWorkflow: HeldItemChanceWorkflow | null;
   raidDensWorkflow: RaidDensWorkflow | null;
@@ -317,6 +319,7 @@ type WorkbenchState = {
   setShopsWorkflow: (shopsWorkflow: ShopsWorkflow) => void;
   setTmMachineControlsWorkflow: (tmMachineControlsWorkflow: TmMachineControlsWorkflow) => void;
   setStarmobilesWorkflow: (starmobilesWorkflow: StarmobilesWorkflow) => void;
+  setTitanSwapperWorkflow: (titanSwapperWorkflow: TitanSwapperWorkflow) => void;
   setHeldItemChanceWorkflow: (heldItemChanceWorkflow: HeldItemChanceWorkflow) => void;
   setMarnieBoostsWorkflow: (marnieBoostsWorkflow: MarnieBoostsWorkflow) => void;
   setRaidDensWorkflow: (raidDensWorkflow: RaidDensWorkflow) => void;
@@ -513,6 +516,7 @@ function createLoadedWorkflowResetState(): Partial<WorkbenchState> {
     tmMachineControlsWorkflow: null,
     habitatCoordinatesWorkflow: null,
     starmobilesWorkflow: null,
+    titanSwapperWorkflow: null,
     marnieBoostsWorkflow: null,
     heldItemChanceWorkflow: null,
     raidDensWorkflow: null,
@@ -635,6 +639,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   tmMachineControlsWorkflow: null,
   habitatCoordinatesWorkflow: null,
   starmobilesWorkflow: null,
+  titanSwapperWorkflow: null,
   marnieBoostsWorkflow: null,
   heldItemChanceWorkflow: null,
   raidDensWorkflow: null,
@@ -1007,6 +1012,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     })),
   setStarmobilesWorkflow: (starmobilesWorkflow) => set((state) => ({
     activeSection: resolveWorkflowLoadSection(state.activeSection, 'starmobiles'), starmobilesWorkflow
+  })),
+  setTitanSwapperWorkflow: (titanSwapperWorkflow) => set((state) => ({
+    activeSection: resolveWorkflowLoadSection(state.activeSection, 'titanSwapper'), titanSwapperWorkflow
   })),
   setHeldItemChanceWorkflow: (heldItemChanceWorkflow) => set((state) => ({
     activeSection: resolveWorkflowLoadSection(state.activeSection, 'heldItemChance'), heldItemChanceWorkflow

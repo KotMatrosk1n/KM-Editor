@@ -27,6 +27,7 @@ const registrations = {
   moves: intrinsic('moves', 'stored move ID'),
   text: intrinsic('text', 'stored message key'),
   starmobiles: sourceRevisionBound('starmobiles', 'physical boss row and exact source revision'),
+  titanSwapper: sourceRevisionBound('titanSwapper', 'Titan phase label and exact source revision'),
   trainers: intrinsic('trainers', 'stored trainer ID and fixed party slot'),
   trainerPools: fixedSchemaSlot('trainerPools', 'stored pool identity and fixed member slot'),
   fashionCatalog: sourceRevisionBound(

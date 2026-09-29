@@ -2,6 +2,7 @@
 
 using System.Buffers.Binary;
 using System.Security.Cryptography;
+using KM.SV.TitanSwapper;
 
 namespace KM.SV.TmMachine;
 
@@ -20,10 +21,6 @@ internal sealed record SvTmMaterialVisibilityAnalysis(
 
 internal static class SvTmMaterialVisibilityPatcher
 {
-    private const string SupportedBaseSha256 =
-        "C1A4F4E2625912CF0B739A642A79BA3357DF0557A544B92DA22A6CB139DE2815";
-    private const string AlwaysVisibleSha256 =
-        "7CA910D8781AFDB8168160020449C1627CFF29598406C6B06B1FA517E00D7F7A";
     private const uint DiscoveryGateInstruction = 0x000085C2;
     private const uint AlwaysVisibleInstruction = 0x000B0580;
     private const uint VisibilityJumpInstruction = 0x800011B8;
@@ -35,24 +32,12 @@ internal static class SvTmMaterialVisibilityPatcher
         ArgumentNullException.ThrowIfNull(bytes);
 
         var sha256 = Convert.ToHexString(SHA256.HashData(bytes));
-        var expectedInstruction = string.Equals(sha256, SupportedBaseSha256, StringComparison.Ordinal)
-            ? DiscoveryGateInstruction
-            : string.Equals(sha256, AlwaysVisibleSha256, StringComparison.Ordinal)
-                ? AlwaysVisibleInstruction
-                : (uint?)null;
-        if (expectedInstruction is null)
-        {
-            return new SvTmMaterialVisibilityAnalysis(
-                SvTmMaterialVisibilityKind.Unsupported,
-                "TM material visibility supports only the exact Scarlet/Violet 4.0.0 script input or KM's verified output.",
-                sha256,
-                InstructionOffset: null);
-        }
-
         try
         {
+            SvTitanSwapperScript.ReadLabels(bytes);
             var prototype = Lua54ChunkInspector.FindMaterialTracker(bytes);
-            ValidatePatchWindow(prototype, expectedInstruction.Value);
+            var expectedInstruction = prototype.Code[GateInstructionIndex];
+            ValidatePatchWindow(prototype, expectedInstruction);
             return expectedInstruction == DiscoveryGateInstruction
                 ? new SvTmMaterialVisibilityAnalysis(
                     SvTmMaterialVisibilityKind.DiscoveryGated,
@@ -101,12 +86,7 @@ internal static class SvTmMaterialVisibilityPatcher
             output.AsSpan(instructionOffset, sizeof(uint)),
             alwaysVisible ? AlwaysVisibleInstruction : DiscoveryGateInstruction);
 
-        var expectedHash = alwaysVisible ? AlwaysVisibleSha256 : SupportedBaseSha256;
-        var actualHash = Convert.ToHexString(SHA256.HashData(output));
-        if (!string.Equals(actualHash, expectedHash, StringComparison.Ordinal))
-        {
-            throw new InvalidDataException("The TM material visibility transform changed bytes outside its owned instruction.");
-        }
+        SvTitanSwapperScript.ReadLabels(output);
 
         var reparsed = Analyze(output);
         if (reparsed.Kind != desiredKind || reparsed.InstructionOffset != instructionOffset)

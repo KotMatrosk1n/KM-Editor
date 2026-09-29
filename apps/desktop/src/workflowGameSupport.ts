@@ -39,6 +39,7 @@ import { type FashionUnlockWorkflow } from './bridge/fashionUnlockContracts';
 import { type FashionCatalogWorkflow } from './bridge/fashionCatalogContracts';
 import { type GymUniformRemovalWorkflow } from './bridge/gymUniformRemovalContracts';
 import { type StarmobilesWorkflow } from './bridge/starmobilesContracts';
+import { type TitanSwapperWorkflow } from './bridge/titanSwapperContracts';
 import { type MarnieBoostsWorkflow } from './bridge/marnieBoostsContracts';
 import { type HeldItemChanceWorkflow } from './bridge/heldItemChanceContracts';
 import { type RaidDensWorkflow } from './bridge/raidDensContracts';
@@ -132,7 +133,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
     id: 'betaEditors',
     label: 'Beta Editors',
     labelKey: 'workbench.navigation.betaEditors',
-    sectionIds: ['gameplaySettings', 'trainerWhiteout', 'trainerDynamax']
+    sectionIds: ['gameplaySettings', 'trainerWhiteout', 'trainerDynamax', 'titanSwapper']
   }
 ];
 
@@ -177,6 +178,7 @@ export const sharedStagedEditorSectionIds = new Set<WorkbenchSection>([
   'pokemon',
   'trainers',
   'starmobiles',
+  'titanSwapper',
   'marnieBoosts',
   'heldItemChance',
   'raidDens',
@@ -204,6 +206,7 @@ export const sharedStagedEditorDomains = new Set([
   'workflow.pokemon',
   'workflow.trainers',
   'workflow.starmobiles',
+  'workflow.titan-swapper',
   'workflow.marnieBoosts',
   'workflow.heldItemChance',
   'workflow.raidDens',
@@ -290,6 +293,7 @@ export type LoadedWorkflowStateBySection = {
   tmMachineControlsWorkflow: TmMachineControlsWorkflow | null;
   habitatCoordinatesWorkflow: HabitatCoordinatesWorkflow | null;
   starmobilesWorkflow: StarmobilesWorkflow | null;
+  titanSwapperWorkflow: TitanSwapperWorkflow | null;
   marnieBoostsWorkflow: MarnieBoostsWorkflow | null;
   heldItemChanceWorkflow: HeldItemChanceWorkflow | null;
   raidDensWorkflow: RaidDensWorkflow | null;
@@ -420,6 +424,8 @@ export function getLoadedWorkflowStateForSection(
       return state.tmMachineControlsWorkflow !== null;
     case 'starmobiles':
       return state.starmobilesWorkflow !== null;
+    case 'titanSwapper':
+      return state.titanSwapperWorkflow !== null;
     case 'heldItemChance':
       return state.heldItemChanceWorkflow !== null;
     case 'marnieBoosts':

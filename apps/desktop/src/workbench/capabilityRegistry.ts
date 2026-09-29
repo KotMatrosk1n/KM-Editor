@@ -119,6 +119,8 @@ function toContractSegment(section: WorkbenchSection) {
 }
 
 export const workbenchCapabilityRegistry = [
+  workflow({ id: 'titanSwapper', label: 'Titan Swapper', games: scarletVioletGames, icon: Star,
+    description: 'Choose a separate combat Pokemon for each Titan battle phase.' }),
   workflow({ id: 'starmobiles', label: 'Starmobiles', games: scarletVioletGames,
     icon: Star, description: 'Edit Team Star Starmobile levels and combat stats.' }),
   {

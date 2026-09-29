@@ -1,0 +1,123 @@
+// SPDX-License-Identifier: GPL-3.0-only
+using System.Security.Cryptography;
+using Google.FlatBuffers;
+using KM.Formats;
+using KM.Formats.SV.Placement;
+
+namespace KM.SV.TitanSwapper;
+
+public sealed record SvTitanSwapperRow(string Id, int StorySpecies, int Phase, string Edition,
+    IReadOnlyDictionary<string, int> Values);
+
+internal sealed class SvTitanSwapperDocument
+{
+    public const string Prefix = "km_titan_";
+    public static readonly (string Label, int Species, string Edition)[] Encounters =
+    [
+        ("nusi_962_01", 950, "both"), ("nusi_962_02", 950, "both"),
+        ("nusi_959_01", 962, "both"), ("nusi_959_02", 962, "both"),
+        ("nusi_944_01", 968, "both"), ("nusi_944_02", 968, "both"),
+        ("nusi_978_01", 984, "scarlet"), ("nusi_978_02", 984, "scarlet"),
+        ("nusi_986_01", 990, "violet"), ("nusi_986_02", 990, "violet"),
+        ("nusi_931_01", 977, "both"), ("nusi_931_02", 977, "both"),
+        ("nusi_952_01", 978, "both"),
+    ];
+    private readonly EventBattlePokemonArray table;
+    private readonly Dictionary<string, EventBattlePokemon> records;
+    public string Revision { get; }
+    public IReadOnlyList<SvTitanSwapperRow> Rows { get; }
+
+    public SvTitanSwapperDocument(byte[] bytes)
+    {
+        if (bytes.Length is < 16 or > 4 * 1024 * 1024) throw new InvalidDataException("Invalid event table size.");
+        table = EventBattlePokemonArray.GetRootAsEventBattlePokemonArray(new ByteBuffer(bytes));
+        FlatBufferMergeGuard.Validate(table);
+        if (table.ValuesLength is < 13 or > 10000) throw new InvalidDataException("Invalid event inventory.");
+        records = new(StringComparer.Ordinal);
+        for (var i = 0; i < table.ValuesLength; i++)
+        {
+            var row = table.Values(i) ?? throw new InvalidDataException("Missing event row.");
+            if (string.IsNullOrEmpty(row.Label) || !records.TryAdd(row.Label, row))
+                throw new InvalidDataException("Missing or duplicate event label.");
+            if (row.Label.StartsWith(Prefix, StringComparison.Ordinal)
+                && !Encounters.Any(encounter => Prefix + encounter.Label == row.Label))
+                throw new InvalidDataException("Unrecognized Titan Swapper record.");
+        }
+        Rows = Encounters.Select(encounter =>
+        {
+            var original = records[encounter.Label].PokeData ?? throw new InvalidDataException("Missing Titan data.");
+            var enabled = records.TryGetValue(Prefix + encounter.Label, out var replacement);
+            var value = enabled ? replacement.PokeData ?? throw new InvalidDataException("Missing replacement data.") : original;
+            if (enabled && (value.FormId != 0 || value.Level is < 1 or > 100))
+                throw new InvalidDataException("Unsupported replacement values.");
+            return new SvTitanSwapperRow(encounter.Label, encounter.Species,
+                encounter.Label == "nusi_952_01" ? 3 : encounter.Label.EndsWith("02", StringComparison.Ordinal) ? 2 : 1,
+                encounter.Edition, new Dictionary<string, int>
+                { ["enabled"] = enabled ? 1 : 0, ["species"] = (int)value.DevId, ["level"] = value.Level });
+        }).ToArray();
+        Revision = Convert.ToHexString(SHA256.HashData(bytes));
+        FlatBufferMergeGuard.ValidateRoundTrip(table, Serialize(null));
+    }
+
+    public byte[] Write(IReadOnlyDictionary<string, IReadOnlyDictionary<string, int>> values) => Serialize(values);
+
+    private byte[] Serialize(IReadOnlyDictionary<string, IReadOnlyDictionary<string, int>>? values)
+    {
+        var builder = new FlatBufferBuilder(32768);
+        var offsets = new List<Offset<EventBattlePokemon>>();
+        for (var i = 0; i < table.ValuesLength; i++)
+        {
+            var row = table.Values(i)!.Value;
+            if (values is not null && row.Label!.StartsWith(Prefix, StringComparison.Ordinal)) continue;
+            offsets.Add(WriteRow(builder, row, row.Label!, null));
+        }
+        if (values is not null)
+            foreach (var encounter in Encounters)
+            {
+                var v = values[encounter.Label];
+                if (v["enabled"] != 0)
+                {
+                    // Keep fields outside this editor when updating an existing combat record.
+                    var row = records.GetValueOrDefault(Prefix + encounter.Label, records[encounter.Label]);
+                    offsets.Add(WriteRow(builder, row, Prefix + encounter.Label, v));
+                }
+            }
+        var vector = EventBattlePokemonArray.CreateValuesVector(builder, offsets.ToArray());
+        var root = EventBattlePokemonArray.CreateEventBattlePokemonArray(builder, vector);
+        EventBattlePokemonArray.FinishEventBattlePokemonArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static Offset<EventBattlePokemon> WriteRow(FlatBufferBuilder builder, EventBattlePokemon row,
+        string label, IReadOnlyDictionary<string, int>? replacement)
+    {
+        var name = builder.CreateString(label);
+        var data = row.PokeData is { } pokemon ? WritePokemon(builder, pokemon, replacement) : default;
+        return EventBattlePokemon.CreateEventBattlePokemon(builder, name, data, row.DisableBattleOut, row.EventEncount);
+    }
+
+    private static Offset<global::PokeDataEventBattle> WritePokemon(FlatBufferBuilder b, global::PokeDataEventBattle p,
+        IReadOnlyDictionary<string, int>? replacement)
+    {
+        var ivs = Stats(b, p.TalentValue);
+        var evs = Stats(b, p.EffortValue);
+        var m1 = Move(b, replacement is null ? p.Waza1 : null);
+        var m2 = Move(b, replacement is null ? p.Waza2 : null);
+        var m3 = Move(b, replacement is null ? p.Waza3 : null);
+        var m4 = Move(b, replacement is null ? p.Waza4 : null);
+        return global::PokeDataEventBattle.CreatePokeDataEventBattle(b,
+            replacement is null ? p.DevId : (global::pml.common.DevID)checked((ushort)replacement["species"]),
+            replacement is null ? p.FormId : (short)0,
+            replacement is null ? p.Sex : global::SexType.DEFAULT,
+            replacement is null ? p.Level : replacement["level"], p.RareType, p.TalentType, p.TalentVnum,
+            ivs, evs, p.Item, p.DropItem, p.DropItemNum, p.Seikaku, p.SeikakuHosei,
+            replacement is null ? p.Tokusei : global::TokuseiType.RANDOM_12,
+            replacement is null ? p.WazaType : global::WazaType.DEFAULT,
+            m1, m2, m3, m4, p.GemType, p.ScaleType, p.ScaleValue, p.SetRibbon);
+    }
+
+    private static Offset<global::ParamSet> Stats(FlatBufferBuilder b, global::ParamSet? value) => value is { } p
+        ? global::ParamSet.CreateParamSet(b, p.Hp, p.Atk, p.Def, p.SpAtk, p.SpDef, p.Agi) : default;
+    private static Offset<global::WazaSet> Move(FlatBufferBuilder b, global::WazaSet? value) => value is { } p
+        ? global::WazaSet.CreateWazaSet(b, p.WazaId, p.PointUp) : default;
+}

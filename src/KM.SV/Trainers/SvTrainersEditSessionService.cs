@@ -101,6 +101,7 @@ internal sealed partial class SvTrainersEditSessionService
         }
         var projectedWorkflow = OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits);
         ValidateFinalTeamOrder(loadedWorkflow, projectedWorkflow, updatedSession.PendingEdits, diagnostics);
+        ValidatePartnerTerastallization(projectedWorkflow, updatedSession.PendingEdits, diagnostics);
         return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             ? new SvTrainersEditResult(workflow, currentSession, diagnostics)
             : new SvTrainersEditResult(projectedWorkflow, updatedSession, diagnostics);
@@ -189,6 +190,7 @@ internal sealed partial class SvTrainersEditSessionService
         updatedSession = CanonicalizePendingTrainerEdits(loadedWorkflow, updatedSession);
         var projectedWorkflow = OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits);
         ValidateFinalTeamOrder(loadedWorkflow, projectedWorkflow, updatedSession.PendingEdits, diagnostics);
+        ValidatePartnerTerastallization(projectedWorkflow, updatedSession.PendingEdits, diagnostics);
         return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             ? new SvTrainersEditResult(workflow, currentSession, diagnostics)
             : new SvTrainersEditResult(projectedWorkflow, updatedSession, diagnostics);
@@ -223,6 +225,18 @@ internal sealed partial class SvTrainersEditSessionService
         }
 
         ValidateFinalTeamOrder(workflow, effectiveWorkflow, effectiveSession.PendingEdits, diagnostics);
+        ValidatePartnerTerastallization(effectiveWorkflow, effectiveSession.PendingEdits, diagnostics);
+
+        if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        {
+            var scenes = PreparePartnerScenes(paths, effectiveSession, diagnostics);
+            if (scenes.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+            {
+                diagnostics.Add(new ValidationDiagnostic(DiagnosticSeverity.Info,
+                    "The Titan partner's appearance will be updated with the lead Pokemon.",
+                    Domain: SvEditSessionSupport.TrainersDomain) { Code = "KM-SV-TRAINER-PARTNER-SYNC" });
+            }
+        }
 
         if (effectiveSession.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
@@ -262,6 +276,34 @@ internal sealed partial class SvTrainersEditSessionService
                 "Trainers",
                 validation.Diagnostics,
                 outputMode);
+        if (plan.CanApply && validation.Session.PendingEdits.Count > 0)
+        {
+            var diagnostics = plan.Diagnostics.ToList();
+            var scenes = PreparePartnerScenes(paths, validation.Session, diagnostics);
+            var writes = plan.Writes.ToList();
+            foreach (var scene in scenes)
+            {
+                var info = SvWorkflowFileSource.CreatePlannedWrite(paths, scene.VirtualPath, scene.Sources, outputMode);
+                writes.Add(new PlannedFileWrite(info.TargetRelativePath, info.Sources, info.ReplacesExistingOutput,
+                    "Synchronize the Titan partner actor with the trainer's lead Pokemon."));
+            }
+
+            if (scenes.Count > 0)
+            {
+                diagnostics.RemoveAll(diagnostic => diagnostic.Severity == DiagnosticSeverity.Info
+                    && diagnostic.Message.StartsWith("Change plan preview contains ", StringComparison.Ordinal));
+                diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(DiagnosticSeverity.Info,
+                    $"Change plan preview contains {writes.Count} target files.", SvEditSessionSupport.TrainersDomain));
+            }
+
+            plan = plan with
+            {
+                Writes = diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+                    ? Array.Empty<PlannedFileWrite>() : writes,
+                Diagnostics = diagnostics,
+            };
+        }
+
         return SvChangePlanSourceGuard.Capture(
             paths,
             validation.Session,
@@ -325,13 +367,20 @@ internal sealed partial class SvTrainersEditSessionService
                 ApplyEdit(rows, edit, moveResolver, diagnostics);
             }
 
+            var scenes = PreparePartnerScenes(paths, effectiveSession, diagnostics);
+
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
                 return SvEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
-            SvWorkflowFileSource.Write(paths, SvDataPaths.TrainerDataArray, WriteRows(rows), outputMode);
-            writtenFiles.Add(SvEditSessionSupport.GeneratedReference(SvDataPaths.TrainerDataArray, outputMode));
+            var writes = new List<SvWorkflowFileWrite>
+            {
+                new(SvDataPaths.TrainerDataArray, WriteRows(rows)),
+            };
+            writes.AddRange(scenes.Select(scene => new SvWorkflowFileWrite(scene.VirtualPath, scene.Bytes)));
+            SvWorkflowFileSource.WriteBatch(paths, writes, outputMode);
+            writtenFiles.AddRange(writes.Select(write => SvEditSessionSupport.GeneratedReference(write.VirtualPath, outputMode)));
             if (outputMode == SvOutputMode.Standalone)
             {
                 writtenFiles.Add(SvEditSessionSupport.GeneratedDescriptorReference());
@@ -381,6 +430,12 @@ internal sealed partial class SvTrainersEditSessionService
             diagnostics);
         if (parsedValue is null)
         {
+            return null;
+        }
+
+        if (normalizedField == ChangeGemField && parsedValue != 0 && GetPartnerScene(trainer.Location) is not null)
+        {
+            diagnostics.Add(PartnerTeraDiagnostic());
             return null;
         }
 

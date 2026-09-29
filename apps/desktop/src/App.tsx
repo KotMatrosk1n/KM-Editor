@@ -469,7 +469,9 @@ import { encodeMarnieBoostSelections, getMarnieBoostPendingSelections, type Marn
 import { type RaidDensWorkflow } from './bridge/raidDensContracts';
 import { type TrainerWhiteoutWorkflow, type TrainerWhiteoutChange } from './bridge/trainerWhiteoutContracts';
 import { StarmobilesSection } from './features/starmobiles/StarmobilesSection';
+import { TitanSwapperSection } from './features/titan-swapper/TitanSwapperSection';
 import { type StarmobileUpdate, type StarmobilesWorkflow } from './bridge/starmobilesContracts';
+import { type TitanSwapperUpdate, type TitanSwapperWorkflow } from './bridge/titanSwapperContracts';
 import { pokemonTypeOptions } from './pokemonTypeOptions';
 import {
   HabitatCoordinatesSection,
@@ -3238,26 +3240,31 @@ export function App({
   const [isFashionCatalogLoading, setIsFashionCatalogLoading] = useState(false);
   const [isFashionCatalogStaging, setIsFashionCatalogStaging] = useState(false);
   const starmobilesWorkflow = useWorkbenchStore(state => state.starmobilesWorkflow);
+  const titanSwapperWorkflow = useWorkbenchStore(state => state.titanSwapperWorkflow);
   const marnieBoostsWorkflow = useWorkbenchStore(state => state.marnieBoostsWorkflow);
   const heldItemChanceWorkflow = useWorkbenchStore(state => state.heldItemChanceWorkflow);
   const raidDensWorkflow = useWorkbenchStore(state => state.raidDensWorkflow);
   const trainerWhiteoutWorkflow = useWorkbenchStore(state => state.trainerWhiteoutWorkflow);
   const setStarmobilesWorkflow = useWorkbenchStore(state => state.setStarmobilesWorkflow);
+  const setTitanSwapperWorkflow = useWorkbenchStore(state => state.setTitanSwapperWorkflow);
   const setMarnieBoostsWorkflow = useWorkbenchStore(state => state.setMarnieBoostsWorkflow);
   const setHeldItemChanceWorkflow = useWorkbenchStore(state => state.setHeldItemChanceWorkflow);
   const setRaidDensWorkflow = useWorkbenchStore(state => state.setRaidDensWorkflow);
   const setTrainerWhiteoutWorkflow = useWorkbenchStore(state => state.setTrainerWhiteoutWorkflow);
   const [isStarmobilesLoading, setIsStarmobilesLoading] = useState(false);
+  const [isTitanSwapperLoading, setIsTitanSwapperLoading] = useState(false);
   const [isMarnieBoostsLoading, setIsMarnieBoostsLoading] = useState(false);
   const [isHeldItemChanceLoading, setIsHeldItemChanceLoading] = useState(false);
   const [isRaidDensLoading, setIsRaidDensLoading] = useState(false);
   const [isTrainerWhiteoutLoading, setIsTrainerWhiteoutLoading] = useState(false);
   const [isStarmobilesStaging, setIsStarmobilesStaging] = useState(false);
+  const [isTitanSwapperStaging, setIsTitanSwapperStaging] = useState(false);
   const [isMarnieBoostsStaging, setIsMarnieBoostsStaging] = useState(false);
   const [isHeldItemChanceStaging, setIsHeldItemChanceStaging] = useState(false);
   const [isRaidDensStaging, setIsRaidDensStaging] = useState(false);
   const [isTrainerWhiteoutStaging, setIsTrainerWhiteoutStaging] = useState(false);
   const starmobilesGenerationRef = useRef(0);
+  const titanSwapperGenerationRef = useRef(0);
   const marnieBoostsGenerationRef = useRef(0);
   const heldItemChanceGenerationRef = useRef(0);
   const raidDensGenerationRef = useRef(0);
@@ -4172,6 +4179,7 @@ export function App({
           fashionCatalogWorkflow,
           habitatCoordinatesWorkflow,
           starmobilesWorkflow,
+          titanSwapperWorkflow,
           marnieBoostsWorkflow,
           heldItemChanceWorkflow,
           raidDensWorkflow,
@@ -4220,6 +4228,7 @@ export function App({
       fashionCatalogWorkflow,
       habitatCoordinatesWorkflow,
       starmobilesWorkflow,
+      titanSwapperWorkflow,
       marnieBoostsWorkflow,
       heldItemChanceWorkflow,
       raidDensWorkflow,
@@ -4335,6 +4344,7 @@ export function App({
     encountersWorkflow, exeFsPatchWorkflow, fairyGymBoostsWorkflow, fashionCatalogWorkflow,
     habitatCoordinatesWorkflow,
     starmobilesWorkflow,
+    titanSwapperWorkflow,
     marnieBoostsWorkflow,
     heldItemChanceWorkflow,
     raidDensWorkflow,
@@ -4471,6 +4481,8 @@ export function App({
     (dirty: boolean) => registerEditorDraftDirty('trainerDynamax', dirty), [registerEditorDraftDirty]);
   const handleStarmobilesDirtyChange = useCallback(
     (dirty: boolean) => registerEditorDraftDirty('starmobiles', dirty), [registerEditorDraftDirty]);
+  const handleTitanSwapperDirtyChange = useCallback(
+    (dirty: boolean) => registerEditorDraftDirty('titanSwapper', dirty), [registerEditorDraftDirty]);
   const handleHabitatCoordinatesDirtyChange = useCallback(
     (isDirty: boolean) => registerEditorDraftDirty('habitatCoordinates', isDirty),
     [registerEditorDraftDirty]
@@ -10661,6 +10673,52 @@ export function App({
     return accepted;
   };
 
+
+  const handleOpenTitanSwapperWorkflow = async () => {
+    const session = getEditSessionForSection('titanSwapper');
+    const signature = getEditSessionSignature(editSessionRef.current);
+    const generation = titanSwapperGenerationRef.current;
+    await runRetainedWorkflowLoad('titanSwapper', setIsTitanSwapperLoading,
+      () => bridge.loadTitanSwapper({ paths: createProjectPaths(draftPaths), session }),
+      response => setTitanSwapperWorkflow(response.workflow),
+      () => generation === titanSwapperGenerationRef.current && signature === getEditSessionSignature(editSessionRef.current));
+  };
+
+  const handleStageTitanSwapper = async (sourceRevision: string, updates: TitanSwapperUpdate[]) => {
+    const activeSession = getEditSessionForSection('titanSwapper');
+    if (!activeSession) return false;
+    let accepted = false;
+    titanSwapperGenerationRef.current += 1;
+    setIsTitanSwapperStaging(true);
+    prepareScopedEditorPanelAction('titanSwapper');
+    try {
+      await runEditSessionMutation(async session => {
+        const response = await bridge.stageTitanSwapper({ paths: createProjectPaths(draftPaths), session, sourceRevision, updates });
+        const matches = response.workflow.sourceRevision === sourceRevision &&
+          response.workflow.summary.availability === 'available' &&
+          (session === null || response.session.sessionId === session.sessionId) &&
+          updates.every(update => response.workflow.rows.find(row => row.id === update.rowId)?.values[update.field] === update.value);
+        const diagnostics = [...response.diagnostics, ...response.workflow.diagnostics];
+        if (!matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error')) {
+          diagnostics.push({ severity: 'error', domain: 'workflow.titan-swapper',
+            code: 'KM-SV-TITAN-SWAPPER-EDIT-INVALID', message: t('titanSwapper.failed') });
+        }
+        const didSucceed = matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error');
+        return { ...response, diagnostics, didSucceed, session: didSucceed ? response.session : session };
+      }, response => {
+        setScopedEditorPanelDiagnostics('titanSwapper', response.diagnostics);
+        if (response.didSucceed) {
+          accepted = true;
+          setTitanSwapperWorkflow(response.workflow);
+          setEditSessionSection('titanSwapper');
+        }
+      }, activeSession);
+    } catch (error) {
+      setScopedEditorPanelDiagnostics('titanSwapper', toBridgeDiagnostics(error));
+    } finally { setIsTitanSwapperStaging(false); }
+    return accepted;
+  };
+
   const handleOpenTmMachineControlsWorkflow = async () => {
     await runRetainedWorkflowLoad(
       'tmMachineControls',
@@ -12399,6 +12457,9 @@ export function App({
         case 'starmobiles':
           if (!currentState.starmobilesWorkflow) await handleOpenStarmobilesWorkflow();
           break;
+        case 'titanSwapper':
+          if (!currentState.titanSwapperWorkflow) await handleOpenTitanSwapperWorkflow();
+          break;
         case 'habitatCoordinates':
           if (!currentState.habitatCoordinatesWorkflow) {
             await handleOpenHabitatCoordinatesWorkflow();
@@ -12784,6 +12845,9 @@ export function App({
       case 'starmobiles':
         if (!starmobilesWorkflow && !isStarmobilesLoading) { markLazyLoadStarted(); void handleOpenStarmobilesWorkflow(); }
         break;
+      case 'titanSwapper':
+        if (!titanSwapperWorkflow && !isTitanSwapperLoading) { markLazyLoadStarted(); void handleOpenTitanSwapperWorkflow(); }
+        break;
       case 'habitatCoordinates':
         if (!habitatCoordinatesWorkflow && !isHabitatCoordinatesLoading) {
           markLazyLoadStarted();
@@ -13039,6 +13103,7 @@ export function App({
     fashionCatalogWorkflow,
     habitatCoordinatesWorkflow,
     starmobilesWorkflow,
+    titanSwapperWorkflow,
     marnieBoostsWorkflow,
     heldItemChanceWorkflow,
     raidDensWorkflow,
@@ -13070,6 +13135,7 @@ export function App({
     isFashionCatalogLoading,
     isHabitatCoordinatesLoading,
     isStarmobilesLoading,
+    isTitanSwapperLoading,
     isMarnieBoostsLoading,
     isHeldItemChanceLoading,
     isRaidDensLoading,
@@ -18359,6 +18425,7 @@ export function App({
       'fashionCatalog',
       'habitatCoordinates',
       'starmobiles',
+      'titanSwapper',
       'marnieBoosts',
       'heldItemChance',
       'raidDens',
@@ -18412,6 +18479,7 @@ export function App({
       fashionCatalog: setIsFashionCatalogLoading,
       habitatCoordinates: setIsHabitatCoordinatesLoading,
       starmobiles: setIsStarmobilesLoading,
+      titanSwapper: setIsTitanSwapperLoading,
       marnieBoosts: setIsMarnieBoostsLoading,
       heldItemChance: setIsHeldItemChanceLoading,
       raidDens: setIsRaidDensLoading,
@@ -18646,6 +18714,12 @@ export function App({
       reloadTasks.push(async () => {
         const response = await bridge.loadStarmobiles({ paths, session: getEditSessionForSection('starmobiles') });
         if (canCommitRefresh()) setStarmobilesWorkflow(response.workflow);
+      });
+    }
+    if (titanSwapperWorkflow && refreshSections.has('titanSwapper')) {
+      reloadTasks.push(async () => {
+        const response = await bridge.loadTitanSwapper({ paths, session: getEditSessionForSection('titanSwapper') });
+        if (canCommitRefresh()) setTitanSwapperWorkflow(response.workflow);
       });
     }
     if (habitatCoordinatesWorkflow && refreshSections.has('habitatCoordinates')) {
@@ -20393,6 +20467,15 @@ export function App({
                 onStage={handleStageStarmobiles} onDirtyStateChange={handleStarmobilesDirtyChange}
                 panelOutput={getOutputSafeScopedEditorPanelOutput('starmobiles')} />
           ) : null}
+          {activeSection === 'titanSwapper' ? (
+            isTitanSwapperLoading && !titanSwapperWorkflow ? <WorkflowLoadingPanel label={t('titanSwapper.title')} /> :
+              <TitanSwapperSection renderPokemon={(species, name) => <PokemonSprite speciesId={species} form={0} editorFamily="sv" name={name} preferStatic />} workflow={titanSwapperWorkflow} isStaging={isTitanSwapperStaging}
+                key={getEditSessionForSection('titanSwapper')?.sessionId ?? 'viewing'}
+                isEditing={getEditSessionForSection('titanSwapper') !== null} isEditStarting={isEditStarting}
+                onStartEditSession={handleStartEditSession} onCancelEditSession={requestCancelEditSession}
+                onStage={handleStageTitanSwapper} onDirtyStateChange={handleTitanSwapperDirtyChange}
+                panelOutput={getOutputSafeScopedEditorPanelOutput('titanSwapper')} />
+          ) : null}
           {activeSection === 'habitatCoordinates' ? (
             isHabitatCoordinatesLoading && !habitatCoordinatesWorkflow ? (
               <WorkflowLoadingPanel label={t('habitatCoordinates.title')} />
@@ -21380,6 +21463,7 @@ export function App({
               editSession={editSession}
               pendingEditContext={{
                 starmobilesWorkflow,
+                titanSwapperWorkflow,
                 marnieBoostsWorkflow,
                 heldItemChanceWorkflow,
                 raidDensWorkflow,
@@ -31513,6 +31597,8 @@ function SelectedTrainerPanel({
   const isSelectedZaTrainerMeowstic = Boolean(
     editorFamily === 'za' && projectedSelectedPokemonSpeciesId === zaMeowsticSpeciesId
   );
+  const isTitanPartnerTrainer = editorFamily === 'sv' &&
+    /^pepper_nusi_0[1-5]$/.test(trainer?.location ?? '');
   const isSelectedZaTrainerMeowsticDynamic =
     isSelectedZaTrainerMeowstic && projectedSelectedPokemonGender === 0;
   const selectedPokemonFormOptionContext = useMemo(
@@ -32639,6 +32725,26 @@ function SelectedTrainerPanel({
               </div>
             ) : null}
 
+            {isTitanPartnerTrainer && trainerDrafts[trainerCanTerastallizeFieldName] === '1' ? (
+              <section className="technical-tool-notice technical-tool-notice-info">
+                <p>{t('sv.trainers.titanPartner.teraRepair')}</p>
+                <button
+                  className="secondary-button"
+                  disabled={!canEditTrainers || editSession === null}
+                  onClick={() => setTrainerDraftsByTrainerId((currentDrafts) =>
+                    setFieldDraftRecord(
+                      currentDrafts,
+                      trainer.trainerId,
+                      { ...trainerDrafts, [trainerCanTerastallizeFieldName]: '0' },
+                      trainerDraftDefaults
+                    )
+                  )}
+                  type="button"
+                >
+                  {t('sv.trainers.titanPartner.teraDisable')}
+                </button>
+              </section>
+            ) : null}
             <div className="editable-field-groups">
               {trainerFieldGroups.map((group) => (
                 <fieldset className="editable-field-group" key={group.group}>
@@ -32651,7 +32757,9 @@ function SelectedTrainerPanel({
                       const isFieldBlocked =
                         field.field === classBallIdFieldName && !trainer.canEditClassBall;
                       const disabledReason =
-                        editorFamily === 'swsh' && field.field === giftFieldName
+                        isTitanPartnerTrainer && field.field === trainerCanTerastallizeFieldName
+                          ? t('sv.trainers.titanPartner.teraLocked')
+                          : editorFamily === 'swsh' && field.field === giftFieldName
                           ? 'This unknown trainer header value is preserved as raw read-only data.'
                           : editorFamily === 'swsh' && field.field === healFieldName
                             ? 'This unknown trainer header flag is preserved as raw read-only data.'
@@ -32892,6 +33000,18 @@ function SelectedTrainerPanel({
 
             {selectedPokemon ? (
               <div className="trainer-party-edit-stack">
+                {isTitanPartnerTrainer && selectedPokemon.slot === 0 ? (
+                  <section className="technical-tool-notice technical-tool-notice-info">
+                    <div className="technical-tool-notice-heading">
+                      <UsersRound aria-hidden="true" size={18} />
+                      <div>
+                        <h3>{t('sv.trainers.titanPartner.title')}</h3>
+                        <p>{t('sv.trainers.titanPartner.appearance')}</p>
+                        <p>{t('sv.trainers.titanPartner.limits')}</p>
+                      </div>
+                    </div>
+                  </section>
+                ) : null}
                 {isSelectedZaTrainerMeowstic ? (
                   <section className="technical-tool-notice technical-tool-notice-info">
                     <div className="technical-tool-notice-heading">
@@ -35130,6 +35250,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.raidDens': 'Raid Dens',
     'workflow.trainerWhiteout': 'Trainer Whiteout',
     'workflow.starmobiles': 'Starmobiles',
+    'workflow.titan-swapper': 'Titan Swapper',
     'workflow.fashionUnlock': 'Fashion Unlock',
     'workflow.giftPokemon': 'Gift Pokemon',
     'workflow.gymUniformRemoval': 'Gym Uniform Removal',
@@ -35193,6 +35314,7 @@ function getPendingEditSection(edit: PendingEdit): WorkbenchSection | null {
     'workflow.raidDens': 'raidDens',
     'workflow.trainerWhiteout': 'trainerWhiteout',
     'workflow.starmobiles': 'starmobiles',
+    'workflow.titan-swapper': 'titanSwapper',
     'workflow.fashionUnlock': 'fashionUnlock',
     'workflow.giftPokemon': 'giftPokemon',
     'workflow.gymUniformRemoval': 'gymUniformRemoval',
@@ -35619,6 +35741,18 @@ function getPendingEditDisplayDetails(
       return getTrainerPoolsPendingEditDisplayDetails(edit, context, editorLabel);
     case 'workflow.habitatCoordinates':
       return getHabitatPendingEditDisplayDetails(edit, editorLabel);
+    case 'workflow.titan-swapper': {
+      let value = '';
+      try { value = String((JSON.parse(edit.newValue ?? '{}') as { Value?: number }).Value ?? ''); } catch { /* Invalid drafts remain reviewable. */ }
+      if (edit.field === 'species') value = formatPendingOptionValue(value, context.titanSwapperWorkflow?.speciesOptions);
+      const row = context.titanSwapperWorkflow?.rows.find(row => row.id === edit.recordId);
+      return createPendingEditDisplayDetails(edit, { editorLabel, recordLabel: edit.recordId ?? '',
+        recordLocalizationKey: row ? 'titanSwapper.pendingRecord' : undefined,
+        recordLocalizationParams: row ? { pokemon: formatPendingOptionValue(String(row.storySpecies), context.titanSwapperWorkflow?.speciesOptions) } : undefined,
+        recordLocalizationParamKeys: row ? { phase: `titanSwapper.phase.${row.phase}` } : undefined,
+        newValueLocalizationKey: edit.field === 'enabled' ? value === '1' ? 'titanSwapper.active' : 'titanSwapper.original' : undefined,
+        fieldLocalizationKey: `titanSwapper.field.${edit.field}`, newValueLabel: value });
+    }
     case 'workflow.starmobiles': {
       let value = '';
       try {
@@ -57003,6 +57137,7 @@ export type PendingEditContext = {
   raidDensWorkflow?: RaidDensWorkflow | null;
   trainerWhiteoutWorkflow?: TrainerWhiteoutWorkflow | null;
   starmobilesWorkflow?: StarmobilesWorkflow | null;
+  titanSwapperWorkflow?: TitanSwapperWorkflow | null;
   angeFightWorkflow: AngeFightWorkflow | null;
   bagHookWorkflow: BagHookWorkflow | null;
   catchCapWorkflow: CatchCapWorkflow | null;

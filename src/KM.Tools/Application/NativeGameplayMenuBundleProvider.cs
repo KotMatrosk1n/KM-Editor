@@ -165,6 +165,7 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
             var outputRuntimeSlot = reviewedSources[2];
             sourceDependencies = reviewedSources
                 .Select(source => new OutputReadDependency(source.Path, source.State))
+                .Concat(KM.SV.TitanSwapper.SvTitanSwapperCompatibility.ReviewGameplayMenuSources(paths))
                 .ToArray();
             usesComposedMain = outputMain.Exists;
             usesComposedMainNpdm = outputNpdm.Exists;
