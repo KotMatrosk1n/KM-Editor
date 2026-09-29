@@ -11,6 +11,7 @@ export const workbenchSections = [
   'text',
   'trainers',
   'starmobiles',
+  'titanSwapper',
   'trainerPools',
   'fashionCatalog',
   'giftPokemon',

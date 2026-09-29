@@ -24,6 +24,7 @@ using KM.Api.GymUniformRemoval;
 using KM.Api.GuidedDesign;
 using KM.Api.HabitatCoordinates;
 using KM.Api.Starmobiles;
+using KM.Api.TitanSwapper;
 using KM.Api.HyperspaceBypass;
 using KM.Api.HyperTraining;
 using KM.Api.Items;
@@ -651,7 +652,9 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.StageTmRecipeAvailability => DispatchStageTmRecipeAvailability(requestJson),
                 KmCommandNames.StageTmMaterialVisibility => DispatchStageTmMaterialVisibility(requestJson),
                 KmCommandNames.LoadStarmobiles => DispatchStarmobiles(requestJson, false),
+                KmCommandNames.LoadTitanSwapper => DispatchTitanSwapper(requestJson, false),
                 KmCommandNames.StageStarmobiles => DispatchStarmobiles(requestJson, true),
+                KmCommandNames.StageTitanSwapper => DispatchTitanSwapper(requestJson, true),
                 KmCommandNames.LoadHabitatCoordinates => DispatchLoadHabitatCoordinates(requestJson),
                 KmCommandNames.StageHabitatCoordinate => DispatchStageHabitatCoordinate(requestJson),
                 KmCommandNames.LoadEncountersWorkflow => DispatchLoadEncountersWorkflow(requestJson),
@@ -3758,6 +3761,32 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             var session = request.Payload.Session is null ? null : EditSessionBridgeMapper.ToCore(request.Payload.Session);
             return SerializeSuccess(new LoadStarmobilesResponse(SvStarmobilesBridgeMapper.ToDto(
                 svWorkflowService.LoadStarmobiles(paths, session))), request.RequestId);
+        }
+    }
+
+    private string DispatchTitanSwapper(string requestJson, bool stage)
+    {
+        if (stage)
+        {
+            var request = DeserializeRequest<StageTitanSwapperRequest>(requestJson);
+            var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+            if (!IsScarletViolet(paths)) return SerializeFailure(BridgeErrorCodes.GameMismatch,
+                "Titan Swapper requires a Scarlet or Violet project.", request.RequestId);
+            var session = request.Payload.Session is null ? null : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+            var result = svWorkflowService.StageTitanSwapper(paths, session, request.Payload.SourceRevision,
+                request.Payload.Updates.Select(update => new KM.SV.TitanSwapper.SvTitanSwapperUpdate(update.RowId, update.Field, update.Value)).ToArray());
+            return SerializeSuccess(new StageTitanSwapperResponse(SvTitanSwapperBridgeMapper.ToDto(result.Workflow),
+                EditSessionBridgeMapper.ToDto(result.Session), result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray()), request.RequestId);
+        }
+        else
+        {
+            var request = DeserializeRequest<LoadTitanSwapperRequest>(requestJson);
+            var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+            if (!IsScarletViolet(paths)) return SerializeFailure(BridgeErrorCodes.GameMismatch,
+                "Titan Swapper requires a Scarlet or Violet project.", request.RequestId);
+            var session = request.Payload.Session is null ? null : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+            return SerializeSuccess(new LoadTitanSwapperResponse(SvTitanSwapperBridgeMapper.ToDto(
+                svWorkflowService.LoadTitanSwapper(paths, session))), request.RequestId);
         }
     }
 
@@ -8326,7 +8355,9 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.StageTmRecipeAvailability or
             KmCommandNames.StageTmMaterialVisibility or
             KmCommandNames.LoadStarmobiles or
+            KmCommandNames.LoadTitanSwapper or
             KmCommandNames.StageStarmobiles or
+            KmCommandNames.StageTitanSwapper or
             KmCommandNames.LoadHabitatCoordinates or
             KmCommandNames.StageHabitatCoordinate or
             KmCommandNames.GetSvCacheStatus or
