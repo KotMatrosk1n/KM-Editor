@@ -372,6 +372,9 @@ public sealed class SwShTextWorkflowService
         return false;
     }
 
+    internal bool IsCachePrepared(SwShCacheSourceIdentity source, SwShTextCacheWarmupTarget target) =>
+        cacheStore.IsPrepared(source, target.Language, target.CategoryId);
+
     internal SwShCacheSourceIdentity GetCacheWarmupSourceIdentity(
         OpenedProject project,
         SwShTextCacheWarmupTarget target)

@@ -20,7 +20,7 @@ public enum SvCacheMode
     Performance,
 }
 
-public sealed class SvCacheManager
+public sealed partial class SvCacheManager
 {
     public const int CacheSchemaVersion = 2;
     public const string ParserVersion = "sv-cache-parser-v1";
@@ -63,12 +63,6 @@ public sealed class SvCacheManager
         PerformanceWarmupWorkerMemoryBudgetBytes,
         MaximumPerformanceWarmupParallelism,
         memoryBudgetDivisor: 8);
-    private static readonly BoundedConcurrencyPolicy WarmupVerificationPolicy = new(
-        "sv-cache-warmup-verification",
-        BoundedWorkloadKind.Read,
-        maximumBytesPerWorker: 32L * 1024L * 1024L,
-        maximumDegreeOfParallelism: MaximumPerformanceWarmupParallelism,
-        degreeOfParallelismWhenMemoryUnknown: 4);
     private static readonly EnumerationOptions CacheDirectoryEnumeration = new()
     {
         AttributesToSkip = 0,
@@ -262,6 +256,15 @@ public sealed class SvCacheManager
         out bool cacheChanged)
     {
         persistToDisk &= !isReadWorker;
+        cacheChanged = false;
+        if (retainedWarmupVirtualPaths is not null && retainedWarmupPathsSource == context.Source)
+            return retainedWarmupVirtualPaths;
+        if (TryReadWarmupPlan(context, out var existingPaths))
+        {
+            retainedWarmupPathsSource = context.Source;
+            retainedWarmupVirtualPaths = existingPaths;
+            return existingPaths;
+        }
         var index = GetOrBuildIndex(context, persistToDisk, out cacheChanged);
         var warmupPaths = GetOrCreateWarmupVirtualPaths(context, index);
         if (persistToDisk)
@@ -340,6 +343,7 @@ public sealed class SvCacheManager
     {
         lock (syncRoot)
         {
+            RefreshWarmupProgress();
             EnsureRoot();
             var settings = ReadSettings();
             var context = TryCreateActiveProjectContext(paths);
@@ -491,6 +495,8 @@ public sealed class SvCacheManager
             {
                 completedPaths.Add(survivingPath);
             }
+
+            SaveWarmupProgress(settings, context, warmupVirtualPaths, completedPaths);
 
             if (!activeEntriesEvicted && processedPaths.Count > 0 && survivingPaths.Length == 0)
             {
@@ -977,6 +983,7 @@ public sealed class SvCacheManager
                     && existing.CacheSchemaVersion == CacheSchemaVersion
                     && existing.Source == context.Source
                     && IsValidWarmupPathList(existing.VirtualPaths)
+                    && existing.PlanHash == WarmupPlanHash(virtualPaths)
                     && existing.VirtualPaths.SequenceEqual(virtualPaths, StringComparer.OrdinalIgnoreCase))
                 {
                     return false;
@@ -991,7 +998,7 @@ public sealed class SvCacheManager
 
         WriteJsonAtomic(
             manifestPath,
-            new SvCacheWarmupPathsFile(CacheSchemaVersion, context.Source, virtualPaths));
+            new SvCacheWarmupPathsFile(CacheSchemaVersion, context.Source, virtualPaths, WarmupPlanHash(virtualPaths)));
         retainedWarmupProgressSource = null;
         retainedWarmupProgressMode = null;
         retainedWarmupProgressPaths = null;
@@ -1178,7 +1185,9 @@ public sealed class SvCacheManager
             }
 
             bytes = ReadAllBytesShared(payloadPath, MaximumPerformanceWarmupFileBytes);
-            if (bytes.LongLength != metadata.DecompressedSize)
+            if (bytes.LongLength != metadata.DecompressedSize
+                || (metadata.PayloadSha256 is not null && !string.Equals(metadata.PayloadSha256,
+                    Convert.ToHexString(SHA256.HashData(bytes)), StringComparison.OrdinalIgnoreCase)))
             {
                 bytes = [];
                 return false;
@@ -1378,17 +1387,18 @@ public sealed class SvCacheManager
     private static bool IsWarmupEntryComplete(
         SvCacheSettings settings,
         SvCacheProjectContext context,
-        string virtualPath)
+        string virtualPath,
+        bool verifyPayload = false)
     {
         if (!IsVirtualMetadataComplete(context, virtualPath))
         {
             return false;
         }
 
-        return settings.Mode != SvCacheMode.Performance || IsWarmupPayloadComplete(context, virtualPath);
+        return settings.Mode != SvCacheMode.Performance || IsWarmupPayloadComplete(context, virtualPath, verifyPayload);
     }
 
-    private static bool IsWarmupPayloadComplete(SvCacheProjectContext context, string virtualPath)
+    private static bool IsWarmupPayloadComplete(SvCacheProjectContext context, string virtualPath, bool verifyPayload)
     {
         var metadataPath = GetPayloadMetadataPath(context, virtualPath);
         var payloadPath = GetPayloadPath(context, virtualPath);
@@ -1406,7 +1416,9 @@ public sealed class SvCacheManager
                 && metadata.Source == context.Source
                 && string.Equals(metadata.VirtualPath, virtualPath, StringComparison.Ordinal)
                 && metadata.DecompressedSize >= 0
-                && new FileInfo(payloadPath).Length == metadata.DecompressedSize;
+                && new FileInfo(payloadPath).Length == metadata.DecompressedSize
+                && (!verifyPayload || metadata.PayloadSha256 is null
+                    || VerifyPayloadHash(payloadPath, metadata.PayloadSha256));
         }
         catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException)
         {
@@ -1451,7 +1463,7 @@ public sealed class SvCacheManager
         foreach (var path in virtualPaths)
         {
             var virtualPath = NormalizeVirtualPath(path);
-            if (IsWarmupEntryComplete(settings, context, virtualPath))
+            if (IsWarmupEntryComplete(settings, context, virtualPath, verifyPayload: true))
             {
                 processed.Add(virtualPath);
             }
@@ -1595,7 +1607,8 @@ public sealed class SvCacheManager
             context.Source,
             virtualPath,
             bytes.LongLength,
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            Convert.ToHexString(SHA256.HashData(bytes)));
 
         WriteBytesAtomic(payloadPath, bytes);
         WriteJsonAtomic(metadataPath, metadata);
@@ -1659,6 +1672,8 @@ public sealed class SvCacheManager
     private static bool IsValidWarmupPathList(IReadOnlyList<string>? virtualPaths)
     {
         return virtualPaths is { Count: > 0 }
+            && virtualPaths.Count <= MaximumCacheTraversalEntries
+            && virtualPaths.Distinct(StringComparer.OrdinalIgnoreCase).Count() == virtualPaths.Count
             && virtualPaths.All(path =>
             {
                 if (string.IsNullOrWhiteSpace(path) || Path.IsPathRooted(path))
@@ -1689,15 +1704,7 @@ public sealed class SvCacheManager
         retainedWarmupProgressSource = context.Source;
         retainedWarmupProgressMode = settings.Mode;
         retainedWarmupProgressPaths = warmupVirtualPaths;
-        var normalizedPaths = warmupVirtualPaths.Select(NormalizeVirtualPath).ToArray();
-        var completed = BoundedParallel.MapOrdered(
-            normalizedPaths,
-            WarmupVerificationPolicy,
-            (virtualPath, _) => IsWarmupEntryComplete(settings, context, virtualPath));
-        retainedCompletedWarmupPaths = Enumerable.Range(0, normalizedPaths.Length)
-            .Where(index => completed[index])
-            .Select(index => normalizedPaths[index])
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        retainedCompletedWarmupPaths = RestoreWarmupProgress(settings, context, warmupVirtualPaths);
         return retainedCompletedWarmupPaths;
     }
 
@@ -2858,7 +2865,8 @@ public sealed class SvCacheManager
     private sealed record SvCacheWarmupPathsFile(
         int CacheSchemaVersion,
         SvCacheSourceFingerprint Source,
-        IReadOnlyList<string> VirtualPaths);
+        IReadOnlyList<string> VirtualPaths,
+        string? PlanHash = null);
 
     private sealed record SvCacheWarmupStateFile(
         int CacheSchemaVersion,
@@ -2872,7 +2880,8 @@ public sealed class SvCacheManager
         SvCacheSourceFingerprint Source,
         string VirtualPath,
         long DecompressedSize,
-        DateTimeOffset CreatedAtUtc);
+        DateTimeOffset CreatedAtUtc,
+        string? PayloadSha256 = null);
 
     private sealed record SvCacheTextArtifactMetadata(
         int CacheSchemaVersion,

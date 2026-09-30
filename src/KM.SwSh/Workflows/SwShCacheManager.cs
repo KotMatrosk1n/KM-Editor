@@ -63,7 +63,7 @@ public sealed record SwShCacheArtifactDescriptor(
 /// Provides bounded, versioned storage for reusable Sword/Shield workflow artifacts.
 /// LayeredFS-derived artifacts are intentionally retained in memory only.
 /// </summary>
-public sealed class SwShCacheManager
+public sealed partial class SwShCacheManager
 {
     public const int CacheSchemaVersion = 1;
     public const string ParserVersion = "swsh-cache-parser-v1";
@@ -786,6 +786,7 @@ public sealed class SwShCacheManager
 
     private void ClearMemoryCacheCore()
     {
+        preparedArtifacts.Clear();
         memoryArtifacts.Clear();
         memoryLru.Clear();
         retainedMemorySizeBytes = 0;
@@ -809,7 +810,8 @@ public sealed class SwShCacheManager
         string typeIdentity,
         SwShCacheSettings settings,
         out byte[] payload,
-        out T value)
+        out T value,
+        bool deserialize = true)
     {
         payload = [];
         value = default!;
@@ -890,7 +892,7 @@ public sealed class SwShCacheManager
                 return false;
             }
 
-            value = JsonSerializer.Deserialize<T>(payload, JsonOptions)!;
+            if (deserialize) value = JsonSerializer.Deserialize<T>(payload, JsonOptions)!;
             var now = DateTime.UtcNow;
             if (!isReadWorker && now - fileInfo.LastWriteTimeUtc >= AccessTouchInterval)
             {

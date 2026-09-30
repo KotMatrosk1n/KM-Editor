@@ -75,6 +75,9 @@ internal sealed class SwShTextCacheStore
             verifyPersistence: true).IsPersisted;
     }
 
+    internal bool IsPrepared(SwShCacheSourceIdentity source, string language, string category) =>
+        cacheManager?.IsArtifactPrepared<SwShTextCategoryCacheData>(source, CreateArtifact(language, category)) == true;
+
     private CacheLoadResult LoadBaseCategoryCore(
         ProjectGame selectedGame,
         string language,
@@ -132,13 +135,13 @@ internal sealed class SwShTextCacheStore
             if (verifyPersistence && cacheManager is not null && identity is not null)
             {
                 var artifact = CreateArtifact(language, categoryId);
-                isPersisted = cacheManager.IsArtifactPersisted<SwShTextCategoryCacheData>(
+                isPersisted = cacheManager.IsArtifactPrepared<SwShTextCategoryCacheData>(
                     identity,
                     artifact);
                 if (!isPersisted)
                 {
                     cacheManager.SetArtifact(identity, artifact, data);
-                    isPersisted = cacheManager.IsArtifactPersisted<SwShTextCategoryCacheData>(
+                    isPersisted = cacheManager.IsArtifactPrepared<SwShTextCategoryCacheData>(
                         identity,
                         artifact);
                 }

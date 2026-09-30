@@ -479,6 +479,9 @@ public sealed class SwShPlacementWorkflowService
         }
     }
 
+    internal bool IsCachePrepared(SwShCacheSourceIdentity source) =>
+        cacheManager?.IsArtifactPrepared<SwShPlacementCatalogCacheData>(source, CatalogCacheArtifact) == true;
+
     private bool TryLoadCachedCatalog(
         SwShCacheSourceIdentity sourceIdentity,
         string revision,

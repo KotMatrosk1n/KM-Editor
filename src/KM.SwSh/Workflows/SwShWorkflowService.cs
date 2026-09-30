@@ -98,11 +98,13 @@ public sealed class SwShWorkflowService
     private readonly SwShTextWorkflowService textWorkflowService;
     private readonly SwShTrainersWorkflowService trainersWorkflowService;
     private readonly ProjectWorkspaceService projectWorkspaceService;
+    private readonly ProjectWorkspaceService cacheWarmupWorkspaceService = new();
     private readonly SwShParsedDataCache parsedDataCache;
     private readonly SwShCacheManager cacheManager;
     private readonly SwShPlacementWorkflowService cachePlacementWorkflowService;
     private readonly object cacheWarmupSyncRoot = new();
     private readonly HashSet<string> warmedCacheKeys = new(StringComparer.Ordinal);
+    private readonly HashSet<string> preparedWarmupTargetKeys = new(StringComparer.Ordinal);
     private ProjectId? activeCacheWarmupProjectId;
     private OpenedProject? cacheWarmupSourceProject;
     private OpenedProject? cacheWarmupBaseProject;
@@ -796,9 +798,9 @@ public sealed class SwShWorkflowService
 
     public SwShCacheStatus GetCacheStatus(ProjectPaths? paths = null)
     {
-        var project = paths is null ? null : CreateCacheWarmupProject(projectWorkspaceService.Open(paths));
+        var project = paths is null ? null : OpenCacheWarmupProject(paths);
         var activeSource = CapturePlacementCacheSourceIdentity(project);
-        return AddCacheWarmupStatus(cacheManager.GetStatus(activeSource), project, activeSource);
+        return AddCacheWarmupStatus(cacheManager.GetStatus(activeSource), project, activeSource, refreshPrepared: true);
     }
 
     public SwShCacheStatus UpdateCacheSettings(
@@ -806,7 +808,7 @@ public sealed class SwShWorkflowService
         long maxCacheSizeBytes,
         ProjectPaths? activePaths = null)
     {
-        var project = activePaths is null ? null : CreateCacheWarmupProject(projectWorkspaceService.Open(activePaths));
+        var project = activePaths is null ? null : OpenCacheWarmupProject(activePaths);
         var activeSource = CapturePlacementCacheSourceIdentity(project);
         var previousSettings = cacheManager.GetSettings();
         var status = cacheManager.UpdateSettings(mode, maxCacheSizeBytes, activeSource);
@@ -825,7 +827,7 @@ public sealed class SwShWorkflowService
 
     public SwShCacheStatus ClearCache(ProjectPaths? activePaths = null)
     {
-        var project = activePaths is null ? null : CreateCacheWarmupProject(projectWorkspaceService.Open(activePaths));
+        var project = activePaths is null ? null : OpenCacheWarmupProject(activePaths);
         var activeSource = CapturePlacementCacheSourceIdentity(project);
         var status = cacheManager.Clear(activeSource);
         ClearMemoryCaches(clearReusableDataCaches: true);
@@ -842,10 +844,11 @@ public sealed class SwShWorkflowService
             return AddCacheWarmupStatus(status, project: null, activeSource: null);
         }
 
-        var project = CreateCacheWarmupProject(projectWorkspaceService.Open(paths));
+        var project = OpenCacheWarmupProject(paths);
         EnsureCacheWarmupProject(project);
         var activeSource = cachePlacementWorkflowService.CaptureCatalogCacheSourceIdentity(project);
         var targets = CreateCacheWarmupTargets(project, activeSource, status.Settings.Mode);
+        RefreshPreparedTargets(targets);
         if (stepIndex < 0 || stepIndex >= targets.Count)
         {
             throw new ArgumentOutOfRangeException(
@@ -896,6 +899,7 @@ public sealed class SwShWorkflowService
     public void ClearMemoryCaches(bool clearReusableDataCaches = true)
     {
         projectWorkspaceService.ClearMemoryCache();
+        cacheWarmupWorkspaceService.ClearMemoryCache();
         pokemonWorkflowService.ClearMemoryCache();
         placementWorkflowService.ClearMemoryCache(clearReusableDataCaches);
         cachePlacementWorkflowService.ClearMemoryCache(clearReusableDataCaches);
@@ -942,10 +946,38 @@ public sealed class SwShWorkflowService
         }
     }
 
+    private OpenedProject OpenCacheWarmupProject(ProjectPaths paths) =>
+        CreateCacheWarmupProject(cacheWarmupWorkspaceService.Open(paths with { OutputRootPath = null }));
+
+    private void RefreshPreparedTargets(IReadOnlyList<CacheWarmupTarget> targets, bool force = false)
+    {
+        lock (cacheWarmupSyncRoot)
+        {
+            if (!force && preparedWarmupTargetKeys.SetEquals(targets.Select(target => target.Key))) return;
+        }
+        foreach (var target in targets)
+        {
+            var ready = target.TextTarget is null
+                ? cachePlacementWorkflowService.IsCachePrepared(target.Source)
+                : textWorkflowService.IsCachePrepared(target.Source, target.TextTarget);
+            lock (cacheWarmupSyncRoot)
+            {
+                if (ready) warmedCacheKeys.Add(target.Key);
+                else warmedCacheKeys.Remove(target.Key);
+            }
+        }
+        lock (cacheWarmupSyncRoot)
+        {
+            preparedWarmupTargetKeys.Clear();
+            preparedWarmupTargetKeys.UnionWith(targets.Select(target => target.Key));
+        }
+    }
+
     private SwShCacheStatus AddCacheWarmupStatus(
         SwShCacheStatus status,
         OpenedProject? project,
-        SwShCacheSourceIdentity? activeSource)
+        SwShCacheSourceIdentity? activeSource,
+        bool refreshPrepared = false)
     {
         if (status.Settings.Mode == SwShCacheMode.Minimal || project is null)
         {
@@ -959,6 +991,7 @@ public sealed class SwShWorkflowService
 
         EnsureCacheWarmupProject(project);
         var targets = CreateCacheWarmupTargets(project, activeSource, status.Settings.Mode);
+        RefreshPreparedTargets(targets, force: refreshPrepared);
         int completed;
         lock (cacheWarmupSyncRoot)
         {
@@ -993,7 +1026,7 @@ public sealed class SwShWorkflowService
         {
             targets.Add(new CacheWarmupTarget(
                 CreatePlacementWarmupKey(project, placementSource),
-                TextTarget: null));
+                TextTarget: null, placementSource));
         }
 
         lock (cacheWarmupSyncRoot)
@@ -1006,9 +1039,11 @@ public sealed class SwShWorkflowService
             {
                 cacheWarmupTextTargets = textWorkflowService
                     .CreateCacheWarmupTargets(project, mode)
-                    .Select(target => new CacheWarmupTarget(
-                        CreateTextWarmupKey(project, target, textWorkflowService.GetCacheWarmupSourceIdentity(project, target)),
-                        target))
+                    .Select(target =>
+                    {
+                        var source = textWorkflowService.GetCacheWarmupSourceIdentity(project, target);
+                        return new CacheWarmupTarget(CreateTextWarmupKey(project, target, source), target, source);
+                    })
                     .ToArray();
                 cacheWarmupTextTargetsProject = project;
                 cacheWarmupTextTargetsMode = mode;
@@ -1032,6 +1067,7 @@ public sealed class SwShWorkflowService
         lock (cacheWarmupSyncRoot)
         {
             warmedCacheKeys.Clear();
+            preparedWarmupTargetKeys.Clear();
             activeCacheWarmupProjectId = null;
             cacheWarmupTextTargetsProject = null;
             cacheWarmupTextTargets = null;
@@ -1069,7 +1105,8 @@ public sealed class SwShWorkflowService
 
     private sealed record CacheWarmupTarget(
         string Key,
-        SwShTextWorkflowService.SwShTextCacheWarmupTarget? TextTarget);
+        SwShTextWorkflowService.SwShTextCacheWarmupTarget? TextTarget,
+        SwShCacheSourceIdentity Source);
 
     private static string CreateCacheIdentityKey(SwShCacheSourceIdentity source)
     {
