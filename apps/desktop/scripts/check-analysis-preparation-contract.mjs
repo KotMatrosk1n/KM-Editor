@@ -475,16 +475,24 @@ for (const cacheManagerPath of [
       && cacheManager.includes('WarmupCandidateBatchSize = 256')
       && cacheManager.includes('PerformanceWarmupWorkerMemoryBudgetBytes = 576L * 1024L * 1024L')
       && cacheManager.includes('BoundedConcurrencyPolicy PerformanceWarmupPolicy')
-      && cacheManager.includes('BoundedConcurrencyPolicy WarmupVerificationPolicy')
       && /BoundedParallel\s*\.Plan\(/.test(cacheManager)
       && cacheManager.includes('BoundedParallel.For(')
-      && cacheManager.includes('BoundedParallel.MapOrdered(')
       && cacheManager.includes('MaximumArchiveIndexBytes = 64 * 1024 * 1024')
       && cacheManager.includes('MaximumPerformanceWarmupFileBytes = 64 * 1024 * 1024')
       && cacheManager.includes('MaximumPerformanceWarmupPackBytes = 128L * 1024L * 1024L')
       && cacheManager.includes('MaximumCacheJsonFileBytes = 16L * 1024L * 1024L')
       && cacheManager.includes('MaximumPersistedIndexFileBytes = 256L * 1024L * 1024L'),
     `${cacheManagerPath} must keep its performance worker pool fast and memory bounded.`
+  );
+  const warmupProgress = read(cacheManagerPath.replace('CacheManager.cs', 'CacheWarmupProgress.cs'));
+  assert.ok(
+    warmupProgress.includes('result.Count >= MaximumCacheTraversalEntries')
+      && warmupProgress.includes('receipt.Entries.Count <= paths.Count')
+      && warmupProgress.includes('bytes.LongLength > MaximumCacheJsonFileBytes')
+      && warmupProgress.includes('settings.MaxCacheSizeBytes')
+      && warmupProgress.includes('ReadAllBytesShared(path, MaximumPerformanceWarmupFileBytes)')
+      && !/(^|[^A-Za-z])Parallel\.For\(/m.test(warmupProgress),
+    `${cacheManagerPath} restart verification must bound inventories, receipts and payload reads.`
   );
   assert.match(
     cacheManager,
