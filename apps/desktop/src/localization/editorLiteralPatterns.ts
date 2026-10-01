@@ -10,6 +10,21 @@ type EditorLiteralPattern = {
 };
 
 export const editorLiteralPatterns: readonly EditorLiteralPattern[] = [
+  { pattern: /^Preparing ([\d,.\s]+) encounter tables?$/u, template: 'Preparing {count} encounter tables', parameters: ['count'] },
+  { pattern: /^Applying ([\d,.\s]+) slot field updates$/u, template: 'Applying {count} slot field updates', parameters: ['count'] },
+  { pattern: /^Applying ([\d,.\s]+) reviewed output files?$/u, template: 'Applying {count} reviewed output files', parameters: ['count'] },
+  { pattern: /^Checking (.+) status$/u, template: 'Checking {cache} status', parameters: ['cache'], translate: ['cache'] },
+  { pattern: /^([\d,.\s]+) changed$/u, template: '{count} changed', parameters: ['count'] },
+  { pattern: /^(.*) · ([\d,.\s]+) folders · ([\d,.\s]+) files$/u, template: '{path} · {folders} folders · {files} files', parameters: ['path', 'folders', 'files'] },
+  { pattern: /^Rental #(\d+) \| Lv\. (\d+)$/u, template: 'Rental #{index} | Lv. {level}', parameters: ['index', 'level'] },
+  { pattern: /^Adventure #(\d+) \| Lv\. (\d+)$/u, template: 'Adventure #{index} | Lv. {level}', parameters: ['index', 'level'] },
+  { pattern: /^Static #(\d+) \| Lv\. (\d+)$/u, template: 'Static #{index} | Lv. {level}', parameters: ['index', 'level'] },
+  { pattern: /^Gift #(\d+) \| (.+)$/u, template: 'Gift #{index} | {level}', parameters: ['index', 'level'], translate: ['level'] },
+  { pattern: /^Received \| Lv\. (\d+)$/u, template: 'Received | Lv. {level}', parameters: ['level'] },
+  { pattern: /^\$([\d,.\s]+) \(rate ([\d.]+)\)$/u, template: '${amount} (rate {rate})', parameters: ['amount', 'rate'] },
+  { pattern: /^Catalog row (\d+)$/u, template: 'Catalog row {index}', parameters: ['index'] },
+  { pattern: /^(\d+) badges: Lv\. (\d+)$/u, template: '{count} badges: Lv. {level}', parameters: ['count', 'level'] },
+  { pattern: /^(\d+) changed matchups?$/u, template: '{count} changed matchups', parameters: ['count'] },
   { pattern: /^Value is outside the allowed range \((.+) to (.+)\)\.$/u, template: 'Value is outside the allowed range ({minimum} to {maximum}).', parameters: ['minimum', 'maximum'], translate: ['minimum', 'maximum'] },
   { pattern: /^The '(.+)' field is missing or is not a text value\.$/u, template: "The '{field}' field is missing or is not a text value.", parameters: ['field'] },
   { pattern: /^Output root creation requires Base RomFS and Base ExeFS to validate for (.+)\.$/u, template: 'Validate Base RomFS and Base ExeFS for {game} before creating the output root.', parameters: ['game'] },

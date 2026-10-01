@@ -4,13 +4,16 @@ import { ClipboardCheck, Gift, RotateCcw, Save, TriangleAlert } from 'lucide-rea
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { type EditSession } from '../../bridge/contracts';
 import {
+  npcItemGiftMaximumMoney,
+  npcItemGiftMoneyId,
   type NpcItemGiftItemOptionRecord,
   type NpcItemGiftNpcGroup,
   type NpcItemGiftRecord,
   type NpcItemGiftSelection,
   type NpcItemGiftWorkflow
 } from '../../bridge/npcItemGiftContracts';
-import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { usePublishCommonEditorDiagnostics, usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { projectBridgeErrorCodes } from '../../errorCodes';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import {
   Metric,
@@ -26,7 +29,6 @@ type NpcGiftDrafts = Record<string, NpcItemGiftSelection>;
 
 type NpcItemGiftSelectableItemOption = NpcItemGiftItemOptionRecord & {
   isUnavailable: boolean;
-  label: string;
 };
 
 type NpcItemGiftTabGroup = {
@@ -220,7 +222,7 @@ export function NpcItemGiftSection({
         Object.entries(quantityInputOverrides)
           .filter(
             ([giftId, value]) =>
-              parseGiftQuantity(value) === null &&
+              parseGiftQuantity(value, giftId) === null &&
               cleanSelections[giftId]?.quantity.toString() !== value
           )
           .map(([giftId]) => giftId)
@@ -298,10 +300,17 @@ export function NpcItemGiftSection({
   usePublishCommonEditorError({
     domain: NPC_ITEM_GIFT_DOMAIN,
     field: 'quantity',
-    message: invalidQuantityGiftIds.size > 0
+    message: [...invalidQuantityGiftIds].some((giftId) => giftId !== npcItemGiftMoneyId)
       ? translateLiteral('Every changed gift quantity must be a whole number from 1 through 999.')
       : null
   });
+  usePublishCommonEditorDiagnostics(invalidQuantityGiftIds.has(npcItemGiftMoneyId) ? [{
+    severity: 'error',
+    domain: NPC_ITEM_GIFT_DOMAIN,
+    field: 'quantity',
+    code: projectBridgeErrorCodes.npcGiftMoneyAmountInvalid,
+    message: translateLiteral('Pocket money must be a whole number from 0 through 9,999,999.')
+  }] : []);
   usePublishCommonEditorError({
     domain: NPC_ITEM_GIFT_DOMAIN,
     field: 'selection',
@@ -348,7 +357,7 @@ export function NpcItemGiftSection({
       [giftId]: value
     }));
 
-    const quantity = parseGiftQuantity(value);
+    const quantity = parseGiftQuantity(value, giftId);
     if (quantity === null) {
       return;
     }
@@ -368,7 +377,7 @@ export function NpcItemGiftSection({
       return;
     }
 
-    const quantity = parseGiftQuantity(override);
+    const quantity = parseGiftQuantity(override, giftId);
     if (quantity !== null) {
       updateDrafts((current) => ({
         ...current,
@@ -453,7 +462,7 @@ export function NpcItemGiftSection({
           <Metric label="Items" value={workflow?.stats.itemOptionCount.toString() ?? '0'} />
           <Metric
             label="Staged"
-            value={stagedNpcId ? getNpcName(orderedNpcs, stagedNpcId) : 'No'}
+            value={translateLiteral(stagedNpcId ? getNpcName(orderedNpcs, stagedNpcId) : 'No')}
           />
         </div>
 
@@ -497,7 +506,7 @@ export function NpcItemGiftSection({
             <div className="npc-item-gift-tab-groups">
               {npcTabGroups.map((group) => (
                 <section className="npc-item-gift-tab-group" key={group.groupId}>
-                  <h3>{group.label}</h3>
+                  <h3>{translateLiteral(group.label)}</h3>
                   <div
                     aria-label={formatNpcGroupAriaLabel(group.label)}
                     className="npc-item-gift-tabs"
@@ -520,7 +529,7 @@ export function NpcItemGiftSection({
                           onClick={() => selectNpc(npc)}
                           type="button"
                         >
-                          <span>{npc.npcName}</span>
+                          <span>{translateLiteral(npc.npcName)}</span>
                           {isStaged ? (
                             <span className="npc-item-gift-staged-badge">Staged</span>
                           ) : null}
@@ -637,13 +646,20 @@ function NpcItemGiftCard({
   quantityValue: string;
   selection: NpcItemGiftSelection | undefined;
 }) {
-  const { t, translateLiteral } = useLocalization();
+  const { formatLocale, t, translateLiteral } = useLocalization();
+  const giftLabel = formatNpcGiftLabel(gift, translateLiteral);
+  const location = gift.npcId === 'mum' && gift.location === 'Postwick'
+    ? t('npcItemGift.location.postwick')
+    : gift.npcId === 'mum' && gift.location === 'Wedgehurst Station'
+      ? t('npcItemGift.location.wedgehurstStation')
+      : translateLiteral(gift.location);
   if (!selection) {
     return null;
   }
 
   const vanillaSelection = getGiftVanillaSelection(gift);
-  const isDefault = areSelectionsEqual([selection], [vanillaSelection]);
+  const isDefault = areSelectionsEqual([selection], [vanillaSelection])
+    && quantityValue === gift.vanillaQuantity.toString();
   const quantityErrorId = `npc-item-gift-${gift.giftId}-quantity-error`;
   const hasKnownKeyItem = selection.items.some(
     (item) => itemOptions.find((option) => option.itemId === item.itemId)?.isKeyItem === true
@@ -653,14 +669,14 @@ function NpcItemGiftCard({
     <article className="npc-item-gift-card">
       <div className="npc-item-gift-card-heading">
         <div>
-          <h3>{gift.label}</h3>
-          <p>{gift.relativePath}</p>
+          <h3>{giftLabel}</h3>
+          <p data-localization-ignore="true">{gift.relativePath}</p>
         </div>
         <div className="npc-item-gift-card-badges">
           <span className={`npc-item-gift-status is-${gift.status}`}>
             {formatNpcItemGiftStatus(gift.status)}
           </span>
-          <span className="npc-item-gift-location">{gift.location}</span>
+          <span className="npc-item-gift-location">{location}</span>
         </div>
       </div>
 
@@ -687,7 +703,7 @@ function NpcItemGiftCard({
                 label={itemLabel}
               />
               <NpcItemGiftItemPicker
-                aria-label={`${gift.label} ${item.label}`}
+                aria-label={`${giftLabel} ${itemLabel}`}
                 disabled={disabled}
                 inputId={itemInputId}
                 onChange={(itemId) => onItemChange(gift.giftId, item.slotId, itemId)}
@@ -700,14 +716,14 @@ function NpcItemGiftCard({
 
         <div className="npc-item-gift-field is-amount">
           <FieldLabel
-            help={t('workflowHelp.npcItemGift.amount')}
+            help={t(gift.isMoney ? 'workflowHelp.npcItemGift.moneyAmount' : 'workflowHelp.npcItemGift.amount')}
             htmlFor={`npc-item-gift-${gift.giftId}-amount`}
             label={translateLiteral('Amount')}
           />
           <input
             aria-describedby={quantityError ? quantityErrorId : undefined}
             aria-invalid={quantityError}
-            aria-label={`${gift.label} amount`}
+            aria-label={`${giftLabel} ${translateLiteral('Amount')}`}
             disabled={disabled || !gift.canEditQuantity || hasKnownKeyItem}
             id={`npc-item-gift-${gift.giftId}-amount`}
             inputMode="numeric"
@@ -723,16 +739,20 @@ function NpcItemGiftCard({
             <small>Key item amount</small>
           ) : quantityError ? (
             <small className="field-error" id={quantityErrorId}>
-              Enter a whole number from 1 to 999.
+              {translateLiteral(gift.isMoney
+                ? 'Pocket money must be a whole number from 0 through 9,999,999.'
+                : 'Enter a whole number from 1 to 999.')}
             </small>
           ) : null}
         </div>
       </div>
 
       <div className="npc-item-gift-defaults">
-        <p>
-          Default: {gift.vanillaQuantity} x{' '}
-          {gift.items.map((item) => item.vanillaItemName).join(', ')}
+        <p>{gift.isMoney
+          ? `${translateLiteral('Default')}: ₽${gift.vanillaQuantity.toLocaleString(formatLocale)}`
+          : <>{translateLiteral('Default')}: {gift.vanillaQuantity} x{' '}
+              <span data-localization-ignore="true">{gift.items.map((item) => item.vanillaItemName).join(', ')}</span>
+            </>}
         </p>
         <button
           className="secondary-button npc-item-gift-restore-button"
@@ -746,6 +766,17 @@ function NpcItemGiftCard({
       </div>
     </article>
   );
+}
+
+function formatNpcGiftLabel(gift: NpcItemGiftRecord, translateLiteral: (text: string) => string) {
+  const translated = translateLiteral(gift.label);
+  const prefix = `${gift.npcName} (`;
+  if (translated !== gift.label || !gift.label.startsWith(prefix) || !gift.label.endsWith(')')) {
+    return translated;
+  }
+
+  // These are editor-owned catalog labels, never names from the game text tables.
+  return `${translateLiteral(gift.npcName)} (${translateLiteral(gift.label.slice(prefix.length, -1))})`;
 }
 
 function NpcItemGiftItemPicker({
@@ -763,16 +794,22 @@ function NpcItemGiftItemPicker({
   options: NpcItemGiftSelectableItemOption[];
   value: number;
 }) {
+  const { translateLiteral } = useLocalization();
   const searchableOptions = useMemo(
-    () => options.map((option) => ({
-      disabled: option.isUnavailable,
-      groupLabel: option.category,
-      inputLabel: option.label,
-      label: option.label,
-      searchAliases: [option.name, option.category],
-      value: option.itemId
-    })),
-    [options]
+    () => options.map((option) => {
+      const label = `${option.name} (#${option.itemId})${
+        option.isKeyItem ? ` [${translateLiteral('Key item')}]` : ''
+      }${option.isUnavailable ? ` (${translateLiteral('Unavailable')})` : ''}`;
+      return {
+        disabled: option.isUnavailable,
+        groupLabel: translateLiteral(option.category),
+        inputLabel: label,
+        label,
+        searchAliases: [option.name, option.category],
+        value: option.itemId
+      };
+    }),
+    [options, translateLiteral]
   );
 
   return (
@@ -817,7 +854,7 @@ function NpcItemGiftSourceSummary({
           {sources.map((source) => (
             <tr key={source.sourceId}>
               <th scope="row">{source.label}</th>
-              <td>{source.relativePath}</td>
+              <td data-localization-ignore="true">{source.relativePath}</td>
               <td>{formatNpcItemGiftStatus(source.status)}</td>
               <td>{formatSourceLayer(source.provenance.sourceLayer)}</td>
               <td>{formatFileState(source.provenance.fileState)}</td>
@@ -855,13 +892,13 @@ export function decodeNpcItemGiftPendingSelections(
       !isNpcItemGiftIdentifier(giftId) ||
       giftIds.has(giftId) ||
       quantity === null ||
-      itemsText.length === 0
+      (itemsText.length === 0 && giftId !== npcItemGiftMoneyId)
     ) {
       return null;
     }
 
     giftIds.add(giftId);
-    const itemEntries = itemsText.split(',');
+    const itemEntries = itemsText.length === 0 ? [] : itemsText.split(',');
     if (itemEntries.some((itemEntry) => itemEntry.length === 0)) {
       return null;
     }
@@ -929,7 +966,11 @@ function getGiftVanillaSelection(gift: NpcItemGiftRecord): NpcItemGiftSelection 
   };
 }
 
-function parseGiftQuantity(value: string) {
+function parseGiftQuantity(value: string, giftId: string) {
+  if (giftId === npcItemGiftMoneyId) {
+    const parsed = parseCanonicalSignedInteger(value);
+    return parsed !== null && parsed >= 0 && parsed <= npcItemGiftMaximumMoney ? parsed : null;
+  }
   return parseCanonicalPositiveInteger(value, 999);
 }
 
@@ -1157,6 +1198,9 @@ function getStagedNpcId(
     if (!match || (stagedNpcId !== null && match.npcId !== stagedNpcId)) {
       return null;
     }
+    if (match.gift.isMoney && parseGiftQuantity(selection.quantity.toString(), selection.giftId) === null) {
+      return null;
+    }
 
     const expectedSlotIds = match.gift.items.map((item) => item.slotId);
     if (
@@ -1283,7 +1327,7 @@ function getSelectableItemOptions(
         category: 'Unavailable',
         isKeyItem: false,
         itemId: selectedItemId,
-        name: `${selectedItemName} unavailable`
+        name: selectedItemName
       },
       true
     ),
@@ -1297,7 +1341,6 @@ function toSelectableItemOption(
 ): NpcItemGiftSelectableItemOption {
   return {
     ...option,
-    isUnavailable,
-    label: `${option.name} (#${option.itemId})${option.isKeyItem ? ' [Key]' : ''}`
+    isUnavailable
   };
 }

@@ -47750,7 +47750,7 @@ function ZaEncounterGroupBrowser({
   table: EncounterTableRecord;
   tables: EncounterTableRecord[];
 }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const selectedZoneKey = getEncounterTableZoneKey(table);
   const [selectedSpawnerCategory, setSelectedSpawnerCategory] = useState<{
     key: string;
@@ -48007,7 +48007,13 @@ function ZaEncounterGroupBrowser({
               : t(getZaWildZoneCompletionStatusKey(completionState));
           return (
             <InteractiveTableRow
-              aria-label={`${groupLabel}, ${formatZaEncounterGroupUsage(group, table, activeBossCategoryKey)}, levels ${group.slot.levelMin} to ${group.slot.levelMax}, source ${formatZaEncounterGroupSource(group)}${
+              aria-label={`${t('editorText.encounterGroupAria', {
+                name: groupLabel,
+                usage: translateLiteral(formatZaEncounterGroupUsage(group, table, activeBossCategoryKey)),
+                minimum: group.slot.levelMin,
+                maximum: group.slot.levelMax,
+                source: formatZaEncounterGroupSource(group)
+              })}${
                 completionLabel ? `, ${t('za.wildZoneCompletion.column')} ${completionLabel}` : ''
               }`}
               aria-selected={isSelected}

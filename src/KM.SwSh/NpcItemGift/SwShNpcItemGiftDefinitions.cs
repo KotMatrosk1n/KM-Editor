@@ -10,6 +10,9 @@ internal static class SwShNpcItemGiftDefinitions
 
     internal static readonly IReadOnlyList<SwShNpcItemGiftDefinition> All =
     [
+        new("mum-postwick-money", "mum", "Mum", "Mum (Postwick pocket money)", "Postwick", 9,
+            SwShNpcMoneyGift.RelativePath, SwShNpcMoneyGift.AmountCell, SwShNpcMoneyGift.DefaultAmount,
+            CanEditQuantity: true, CompanionQuantityCells: [], Items: [], IsMoney: true),
         Gift("mum-postwick-poke-ball", "mum", "Mum", "Mum (Postwick)", "Postwick", 10, "main_event_0180.amx", 5118, 5, Slot("item", "Poke Ball", 5119, 4)),
         Gift("lab-guide-wedgehurst-potion", "guide", "Guide", "Guide (Wedgehurst Pokemon Lab)", "Wedgehurst", 20, "main_event_0215.amx", 2845, 1, Slot("item", "Potion", 2846, 17, 2740), companionQuantityCells: [2739]),
         Gift("leon-route-2-poke-ball", "leon", "Leon", "Leon (Route 2)", "Route 2", 30, "main_event_0250.amx", 6119, 20, Slot("item", "Poke Ball", 6120, 4, 5764), companionQuantityCells: [5763]),
