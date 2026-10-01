@@ -358,6 +358,9 @@ public sealed class SwShNpcItemGiftWorkflowService
                 expected: "Readable vanilla base AMX script"));
         }
 
+        var moneyLayoutVerified = !definitions.Any(definition => definition.IsMoney)
+            || (SwShNpcMoneyGift.TryVerifySource(basePath)
+                && (effectiveIsBase || SwShNpcMoneyGift.TryVerifySource(source.AbsolutePath)));
         var gifts = effectiveReader is null
             ? definitions.Select(definition => ToDefaultGiftRecord(
                 definition,
@@ -370,6 +373,7 @@ public sealed class SwShNpcItemGiftWorkflowService
                 effectiveReader,
                 itemLookup,
                 provenance,
+                moneyLayoutVerified,
                 diagnostics)).ToArray();
         var sourceStatus = gifts.Any(gift => gift.Status == "damaged")
             ? "damaged"
@@ -393,9 +397,10 @@ public sealed class SwShNpcItemGiftWorkflowService
         SwShAmxCellPatcher.SwShAmxCodeCellReader effectiveReader,
         IReadOnlyDictionary<int, SwShNpcItemGiftItemOptionRecord> itemLookup,
         SwShNpcItemGiftProvenance provenance,
+        bool moneyLayoutVerified,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var damaged = baseReader is null;
+        var damaged = baseReader is null || (definition.IsMoney && !moneyLayoutVerified);
         var companionMismatch = false;
         var quantity = definition.Quantity;
 
@@ -411,7 +416,9 @@ public sealed class SwShNpcItemGiftWorkflowService
                 if (effectiveReader.TryReadPackedInt(quantityCell, out var currentQuantity))
                 {
                     quantity = currentQuantity;
-                    damaged |= currentQuantity <= 0;
+                    damaged |= definition.IsMoney
+                        ? !SwShNpcMoneyGift.IsValidAmount(currentQuantity)
+                        : currentQuantity <= 0;
                 }
                 else
                 {
@@ -479,7 +486,8 @@ public sealed class SwShNpcItemGiftWorkflowService
                 DiagnosticSeverity.Warning,
                 $"{definition.Label} has an incompatible mapped operand or an unverified base layout and is blocked from editing.",
                 file: definition.RelativePath,
-                expected: "Vanilla base packed operands and readable effective packed operands"));
+                expected: "Vanilla base packed operands and readable effective packed operands")
+                with { Code = definition.IsMoney ? SwShNpcMoneyGift.SourceInvalidCode : null });
         }
         else if (status == "repairable")
         {
@@ -504,7 +512,8 @@ public sealed class SwShNpcItemGiftWorkflowService
             definition.QuantityCell,
             definition.CanEditQuantity,
             items,
-            provenance);
+            provenance,
+            definition.IsMoney);
     }
 
     private static SwShNpcItemGiftRecord ToDefaultGiftRecord(
@@ -527,7 +536,8 @@ public sealed class SwShNpcItemGiftWorkflowService
             definition.QuantityCell,
             definition.CanEditQuantity,
             definition.Items.Select(slot => CreateItemSlotRecord(slot, slot.ItemId, itemLookup)).ToArray(),
-            provenance);
+            provenance,
+            definition.IsMoney);
     }
 
     private static SwShNpcItemGiftItemSlotRecord CreateItemSlotRecord(

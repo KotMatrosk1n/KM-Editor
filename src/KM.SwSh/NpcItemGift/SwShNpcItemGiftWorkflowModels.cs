@@ -49,7 +49,8 @@ public sealed record SwShNpcItemGiftRecord(
     int? QuantityCell,
     bool CanEditQuantity,
     IReadOnlyList<SwShNpcItemGiftItemSlotRecord> Items,
-    SwShNpcItemGiftProvenance Provenance);
+    SwShNpcItemGiftProvenance Provenance,
+    bool IsMoney = false);
 
 public sealed record SwShNpcItemGiftNpcGroup(
     string NpcId,
@@ -98,7 +99,8 @@ internal sealed record SwShNpcItemGiftDefinition(
     bool CanEditQuantity,
     IReadOnlyList<int> CompanionQuantityCells,
     IReadOnlyList<SwShNpcItemGiftItemSlotDefinition> Items,
-    ProjectGame? Game = null);
+    ProjectGame? Game = null,
+    bool IsMoney = false);
 
 internal sealed record SwShNpcItemGiftItemSlotDefinition(
     string SlotId,

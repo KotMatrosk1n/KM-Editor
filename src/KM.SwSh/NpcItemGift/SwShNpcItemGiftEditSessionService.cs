@@ -452,9 +452,12 @@ public sealed class SwShNpcItemGiftEditSessionService
                 return null;
             }
 
-            var output = SwShAmxCellPatcher.ApplyCodeCellPatches(
-                File.ReadAllBytes(source.AbsolutePath),
-                patches);
+            var sourceBytes = File.ReadAllBytes(source.AbsolutePath);
+            if (fileGroup.Selections.Any(selection => selection.Definition.IsMoney))
+            {
+                SwShNpcMoneyGift.VerifySource(sourceBytes);
+            }
+            var output = SwShAmxCellPatcher.ApplyCodeCellPatches(sourceBytes, patches);
             VerifyPatchedOutput(fileGroup, output);
             return new PreparedNpcItemGiftOutput(fileGroup, targetPath, output);
         }
@@ -483,6 +486,10 @@ public sealed class SwShNpcItemGiftEditSessionService
         byte[] output)
     {
         var diagnostics = new List<ValidationDiagnostic>();
+        if (fileGroup.Selections.Any(selection => selection.Definition.IsMoney))
+        {
+            SwShNpcMoneyGift.VerifySource(output);
+        }
         foreach (var patch in CreateCellPatches(fileGroup, diagnostics))
         {
             var actual = SwShAmxCellPatcher.ReadPackedCodeCellInt(output, patch.Cell);
@@ -766,7 +773,15 @@ public sealed class SwShNpcItemGiftEditSessionService
                 field: GiftsField,
                 expected: $"Quantity {current.Quantity.ToString(CultureInfo.InvariantCulture)}"));
         }
-        else if (definition.CanEditQuantity && quantityChanged && selection.Quantity is < 1 or > 999)
+        else if (definition.IsMoney && !SwShNpcMoneyGift.IsValidAmount(selection.Quantity))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pocket money must be a whole number from 0 through 9,999,999.",
+                field: GiftsField,
+                expected: "Money amount 0-9999999") with { Code = SwShNpcMoneyGift.AmountInvalidCode });
+        }
+        else if (!definition.IsMoney && definition.CanEditQuantity && quantityChanged && selection.Quantity is < 1 or > 999)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -902,8 +917,7 @@ public sealed class SwShNpcItemGiftEditSessionService
             var parts = entry.Split('|');
             if (parts.Length != 3
                 || string.IsNullOrEmpty(parts[0])
-                || !TryParseCanonicalInt(parts[1], out var quantity)
-                || string.IsNullOrEmpty(parts[2]))
+                || !TryParseCanonicalInt(parts[1], out var quantity))
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
@@ -914,7 +928,7 @@ public sealed class SwShNpcItemGiftEditSessionService
             }
 
             var items = new List<SwShNpcItemGiftItemSelection>();
-            foreach (var itemEntry in parts[2].Split(',', StringSplitOptions.None))
+            foreach (var itemEntry in parts[2].Length == 0 ? [] : parts[2].Split(',', StringSplitOptions.None))
             {
                 var itemParts = itemEntry.Split('=');
                 if (itemParts.Length != 2

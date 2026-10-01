@@ -64,7 +64,8 @@ public sealed record NpcItemGiftRecordDto(
     int? QuantityCell,
     bool CanEditQuantity,
     IReadOnlyList<NpcItemGiftItemSlotRecordDto> Items,
-    NpcItemGiftProvenanceDto Provenance);
+    NpcItemGiftProvenanceDto Provenance,
+    bool IsMoney = false);
 
 public sealed record NpcItemGiftNpcGroupDto(
     string NpcId,

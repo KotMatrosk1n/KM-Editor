@@ -3579,7 +3579,8 @@ public static class SwShBridgeMapper
             gift.QuantityCell,
             gift.CanEditQuantity,
             gift.Items.Select(ToDto).ToArray(),
-            ToDto(gift.Provenance));
+            ToDto(gift.Provenance),
+            gift.IsMoney);
     }
 
     private static NpcItemGiftItemSlotRecordDto ToDto(SwShNpcItemGiftItemSlotRecord item)

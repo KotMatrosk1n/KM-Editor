@@ -16,6 +16,8 @@ export const kmErrorCodeSchema = z
   );
 
 export const projectBridgeErrorCodes = {
+  npcGiftMoneyAmountInvalid: "KM-SWSH-NPC-GIFT-MONEY-AMOUNT-INVALID",
+  npcGiftMoneySourceInvalid: "KM-SWSH-NPC-GIFT-MONEY-SOURCE-INVALID",
   dumpYamlSyntax: "KM-DUMP-YAML-SYNTAX",
   dumpYamlDuplicate: "KM-DUMP-YAML-DUPLICATE",
   dumpYamlSource: "KM-DUMP-YAML-SOURCE",

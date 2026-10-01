@@ -36,7 +36,9 @@ const npcItemGiftStatusSchema = z.enum([
   'damaged',
   'missing'
 ]);
-const npcItemGiftQuantitySchema = z.number().int().min(1).max(999);
+export const npcItemGiftMoneyId = 'mum-postwick-money';
+export const npcItemGiftMaximumMoney = 9_999_999;
+const npcItemGiftQuantitySchema = z.number().int().min(0).max(npcItemGiftMaximumMoney);
 const npcItemGiftPackedIntegerSchema = z
   .number()
   .int()
@@ -78,7 +80,8 @@ export const npcItemGiftRecordSchema = z.strictObject({
   canEditQuantity: z.boolean(),
   displayOrder: z.number().int().nonnegative(),
   giftId: npcItemGiftIdentifierSchema,
-  items: z.array(npcItemGiftItemSlotRecordSchema).min(1).max(16),
+  isMoney: z.boolean().default(false),
+  items: z.array(npcItemGiftItemSlotRecordSchema).max(16),
   label: npcItemGiftLabelSchema,
   location: npcItemGiftLabelSchema,
   npcId: npcItemGiftIdentifierSchema,
@@ -89,7 +92,10 @@ export const npcItemGiftRecordSchema = z.strictObject({
   relativePath: npcItemGiftPathSchema,
   status: npcItemGiftStatusSchema,
   vanillaQuantity: npcItemGiftQuantitySchema
-});
+}).refine((gift) => gift.isMoney
+  ? gift.giftId === npcItemGiftMoneyId && gift.items.length === 0 && gift.canEditQuantity
+  : gift.items.length > 0 && gift.vanillaQuantity >= 1 && gift.vanillaQuantity <= 999,
+  'Gift fields must match the money or item reward kind.');
 
 export const npcItemGiftNpcGroupSchema = z.strictObject({
   displayOrder: z.number().int().nonnegative(),
@@ -105,9 +111,12 @@ export const npcItemGiftItemSelectionSchema = z.strictObject({
 
 export const npcItemGiftSelectionSchema = z.strictObject({
   giftId: npcItemGiftIdentifierSchema,
-  items: z.array(npcItemGiftItemSelectionSchema).min(1).max(16),
+  items: z.array(npcItemGiftItemSelectionSchema).max(16),
   quantity: npcItemGiftPackedIntegerSchema
-});
+}).refine((selection) => selection.giftId === npcItemGiftMoneyId
+  ? selection.items.length === 0 && selection.quantity >= 0 && selection.quantity <= npcItemGiftMaximumMoney
+  : selection.items.length > 0,
+  'Money selections have no item slots; item gifts require their mapped slots.');
 
 export const npcItemGiftWorkflowStatsSchema = z.strictObject({
   giftCount: z.number().int().nonnegative(),

@@ -3955,7 +3955,9 @@ internal static class GameModuleProviders
                     parentRecordId: null,
                     records.Count,
                     gift.Label,
-                    "Verified item-grant operands from one existing NPC script. Runtime event order is not inferred.",
+                    gift.IsMoney
+                        ? "Verified money amount added by one existing NPC script. Runtime event order is not inferred."
+                        : "Verified item-grant operands from one existing NPC script. Runtime event order is not inferred.",
                     target: null,
                     capability,
                     [
@@ -3963,7 +3965,7 @@ internal static class GameModuleProviders
                         TextFact(providerId, giftRecordId, "npcId", "NPC ID", gift.NpcId),
                         TextFact(providerId, giftRecordId, "npcName", "NPC", gift.NpcName),
                         TextFact(providerId, giftRecordId, "location", "Location", gift.Location),
-                        SignedFact(providerId, giftRecordId, "quantity", "Quantity", gift.Quantity),
+                        SignedFact(providerId, giftRecordId, "quantity", gift.IsMoney ? "Money amount" : "Quantity", gift.Quantity),
                         EnumFact(providerId, giftRecordId, "status", "Status", gift.Status),
                         DerivedSignedFact(providerId, giftRecordId, "itemCount", "Item slot count", gift.Items.Count),
                     ]));

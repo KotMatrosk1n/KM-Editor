@@ -505,7 +505,12 @@ function translateLiteralBodyForLanguage(language: InterfaceLocale, literal: str
   }
 
   const resource = getLocalizationResource(language);
-  const direct = resource.literals[literal] ?? resourcesByLanguage.en.literals[literal];
+  // Older resources also contain exact English UI literals in the keyed catalog.
+  // Reuse those translations without interpreting semantic keys or raw identifiers.
+  const keyedLiteral = resourcesByLanguage.en.keys[literal] === literal
+    ? resource.keys[literal]
+    : undefined;
+  const direct = resource.literals[literal] ?? keyedLiteral ?? resourcesByLanguage.en.literals[literal];
   if (direct) {
     return direct;
   }
