@@ -21,6 +21,8 @@ public static class ModelPreviewCache
         lock (Gate) candidate = Entries.FirstOrDefault(e => e.Key == key);
         var sources = new Dictionary<string, string?>(StringComparer.Ordinal);
         var loaded = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        bool Missing(Exception error) => error is FileNotFoundException or DirectoryNotFoundException
+            || error.InnerException is { } inner && Missing(inner);
         byte[] Read(string path)
         {
             if (loaded.TryGetValue(path, out var value)) return value;
@@ -31,8 +33,7 @@ public static class ModelPreviewCache
                 loaded[path] = value;
                 return value;
             }
-            catch (FileNotFoundException) { sources[path] = null; throw; }
-            catch (DirectoryNotFoundException) { sources[path] = null; throw; }
+            catch (IOException error) when (Missing(error)) { sources[path] = null; throw; }
         }
         if (candidate is not null)
         {
@@ -40,9 +41,11 @@ public static class ModelPreviewCache
             foreach (var dependency in candidate.Sources)
             {
                 try { _ = Read(dependency.Key); }
-                catch (FileNotFoundException) { }
-                catch (DirectoryNotFoundException) { }
-                if (sources[dependency.Key] != dependency.Value) unchanged = false;
+                catch (IOException error) when (Missing(error)) { }
+                catch (IOException) { unchanged = false; break; }
+                // Dependencies are recorded in traversal order. Once an ancestor
+                // changes, its old children may no longer belong to this model.
+                if (sources[dependency.Key] != dependency.Value) { unchanged = false; break; }
             }
             if (unchanged)
             {
@@ -52,6 +55,8 @@ public static class ModelPreviewCache
                 }
                 return candidate.Scene;
             }
+            sources.Clear();
+            loaded.Clear();
         }
         var scene = build(Read);
         var bytes = scene.Primitives.Sum(p => (long)p.Vertices.Length * 4 + (long)p.Indices.Length * 4)

@@ -106,7 +106,7 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
   }, [background]);
   const pathKey = JSON.stringify(paths);
   const supported = ['sword', 'shield', 'scarlet', 'violet', 'za'].some(game => game === paths.selectedGame);
-  const vanillaAssets = useMemo(() => properties?.assets.map(a => ({ asset: a.id, sourceHash: a.sourceHash, changes: [], restore: true })) ?? [], [properties]);
+  const vanillaAssets = useMemo(() => (properties?.vanillaAssets ?? properties?.assets ?? []).map(a => ({ asset: a.id, sourceHash: a.sourceHash, changes: [], restore: true })), [properties]);
   const viewer = useModelViewport(paths, selected, animation, revision, !!image, background, original ? [] : textureChanges,
     original ? vanillaAssets : assetChanges ?? stagedAssetChanges(session, selected), light,
     editing ? { ...options, statistics, inGame } : { display: 0, wireframe: false, hidden: [], selected: null, statistics: false, inGame: true },

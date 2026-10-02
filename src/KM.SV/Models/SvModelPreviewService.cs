@@ -61,17 +61,26 @@ public sealed class SvModelPreviewService
 
     public ModelTextureResource[] Assets(OpenedProject project, string id, bool vanilla = false)
     {
-        var baseProject = project with { Paths = project.Paths with { OutputRootPath = null } };
+        var selected = vanilla ? project with { Paths = project.Paths with { OutputRootPath = null } } : project;
         var seeds = new HashSet<string>(StringComparer.Ordinal);
-        Prepare(baseProject, id, "rest", (path, _, _) => { if (path != CatalogPath) seeds.Add(path); });
+        Prepare(selected, id, "rest", (path, _, _) => { if (path != CatalogPath) seeds.Add(path); });
         var graphSource = new SvWorkflowFileSource(bypassReusableBaseCache: true, maximumReadBytes: 32 * 1024 * 1024,
             maximumReadCount: 16384, maximumAggregateReadBytes: 512L * 1024 * 1024);
-        ModelTextureResource[] graph;
-        using (SvWorkflowFileSource.BeginIndependentFreshReadScope(baseProject.Paths))
-            graph = ModelAssetGraph.Read(seeds.Select(path => (path, (string?)null)), (path, _) => graphSource.ReadBase(baseProject, path).Bytes);
-        if (vanilla) return graph;
+        using var scope = SvWorkflowFileSource.BeginIndependentFreshReadScope(selected.Paths);
+        return ModelAssetGraph.Read(seeds.Select(path => (path, (string?)null)), (path, _) => graphSource.Read(selected, path).Bytes);
+    }
+
+    public ModelTextureResource[] RestorationAssets(OpenedProject project, string id)
+    {
+        var graph = Assets(project, id, true);
+        var graphSource = new SvWorkflowFileSource(bypassReusableBaseCache: true, maximumReadBytes: 32 * 1024 * 1024,
+            maximumReadCount: 16384, maximumAggregateReadBytes: 512L * 1024 * 1024);
         using var currentScope = SvWorkflowFileSource.BeginIndependentFreshReadScope(project.Paths);
-        return graph.Select(asset => asset with { Bytes = graphSource.Read(project, asset.Id).Bytes }).ToArray();
+        return graph.Select(asset =>
+        {
+            try { return asset with { Bytes = graphSource.Read(project, asset.Id).Bytes }; }
+            catch (FileNotFoundException) { return asset with { Bytes = [] }; }
+        }).ToArray();
     }
 
     public PreviewScene Prepare(OpenedProject project, string id, string? animation = null, Action<string, byte[], string?>? observe = null, Func<string, byte[], byte[]>? transform = null)

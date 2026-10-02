@@ -1,5 +1,7 @@
 {
   "keys": {
+    "modelViewer.warning.incompleteTriangles": "Некоторые группы полигонов содержат неполные треугольники. Эти индексы пропускаются в предпросмотре и сохраняются в записываемых файлах.",
+    "modelViewer.warning.animationUnavailable": "Выбранная анимация недоступна для исходной модели. Показана её исходная поза.",
     "editorText.encounterGroupAria": "{name}, {usage}, уровни от {minimum} до {maximum}, источник {source}",
     "npcItemGift.location.postwick": "Поствик",
     "npcItemGift.location.wedgehurstStation": "Станция Веджхерст",

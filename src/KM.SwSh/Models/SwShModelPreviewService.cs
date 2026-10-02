@@ -30,16 +30,27 @@ public sealed class SwShModelPreviewService
 
     public ModelTextureResource[] Assets(OpenedProject project, string id, bool vanilla = false)
     {
-        var baseProject = project with { Paths = project.Paths with { OutputRootPath = null } };
-        var source = new SwShModelSource(baseProject, 512L * 1024 * 1024, 16384);
-        var resource = Resources(baseProject, source).SingleOrDefault(r => r.Entry.Id == id)
-            ?? throw new InvalidDataException("Select a model from the vanilla catalog.");
+        var selected = vanilla ? project with { Paths = project.Paths with { OutputRootPath = null } } : project;
+        var source = new SwShModelSource(selected, 512L * 1024 * 1024, 16384);
+        var resource = Resources(selected, source).SingleOrDefault(r => r.Entry.Id == id)
+            ?? throw new InvalidDataException("Select a model from the selected catalog.");
         var roots = resource.Animations.Select(a => (a.Path, a.Archive)).Prepend((id, resource.Archive));
         var graph = ModelAssetGraph.Read(roots, source.Read);
         source.Verify();
-        if (vanilla) return graph;
+        return graph;
+    }
+
+    public ModelTextureResource[] RestorationAssets(OpenedProject project, string id)
+    {
+        var graph = Assets(project, id, true);
         var layered = new SwShModelSource(project, 512L * 1024 * 1024, 16384);
-        var result = graph.Select(asset => asset with { Bytes = layered.Read(asset.Id, asset.Archive) }).ToArray();
+        var result = graph.Select(asset =>
+        {
+            try { return asset with { Bytes = layered.Read(asset.Id, asset.Archive) }; }
+            // A replacement can omit original members. Restore those as loose
+            // resources instead of rebuilding or replacing its whole archive.
+            catch (FileNotFoundException) { return asset with { Bytes = [], Archive = null }; }
+        }).ToArray();
         layered.Verify(); return result;
     }
 

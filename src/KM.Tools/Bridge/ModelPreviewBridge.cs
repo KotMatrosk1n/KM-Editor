@@ -15,6 +15,7 @@ internal static class ModelPreviewBridge
         var assets = Assets(project, request.Id);
         return new {
             Assets = assets.Select(a => new { a.Id, Size = a.Bytes.Length, SourceHash = ModelTextureIntent.Hash(a.Bytes), a.Archive }),
+            VanillaAssets = RestorationAssets(project, request.Id).Select(a => new { a.Id, Size = a.Bytes.Length, SourceHash = ModelTextureIntent.Hash(a.Bytes), a.Archive }),
             Materials = assets.Where(a => Path.GetExtension(a.Id) is ".trmtr" or ".gfbmdl")
                 .Select(a => new { a.Id, SourceHash = ModelTextureIntent.Hash(a.Bytes), Fields = new ModelMaterialDocument(a.Bytes, a.Id.EndsWith(".gfbmdl", StringComparison.Ordinal)).Fields })
         };
@@ -43,6 +44,11 @@ internal static class ModelPreviewBridge
         ProjectGame.Sword or ProjectGame.Shield => new SwShModelPreviewService().Assets(project, id, vanilla),
         ProjectGame.ZA => new ZaModelPreviewService().Assets(project, id, vanilla),
         _ => new SvModelPreviewService().Assets(project, id, vanilla)
+    };
+    private static ModelTextureResource[] RestorationAssets(OpenedProject project, string id) => project.Paths.SelectedGame switch {
+        ProjectGame.Sword or ProjectGame.Shield => new SwShModelPreviewService().RestorationAssets(project, id),
+        ProjectGame.ZA => new ZaModelPreviewService().RestorationAssets(project, id),
+        _ => new SvModelPreviewService().RestorationAssets(project, id)
     };
     private static ModelTextureIntent AssetIntent(OpenedProject project, string id, ModelAssetChangeDto change)
     {
@@ -106,7 +112,7 @@ internal static class ModelPreviewBridge
             }
             var info = checked((int)BitConverter.ToInt64(resource.Bytes, checked((int)BitConverter.ToInt64(resource.Bytes, 40))));
             return new { resource.Id, resource.Materials, SourceHash = ModelTextureIntent.Hash(resource.Bytes), preview.Width, preview.Height,
-                Editable = document is not null, MipCount = BitConverter.ToUInt16(resource.Bytes, info + 22), Format = preview.Format.ToString("X4"), ThumbnailWidth = width, ThumbnailHeight = height,
+                Editable = document is not null, MipCount = BitConverter.ToUInt16(resource.Bytes, info + 22), Format = BitConverter.ToUInt32(resource.Bytes, info + 28).ToString("X4"), ThumbnailWidth = width, ThumbnailHeight = height,
                 Pixels = Convert.ToBase64String(thumbnail), Colors = colors.OrderByDescending(pair => pair.Value).Take(16).Select(pair => pair.Key).ToArray() };
         }, value => System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(value).LongLength)).ToArray();
     }
@@ -158,26 +164,45 @@ internal static class ModelPreviewBridge
         if (request.Resolution is not (1 or 2 or 4)) throw new InvalidDataException("Model preview resolution is invalid.");
         var project = Open(request.Paths);
         var replacements = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        var restoring = false;
         if (request.AssetChanges is { Length: > 0 } assetChanges)
         {
             if (assetChanges.Length > 2048 || assetChanges.Any(c => c is null) || assetChanges.Select(c => c.Asset).Distinct().Count() != assetChanges.Length)
                 throw new InvalidDataException("Model preview changes are invalid.");
-            var assets = Assets(project, request.Id).ToDictionary(a => a.Id, StringComparer.Ordinal);
-            var vanilla = assetChanges.Any(c => c.Restore) ? Assets(project, request.Id, true).ToDictionary(a => a.Id, StringComparer.Ordinal) : null;
+            restoring = assetChanges.Any(c => c.Restore);
+            if (restoring && (assetChanges.Any(c => !c.Restore) || request.TextureChanges is { Length: > 0 }))
+                throw new InvalidDataException("Preview complete model restoration separately from other edits.");
+            var assets = (restoring ? RestorationAssets(project, request.Id) : Assets(project, request.Id)).ToDictionary(a => a.Id, StringComparer.Ordinal);
+            var vanilla = restoring ? Assets(project, request.Id, true).ToDictionary(a => a.Id, StringComparer.Ordinal) : null;
             foreach (var change in assetChanges)
             {
                 var intent = AssetIntent(project, request.Id, change);
                 if (!assets.TryGetValue(change.Asset, out var asset)) throw new InvalidDataException("Model asset association changed.");
                 replacements.Add(asset.Id, ModelTextureEncodingCache.Encode(asset.Bytes, intent, vanilla?.GetValueOrDefault(asset.Id)?.Bytes).Bytes);
             }
+            if (restoring)
+            {
+                if (vanilla!.Values.Any(asset => !assets[asset.Id].Bytes.AsSpan().SequenceEqual(asset.Bytes) && !replacements.ContainsKey(asset.Id)))
+                    throw new InvalidDataException("Preview restoration must include every changed original model asset.");
+                // Restore Vanilla owns the original graph. Loading that graph also
+                // handles original members absent from a replacement archive.
+                project = project with { Paths = project.Paths with { OutputRootPath = null } };
+                replacements.Clear();
+            }
         }
         byte[] Transform(string path, byte[] bytes) => replacements.GetValueOrDefault(path) ?? bytes;
-        var scene = project.Paths.SelectedGame switch
+        PreviewScene Prepare(string? animation) => project.Paths.SelectedGame switch
         {
-            ProjectGame.Sword or ProjectGame.Shield => new SwShModelPreviewService().Prepare(project, request.Id, request.Animation, transform: Transform),
-            ProjectGame.ZA => new ZaModelPreviewService().Prepare(project, request.Id, request.Animation, transform: Transform),
-            _ => new SvModelPreviewService().Prepare(project, request.Id, request.Animation, transform: Transform)
+            ProjectGame.Sword or ProjectGame.Shield => new SwShModelPreviewService().Prepare(project, request.Id, animation, transform: Transform),
+            ProjectGame.ZA => new ZaModelPreviewService().Prepare(project, request.Id, animation, transform: Transform),
+            _ => new SvModelPreviewService().Prepare(project, request.Id, animation, transform: Transform)
         };
+        var scene = Prepare(restoring ? "rest" : request.Animation);
+        if (restoring && request.Animation != "rest")
+        {
+            if (request.Animation is null || scene.Rig.Clips.Any(clip => clip.Id == request.Animation)) scene = Prepare(request.Animation);
+            else scene = scene with { Rig = scene.Rig with { Warnings = [.. scene.Rig.Warnings, "animationUnavailable"] } };
+        }
         if (request.TextureChanges is { Length: > 0 } changes)
         {
             if (changes.Length > 32 || changes.Any(change => change is null) || changes.Select(change => change.Texture).Distinct().Count() != changes.Length)

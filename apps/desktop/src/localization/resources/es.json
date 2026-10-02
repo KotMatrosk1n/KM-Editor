@@ -1,5 +1,7 @@
 {
   "keys": {
+    "modelViewer.warning.incompleteTriangles": "Algunos grupos de mallas contienen triángulos incompletos. Esos índices se omiten en la vista previa y se conservan en los archivos guardados.",
+    "modelViewer.warning.animationUnavailable": "La animación seleccionada no está disponible para el modelo original. Se muestra su pose de reposo.",
     "editorText.encounterGroupAria": "{name}, {usage}, niveles {minimum} a {maximum}, origen {source}",
     "npcItemGift.location.postwick": "Pueblo Yarda",
     "npcItemGift.location.wedgehurstStation": "Estación de Pueblo Par",

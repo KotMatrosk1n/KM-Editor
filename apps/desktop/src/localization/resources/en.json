@@ -1,5 +1,7 @@
 {
   "keys": {
+    "modelViewer.warning.incompleteTriangles": "Some mesh groups contain incomplete triangles. Those indices are omitted from the preview and preserved in saved files.",
+    "modelViewer.warning.animationUnavailable": "The selected animation is unavailable for the original model. Showing its rest pose.",
     "editorText.encounterGroupAria": "{name}, {usage}, levels {minimum} to {maximum}, source {source}",
     "npcItemGift.location.postwick": "Postwick",
     "npcItemGift.location.wedgehurstStation": "Wedgehurst Station",

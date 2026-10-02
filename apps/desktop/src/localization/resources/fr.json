@@ -1,5 +1,7 @@
 {
   "keys": {
+    "modelViewer.warning.incompleteTriangles": "Certains groupes de maillages contiennent des triangles incomplets. Ces indices sont omis dans l’aperçu et conservés dans les fichiers enregistrés.",
+    "modelViewer.warning.animationUnavailable": "L’animation sélectionnée n’est pas disponible pour le modèle d’origine. Sa pose de repos est affichée.",
     "editorText.encounterGroupAria": "{name}, {usage}, niveaux {minimum} à {maximum}, source {source}",
     "npcItemGift.location.postwick": "Paddoxton",
     "npcItemGift.location.wedgehurstStation": "Gare de Brasswick",

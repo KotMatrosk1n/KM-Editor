@@ -24,7 +24,6 @@ public static class PreviewRigReader
         var nodes = data.Tables(data.Root, 1, 512);
         var joints = data.Tables(data.Root, 2, 512);
         var result = new PreviewBone[nodes.Length];
-        var names = new HashSet<string>(StringComparer.Ordinal);
         for (var i = 0; i < nodes.Length; i++)
         {
             var node = nodes[i];
@@ -49,7 +48,6 @@ public static class PreviewRigReader
                 compensate = data.Field(bone, 0) is var flag && flag != 0 && data.U8(flag) != 0;
             }
             var name = data.Text(node, 0) ?? throw new InvalidDataException("Skeleton node has no identifier.");
-            if (!names.Add(name)) throw new InvalidDataException("Skeleton node identifiers are ambiguous.");
             result[i] = new(name, parent, joint, compensate, [scale.X, scale.Y, scale.Z],
                 [rotation.X, rotation.Y, rotation.Z, rotation.W], [translation.X, translation.Y, translation.Z],
                 [inverse.M11, inverse.M12, inverse.M13, inverse.M14, inverse.M21, inverse.M22, inverse.M23, inverse.M24,
@@ -80,10 +78,15 @@ public static class PreviewRigReader
         // Shared clips can include companion and prop tracks beyond this model's
         // skeleton. Bound the source independently, then retain matching bones.
         var entries = skeletal == 0 ? [] : data.Tables(skeletal, 0, 4096);
+        // Node indices own transforms. Labels may be shared by unanimated nodes,
+        // but a named skeletal track must resolve to exactly one node.
+        var indices = bones.Select((bone, index) => (bone.Name, Index: index)).GroupBy(b => b.Name, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count() == 1 ? group.First().Index : -1, StringComparer.Ordinal);
         foreach (var entry in entries)
         {
-            var index = Array.FindIndex(bones, b => b.Name == data.Text(entry, 0));
-            if (index < 0) continue;
+            var name = data.Text(entry, 0);
+            if (name is null || !indices.TryGetValue(name, out var index)) continue;
+            if (index < 0) throw new InvalidDataException("Animation target matches multiple skeleton nodes.");
             if (!seen.Add(index)) throw new InvalidDataException("Animation tracks are ambiguous.");
             tracks.Add(new(index, Keys(1, false), Keys(3, true), Keys(5, false)));
             PreviewKey[] Keys(int field, bool rotation)

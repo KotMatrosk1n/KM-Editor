@@ -193,7 +193,7 @@ public sealed class SwShPreviewReader(Func<string, byte[]> read)
             var material = checked((int)data.Value(polygon, 0));
             var (start, length) = data.Vector(polygon, 1, 2, 3_000_000);
             indicesRead = checked(indicesRead + length);
-            if (material >= materials.Length || length == 0 || length % 3 != 0 || indicesRead > 3_000_000)
+            if (material >= materials.Length || indicesRead > 3_000_000)
                 throw new InvalidDataException("Mesh triangle range is invalid.");
             var indices = new uint[length];
             for (var i = 0; i < length; i++)
@@ -201,6 +201,12 @@ public sealed class SwShPreviewReader(Func<string, byte[]> read)
                 indices[i] = data.U16(start + i * 2);
                 if (indices[i] >= count) throw new InvalidDataException("Triangle refers to an unavailable vertex.");
             }
+            if (length % 3 != 0)
+            {
+                warnings.Add("incompleteTriangles");
+                indices = indices[..(length - length % 3)];
+            }
+            if (indices.Length == 0) continue;
             yield return new(vertices, indices, materials[material], rig.Bones[meshBone].Name);
         }
     }

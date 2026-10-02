@@ -14,8 +14,10 @@ const materialFieldSchema = z.object({
   key: z.string(), material: z.string(), group: z.string(), name: z.string(), kind: z.string(),
   values: z.array(z.number()).max(4), text: z.string().nullable(), options: z.array(z.string()).max(256), editable: z.boolean(), previewed: z.boolean()
 });
+const modelAssetSchema = z.object({ id: z.string(), size: z.number(), sourceHash: z.string(), archive: z.string().nullable() });
 export const modelPropertiesSchema = z.object({
-  assets: z.array(z.object({ id: z.string(), size: z.number(), sourceHash: z.string(), archive: z.string().nullable() })).max(2048),
+  assets: z.array(modelAssetSchema).max(2048),
+  vanillaAssets: z.array(modelAssetSchema).max(2048).optional(),
   materials: z.array(z.object({ id: z.string(), sourceHash: z.string(), fields: z.array(materialFieldSchema).max(16384) })).max(256)
 });
 export type ModelProperties = z.infer<typeof modelPropertiesSchema>;
@@ -23,7 +25,7 @@ export type MaterialField = z.infer<typeof materialFieldSchema>;
 export const modelTexturesSchema = z.array(z.object({
   editable: z.boolean().default(true),
   id: z.string().max(1024), materials: z.array(z.string()).max(256), sourceHash: z.string().regex(/^[0-9a-f]{64}$/i),
-  width: z.number().int().min(1).max(4096), height: z.number().int().min(1).max(4096), mipCount: z.number().int().min(1).max(13), format: z.string(),
+  width: z.number().int().min(1).max(4096), height: z.number().int().min(1).max(4096), mipCount: z.number().int().min(1).max(32), format: z.string(),
   thumbnailWidth: z.number().int().min(1).max(256), thumbnailHeight: z.number().int().min(1).max(256),
   pixels: z.string().max(350000), colors: z.array(hex).max(16)
 })).max(128);

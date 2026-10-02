@@ -11,7 +11,6 @@ internal sealed record SwShPreviewRig(PreviewBone[] Bones, Matrix4x4[] World, in
         var bones = new PreviewBone[nodes.Length];
         var world = new Matrix4x4[nodes.Length];
         var skin = new List<int>();
-        var names = new HashSet<string>(StringComparer.Ordinal);
         for (var index = 0; index < nodes.Length; index++)
         {
             var node = nodes[index];
@@ -26,7 +25,7 @@ internal sealed record SwShPreviewRig(PreviewBone[] Bones, Matrix4x4[] World, in
             var name = data.Text(node, 0) ?? throw new InvalidDataException("Skeleton node has no identifier.");
             var parentAt = data.Field(node, 2);
             var parent = parentAt == 0 ? 0 : data.I32(parentAt);
-            if (parent >= index || parent < -1 || !names.Add(name)) throw new InvalidDataException("Skeleton hierarchy is unsupported.");
+            if (parent >= index || parent < -1) throw new InvalidDataException("Skeleton hierarchy is unsupported.");
             if (data.Value(node, 3) != 0) throw new InvalidDataException("Skeleton billboard is unsupported.");
             var scalePivot = Vector(8, Vector3.Zero);
             var rotationPivot = Vector(9, Vector3.Zero);
