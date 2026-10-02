@@ -674,6 +674,20 @@ public sealed class SwShTrainersEditSessionService
             return;
         }
 
+        if (edit.Owner == PendingEditOwners.SwShAiFlagsRepair)
+        {
+            var trainer = workflow.Trainers.FirstOrDefault(row => row.TrainerId.ToString(CultureInfo.InvariantCulture) == edit.RecordId);
+            if (edit.Field != SwShTrainersWorkflowService.AiFlagsField || trainer is null
+                || !SwShAiFlagsRepairService.IsCandidate(trainer.AiFlags)
+                || edit.NewValue != SwShAiFlagsRepairService.RepairFlags(trainer.AiFlags).ToString(CultureInfo.InvariantCulture))
+            {
+                diagnostics.Add(CreateDiagnostic(DiagnosticSeverity.Error,
+                    "The reviewed AI flag repair no longer matches this trainer. Refresh Fix AI Flags and review it again.", field: edit.Field)
+                    with { Code = SwShAiFlagsRepairService.InvalidCode });
+                return;
+            }
+        }
+
         ValidatePendingEditSources(project, workflow, edit, diagnostics);
 
         if (SwShTrainersWorkflowService.IsTrainerDataField(edit.Field))

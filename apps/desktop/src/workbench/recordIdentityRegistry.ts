@@ -125,6 +125,7 @@ const registrations = {
   marnieBoosts: fixedSchemaSlot('marnieBoosts', 'Wyndon cheering answer outcomes'),
   heldItemChance: fixedSchemaSlot('heldItemChance', 'Global normal and boosted held item percentages'),
   raidDens: fixedSchemaSlot('raidDens', 'den interaction dispatch'),
+  fixAiFlags: intrinsic('fixAiFlags', 'stored trainer ID'),
   trainerWhiteout: intrinsic('trainerWhiteout', 'stored trainer ID'),
   randomizer: operationScoped('randomizer'),
   gameDump: operationScoped('gameDump'),

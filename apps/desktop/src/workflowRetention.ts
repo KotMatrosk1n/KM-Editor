@@ -44,6 +44,7 @@ export const workflowStoreKeyBySection = {
   marnieBoosts: 'marnieBoostsWorkflow',
   heldItemChance: 'heldItemChanceWorkflow',
   raidDens: 'raidDensWorkflow',
+  fixAiFlags: 'fixAiFlagsWorkflow',
   trainerWhiteout: 'trainerWhiteoutWorkflow',
   spreadsheetImport: 'spreadsheetImportWorkflow',
   startingItems: 'startingItemsWorkflow',
@@ -72,8 +73,9 @@ const refreshDependentsBySection: Partial<
   heldItemChance: ['encounters'],
   royalCandy: ['placement'],
   staticEncounters: ['placement'],
-  text: ['placement', 'trainers', 'trainerPools', 'behavior'],
-  trainers: ['trainerPools']
+  text: ['placement', 'trainers', 'trainerPools', 'behavior', 'fixAiFlags'],
+  trainers: ['trainerPools', 'fixAiFlags'],
+  fixAiFlags: ['trainers']
 };
 
 export type LoadedWorkflowRetentionEntry = {

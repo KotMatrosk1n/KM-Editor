@@ -43,6 +43,7 @@ import { type TitanSwapperWorkflow } from './bridge/titanSwapperContracts';
 import { type MarnieBoostsWorkflow } from './bridge/marnieBoostsContracts';
 import { type HeldItemChanceWorkflow } from './bridge/heldItemChanceContracts';
 import { type RaidDensWorkflow } from './bridge/raidDensContracts';
+import { type FixAiFlagsWorkflow } from './bridge/fixAiFlagsContracts';
 import { type TrainerWhiteoutWorkflow } from './bridge/trainerWhiteoutContracts';
 import { type HabitatCoordinatesWorkflow } from './bridge/habitatCoordinatesContracts';
 import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContracts';
@@ -104,7 +105,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
     label: 'Economy',
     sectionIds: ['shops', 'battleCafeRewards', 'tmMachineControls', 'raidRewards', 'raidBonusRewards']
   },
-  { id: 'tools', label: 'Tools', sectionIds: ['modelViewer', 'soundStudio', 'fashionCatalog', 'fpsPatch', 'profanityFilter', 'raidDens', 'randomizer', 'gameDump', 'spreadsheetImport', 'modMerger'] },
+  { id: 'tools', label: 'Tools', sectionIds: ['modelViewer', 'soundStudio', 'fashionCatalog', 'fpsPatch', 'profanityFilter', 'raidDens', 'fixAiFlags', 'randomizer', 'gameDump', 'spreadsheetImport', 'modMerger'] },
   { id: 'hooks', label: 'Hooks', sectionIds: ['bagHook'] },
   {
     id: 'advancedEditors',
@@ -182,6 +183,7 @@ export const sharedStagedEditorSectionIds = new Set<WorkbenchSection>([
   'marnieBoosts',
   'heldItemChance',
   'raidDens',
+  'fixAiFlags',
   'trainerWhiteout',
   'moves',
   'items',
@@ -297,6 +299,7 @@ export type LoadedWorkflowStateBySection = {
   marnieBoostsWorkflow: MarnieBoostsWorkflow | null;
   heldItemChanceWorkflow: HeldItemChanceWorkflow | null;
   raidDensWorkflow: RaidDensWorkflow | null;
+  fixAiFlagsWorkflow: FixAiFlagsWorkflow | null;
   trainerWhiteoutWorkflow: TrainerWhiteoutWorkflow | null;
   spreadsheetImportWorkflow: SpreadsheetImportWorkflow | null;
   startingItemsWorkflow: StartingItemsWorkflow | null;
@@ -432,6 +435,8 @@ export function getLoadedWorkflowStateForSection(
       return state.marnieBoostsWorkflow !== null;
     case 'raidDens':
       return state.raidDensWorkflow !== null;
+    case 'fixAiFlags':
+      return state.fixAiFlagsWorkflow !== null;
     case 'trainerWhiteout':
       return state.trainerWhiteoutWorkflow !== null;
     case 'habitatCoordinates':

@@ -499,6 +499,11 @@ export const workbenchCapabilityRegistry = [
     showInWorkflowDashboard: false, standalone: true
   }),
   workflow({
+    description: 'Review and repair migrated trainer AI flags.',
+    games: swordShieldGames, icon: Wrench, id: 'fixAiFlags', label: 'Fix AI Flags',
+    showInWorkflowDashboard: false, standalone: true
+  }),
+  workflow({
     description: 'Control trainer whiteout behavior.',
     games: swordShieldGames, icon: Skull, id: 'trainerWhiteout', label: 'Trainer Whiteout',
     showInWorkflowDashboard: false, standalone: true

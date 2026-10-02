@@ -463,10 +463,12 @@ import { MarnieBoostsSection } from './features/marnie-boosts/MarnieBoostsSectio
 import { WildHeldItems, WildHeldItemsActions, effectiveHeldItems, type WildHeldItemUpdate } from './features/held-item-chance/WildHeldItems';
 import { HeldItemChanceSection } from './features/held-item-chance/HeldItemChanceSection';
 import { RaidDensSection } from './features/raid-dens/RaidDensSection';
+import { FixAiFlagsSection } from './features/fix-ai-flags/FixAiFlagsSection';
 import { TrainerWhiteoutSection } from './features/trainer-whiteout/TrainerWhiteoutSection';
 import { encodeHeldItemRates, getHeldItemPendingRates, type HeldItemChanceWorkflow } from './bridge/heldItemChanceContracts';
 import { encodeMarnieBoostSelections, getMarnieBoostPendingSelections, type MarnieBoostsWorkflow } from './bridge/marnieBoostsContracts';
 import { type RaidDensWorkflow } from './bridge/raidDensContracts';
+import { type FixAiFlagsWorkflow, type FixAiFlagsSelection } from './bridge/fixAiFlagsContracts';
 import { type TrainerWhiteoutWorkflow, type TrainerWhiteoutChange } from './bridge/trainerWhiteoutContracts';
 import { StarmobilesSection } from './features/starmobiles/StarmobilesSection';
 import { TitanSwapperSection } from './features/titan-swapper/TitanSwapperSection';
@@ -3244,30 +3246,35 @@ export function App({
   const marnieBoostsWorkflow = useWorkbenchStore(state => state.marnieBoostsWorkflow);
   const heldItemChanceWorkflow = useWorkbenchStore(state => state.heldItemChanceWorkflow);
   const raidDensWorkflow = useWorkbenchStore(state => state.raidDensWorkflow);
+  const fixAiFlagsWorkflow = useWorkbenchStore(state => state.fixAiFlagsWorkflow);
   const trainerWhiteoutWorkflow = useWorkbenchStore(state => state.trainerWhiteoutWorkflow);
   const setStarmobilesWorkflow = useWorkbenchStore(state => state.setStarmobilesWorkflow);
   const setTitanSwapperWorkflow = useWorkbenchStore(state => state.setTitanSwapperWorkflow);
   const setMarnieBoostsWorkflow = useWorkbenchStore(state => state.setMarnieBoostsWorkflow);
   const setHeldItemChanceWorkflow = useWorkbenchStore(state => state.setHeldItemChanceWorkflow);
   const setRaidDensWorkflow = useWorkbenchStore(state => state.setRaidDensWorkflow);
+  const setFixAiFlagsWorkflow = useWorkbenchStore(state => state.setFixAiFlagsWorkflow);
   const setTrainerWhiteoutWorkflow = useWorkbenchStore(state => state.setTrainerWhiteoutWorkflow);
   const [isStarmobilesLoading, setIsStarmobilesLoading] = useState(false);
   const [isTitanSwapperLoading, setIsTitanSwapperLoading] = useState(false);
   const [isMarnieBoostsLoading, setIsMarnieBoostsLoading] = useState(false);
   const [isHeldItemChanceLoading, setIsHeldItemChanceLoading] = useState(false);
   const [isRaidDensLoading, setIsRaidDensLoading] = useState(false);
+  const [isFixAiFlagsLoading, setIsFixAiFlagsLoading] = useState(false);
   const [isTrainerWhiteoutLoading, setIsTrainerWhiteoutLoading] = useState(false);
   const [isStarmobilesStaging, setIsStarmobilesStaging] = useState(false);
   const [isTitanSwapperStaging, setIsTitanSwapperStaging] = useState(false);
   const [isMarnieBoostsStaging, setIsMarnieBoostsStaging] = useState(false);
   const [isHeldItemChanceStaging, setIsHeldItemChanceStaging] = useState(false);
   const [isRaidDensStaging, setIsRaidDensStaging] = useState(false);
+  const [isFixAiFlagsStaging, setIsFixAiFlagsStaging] = useState(false);
   const [isTrainerWhiteoutStaging, setIsTrainerWhiteoutStaging] = useState(false);
   const starmobilesGenerationRef = useRef(0);
   const titanSwapperGenerationRef = useRef(0);
   const marnieBoostsGenerationRef = useRef(0);
   const heldItemChanceGenerationRef = useRef(0);
   const raidDensGenerationRef = useRef(0);
+  const fixAiFlagsGenerationRef = useRef(0);
   const trainerWhiteoutGenerationRef = useRef(0);
   const [isHabitatCoordinatesLoading, setIsHabitatCoordinatesLoading] = useState(false);
   const [isHabitatCoordinateStaging, setIsHabitatCoordinateStaging] = useState(false);
@@ -4183,6 +4190,7 @@ export function App({
           marnieBoostsWorkflow,
           heldItemChanceWorkflow,
           raidDensWorkflow,
+          fixAiFlagsWorkflow,
           trainerWhiteoutWorkflow,
           fashionUnlockWorkflow,
           flagworkSaveWorkflow,
@@ -4232,6 +4240,7 @@ export function App({
       marnieBoostsWorkflow,
       heldItemChanceWorkflow,
       raidDensWorkflow,
+      fixAiFlagsWorkflow,
       trainerWhiteoutWorkflow,
       fashionUnlockWorkflow,
       flagworkSaveWorkflow,
@@ -4348,6 +4357,7 @@ export function App({
     marnieBoostsWorkflow,
     heldItemChanceWorkflow,
     raidDensWorkflow,
+    fixAiFlagsWorkflow,
     trainerWhiteoutWorkflow,
     fashionUnlockWorkflow,
     flagworkSaveWorkflow, giftPokemonWorkflow, gymUniformRemovalWorkflow, hyperTrainingWorkflow,
@@ -4475,6 +4485,8 @@ export function App({
     (dirty: boolean) => registerEditorDraftDirty('heldItemChance', dirty), [registerEditorDraftDirty]);
   const handleRaidDensDirtyChange = useCallback(
     (dirty: boolean) => registerEditorDraftDirty('raidDens', dirty), [registerEditorDraftDirty]);
+  const handleFixAiFlagsDirtyChange = useCallback(
+    (dirty: boolean) => registerEditorDraftDirty('fixAiFlags', dirty), [registerEditorDraftDirty]);
   const handleTrainerWhiteoutDirtyChange = useCallback(
     (dirty: boolean) => registerEditorDraftDirty('trainerWhiteout', dirty), [registerEditorDraftDirty]);
   const handleTrainerDynamaxDirtyChange = useCallback(
@@ -10584,12 +10596,57 @@ export function App({
     return accepted;
   };
 
+  const handleOpenFixAiFlagsWorkflow = async () => {
+    const generation = fixAiFlagsGenerationRef.current;
+    await runRetainedWorkflowLoad('fixAiFlags', setIsFixAiFlagsLoading,
+      () => bridge.loadFixAiFlags({ paths: createProjectPaths(draftPaths) }),
+      response => setFixAiFlagsWorkflow(response.workflow),
+      () => generation === fixAiFlagsGenerationRef.current);
+  };
+
   const handleOpenTrainerWhiteoutWorkflow = async () => {
     const generation = trainerWhiteoutGenerationRef.current;
     await runRetainedWorkflowLoad('trainerWhiteout', setIsTrainerWhiteoutLoading,
       () => bridge.loadTrainerWhiteout({ paths: createProjectPaths(draftPaths) }),
       response => setTrainerWhiteoutWorkflow(response.workflow),
       () => generation === trainerWhiteoutGenerationRef.current);
+  };
+
+  const handleStageFixAiFlags = async (selections: FixAiFlagsSelection[], contextFingerprint: string, acknowledgeCustomScripts: boolean) => {
+    const activeSession = getEditSessionForSection('fixAiFlags');
+    if (!activeSession) return false;
+    let accepted = false;
+    fixAiFlagsGenerationRef.current += 1;
+    setIsFixAiFlagsStaging(true);
+    prepareScopedEditorPanelAction('fixAiFlags');
+    try {
+      await runEditSessionMutation(async session => {
+        const response = await bridge.stageFixAiFlags({ paths: createProjectPaths(draftPaths), session,
+          selections, contextFingerprint, acknowledgeCustomScripts });
+        const acknowledged = selections.every(selection => {
+          const row = response.workflow.trainers.find(row => row.trainerId === selection.trainerId);
+          return row?.fingerprint === selection.fingerprint && row.proposedFlags !== null && response.session.pendingEdits.some(edit =>
+            edit.domain === 'workflow.trainers' && edit.field === 'aiFlags' && edit.recordId === String(selection.trainerId) &&
+            edit.newValue === String(row.proposedFlags) && edit.owner === 'repair.swsh-ai-flags.v1');
+        });
+        const matches = response.workflow.canEdit && response.workflow.detectedGame === draftPaths.selectedGame &&
+          response.session.sessionId === activeSession.sessionId && acknowledged;
+        const diagnostics = [...response.diagnostics, ...response.workflow.diagnostics];
+        if (!matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error'))
+          diagnostics.push({ severity: 'error', domain: 'workflow.trainers', code: 'KM-SWSH-AI-FLAGS-REPAIR-INVALID', message: t('fixAiFlags.failed') });
+        const didSucceed = matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error');
+        return { ...response, diagnostics, didSucceed, session: didSucceed ? response.session : session };
+      }, response => {
+        setScopedEditorPanelDiagnostics('fixAiFlags', response.diagnostics);
+        if (response.didSucceed) {
+          accepted = true;
+          setFixAiFlagsWorkflow(response.workflow);
+          setEditSessionSection('fixAiFlags');
+        }
+      }, activeSession);
+    } catch (error) { setScopedEditorPanelDiagnostics('fixAiFlags', toBridgeDiagnostics(error)); }
+    finally { setIsFixAiFlagsStaging(false); }
+    return accepted;
   };
 
   const handleStageTrainerWhiteout = async (changes: TrainerWhiteoutChange[]) => {
@@ -12451,6 +12508,9 @@ export function App({
         case 'raidDens':
           if (!currentState.raidDensWorkflow) await handleOpenRaidDensWorkflow();
           break;
+        case 'fixAiFlags':
+          if (!currentState.fixAiFlagsWorkflow) await handleOpenFixAiFlagsWorkflow();
+          break;
         case 'trainerWhiteout':
           if (!currentState.trainerWhiteoutWorkflow) await handleOpenTrainerWhiteoutWorkflow();
           break;
@@ -12839,6 +12899,9 @@ export function App({
       case 'raidDens':
         if (!raidDensWorkflow && !isRaidDensLoading) { markLazyLoadStarted(); void handleOpenRaidDensWorkflow(); }
         break;
+      case 'fixAiFlags':
+        if (!fixAiFlagsWorkflow && !isFixAiFlagsLoading) { markLazyLoadStarted(); void handleOpenFixAiFlagsWorkflow(); }
+        break;
       case 'trainerWhiteout':
         if (!trainerWhiteoutWorkflow && !isTrainerWhiteoutLoading) { markLazyLoadStarted(); void handleOpenTrainerWhiteoutWorkflow(); }
         break;
@@ -13107,6 +13170,7 @@ export function App({
     marnieBoostsWorkflow,
     heldItemChanceWorkflow,
     raidDensWorkflow,
+    fixAiFlagsWorkflow,
     trainerWhiteoutWorkflow,
     fashionUnlockWorkflow,
     flagworkSaveWorkflow,
@@ -13139,6 +13203,7 @@ export function App({
     isMarnieBoostsLoading,
     isHeldItemChanceLoading,
     isRaidDensLoading,
+    isFixAiFlagsLoading,
     isTrainerWhiteoutLoading,
     isFashionUnlockLoading,
     isGymUniformRemovalLoading,
@@ -18429,6 +18494,7 @@ export function App({
       'marnieBoosts',
       'heldItemChance',
       'raidDens',
+      'fixAiFlags',
       'trainerWhiteout',
       'giftPokemon',
       'tradePokemon',
@@ -18483,6 +18549,7 @@ export function App({
       marnieBoosts: setIsMarnieBoostsLoading,
       heldItemChance: setIsHeldItemChanceLoading,
       raidDens: setIsRaidDensLoading,
+      fixAiFlags: setIsFixAiFlagsLoading,
       trainerWhiteout: setIsTrainerWhiteoutLoading,
       fashionUnlock: setIsFashionUnlockLoading,
       flagworkSave: setIsFlagworkSaveLoading,
@@ -18702,6 +18769,12 @@ export function App({
       reloadTasks.push(async () => {
         const response = await bridge.loadRaidDens({ paths });
         if (canCommitRefresh()) setRaidDensWorkflow(response.workflow);
+      });
+    }
+    if (fixAiFlagsWorkflow && refreshSections.has('fixAiFlags')) {
+      reloadTasks.push(async () => {
+        const response = await bridge.loadFixAiFlags({ paths });
+        if (canCommitRefresh()) setFixAiFlagsWorkflow(response.workflow);
       });
     }
     if (trainerWhiteoutWorkflow && refreshSections.has('trainerWhiteout')) {
@@ -21334,6 +21407,16 @@ export function App({
                 onDirtyStateChange={handleRaidDensDirtyChange} onRefresh={handleOpenRaidDensWorkflow}
                 isLoading={isRaidDensLoading} panelOutput={getOutputSafeScopedEditorPanelOutput('raidDens')} />
           ) : null}
+          {activeSection === 'fixAiFlags' ? (
+            isFixAiFlagsLoading && !fixAiFlagsWorkflow ? <WorkflowLoadingPanel label={t('fixAiFlags.title')} /> :
+              <FixAiFlagsSection workflow={fixAiFlagsWorkflow} session={getEditSessionForSection('fixAiFlags')}
+                key={getEditSessionForSection('fixAiFlags')?.sessionId ?? 'viewing'}
+                isStaging={isFixAiFlagsStaging} isEditing={getEditSessionForSection('fixAiFlags') !== null}
+                isEditStarting={isEditStarting} onStartEditSession={handleStartEditSession}
+                onCancelEditSession={requestCancelEditSession} onStage={handleStageFixAiFlags}
+                onDirtyStateChange={handleFixAiFlagsDirtyChange} onRefresh={handleOpenFixAiFlagsWorkflow}
+                isLoading={isFixAiFlagsLoading} panelOutput={getOutputSafeScopedEditorPanelOutput('fixAiFlags')} />
+          ) : null}
           {activeSection === 'trainerWhiteout' ? (
             isTrainerWhiteoutLoading && !trainerWhiteoutWorkflow ? <WorkflowLoadingPanel label={t('trainerWhiteout.title')} /> :
               <TrainerWhiteoutSection workflow={trainerWhiteoutWorkflow} session={getEditSessionForSection('trainerWhiteout')}
@@ -21467,6 +21550,7 @@ export function App({
                 marnieBoostsWorkflow,
                 heldItemChanceWorkflow,
                 raidDensWorkflow,
+                fixAiFlagsWorkflow,
                 trainerWhiteoutWorkflow,
                 angeFightWorkflow,
                 bagHookWorkflow,
@@ -57141,6 +57225,7 @@ export type PendingEditContext = {
   marnieBoostsWorkflow?: MarnieBoostsWorkflow | null;
   heldItemChanceWorkflow?: HeldItemChanceWorkflow | null;
   raidDensWorkflow?: RaidDensWorkflow | null;
+  fixAiFlagsWorkflow?: FixAiFlagsWorkflow | null;
   trainerWhiteoutWorkflow?: TrainerWhiteoutWorkflow | null;
   starmobilesWorkflow?: StarmobilesWorkflow | null;
   titanSwapperWorkflow?: TitanSwapperWorkflow | null;

@@ -43,6 +43,7 @@ internal sealed record OutputApplyHistoryDocument(
     ImmutableArray<OutputApplyReceipt> Receipts)
 {
     public const int CurrentSchemaVersion = 1;
+    public IReadOnlyList<OutputRepairStamp> RepairStamps { get; init; } = [];
 }
 
 internal sealed record OutputCheckpointEntry(
