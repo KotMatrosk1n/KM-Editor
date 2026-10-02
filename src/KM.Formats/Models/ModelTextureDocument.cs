@@ -40,7 +40,7 @@ public sealed class ModelTextureDocument
         Format = data.U32(info + 28);
         compression = Format switch
         {
-            0x0b01 or 0x0b06 => CompressionFormat.Rgba,
+            0x0b01 or 0x0b06 or 0x0c01 or 0x0c06 => CompressionFormat.Rgba,
             0x1a01 or 0x1a06 => CompressionFormat.Bc1WithAlpha,
             0x1b01 or 0x1b06 => CompressionFormat.Bc2,
             0x1c01 or 0x1c06 => CompressionFormat.Bc3,
@@ -57,7 +57,7 @@ public sealed class ModelTextureDocument
         blockHeight = 1 << checked((int)(data.U32(info + 52) & 7));
         if (tile is not (0 or 1)) throw new InvalidDataException("Texture tiling is unsupported.");
         var count = data.U16(info + 22);
-        if (count < 1 || count > 1 + (int)Math.Log2(Math.Max(Width, Height)))
+        if (count is < 1 or > 32)
             throw new InvalidDataException("Texture mip count is invalid.");
         var pointers = Pointer(info + 112);
         data.Slice(pointers, count * 8);
@@ -166,7 +166,9 @@ public sealed class ModelTextureDocument
         var linear = Linear(level, bytes);
         if (compression != CompressionFormat.Rgba)
             return new BcDecoder().DecodeRaw(linear, level.Width, level.Height, compression);
-        return Enumerable.Range(0, level.Width * level.Height).Select(i => new ColorRgba32(linear[i * 4], linear[i * 4 + 1], linear[i * 4 + 2], linear[i * 4 + 3])).ToArray();
+        var bgra = Format is 0x0c01 or 0x0c06;
+        return Enumerable.Range(0, level.Width * level.Height).Select(i => new ColorRgba32(linear[i * 4 + (bgra ? 2 : 0)],
+            linear[i * 4 + 1], linear[i * 4 + (bgra ? 0 : 2)], linear[i * 4 + 3])).ToArray();
     }
 
     private byte[] Linear(Level level, byte[] bytes)
@@ -210,21 +212,23 @@ public sealed class ModelTextureDocument
                 if (!different) continue;
                 var encoded = compression == CompressionFormat.Rgba ? new[] { block[0].r, block[0].g, block[0].b, block[0].a }
                     : compression == CompressionFormat.Bc7 ? [] : encoder.EncodeBlock(block.AsSpan());
+                if (Format is 0x0c01 or 0x0c06) (encoded[0], encoded[2]) = (encoded[2], encoded[0]);
                 if (compression == CompressionFormat.Bc7)
                 {
+                    bool VisibleTexel(int i) => bx * blockSize + i % blockSize < level.Width && by * blockSize + i / blockSize < level.Height;
                     double ColorError(byte[] candidate)
                     {
                         var decoded = new BcDecoder().DecodeRaw(candidate, 4, 4, compression);
                         double error = 0; var count = 0;
                         for (var i = 0; i < block.Length; i++)
                         {
-                            if (block[i].a == 0) continue;
+                            if (!VisibleTexel(i) || block[i].a == 0) continue;
                             error += Math.Pow(decoded[i].r - block[i].r, 2) + Math.Pow(decoded[i].g - block[i].g, 2) + Math.Pow(decoded[i].b - block[i].b, 2); count += 3;
                         }
                         return count == 0 ? 0 : Math.Sqrt(error / count);
                     }
                     bool AlphaMatches(byte[] candidate) => !new BcDecoder().DecodeRaw(candidate, 4, 4, compression)
-                        .Where((p, i) => Math.Abs(p.a - block[i].a) > 1 || (block[i].a is 0 or 255 && p.a != block[i].a)).Any();
+                        .Where((p, i) => VisibleTexel(i) && (Math.Abs(p.a - block[i].a) > 1 || (block[i].a is 0 or 255 && p.a != block[i].a))).Any();
                     var refitted = ModelTextureAlphaBlock.RefitSource(block, linear.AsSpan((by * columns + bx) * blockBytes, blockBytes));
                     if (refitted is not null && ColorError(refitted) <= 3 && AlphaMatches(refitted)) encoded = refitted;
                     else

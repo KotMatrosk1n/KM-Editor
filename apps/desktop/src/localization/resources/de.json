@@ -1,5 +1,7 @@
 {
   "keys": {
+    "modelViewer.warning.incompleteTriangles": "Einige Mesh-Gruppen enthalten unvollständige Dreiecke. Diese Indizes werden in der Vorschau ausgelassen und in gespeicherten Dateien beibehalten.",
+    "modelViewer.warning.animationUnavailable": "Die ausgewählte Animation ist für das Originalmodell nicht verfügbar. Es wird in seiner Ruhepose angezeigt.",
     "editorText.encounterGroupAria": "{name}, {usage}, Level {minimum} bis {maximum}, Quelle {source}",
     "npcItemGift.location.postwick": "Furlongham",
     "npcItemGift.location.wedgehurstStation": "Bahnhof Brassbury",

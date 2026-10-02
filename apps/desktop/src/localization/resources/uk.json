@@ -1,5 +1,7 @@
 {
   "keys": {
+    "modelViewer.warning.incompleteTriangles": "Деякі групи полігонів містять неповні трикутники. Ці індекси пропускаються в попередньому перегляді та зберігаються в записаних файлах.",
+    "modelViewer.warning.animationUnavailable": "Вибрана анімація недоступна для початкової моделі. Показано її початкову позу.",
     "editorText.encounterGroupAria": "{name}, {usage}, рівні від {minimum} до {maximum}, джерело {source}",
     "npcItemGift.location.postwick": "Поствік",
     "npcItemGift.location.wedgehurstStation": "Станція Веджгерст",

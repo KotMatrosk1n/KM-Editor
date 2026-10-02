@@ -1,5 +1,7 @@
 {
   "keys": {
+    "modelViewer.warning.incompleteTriangles": "部分网格组包含不完整的三角形。预览中会省略这些索引，但保存文件时会保留它们。",
+    "modelViewer.warning.animationUnavailable": "原始模型没有所选动画，当前显示其静止姿势。",
     "editorText.encounterGroupAria": "{name}，{usage}，等级 {minimum} 至 {maximum}，来源 {source}",
     "npcItemGift.location.postwick": "化朗镇",
     "npcItemGift.location.wedgehurstStation": "木杆镇车站",

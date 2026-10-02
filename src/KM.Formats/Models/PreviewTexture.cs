@@ -17,9 +17,18 @@ public sealed record PreviewTexture(int Width, int Height, uint Format, byte[] B
         var data = new ModelBuffer(bytes);
         var info = checked((int)BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(checked((int)BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(40, 8))), 8)));
         var count = data.U16(info + 22);
-        if (count < 1 || count > 1 + (int)Math.Log2(Math.Max(texture.Width, texture.Height)))
+        if (count is < 1 or > 32)
             throw new InvalidDataException("Texture mip count is invalid.");
-        return texture with { Mips = Enumerable.Range(1, count - 1).Select(i => ReadLevel(bytes, i).Blocks).ToArray() };
+        var maximum = 1 + (int)Math.Log2(Math.Max(texture.Width, texture.Height));
+        var mips = new List<byte[]>();
+        for (var level = 1; level < count; level++)
+        {
+            var mip = ReadLevel(bytes, level);
+            // Validate stored 1x1 tails, but send only a legal GPU mip chain.
+            // The editing document retains and updates every stored level.
+            if (level < maximum) mips.Add(mip.Blocks);
+        }
+        return texture with { Mips = mips.ToArray() };
     }
     private static PreviewTexture ReadLevel(byte[] bytes, int level)
     {
@@ -32,7 +41,7 @@ public sealed record PreviewTexture(int Width, int Height, uint Format, byte[] B
         var format = data.U32(info + 28);
         var blockBytes = format switch
         {
-            0x0b01 or 0x0b06 => 4,
+            0x0b01 or 0x0b06 or 0x0c01 or 0x0c06 => 4,
             0x1a01 or 0x1a06 or 0x1d01 => 8,
             0x1b01 or 0x1b06 or 0x1c01 or 0x1c06 or 0x1e01 or 0x2001 or 0x2006 => 16,
             _ => throw new InvalidDataException("Texture compression is not supported by this preview.")
@@ -42,16 +51,22 @@ public sealed record PreviewTexture(int Width, int Height, uint Format, byte[] B
             || data.U32(info + 44) != 1 || data.U32(info + 48) != 1)
             throw new InvalidDataException("Texture dimensions are unsupported.");
         width = Math.Max(1, width >> level); height = Math.Max(1, height >> level);
-        var blockSize = format is 0x0b01 or 0x0b06 ? 1 : 4;
+        var blockSize = format is 0x0b01 or 0x0b06 or 0x0c01 or 0x0c06 ? 1 : 4;
         var blocksWide = (width + blockSize - 1) / blockSize; var blocksHigh = (height + blockSize - 1) / blockSize;
         var stride = checked(blocksWide * blockBytes);
         var result = new byte[checked(stride * blocksHigh)];
         var pointers = Pointer(info + 112);
+        var count = data.U16(info + 22);
+        if (count is < 1 or > 32 || level >= count) throw new InvalidDataException("Texture mip count is invalid.");
+        data.Slice(pointers, count * 8);
+        var first = Pointer(pointers);
+        var imageEnd = checked(first + (int)data.U32(info + 80));
+        data.Slice(first, imageEnd - first);
+        if (first < Math.Max(info + 120, pointers + count * 8)) throw new InvalidDataException("Texture image overlaps metadata.");
         var source = Pointer(pointers + level * 8);
-        var end = level + 1 < data.U16(info + 22) ? Pointer(pointers + (level + 1) * 8)
-            : checked(Pointer(pointers) + (int)data.U32(info + 80));
+        var end = level + 1 < count ? Pointer(pointers + (level + 1) * 8) : imageEnd;
         var imageSize = checked(end - source);
-        if (imageSize <= 0 || source < Pointer(pointers)) throw new InvalidDataException("Texture mip ranges are invalid.");
+        if (imageSize <= 0 || source < first || end > imageEnd) throw new InvalidDataException("Texture mip ranges are invalid.");
         data.Slice(source, imageSize);
         var tile = data.U16(info + 18);
         if (tile == 1)
@@ -78,6 +93,11 @@ public sealed record PreviewTexture(int Width, int Height, uint Format, byte[] B
             }
         }
         else throw new InvalidDataException("Texture tiling is unsupported.");
+        if (format is 0x0c01 or 0x0c06)
+        {
+            for (var i = 0; i < result.Length; i += 4) (result[i], result[i + 2]) = (result[i + 2], result[i]);
+            format -= 0x100;
+        }
         return new PreviewTexture(width, height, format, result);
     }
 }

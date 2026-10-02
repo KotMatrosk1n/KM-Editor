@@ -17,10 +17,11 @@ public sealed class SwShModelTextureEditSessionService
         var project = Open(paths);
         var service = new SwShModelPreviewService();
         var vanilla = service.Assets(project, model, true);
-        var currentAssets = service.Assets(project, model).ToDictionary(a => a.Id, StringComparer.Ordinal);
+        var currentAssets = service.RestorationAssets(project, model).ToDictionary(a => a.Id, StringComparer.Ordinal);
         var ids = vanilla.Select(a => a.Id).ToHashSet(StringComparer.Ordinal);
         var current = session ?? EditSession.Start();
-        var edits = current.PendingEdits.Where(e => e.Domain != ModelTextureIntent.Domain || e.RecordId is null || !ids.Contains(e.RecordId)).ToList();
+        var edits = current.PendingEdits.Where(e => e.Domain != ModelTextureIntent.Domain
+            || (ModelTextureIntent.Parse(e.NewValue).Model != model && (e.RecordId is null || !ids.Contains(e.RecordId)))).ToList();
         foreach (var asset in vanilla)
         {
             var original = currentAssets[asset.Id];
@@ -68,11 +69,26 @@ public sealed class SwShModelTextureEditSessionService
         {
             var outputs = Outputs(paths, session);
             if (outputs.Count == 0) return new(session.Id, [], [Diagnostic("Stage a model change before reviewing.")]);
-            var writes = outputs.Select(pair => new PlannedFileWrite(pair.Key, [new(ProjectFileLayer.Base, pair.Key)],
+            var originals = new Dictionary<string, ModelTextureResource[]>(StringComparer.Ordinal);
+            ProjectFileReference[] Sources(string path)
+            {
+                if (File.Exists(Path.Combine(paths.OutputRootPath!, path)) || File.Exists(Path.Combine(paths.BaseRomFsPath!, path[6..])))
+                    return [new(ProjectFileLayer.Base, path)];
+                var intent = session.PendingEdits.Select(e => ModelTextureIntent.Parse(e.NewValue)).Single(i => "romfs/" + i.Texture == path && i.Kind == "restore");
+                if (!originals.TryGetValue(intent.Model, out var assets))
+                    originals.Add(intent.Model, assets = new SwShModelPreviewService().Assets(Open(paths), intent.Model, true));
+                var archive = assets.Single(a => a.Id == intent.Texture).Archive ?? throw new InvalidDataException("Original model archive is missing.");
+                var source = "romfs/" + archive;
+                // Bind the original archive and effective replacement separately.
+                // The guard also captures the absence of the new loose target.
+                return File.Exists(Path.Combine(paths.OutputRootPath!, source))
+                    ? [new(ProjectFileLayer.Base, source), new(ProjectFileLayer.Layered, source)] : [new(ProjectFileLayer.Base, source)];
+            }
+            var writes = outputs.Select(pair => new PlannedFileWrite(pair.Key, Sources(pair.Key),
                 File.Exists(Path.Combine(paths.OutputRootPath!, pair.Key)), "Apply verified model changes.",
                 ModelTextureIntent.Hash(System.Text.Encoding.UTF8.GetBytes(string.Join("\n", session.PendingEdits.Select(e => e.NewValue)))))).ToArray();
             return SwShChangePlanSourceGuard.CaptureBounded(paths, new(session.Id, writes, []) { EffectivePendingEdits = session.PendingEdits },
-                64L * 1024 * 1024, 128L * 1024 * 1024);
+                64L * 1024 * 1024, 512L * 1024 * 1024);
         }
         catch (Exception ex) when (Expected(ex)) { return new(session.Id, [], [Diagnostic("Model asset output could not be prepared. Reload and review the edits again.")]); }
     }
@@ -114,7 +130,7 @@ public sealed class SwShModelTextureEditSessionService
         if (session.PendingEdits.Count is < 1 or > 2048) throw new InvalidDataException("Model edit count is invalid.");
         var outputs = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         var packs = new Dictionary<string, SwShGfPackFile>(StringComparer.Ordinal);
-        var resources = new Dictionary<string, ModelTextureResource[]>(StringComparer.Ordinal);
+        var resources = new Dictionary<(string Model, bool Restore), ModelTextureResource[]>();
         var assetModels = session.PendingEdits.Select(e => ModelTextureIntent.Parse(e.NewValue)).Where(i => i.Kind != "texture").Select(i => i.Model).ToHashSet(StringComparer.Ordinal);
         var vanilla = new Dictionary<string, ModelTextureResource[]>(StringComparer.Ordinal);
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -125,7 +141,13 @@ public sealed class SwShModelTextureEditSessionService
             var intent = ModelTextureIntent.Parse(edit.NewValue);
             if (intent.Game != paths.SelectedGame.ToString() || edit.RecordId != intent.Texture || intent.EncodedHash == "" || !seen.Add(intent.Texture))
                 throw new InvalidDataException("Model asset edit binding is invalid or duplicated.");
-            if (!resources.TryGetValue(intent.Model, out var models)) resources.Add(intent.Model, models = assetModels.Contains(intent.Model) ? new SwShModelPreviewService().Assets(project, intent.Model) : new SwShModelPreviewService().Textures(project, intent.Model));
+            var key = (intent.Model, intent.Kind == "restore");
+            if (!resources.TryGetValue(key, out var models))
+            {
+                var service = new SwShModelPreviewService();
+                resources.Add(key, models = key.Item2 ? service.RestorationAssets(project, intent.Model)
+                    : assetModels.Contains(intent.Model) ? service.Assets(project, intent.Model) : service.Textures(project, intent.Model));
+            }
             var resource = models.SingleOrDefault(t => t.Id == intent.Texture) ?? throw new InvalidDataException("Asset is no longer associated with the model.");
             byte[]? baseBytes = null;
             if (intent.Kind == "restore")
@@ -155,7 +177,7 @@ public sealed class SwShModelTextureEditSessionService
             foreach (var edit in session.PendingEdits)
             {
                 var intent = ModelTextureIntent.Parse(edit.NewValue);
-                var resource = resources[intent.Model].Single(t => t.Id == intent.Texture);
+                var resource = resources[(intent.Model, intent.Kind == "restore")].Single(t => t.Id == intent.Texture);
                 if (Target(paths, resource) == path && ModelTextureIntent.Hash(readback.GetFileByName(Path.GetFileName(resource.Id))) != intent.EncodedHash)
                     throw new InvalidDataException("Packed model asset verification failed.");
             }
@@ -168,7 +190,7 @@ public sealed class SwShModelTextureEditSessionService
     private static string Target(ProjectPaths paths, ModelTextureResource resource)
     {
         if (File.Exists(Path.Combine(paths.OutputRootPath!, "romfs", resource.Id)) || File.Exists(Path.Combine(paths.BaseRomFsPath!, resource.Id))) return resource.Id;
-        return resource.Archive ?? throw new InvalidDataException("Model asset archive is missing.");
+        return resource.Archive ?? resource.Id;
     }
     private static OpenedProject Open(ProjectPaths paths)
     {

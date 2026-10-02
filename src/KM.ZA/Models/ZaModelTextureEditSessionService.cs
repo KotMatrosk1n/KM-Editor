@@ -17,10 +17,11 @@ public sealed class ZaModelTextureEditSessionService
         var project = Open(paths);
         var service = new ZaModelPreviewService();
         var vanilla = service.Assets(project, model, true);
-        var currentAssets = service.Assets(project, model).ToDictionary(a => a.Id, StringComparer.Ordinal);
+        var currentAssets = service.RestorationAssets(project, model).ToDictionary(a => a.Id, StringComparer.Ordinal);
         var ids = vanilla.Select(a => a.Id).ToHashSet(StringComparer.Ordinal);
         var current = session ?? EditSession.Start();
-        var edits = current.PendingEdits.Where(e => e.Domain != ModelTextureIntent.Domain || e.RecordId is null || !ids.Contains(e.RecordId)).ToList();
+        var edits = current.PendingEdits.Where(e => e.Domain != ModelTextureIntent.Domain
+            || (ModelTextureIntent.Parse(e.NewValue).Model != model && (e.RecordId is null || !ids.Contains(e.RecordId)))).ToList();
         foreach (var asset in vanilla)
         {
             var original = currentAssets[asset.Id];
@@ -111,7 +112,7 @@ public sealed class ZaModelTextureEditSessionService
         var project = Open(paths);
         if (session.PendingEdits.Count is < 1 or > 2048) throw new InvalidDataException("Model edit count is invalid.");
         var outputs = new Dictionary<string, byte[]>(StringComparer.Ordinal);
-        var resources = new Dictionary<string, ModelTextureResource[]>(StringComparer.Ordinal);
+        var resources = new Dictionary<(string Model, bool Restore), ModelTextureResource[]>();
         var assetModels = session.PendingEdits.Select(e => ModelTextureIntent.Parse(e.NewValue)).Where(i => i.Kind != "texture").Select(i => i.Model).ToHashSet(StringComparer.Ordinal);
         var vanilla = new Dictionary<string, ModelTextureResource[]>(StringComparer.Ordinal);
         long bytes = 0;
@@ -120,7 +121,13 @@ public sealed class ZaModelTextureEditSessionService
             if (edit.Domain != ModelTextureIntent.Domain || edit.Owner != ModelTextureIntent.Domain || edit.Field != "recolor") throw new InvalidDataException("Model asset edit is unsupported.");
             var intent = ModelTextureIntent.Parse(edit.NewValue);
             if (intent.Game != paths.SelectedGame.ToString() || edit.RecordId != intent.Texture || intent.EncodedHash == "") throw new InvalidDataException("Model asset edit binding is invalid.");
-            if (!resources.TryGetValue(intent.Model, out var models)) resources.Add(intent.Model, models = assetModels.Contains(intent.Model) ? new ZaModelPreviewService().Assets(project, intent.Model) : new ZaModelPreviewService().Textures(project, intent.Model));
+            var key = (intent.Model, intent.Kind == "restore");
+            if (!resources.TryGetValue(key, out var models))
+            {
+                var service = new ZaModelPreviewService();
+                resources.Add(key, models = key.Item2 ? service.RestorationAssets(project, intent.Model)
+                    : assetModels.Contains(intent.Model) ? service.Assets(project, intent.Model) : service.Textures(project, intent.Model));
+            }
             var resource = models.SingleOrDefault(t => t.Id == intent.Texture) ?? throw new InvalidDataException("Asset is no longer associated with the model.");
             byte[]? baseBytes = null;
             if (intent.Kind == "restore")
