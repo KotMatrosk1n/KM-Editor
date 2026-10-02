@@ -143,19 +143,19 @@ public sealed class SwShTrainersWorkflowService
 
     private static readonly IReadOnlyList<TrainerAiFlagDefinition> AiFlagDefinitions =
     [
-        new(0, "Basic", "Enables the Basic trainer AI script slot."),
-        new(1, "Strong", "Enables the Strong trainer AI script slot."),
-        new(2, "Expert", "Enables the Expert trainer AI script slot."),
-        new(3, "Double", "Enables the Double trainer AI script slot."),
-        new(4, "Raid", "Enables the Raid trainer AI script slot."),
-        new(5, "Allowance", "Enables the Allowance trainer AI script slot."),
-        new(6, "Fire Gym Rival", "Enables the Fire Gym Rival trainer AI script slot."),
-        new(7, "Fire Gym Staff", "Enables the Fire Gym Staff trainer AI script slot."),
-        new(8, "Fire Gym Team Yell", "Enables the Fire Gym Team Yell trainer AI script slot."),
-        new(9, "JK3 Ookami", "Enables the JK3 Ookami trainer AI script slot."),
-        new(10, "Item", "Enables the Item trainer AI script slot."),
-        new(11, "Fire Gym Item", "Enables the Fire Gym Item trainer AI script slot."),
-        new(12, "PokeChange", "Enables the PokeChange trainer AI script slot."),
+        new(0, "Basic", "Bit 0 (0x0001). Applies basic move checks, including ineffective moves."),
+        new(1, "Strong", "Bit 1 (0x0002). Adds damage and type effectiveness scoring."),
+        new(2, "Expert", "Bit 2 (0x0004). Adds situational move scoring."),
+        new(3, "Double", "Bit 3 (0x0008). Adds move scoring for double battles. Does not change the battle format."),
+        new(4, "Raid", "Bit 4 (0x0010). Adds move scoring for raid battles. Does not create a raid battle."),
+        new(5, "Allowance", "Bit 5 (0x0020). Makes small adjustments to damaging move scores using HP and random checks."),
+        new(6, "Fire Gym Rival", "Bit 6 (0x0040). Selects the Fire Gym rival routine. The unmodified game script does not change move scores. Modified scripts may behave differently."),
+        new(7, "Fire Gym Staff", "Bit 7 (0x0080). Selects the Fire Gym staff move routine for its scripted encounter."),
+        new(8, "Fire Gym Team Yell", "Bit 8 (0x0100). Selects the Fire Gym Team Yell move routine for its scripted encounter."),
+        new(9, "Opening Turn Strategy", "Bit 9 (0x0200). Favors Attack boosts and Light Screen on the first turn, then Behemoth Blade or Behemoth Bash from the second turn. Penalizes moves targeting an ally. This is a scripted opening, not a general difficulty setting."),
+        new(10, "Use Items", "Bit 10 (0x0400). Enables item evaluation. The trainer needs usable items and the battle must allow their use."),
+        new(11, "Fire Gym Item", "Bit 11 (0x0800). Selects the Fire Gym item routine for its scripted encounter."),
+        new(12, "Switch Pokemon", "Bit 12 (0x1000). Enables switch evaluation. Switching still depends on battle rules, available party members and the game AI."),
     ];
 
     private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> BallOptions =

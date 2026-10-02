@@ -45,12 +45,12 @@ const auditedTsxSourceFiles = auditedSourceFiles.filter((sourceFile) =>
 // failure rather than silently shrinking the audit.
 assert.equal(
   auditedSourceFiles.length,
-  324,
+  326,
   'Update the field-lock source count only after reviewing every added or removed application file.'
 );
 assert.equal(
   auditedTsxSourceFiles.length,
-  116,
+  117,
   'Update the field-lock TSX count only after reviewing every added or removed editor surface.'
 );
 
@@ -118,6 +118,10 @@ const knownFieldComponents = new Set([
  * detected value control exactly; stale permits fail the gate.
  */
 const permittedTransientFieldLocks = new Map([
+  [
+    'src/features/fix-ai-flags/FixAiFlagsSection.tsx#input[4][disabled]',
+    'Repair selection requires a matching source candidate with no staged AI edit for that trainer. This prevents replacing an existing edit; other selections stay editable during staging.'
+  ],
   [
     'src/features/trainer-dynamax/TrainerDynamaxSection.tsx#TrainerDynamaxRoster[1]=>src/features/trainer-dynamax/TrainerDynamaxRoster.tsx#SearchableOptionInput[1][disabled]=>src/components/SearchableOptionInput.tsx#input:id={inputId}[disabled]',
     'Trainer overrides require a readable source and freeze during initial loading or the direct output transaction. Review permits newer drafts and rejects its obsolete response; failed operations release controls.'

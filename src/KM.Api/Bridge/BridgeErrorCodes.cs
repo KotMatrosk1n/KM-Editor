@@ -48,6 +48,7 @@ public static class BridgeErrorCodes
     public const string OutputMetadataUnavailable = "KM-OUTPUT-METADATA-UNAVAILABLE";
 
     public const string RaidDensInvalid = "KM-SWSH-RAID-DENS-INVALID";
+    public const string AiFlagsRepairInvalid = "KM-SWSH-AI-FLAGS-REPAIR-INVALID";
     public const string TrainerWhiteoutInvalid = "KM-SWSH-TRAINER-WHITEOUT-INVALID";
     public const string TrainerDynamaxInvalid = "KM-SWSH-TRAINER-DYNAMAX-INVALID";
     public const string TrainerDynamaxReviewStale = "KM-SWSH-TRAINER-DYNAMAX-REVIEW-STALE";

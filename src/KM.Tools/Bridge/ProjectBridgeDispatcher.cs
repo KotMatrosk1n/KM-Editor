@@ -208,6 +208,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private readonly SwShHeldItemChanceService heldItemChanceService;
     private readonly SwShRaidDensService raidDensService;
     private readonly SwShTrainerWhiteoutService trainerWhiteoutService;
+    private readonly SwShAiFlagsRepairService aiFlagsRepairService;
     private readonly SwShProfanityFilterService profanityFilterService;
     private readonly SwShTrainerDynamaxService trainerDynamaxService;
     private readonly SwShRandomizerService randomizerService;
@@ -336,6 +337,7 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         heldItemChanceService = new SwShHeldItemChanceService(this.projectWorkspaceService);
         raidDensService = new SwShRaidDensService(this.projectWorkspaceService);
         trainerWhiteoutService = new SwShTrainerWhiteoutService(this.projectWorkspaceService);
+        aiFlagsRepairService = new SwShAiFlagsRepairService(this.projectWorkspaceService);
         this.profanityFilterService = profanityFilterService ?? new SwShProfanityFilterService(this.projectWorkspaceService);
         this.trainerDynamaxService = new SwShTrainerDynamaxService(this.projectWorkspaceService);
         this.randomizerService = randomizerService ?? new SwShRandomizerService(this.projectWorkspaceService);
@@ -756,6 +758,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.LoadMarnieBoosts => DispatchLoadMarnieBoosts(requestJson),
                 KmCommandNames.LoadHeldItemChance => DispatchLoadHeldItemChance(requestJson),
                 KmCommandNames.LoadRaidDens => DispatchLoadRaidDens(requestJson),
+                KmCommandNames.LoadFixAiFlags => DispatchLoadFixAiFlags(requestJson),
+                KmCommandNames.StageFixAiFlags => DispatchStageFixAiFlags(requestJson),
                 KmCommandNames.LoadTrainerWhiteout => DispatchLoadTrainerWhiteout(requestJson),
                 KmCommandNames.StageMarnieBoosts => DispatchStageMarnieBoosts(requestJson),
                 KmCommandNames.StageHeldItemChance => DispatchStageHeldItemChance(requestJson),
@@ -5559,6 +5563,32 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         workflow.DetectedGame is null ? null : ProjectBridgeMapper.ToDto(workflow.DetectedGame.Value),
         workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
 
+    private string DispatchLoadFixAiFlags(string requestJson)
+    {
+        var request = DeserializeRequest<LoadFixAiFlagsRequest>(requestJson);
+        return SerializeSuccess(new LoadFixAiFlagsResponse(ToDto(aiFlagsRepairService.Load(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths)))), request.RequestId);
+    }
+
+    private string DispatchStageFixAiFlags(string requestJson)
+    {
+        var request = DeserializeRequest<StageFixAiFlagsRequest>(requestJson);
+        var payload = request.Payload;
+        var result = aiFlagsRepairService.Stage(ProjectBridgeMapper.ToCore(payload.Paths),
+            payload.Selections.Select(row => new SwShAiFlagsRepairSelection(row.TrainerId, row.Fingerprint, row.AcknowledgePreviousFix)).ToArray(),
+            payload.ContextFingerprint, payload.AcknowledgeCustomScripts,
+            payload.Session is null ? null : EditSessionBridgeMapper.ToCore(payload.Session));
+        return SerializeSuccess(new StageFixAiFlagsResponse(ToDto(result.Workflow), EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray()), request.RequestId);
+    }
+
+    private static AiFlagsRepairWorkflowDto ToDto(SwShAiFlagsRepairWorkflow workflow) => new(
+        workflow.CanEdit, workflow.Trainers.Select(row => new AiFlagsRepairRowDto(row.TrainerId, row.Name, row.SourceFile,
+            row.CurrentFlags, row.ProposedFlags, row.Fingerprint, row.Candidate, row.PreviouslyFixed, row.ChangedSinceFix,
+            row.FixedAtUtc, row.BaseFlags)).ToArray(),
+        workflow.DetectedGame is null ? null : ProjectBridgeMapper.ToDto(workflow.DetectedGame.Value),
+        workflow.CustomAiScripts, workflow.ContextFingerprint, workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+
     private string DispatchLoadTrainerWhiteout(string requestJson)
     {
         var request = DeserializeRequest<LoadTrainerWhiteoutRequest>(requestJson);
@@ -8298,6 +8328,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.LoadMarnieBoosts or
             KmCommandNames.LoadHeldItemChance or
             KmCommandNames.LoadRaidDens or
+            KmCommandNames.LoadFixAiFlags or
+            KmCommandNames.StageFixAiFlags or
             KmCommandNames.LoadTrainerWhiteout or
             KmCommandNames.StageMarnieBoosts or
             KmCommandNames.StageHeldItemChance or

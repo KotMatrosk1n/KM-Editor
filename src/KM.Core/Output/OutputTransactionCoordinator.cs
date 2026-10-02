@@ -229,6 +229,20 @@ public sealed class OutputTransactionCoordinator
         }
     }
 
+    public async Task<IReadOnlyList<OutputRepairStamp>> GetRepairStampsAsync(CancellationToken cancellationToken = default)
+    {
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await using var workspaceLease = workspace is null ? null
+                : await workspace.AcquireAsync(options, cancellationToken).ConfigureAwait(false);
+            paths.EnsureMetadataLayout();
+            await using var outputLock = await AcquireOutputRootLockAsync(cancellationToken).ConfigureAwait(false);
+            return (await ReadHistoryAsync(cancellationToken).ConfigureAwait(false)).RepairStamps;
+        }
+        finally { operationGate.Release(); }
+    }
+
     public async Task<OutputApplyHistory> GetHistorySnapshotAsync(
         CancellationToken cancellationToken = default)
     {
@@ -2012,7 +2026,7 @@ public sealed class OutputTransactionCoordinator
             HistoryDetails = plan.HistoryDetails,
         };
 
-        EnsureFinalizationMetadataCapacity(inventoryAtStart, journal);
+        await EnsureFinalizationMetadataCapacityAsync(inventoryAtStart, journal).ConfigureAwait(false);
 
         workspace?.EnsureWorkingLayout();
         paths.CreateMetadataDirectory(transactionDirectory, paths.TransactionsRoot);
@@ -2628,7 +2642,7 @@ public sealed class OutputTransactionCoordinator
         return new OutputApplyResult(OutputApplyOutcome.Committed, journal.TransactionId, receipt);
     }
 
-    private void EnsureFinalizationMetadataCapacity(
+    private async Task EnsureFinalizationMetadataCapacityAsync(
         OutputOwnershipInventory inventory,
         OutputTransactionJournal journal)
     {
@@ -2645,9 +2659,11 @@ public sealed class OutputTransactionCoordinator
             OutputApplyOutcome.RecoveryRequired,
             journal.StartedAtUtc,
             OutputOutcomeCodes.RollbackVerificationFailed);
+        var history = await ReadHistoryAsync(CancellationToken.None).ConfigureAwait(false);
+        var committedReceipt = BuildReceipt(journal, OutputApplyOutcome.Committed, journal.StartedAtUtc, null);
         _ = metadata.GetJsonByteCount(new OutputApplyHistoryDocument(
             OutputApplyHistoryDocument.CurrentSchemaVersion,
-            [largestReceipt]));
+            [largestReceipt]) { RepairStamps = MergeRepairStamps(history.RepairStamps, committedReceipt) });
     }
 
     private ImmutableArray<RelativeOutputPath> GetMissingTargetParentDirectories(
@@ -4336,7 +4352,8 @@ public sealed class OutputTransactionCoordinator
         }
 
         foreach (var receipt in history.Receipts) receipt.HistoryDetails?.Validate();
-        return history;
+        // Repair evidence is advisory. Discard malformed evidence without blocking ordinary editing.
+        return history with { RepairStamps = ValidRepairStamps(history.RepairStamps).ToArray() };
     }
 
     private async Task AppendHistoryAsync(OutputApplyReceipt receipt, CancellationToken cancellationToken)
@@ -4352,7 +4369,8 @@ public sealed class OutputTransactionCoordinator
             OutputApplyHistoryDocument.CurrentSchemaVersion,
             ImmutableArray<OutputApplyReceipt>.Empty);
         var receiptBytes = metadata.GetJsonByteCount(receipt);
-        long serializedBytes = metadata.GetJsonByteCount(empty) + receiptBytes;
+        var repairStamps = MergeRepairStamps(history.RepairStamps, receipt);
+        long serializedBytes = metadata.GetJsonByteCount(empty with { RepairStamps = repairStamps }) + receiptBytes;
         if (serializedBytes > OutputLimits.MaximumMetadataDocumentBytes)
         {
             throw new OutputLimitExceededException(
@@ -4380,10 +4398,39 @@ public sealed class OutputTransactionCoordinator
             .ToImmutableArray();
         var updated = new OutputApplyHistoryDocument(
             OutputApplyHistoryDocument.CurrentSchemaVersion,
-            receipts);
+            receipts)
+        {
+            RepairStamps = repairStamps,
+        };
         _ = metadata.GetJsonByteCount(updated);
         var path = paths.GetContainedMetadataPath(paths.MetadataRoot, "history.json");
         await metadata.WriteJsonAtomicAsync(path, updated, cancellationToken).ConfigureAwait(false);
+    }
+
+    private const int MaximumRepairStamps = 4096;
+
+    private static IEnumerable<OutputRepairStamp> ValidRepairStamps(IReadOnlyList<OutputRepairStamp>? stamps) =>
+        (stamps ?? []).Take(MaximumRepairStamps).Where(stamp => stamp is not null
+            && stamp.Kind == KM.Core.Editing.PendingEditOwners.SwShAiFlagsRepair
+            && stamp.Path is { Length: > 0 and <= 512 } && stamp.RecordId is { Length: > 0 and <= 32 }
+            && stamp.Value is { Length: > 0 and <= 32 } && stamp.Sha256 is { Length: 64 }
+            && stamp.Sha256.All(char.IsAsciiHexDigit));
+
+    private static IReadOnlyList<OutputRepairStamp> MergeRepairStamps(IReadOnlyList<OutputRepairStamp> existing,
+        OutputApplyReceipt receipt)
+    {
+        var stamps = ValidRepairStamps(existing).GroupBy(stamp => (stamp.Kind, stamp.Path.ToUpperInvariant()))
+            .ToDictionary(group => group.Key, group => group.Last());
+        if (receipt.Outcome == OutputApplyOutcome.Committed && receipt.HistoryDetails is { } details)
+            foreach (var repair in details.Repairs)
+            {
+                var target = receipt.Targets.FirstOrDefault(target =>
+                    string.Equals(target.Path.Value, repair.Path, StringComparison.OrdinalIgnoreCase));
+                if (target?.Postimage is not { Exists: true, Sha256: { } hash }) continue;
+                stamps[(repair.Kind, repair.Path.ToUpperInvariant())] = new(repair.Kind, target.Path.Value,
+                    repair.RecordId, repair.Value, hash, receipt.CompletedAtUtc);
+            }
+        return stamps.Values.OrderByDescending(stamp => stamp.AppliedAtUtc).Take(MaximumRepairStamps).ToArray();
     }
 
     private static OutputStateRevision ComputeHistoryRevision(OutputApplyHistoryDocument history)
@@ -4586,6 +4633,13 @@ public sealed class OutputTransactionCoordinator
                 yield return change.RecordId;
                 yield return change.Field;
                 yield return change.NewValue;
+            }
+            foreach (var repair in details.Repairs)
+            {
+                yield return repair.Kind;
+                yield return repair.Path;
+                yield return repair.RecordId;
+                yield return repair.Value;
             }
         }
         yield return journal.PublishedEntryCount.ToString(System.Globalization.CultureInfo.InvariantCulture);

@@ -75,6 +75,7 @@ export const projectBridgeErrorCodes = {
   marnieBoostsPlanStale: "KM-SWSH-MARNIE-PLAN-STALE",
   marnieBoostsApplyFailed: "KM-SWSH-MARNIE-APPLY-FAILED",
   raidDensInvalid: "KM-SWSH-RAID-DENS-INVALID",
+  aiFlagsRepairInvalid: "KM-SWSH-AI-FLAGS-REPAIR-INVALID",
   trainerWhiteoutInvalid: "KM-SWSH-TRAINER-WHITEOUT-INVALID",
   trainerDynamaxInvalid: "KM-SWSH-TRAINER-DYNAMAX-INVALID",
   trainerDynamaxReviewStale: "KM-SWSH-TRAINER-DYNAMAX-REVIEW-STALE",

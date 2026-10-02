@@ -174,6 +174,8 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "fashionUnlock.install.stage",
     "fashionUnlock.load",
     "fashionUnlock.uninstall.stage",
+    "fixAiFlags.load",
+    "fixAiFlags.stage",
     "flagworkSave.load",
     "fpsPatch.apply",
     "fpsPatch.load",
@@ -197,10 +199,8 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "gymUniformRemoval.uninstall.stage",
     "habitatCoordinates.coordinate.stage",
     "habitatCoordinates.load",
-    "starmobiles.load",
-    "titan-swapper.load",
-    "starmobiles.fields.stage",
-    "titan-swapper.fields.stage",
+    "heldItemChance.load",
+    "heldItemChance.stage",
     "hyperTraining.load",
     "hyperTraining.stage",
     "hyperspaceBypass.install.stage",
@@ -216,6 +216,8 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "ivScreen.install.stage",
     "ivScreen.load",
     "ivScreen.uninstall.stage",
+    "marnieBoosts.load",
+    "marnieBoosts.stage",
     "modMerger.apply",
     "modMerger.load",
     "modMerger.packages.scan",
@@ -264,15 +266,6 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "pokemon.load",
     "profanityFilter.apply",
     "profanityFilter.load",
-    "trainerDynamax.load",
-    "trainerDynamax.review",
-    "trainerDynamax.apply",
-    "marnieBoosts.load",
-    "raidDens.load",
-    "trainerWhiteout.load",
-    "marnieBoosts.stage",
-    "raidDens.stage",
-    "trainerWhiteout.stage",
     "profanityFilter.restore",
     "project.fileGraph.refresh",
     "project.open",
@@ -286,6 +279,8 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "raidBonusRewards.load",
     "raidBonusRewards.reward.update",
     "raidBonusRewards.rewards.update",
+    "raidDens.load",
+    "raidDens.stage",
     "raidRewards.load",
     "raidRewards.reward.update",
     "raidRewards.rewards.update",
@@ -333,6 +328,8 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "shops.load",
     "spreadsheetImport.load",
     "spreadsheetImport.preview",
+    "starmobiles.fields.stage",
+    "starmobiles.load",
     "startingItems.load",
     "startingItems.stage",
     "staticEncounters.field.update",
@@ -355,14 +352,21 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "teraRaids.load",
     "text.entry.update",
     "text.load",
+    "titan-swapper.fields.stage",
+    "titan-swapper.load",
     "tmMachineControls.load",
     "tmMachineControls.materialVisibility.stage",
     "tmMachineControls.recipeAvailability.stage",
     "tradePokemon.field.update",
     "tradePokemon.fields.update",
     "tradePokemon.load",
+    "trainerDynamax.apply",
+    "trainerDynamax.load",
+    "trainerDynamax.review",
     "trainerPools.fixedCountSwap.stage",
     "trainerPools.load",
+    "trainerWhiteout.load",
+    "trainerWhiteout.stage",
     "trainers.field.update",
     "trainers.fields.update",
     "trainers.load",
@@ -2832,6 +2836,7 @@ fn is_project_bridge_workflow_load_command(command: &str) -> bool {
             | "pokemon.load"
             | "profanityFilter.load"
             | "trainerDynamax.load"
+            | "heldItemChance.load"
             | "marnieBoosts.load"
             | "raidDens.load"
             | "trainerWhiteout.load"
@@ -2985,8 +2990,11 @@ fn is_replay_safe_edit_session_command(command: &str) -> bool {
             | "habitatCoordinates.coordinate.stage"
             | "starmobiles.fields.stage"
             | "titan-swapper.fields.stage"
+            | "heldItemChance.stage"
             | "marnieBoosts.stage"
             | "raidDens.stage"
+            | "fixAiFlags.load"
+            | "fixAiFlags.stage"
             | "trainerWhiteout.stage"
             | "hyperTraining.stage"
             | "hyperspaceBypass.install.stage"

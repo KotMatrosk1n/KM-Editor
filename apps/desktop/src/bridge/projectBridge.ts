@@ -15,6 +15,8 @@ import { type LoadHeldItemChanceRequest, type LoadHeldItemChanceResponse, type S
   loadHeldItemChanceRequestSchema, loadHeldItemChanceResponseSchema, stageHeldItemChanceRequestSchema, stageHeldItemChanceResponseSchema } from './heldItemChanceContracts';
 import { type LoadRaidDensRequest, type LoadRaidDensResponse, type StageRaidDensRequest, type StageRaidDensResponse,
   loadRaidDensRequestSchema, loadRaidDensResponseSchema, stageRaidDensRequestSchema, stageRaidDensResponseSchema } from './raidDensContracts';
+import { type LoadFixAiFlagsRequest, type LoadFixAiFlagsResponse, type StageFixAiFlagsRequest, type StageFixAiFlagsResponse,
+  loadFixAiFlagsRequestSchema, loadFixAiFlagsResponseSchema, stageFixAiFlagsRequestSchema, stageFixAiFlagsResponseSchema } from './fixAiFlagsContracts';
 import { type LoadTrainerWhiteoutRequest, type LoadTrainerWhiteoutResponse, type StageTrainerWhiteoutRequest, type StageTrainerWhiteoutResponse,
   loadTrainerWhiteoutRequestSchema, loadTrainerWhiteoutResponseSchema, stageTrainerWhiteoutRequestSchema, stageTrainerWhiteoutResponseSchema } from './trainerWhiteoutContracts';
 import { invoke } from "@tauri-apps/api/core";
@@ -848,6 +850,8 @@ export type ProjectBridge = {
   loadMarnieBoosts: (request: LoadMarnieBoostsRequest) => Promise<LoadMarnieBoostsResponse>;
   loadHeldItemChance: (request: LoadHeldItemChanceRequest) => Promise<LoadHeldItemChanceResponse>;
   loadRaidDens: (request: LoadRaidDensRequest) => Promise<LoadRaidDensResponse>;
+  loadFixAiFlags: (request: LoadFixAiFlagsRequest) => Promise<LoadFixAiFlagsResponse>;
+  stageFixAiFlags: (request: StageFixAiFlagsRequest) => Promise<StageFixAiFlagsResponse>;
   loadTrainerWhiteout: (request: LoadTrainerWhiteoutRequest) => Promise<LoadTrainerWhiteoutResponse>;
   stageStarmobiles: (request: StageStarmobilesRequest) => Promise<StageStarmobilesResponse>;
   stageTitanSwapper: (request: StageTitanSwapperRequest) => Promise<StageTitanSwapperResponse>;
@@ -1689,6 +1693,10 @@ export function createProjectBridge(
       loadHeldItemChanceRequestSchema.parse(request), loadHeldItemChanceResponseSchema),
     loadRaidDens: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadRaidDens,
       loadRaidDensRequestSchema.parse(request), loadRaidDensResponseSchema),
+    loadFixAiFlags: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadFixAiFlags,
+      loadFixAiFlagsRequestSchema.parse(request), loadFixAiFlagsResponseSchema),
+    stageFixAiFlags: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageFixAiFlags,
+      stageFixAiFlagsRequestSchema.parse(request), stageFixAiFlagsResponseSchema),
     loadTrainerWhiteout: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadTrainerWhiteout,
       loadTrainerWhiteoutRequestSchema.parse(request), loadTrainerWhiteoutResponseSchema),
     stageStarmobiles: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageStarmobiles,

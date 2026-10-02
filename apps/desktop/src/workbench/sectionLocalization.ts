@@ -67,6 +67,7 @@ export const workbenchSectionLocalization = {
   marnieBoosts: { label: 'workbench.section.marnie-boosts.label', description: 'workbench.section.marnie-boosts.description' },
   heldItemChance: { label: 'workbench.section.held-item-chance.label', description: 'workbench.section.held-item-chance.description' },
   raidDens: { label: 'workbench.section.raid-dens.label', description: 'workbench.section.raid-dens.description' },
+  fixAiFlags: { label: 'workbench.section.fix-ai-flags.label', description: 'workbench.section.fix-ai-flags.description' },
   trainerWhiteout: { label: 'workbench.section.trainer-whiteout.label', description: 'workbench.section.trainer-whiteout.description' },
   trainerDynamax: { label: 'workbench.section.trainer-dynamax.label', description: 'workbench.section.trainer-dynamax.description' },
   randomizer: { label: 'workbench.section.randomizer.label', description: 'workbench.section.randomizer.description' },

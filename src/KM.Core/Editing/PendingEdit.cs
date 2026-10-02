@@ -71,5 +71,6 @@ public sealed record PendingEditAssociation
 
 public static class PendingEditOwners
 {
+    public const string SwShAiFlagsRepair = "repair.swsh-ai-flags.v1";
     public const string DumpImporterItemsPrice = "workflow.dump-import.items-price";
 }

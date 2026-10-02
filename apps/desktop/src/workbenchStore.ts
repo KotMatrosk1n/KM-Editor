@@ -49,6 +49,7 @@ import { type TitanSwapperWorkflow } from './bridge/titanSwapperContracts';
 import { type MarnieBoostsWorkflow } from './bridge/marnieBoostsContracts';
 import { type HeldItemChanceWorkflow } from './bridge/heldItemChanceContracts';
 import { type RaidDensWorkflow } from './bridge/raidDensContracts';
+import { type FixAiFlagsWorkflow } from './bridge/fixAiFlagsContracts';
 import { type TrainerWhiteoutWorkflow } from './bridge/trainerWhiteoutContracts';
 import { type HabitatCoordinatesWorkflow } from './bridge/habitatCoordinatesContracts';
 import { type FairyGymBoostsWorkflow } from './bridge/fairyGymBoostsContracts';
@@ -199,6 +200,7 @@ type WorkbenchState = {
   marnieBoostsWorkflow: MarnieBoostsWorkflow | null;
   heldItemChanceWorkflow: HeldItemChanceWorkflow | null;
   raidDensWorkflow: RaidDensWorkflow | null;
+  fixAiFlagsWorkflow: FixAiFlagsWorkflow | null;
   trainerWhiteoutWorkflow: TrainerWhiteoutWorkflow | null;
   textSearchText: string;
   textWorkflow: TextWorkflow | null;
@@ -323,6 +325,7 @@ type WorkbenchState = {
   setHeldItemChanceWorkflow: (heldItemChanceWorkflow: HeldItemChanceWorkflow) => void;
   setMarnieBoostsWorkflow: (marnieBoostsWorkflow: MarnieBoostsWorkflow) => void;
   setRaidDensWorkflow: (raidDensWorkflow: RaidDensWorkflow) => void;
+  setFixAiFlagsWorkflow: (fixAiFlagsWorkflow: FixAiFlagsWorkflow) => void;
   setTrainerWhiteoutWorkflow: (trainerWhiteoutWorkflow: TrainerWhiteoutWorkflow) => void;
   setHabitatCoordinatesWorkflow: (habitatCoordinatesWorkflow: HabitatCoordinatesWorkflow) => void;
   setTextSearchText: (textSearchText: string) => void;
@@ -520,6 +523,7 @@ function createLoadedWorkflowResetState(): Partial<WorkbenchState> {
     marnieBoostsWorkflow: null,
     heldItemChanceWorkflow: null,
     raidDensWorkflow: null,
+    fixAiFlagsWorkflow: null,
     trainerWhiteoutWorkflow: null,
     textSearchText: '',
     textWorkflow: null,
@@ -643,6 +647,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   marnieBoostsWorkflow: null,
   heldItemChanceWorkflow: null,
   raidDensWorkflow: null,
+  fixAiFlagsWorkflow: null,
   trainerWhiteoutWorkflow: null,
   textSearchText: '',
   textWorkflow: null,
@@ -1024,6 +1029,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   })),
   setRaidDensWorkflow: (raidDensWorkflow) => set((state) => ({
     activeSection: resolveWorkflowLoadSection(state.activeSection, 'raidDens'), raidDensWorkflow
+  })),
+  setFixAiFlagsWorkflow: (fixAiFlagsWorkflow) => set((state) => ({
+    activeSection: resolveWorkflowLoadSection(state.activeSection, 'fixAiFlags'), fixAiFlagsWorkflow
   })),
   setTrainerWhiteoutWorkflow: (trainerWhiteoutWorkflow) => set((state) => ({
     activeSection: resolveWorkflowLoadSection(state.activeSection, 'trainerWhiteout'), trainerWhiteoutWorkflow
