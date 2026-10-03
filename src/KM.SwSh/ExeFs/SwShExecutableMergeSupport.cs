@@ -5,6 +5,7 @@ using KM.SwSh.GymUniformRemoval;
 using KM.SwSh.HyperTraining;
 using KM.SwSh.ShinyRate;
 using KM.SwSh.HeldItemChance;
+using KM.SwSh.GameOptions;
 
 namespace KM.SwSh.ExeFs;
 
@@ -56,7 +57,8 @@ public static class SwShExecutableMergeSupport
     }
 
     public static IReadOnlyList<SwShExecutableMergeRegion> RoRegions(string build) => GameForBuild(build) is null ? [] :
-        [new("Held Item Chance", SwShHeldItemChancePatcher.RateOffset, 6)];
+        [new("Held Item Chance", SwShHeldItemChancePatcher.RateOffset, 6),
+         new("Game Options", SwShGameOptionsPatcher.DescriptorsOffset, 16 * 56)];
 
     public static int? HyperLevel(string path, byte[] bytes)
     {
@@ -89,6 +91,17 @@ public static class SwShExecutableMergeSupport
     public static bool IsValid(byte[] original, byte[] merged)
     {
         if (GameForBuild(Convert.ToHexString(NsoFile.Parse(original).BuildId)) is not { } game) return true;
+        var beforeOptions = NsoFile.Parse(original);
+        var afterOptions = NsoFile.Parse(merged);
+        if (SwShGameOptionsPatcher.CreateReservations().Where(region =>
+                !region.FeatureId.Contains(game == ProjectGame.Sword ? "-shield-" : "-sword-", StringComparison.Ordinal))
+            .Any(region => !(region.Area == "main.ro" ? beforeOptions.Ro : beforeOptions.Text).DecompressedData
+                .AsSpan(region.StartOffset!.Value, region.Length!.Value).SequenceEqual(
+                    (region.Area == "main.ro" ? afterOptions.Ro : afterOptions.Text).DecompressedData.AsSpan(region.StartOffset.Value, region.Length.Value))))
+        {
+            try { _ = SwShGameOptionsPatcher.Read(merged, game); }
+            catch (InvalidDataException) { return false; }
+        }
         var originalRates = SwShHeldItemChancePatcher.Rates(NsoFile.Parse(original));
         var mergedRates = SwShHeldItemChancePatcher.Rates(NsoFile.Parse(merged));
         if (!originalRates.SequenceEqual(mergedRates))

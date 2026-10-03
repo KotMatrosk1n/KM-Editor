@@ -200,7 +200,9 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "habitatCoordinates.coordinate.stage",
     "habitatCoordinates.load",
     "heldItemChance.load",
+    "gameOptions.load",
     "heldItemChance.stage",
+    "gameOptions.stage",
     "hyperTraining.load",
     "hyperTraining.stage",
     "hyperspaceBypass.install.stage",
@@ -2837,6 +2839,7 @@ fn is_project_bridge_workflow_load_command(command: &str) -> bool {
             | "profanityFilter.load"
             | "trainerDynamax.load"
             | "heldItemChance.load"
+            | "gameOptions.load"
             | "marnieBoosts.load"
             | "raidDens.load"
             | "trainerWhiteout.load"
@@ -2991,6 +2994,7 @@ fn is_replay_safe_edit_session_command(command: &str) -> bool {
             | "starmobiles.fields.stage"
             | "titan-swapper.fields.stage"
             | "heldItemChance.stage"
+            | "gameOptions.stage"
             | "marnieBoosts.stage"
             | "raidDens.stage"
             | "fixAiFlags.load"

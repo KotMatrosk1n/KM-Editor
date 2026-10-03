@@ -13,6 +13,8 @@ import { type LoadMarnieBoostsRequest, type LoadMarnieBoostsResponse, type Stage
   loadMarnieBoostsRequestSchema, loadMarnieBoostsResponseSchema, stageMarnieBoostsRequestSchema, stageMarnieBoostsResponseSchema } from './marnieBoostsContracts';
 import { type LoadHeldItemChanceRequest, type LoadHeldItemChanceResponse, type StageHeldItemChanceRequest, type StageHeldItemChanceResponse,
   loadHeldItemChanceRequestSchema, loadHeldItemChanceResponseSchema, stageHeldItemChanceRequestSchema, stageHeldItemChanceResponseSchema } from './heldItemChanceContracts';
+import { type LoadGameOptionsRequest, type LoadGameOptionsResponse, type StageGameOptionsRequest, type StageGameOptionsResponse,
+  loadGameOptionsRequestSchema, loadGameOptionsResponseSchema, stageGameOptionsRequestSchema, stageGameOptionsResponseSchema } from './gameOptionsContracts';
 import { type LoadRaidDensRequest, type LoadRaidDensResponse, type StageRaidDensRequest, type StageRaidDensResponse,
   loadRaidDensRequestSchema, loadRaidDensResponseSchema, stageRaidDensRequestSchema, stageRaidDensResponseSchema } from './raidDensContracts';
 import { type LoadFixAiFlagsRequest, type LoadFixAiFlagsResponse, type StageFixAiFlagsRequest, type StageFixAiFlagsResponse,
@@ -849,6 +851,7 @@ export type ProjectBridge = {
   loadTitanSwapper: (request: LoadTitanSwapperRequest) => Promise<LoadTitanSwapperResponse>;
   loadMarnieBoosts: (request: LoadMarnieBoostsRequest) => Promise<LoadMarnieBoostsResponse>;
   loadHeldItemChance: (request: LoadHeldItemChanceRequest) => Promise<LoadHeldItemChanceResponse>;
+  loadGameOptions: (request: LoadGameOptionsRequest) => Promise<LoadGameOptionsResponse>;
   loadRaidDens: (request: LoadRaidDensRequest) => Promise<LoadRaidDensResponse>;
   loadFixAiFlags: (request: LoadFixAiFlagsRequest) => Promise<LoadFixAiFlagsResponse>;
   stageFixAiFlags: (request: StageFixAiFlagsRequest) => Promise<StageFixAiFlagsResponse>;
@@ -857,6 +860,7 @@ export type ProjectBridge = {
   stageTitanSwapper: (request: StageTitanSwapperRequest) => Promise<StageTitanSwapperResponse>;
   stageMarnieBoosts: (request: StageMarnieBoostsRequest) => Promise<StageMarnieBoostsResponse>;
   stageHeldItemChance: (request: StageHeldItemChanceRequest) => Promise<StageHeldItemChanceResponse>;
+  stageGameOptions: (request: StageGameOptionsRequest) => Promise<StageGameOptionsResponse>;
   stageRaidDens: (request: StageRaidDensRequest) => Promise<StageRaidDensResponse>;
   stageTrainerWhiteout: (request: StageTrainerWhiteoutRequest) => Promise<StageTrainerWhiteoutResponse>;
   loadHabitatCoordinates: (
@@ -1691,6 +1695,8 @@ export function createProjectBridge(
       loadMarnieBoostsRequestSchema.parse(request), loadMarnieBoostsResponseSchema),
     loadHeldItemChance: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadHeldItemChance,
       loadHeldItemChanceRequestSchema.parse(request), loadHeldItemChanceResponseSchema),
+    loadGameOptions: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadGameOptions,
+      loadGameOptionsRequestSchema.parse(request), loadGameOptionsResponseSchema),
     loadRaidDens: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadRaidDens,
       loadRaidDensRequestSchema.parse(request), loadRaidDensResponseSchema),
     loadFixAiFlags: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadFixAiFlags,
@@ -1707,6 +1713,8 @@ export function createProjectBridge(
       stageMarnieBoostsRequestSchema.parse(request), stageMarnieBoostsResponseSchema),
     stageHeldItemChance: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageHeldItemChance,
       stageHeldItemChanceRequestSchema.parse(request), stageHeldItemChanceResponseSchema),
+    stageGameOptions: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageGameOptions,
+      stageGameOptionsRequestSchema.parse(request), stageGameOptionsResponseSchema),
     stageRaidDens: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageRaidDens,
       stageRaidDensRequestSchema.parse(request), stageRaidDensResponseSchema),
     stageTrainerWhiteout: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageTrainerWhiteout,

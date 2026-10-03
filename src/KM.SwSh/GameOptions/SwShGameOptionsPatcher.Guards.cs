@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: GPL-3.0-only
+using KM.Core.Projects;
+namespace KM.SwSh.GameOptions;
+
+internal static partial class SwShGameOptionsPatcher
+{
+    private static readonly Guard[] Guards =
+    [
+        new(ProjectGame.Sword, 0x140D0F0, 0x10D0, "5B91C5FA24DB16DAA46872084C1BEE8EBEEB6F56DA6D70E22007E7CEA50B1F52"),
+        new(ProjectGame.Sword, 0x14D7BD0, 0x7200, "C4E6A4BA730096F2C1BEAE4CB3A80A444592EE5631002743B4FAF6309BA1A09E"),
+        new(ProjectGame.Shield, 0x140D120, 0x10D0, "F0435422EC4DB665E17DDFD460A42F28C8186358EE487468CBA70257F8582783"),
+        new(ProjectGame.Shield, 0x14D7C00, 0x7200, "49283A630DB40B61ECFA6BA0CB4A01B369286BA2B0A0EDE7416288A240BA986B"),
+    ];
+}

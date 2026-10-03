@@ -31,6 +31,7 @@ public static class SwShWorkflowIds
     public const string FairyGymBoosts = "fairyGymBoosts";
     public const string MarnieBoosts = "marnieBoosts";
     public const string HeldItemChance = "heldItemChance";
+    public const string GameOptions = "gameOptions";
     public const string FashionUnlock = "fashionUnlock";
     public const string GymUniformRemoval = "gymUniformRemoval";
     public const string IvScreen = "ivScreen";

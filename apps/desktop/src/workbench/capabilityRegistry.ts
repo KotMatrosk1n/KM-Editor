@@ -443,6 +443,10 @@ export const workbenchCapabilityRegistry = [
     games: swordShieldGames, icon: Sparkles, id: 'heldItemChance', label: 'Held Item Chance'
   }),
   workflow({
+    description: 'Choose new game option values and hide individual menu selections.',
+    games: swordShieldGames, icon: Sparkles, id: 'gameOptions', label: 'Game Options'
+  }),
+  workflow({
     description:
       'Advanced ExeFS editor that unlocks fashion ownership checks without editing the save file.',
     games: ['sword', 'shield', 'scarlet', 'violet'],
