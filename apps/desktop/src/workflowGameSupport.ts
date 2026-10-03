@@ -42,6 +42,7 @@ import { type StarmobilesWorkflow } from './bridge/starmobilesContracts';
 import { type TitanSwapperWorkflow } from './bridge/titanSwapperContracts';
 import { type MarnieBoostsWorkflow } from './bridge/marnieBoostsContracts';
 import { type HeldItemChanceWorkflow } from './bridge/heldItemChanceContracts';
+import { type GameOptionsWorkflow } from './bridge/gameOptionsContracts';
 import { type RaidDensWorkflow } from './bridge/raidDensContracts';
 import { type FixAiFlagsWorkflow } from './bridge/fixAiFlagsContracts';
 import { type TrainerWhiteoutWorkflow } from './bridge/trainerWhiteoutContracts';
@@ -124,6 +125,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
       'fairyGymBoosts',
       'marnieBoosts',
       'heldItemChance',
+      'gameOptions',
       'fashionUnlock',
       'gymUniformRemoval',
       'hyperspaceBypass',
@@ -182,6 +184,7 @@ export const sharedStagedEditorSectionIds = new Set<WorkbenchSection>([
   'titanSwapper',
   'marnieBoosts',
   'heldItemChance',
+  'gameOptions',
   'raidDens',
   'fixAiFlags',
   'trainerWhiteout',
@@ -211,6 +214,7 @@ export const sharedStagedEditorDomains = new Set([
   'workflow.titan-swapper',
   'workflow.marnieBoosts',
   'workflow.heldItemChance',
+  'workflow.gameOptions',
   'workflow.raidDens',
   'workflow.trainerWhiteout',
   'workflow.moves',
@@ -298,6 +302,7 @@ export type LoadedWorkflowStateBySection = {
   titanSwapperWorkflow: TitanSwapperWorkflow | null;
   marnieBoostsWorkflow: MarnieBoostsWorkflow | null;
   heldItemChanceWorkflow: HeldItemChanceWorkflow | null;
+  gameOptionsWorkflow: GameOptionsWorkflow | null;
   raidDensWorkflow: RaidDensWorkflow | null;
   fixAiFlagsWorkflow: FixAiFlagsWorkflow | null;
   trainerWhiteoutWorkflow: TrainerWhiteoutWorkflow | null;
@@ -431,6 +436,8 @@ export function getLoadedWorkflowStateForSection(
       return state.titanSwapperWorkflow !== null;
     case 'heldItemChance':
       return state.heldItemChanceWorkflow !== null;
+    case 'gameOptions':
+      return state.gameOptionsWorkflow !== null;
     case 'marnieBoosts':
       return state.marnieBoostsWorkflow !== null;
     case 'raidDens':

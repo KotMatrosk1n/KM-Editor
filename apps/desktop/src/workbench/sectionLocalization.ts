@@ -66,6 +66,7 @@ export const workbenchSectionLocalization = {
   profanityFilter: { label: 'workbench.section.profanity-filter.label', description: 'workbench.section.profanity-filter.description' },
   marnieBoosts: { label: 'workbench.section.marnie-boosts.label', description: 'workbench.section.marnie-boosts.description' },
   heldItemChance: { label: 'workbench.section.held-item-chance.label', description: 'workbench.section.held-item-chance.description' },
+  gameOptions: { label: 'workbench.section.game-options.label', description: 'workbench.section.game-options.description' },
   raidDens: { label: 'workbench.section.raid-dens.label', description: 'workbench.section.raid-dens.description' },
   fixAiFlags: { label: 'workbench.section.fix-ai-flags.label', description: 'workbench.section.fix-ai-flags.description' },
   trainerWhiteout: { label: 'workbench.section.trainer-whiteout.label', description: 'workbench.section.trainer-whiteout.description' },

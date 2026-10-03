@@ -40,6 +40,7 @@ export const workbenchSections = [
   'fairyGymBoosts',
   'marnieBoosts',
   'heldItemChance',
+  'gameOptions',
   'fashionUnlock',
   'gymUniformRemoval',
   'hyperspaceBypass',

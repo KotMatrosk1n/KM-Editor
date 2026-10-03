@@ -13,6 +13,7 @@ using KM.SwSh.NameFilter;
 using KM.SwSh.ShinyRate;
 using KM.SwSh.TypeChart;
 using KM.SwSh.HeldItemChance;
+using KM.SwSh.GameOptions;
 
 namespace KM.SwSh.RuntimeSettings;
 
@@ -42,7 +43,8 @@ public static class SwShKnownExecutableCompositionVerifier
             var normalized = candidateMain.ToArray();
             var recognizedTransformation = false;
 
-            if (!NormalizeLegacyGameplaySettings(retail, ref normalized, expectedGame, ref recognizedTransformation)
+            if (!NormalizeGameOptions(retail, ref normalized, expectedGame, ref recognizedTransformation)
+                || !NormalizeLegacyGameplaySettings(retail, ref normalized, expectedGame, ref recognizedTransformation)
                 || !NormalizeIvScreen(retail, ref normalized, expectedGame, ref recognizedTransformation)
                 || !NormalizeHyperTraining(retail, ref normalized, expectedGame, ref recognizedTransformation)
                 || !NormalizeCatchCap(retail, ref normalized, expectedGame, ref recognizedTransformation)
@@ -220,6 +222,16 @@ public static class SwShKnownExecutableCompositionVerifier
         var current = SwShHeldItemChancePatcher.Rates(NsoFile.Parse(normalized));
         if (original.SequenceEqual(current)) return true;
         normalized = SwShHeldItemChancePatcher.Apply(retail, normalized, expectedGame, original);
+        recognizedTransformation = true;
+        return true;
+    }
+
+    private static bool NormalizeGameOptions(byte[] retail, ref byte[] normalized,
+        ProjectGame expectedGame, ref bool recognizedTransformation)
+    {
+        var current = SwShGameOptionsPatcher.Read(normalized, expectedGame);
+        if (current.Selections.All(value => value == 0)) return true;
+        normalized = SwShGameOptionsPatcher.Apply(retail, normalized, expectedGame, SwShGameOptionsPolicy.Defaults);
         recognizedTransformation = true;
         return true;
     }

@@ -491,7 +491,16 @@ public static class SwShStaticGameplaySettingsMainPatcher
         var text = currentText.ToArray();
         var optionsDelta = expectedGame == ProjectGame.Shield ? 0x30 : 0;
         var descriptorOffset = 0x020736A8 - baseNso.Ro.Header.MemoryOffset;
+        var optionsProof = currentNso;
         if (!currentNso.Ro.DecompressedData.AsSpan(descriptorOffset, 0x380)
+            .SequenceEqual(baseNso.Ro.DecompressedData.AsSpan(descriptorOffset, 0x380)))
+        {
+            // Prove the complete independently authored policy before comparing the
+            // retail menu dependencies. Keep the actual policy in the delivered main.
+            optionsProof = NsoFile.Parse(KM.SwSh.GameOptions.SwShGameOptionsPatcher.Apply(
+                baseMainBytes, compositionMainBytes, expectedGame, KM.SwSh.GameOptions.SwShGameOptionsPolicy.Defaults));
+        }
+        if (!optionsProof.Ro.DecompressedData.AsSpan(descriptorOffset, 0x380)
             .SequenceEqual(baseNso.Ro.DecompressedData.AsSpan(descriptorOffset, 0x380)))
         {
             throw new InvalidDataException(
@@ -504,7 +513,7 @@ public static class SwShStaticGameplaySettingsMainPatcher
             (0x0067D5C0, 0xC0),
         })
         {
-            if (!currentText.AsSpan(offset, length).SequenceEqual(baseText.AsSpan(offset, length)))
+            if (!optionsProof.Text.DecompressedData.AsSpan(offset, length).SequenceEqual(baseText.AsSpan(offset, length)))
             {
                 throw new InvalidDataException(
                     "The native gameplay menu requires the original Sword/Shield Options code. Another executable edit overlaps that menu.");

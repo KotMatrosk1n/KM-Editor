@@ -462,10 +462,12 @@ import {
 import { MarnieBoostsSection } from './features/marnie-boosts/MarnieBoostsSection';
 import { WildHeldItems, WildHeldItemsActions, effectiveHeldItems, type WildHeldItemUpdate } from './features/held-item-chance/WildHeldItems';
 import { HeldItemChanceSection } from './features/held-item-chance/HeldItemChanceSection';
+import { GameOptionsSection } from './features/game-options/GameOptionsSection';
 import { RaidDensSection } from './features/raid-dens/RaidDensSection';
 import { FixAiFlagsSection } from './features/fix-ai-flags/FixAiFlagsSection';
 import { TrainerWhiteoutSection } from './features/trainer-whiteout/TrainerWhiteoutSection';
 import { encodeHeldItemRates, getHeldItemPendingRates, type HeldItemChanceWorkflow } from './bridge/heldItemChanceContracts';
+import { encodeGameOptionsSelections, getGameOptionsPendingSelections, type GameOptionsWorkflow } from './bridge/gameOptionsContracts';
 import { encodeMarnieBoostSelections, getMarnieBoostPendingSelections, type MarnieBoostsWorkflow } from './bridge/marnieBoostsContracts';
 import { type RaidDensWorkflow } from './bridge/raidDensContracts';
 import { type FixAiFlagsWorkflow, type FixAiFlagsSelection } from './bridge/fixAiFlagsContracts';
@@ -3245,6 +3247,7 @@ export function App({
   const titanSwapperWorkflow = useWorkbenchStore(state => state.titanSwapperWorkflow);
   const marnieBoostsWorkflow = useWorkbenchStore(state => state.marnieBoostsWorkflow);
   const heldItemChanceWorkflow = useWorkbenchStore(state => state.heldItemChanceWorkflow);
+  const gameOptionsWorkflow = useWorkbenchStore(state => state.gameOptionsWorkflow);
   const raidDensWorkflow = useWorkbenchStore(state => state.raidDensWorkflow);
   const fixAiFlagsWorkflow = useWorkbenchStore(state => state.fixAiFlagsWorkflow);
   const trainerWhiteoutWorkflow = useWorkbenchStore(state => state.trainerWhiteoutWorkflow);
@@ -3252,6 +3255,7 @@ export function App({
   const setTitanSwapperWorkflow = useWorkbenchStore(state => state.setTitanSwapperWorkflow);
   const setMarnieBoostsWorkflow = useWorkbenchStore(state => state.setMarnieBoostsWorkflow);
   const setHeldItemChanceWorkflow = useWorkbenchStore(state => state.setHeldItemChanceWorkflow);
+  const setGameOptionsWorkflow = useWorkbenchStore(state => state.setGameOptionsWorkflow);
   const setRaidDensWorkflow = useWorkbenchStore(state => state.setRaidDensWorkflow);
   const setFixAiFlagsWorkflow = useWorkbenchStore(state => state.setFixAiFlagsWorkflow);
   const setTrainerWhiteoutWorkflow = useWorkbenchStore(state => state.setTrainerWhiteoutWorkflow);
@@ -3259,6 +3263,7 @@ export function App({
   const [isTitanSwapperLoading, setIsTitanSwapperLoading] = useState(false);
   const [isMarnieBoostsLoading, setIsMarnieBoostsLoading] = useState(false);
   const [isHeldItemChanceLoading, setIsHeldItemChanceLoading] = useState(false);
+  const [isGameOptionsLoading, setIsGameOptionsLoading] = useState(false);
   const [isRaidDensLoading, setIsRaidDensLoading] = useState(false);
   const [isFixAiFlagsLoading, setIsFixAiFlagsLoading] = useState(false);
   const [isTrainerWhiteoutLoading, setIsTrainerWhiteoutLoading] = useState(false);
@@ -3266,6 +3271,7 @@ export function App({
   const [isTitanSwapperStaging, setIsTitanSwapperStaging] = useState(false);
   const [isMarnieBoostsStaging, setIsMarnieBoostsStaging] = useState(false);
   const [isHeldItemChanceStaging, setIsHeldItemChanceStaging] = useState(false);
+  const [isGameOptionsStaging, setIsGameOptionsStaging] = useState(false);
   const [isRaidDensStaging, setIsRaidDensStaging] = useState(false);
   const [isFixAiFlagsStaging, setIsFixAiFlagsStaging] = useState(false);
   const [isTrainerWhiteoutStaging, setIsTrainerWhiteoutStaging] = useState(false);
@@ -3273,6 +3279,7 @@ export function App({
   const titanSwapperGenerationRef = useRef(0);
   const marnieBoostsGenerationRef = useRef(0);
   const heldItemChanceGenerationRef = useRef(0);
+  const gameOptionsGenerationRef = useRef(0);
   const raidDensGenerationRef = useRef(0);
   const fixAiFlagsGenerationRef = useRef(0);
   const trainerWhiteoutGenerationRef = useRef(0);
@@ -4189,6 +4196,7 @@ export function App({
           titanSwapperWorkflow,
           marnieBoostsWorkflow,
           heldItemChanceWorkflow,
+          gameOptionsWorkflow,
           raidDensWorkflow,
           fixAiFlagsWorkflow,
           trainerWhiteoutWorkflow,
@@ -4239,6 +4247,7 @@ export function App({
       titanSwapperWorkflow,
       marnieBoostsWorkflow,
       heldItemChanceWorkflow,
+      gameOptionsWorkflow,
       raidDensWorkflow,
       fixAiFlagsWorkflow,
       trainerWhiteoutWorkflow,
@@ -4356,6 +4365,7 @@ export function App({
     titanSwapperWorkflow,
     marnieBoostsWorkflow,
     heldItemChanceWorkflow,
+    gameOptionsWorkflow,
     raidDensWorkflow,
     fixAiFlagsWorkflow,
     trainerWhiteoutWorkflow,
@@ -4483,6 +4493,8 @@ export function App({
     (dirty: boolean) => registerEditorDraftDirty('marnieBoosts', dirty), [registerEditorDraftDirty]);
   const handleHeldItemChanceDirtyChange = useCallback(
     (dirty: boolean) => registerEditorDraftDirty('heldItemChance', dirty), [registerEditorDraftDirty]);
+  const handleGameOptionsDirtyChange = useCallback(
+    (dirty: boolean) => registerEditorDraftDirty('gameOptions', dirty), [registerEditorDraftDirty]);
   const handleRaidDensDirtyChange = useCallback(
     (dirty: boolean) => registerEditorDraftDirty('raidDens', dirty), [registerEditorDraftDirty]);
   const handleFixAiFlagsDirtyChange = useCallback(
@@ -10554,6 +10566,49 @@ export function App({
     return accepted;
   };
 
+  const handleOpenGameOptionsWorkflow = async () => {
+    const generation = gameOptionsGenerationRef.current;
+    await runRetainedWorkflowLoad('gameOptions', setIsGameOptionsLoading,
+      () => bridge.loadGameOptions({ paths: createProjectPaths(draftPaths) }),
+      response => setGameOptionsWorkflow(response.workflow),
+      () => generation === gameOptionsGenerationRef.current);
+  };
+
+  const handleStageGameOptions = async (selections: number[]) => {
+    const activeSession = getEditSessionForSection('gameOptions');
+    if (!activeSession) return false;
+    let accepted = false;
+    gameOptionsGenerationRef.current += 1;
+    setIsGameOptionsStaging(true);
+    prepareScopedEditorPanelAction('gameOptions');
+    try {
+      await runEditSessionMutation(async session => {
+        const response = await bridge.stageGameOptions({ paths: createProjectPaths(draftPaths), session, selections });
+        const edits = response.session.pendingEdits.filter(edit => edit.domain === 'workflow.gameOptions');
+        const pendingSelections = getGameOptionsPendingSelections(response.session);
+        const acknowledged = edits.length === 0
+          ? encodeGameOptionsSelections(response.workflow.selections) === encodeGameOptionsSelections(selections)
+          : pendingSelections !== null && encodeGameOptionsSelections(pendingSelections) === encodeGameOptionsSelections(selections);
+        const matches = response.workflow.canEdit && response.workflow.detectedGame === draftPaths.selectedGame &&
+          response.session.sessionId === activeSession.sessionId && acknowledged;
+        const diagnostics = [...response.diagnostics, ...response.workflow.diagnostics];
+        if (!matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error'))
+          diagnostics.push({ severity: 'error', domain: 'workflow.gameOptions', code: 'KM-SWSH-GAME-OPTIONS-SESSION-INVALID', message: t('gameOptions.failed') });
+        const didSucceed = matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error');
+        return { ...response, diagnostics, didSucceed, session: didSucceed ? response.session : session };
+      }, response => {
+        setScopedEditorPanelDiagnostics('gameOptions', response.diagnostics);
+        if (response.didSucceed) {
+          accepted = true;
+          setGameOptionsWorkflow(response.workflow);
+          setEditSessionSection('gameOptions');
+        }
+      }, activeSession);
+    } catch (error) { setScopedEditorPanelDiagnostics('gameOptions', toBridgeDiagnostics(error)); }
+    finally { setIsGameOptionsStaging(false); }
+    return accepted;
+  };
+
   const handleOpenRaidDensWorkflow = async () => {
     const generation = raidDensGenerationRef.current;
     await runRetainedWorkflowLoad('raidDens', setIsRaidDensLoading,
@@ -12505,6 +12560,9 @@ export function App({
         case 'heldItemChance':
           if (!currentState.heldItemChanceWorkflow) await handleOpenHeldItemChanceWorkflow();
           break;
+        case 'gameOptions':
+          if (!currentState.gameOptionsWorkflow) await handleOpenGameOptionsWorkflow();
+          break;
         case 'raidDens':
           if (!currentState.raidDensWorkflow) await handleOpenRaidDensWorkflow();
           break;
@@ -12896,6 +12954,9 @@ export function App({
       case 'heldItemChance':
         if (!heldItemChanceWorkflow && !isHeldItemChanceLoading) { markLazyLoadStarted(); void handleOpenHeldItemChanceWorkflow(); }
         break;
+      case 'gameOptions':
+        if (!gameOptionsWorkflow && !isGameOptionsLoading) { markLazyLoadStarted(); void handleOpenGameOptionsWorkflow(); }
+        break;
       case 'raidDens':
         if (!raidDensWorkflow && !isRaidDensLoading) { markLazyLoadStarted(); void handleOpenRaidDensWorkflow(); }
         break;
@@ -13169,6 +13230,7 @@ export function App({
     titanSwapperWorkflow,
     marnieBoostsWorkflow,
     heldItemChanceWorkflow,
+    gameOptionsWorkflow,
     raidDensWorkflow,
     fixAiFlagsWorkflow,
     trainerWhiteoutWorkflow,
@@ -13202,6 +13264,7 @@ export function App({
     isTitanSwapperLoading,
     isMarnieBoostsLoading,
     isHeldItemChanceLoading,
+    isGameOptionsLoading,
     isRaidDensLoading,
     isFixAiFlagsLoading,
     isTrainerWhiteoutLoading,
@@ -18493,6 +18556,7 @@ export function App({
       'titanSwapper',
       'marnieBoosts',
       'heldItemChance',
+      'gameOptions',
       'raidDens',
       'fixAiFlags',
       'trainerWhiteout',
@@ -18548,6 +18612,7 @@ export function App({
       titanSwapper: setIsTitanSwapperLoading,
       marnieBoosts: setIsMarnieBoostsLoading,
       heldItemChance: setIsHeldItemChanceLoading,
+      gameOptions: setIsGameOptionsLoading,
       raidDens: setIsRaidDensLoading,
       fixAiFlags: setIsFixAiFlagsLoading,
       trainerWhiteout: setIsTrainerWhiteoutLoading,
@@ -18763,6 +18828,12 @@ export function App({
       reloadTasks.push(async () => {
         const response = await bridge.loadHeldItemChance({ paths });
         if (canCommitRefresh()) setHeldItemChanceWorkflow(response.workflow);
+      });
+    }
+    if (gameOptionsWorkflow && refreshSections.has('gameOptions')) {
+      reloadTasks.push(async () => {
+        const response = await bridge.loadGameOptions({ paths });
+        if (canCommitRefresh()) setGameOptionsWorkflow(response.workflow);
       });
     }
     if (raidDensWorkflow && refreshSections.has('raidDens')) {
@@ -21397,6 +21468,16 @@ export function App({
                 onDirtyStateChange={handleHeldItemChanceDirtyChange} onRefresh={handleOpenHeldItemChanceWorkflow}
                 isLoading={isHeldItemChanceLoading} panelOutput={getOutputSafeScopedEditorPanelOutput('heldItemChance')} />
           ) : null}
+          {activeSection === 'gameOptions' ? (
+            isGameOptionsLoading && !gameOptionsWorkflow ? <WorkflowLoadingPanel label={t('gameOptions.title')} /> :
+              <GameOptionsSection workflow={gameOptionsWorkflow} session={getEditSessionForSection('gameOptions')}
+                key={getEditSessionForSection('gameOptions')?.sessionId ?? 'viewing'}
+                isStaging={isGameOptionsStaging} isEditing={getEditSessionForSection('gameOptions') !== null}
+                isEditStarting={isEditStarting} onStartEditSession={handleStartEditSession}
+                onCancelEditSession={requestCancelEditSession} onStage={handleStageGameOptions}
+                onDirtyStateChange={handleGameOptionsDirtyChange} onRefresh={handleOpenGameOptionsWorkflow}
+                isLoading={isGameOptionsLoading} panelOutput={getOutputSafeScopedEditorPanelOutput('gameOptions')} />
+          ) : null}
           {activeSection === 'raidDens' ? (
             isRaidDensLoading && !raidDensWorkflow ? <WorkflowLoadingPanel label={t('raidDens.title')} /> :
               <RaidDensSection workflow={raidDensWorkflow} session={getEditSessionForSection('raidDens')}
@@ -21549,6 +21630,7 @@ export function App({
                 titanSwapperWorkflow,
                 marnieBoostsWorkflow,
                 heldItemChanceWorkflow,
+                gameOptionsWorkflow,
                 raidDensWorkflow,
                 fixAiFlagsWorkflow,
                 trainerWhiteoutWorkflow,
@@ -35331,6 +35413,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.habitatCoordinates': 'Habitat Coordinates',
     'workflow.marnieBoosts': 'Marnie Wyndon Boosts',
     'workflow.heldItemChance': 'Held Item Chance',
+    'workflow.gameOptions': 'Game Options',
     'workflow.raidDens': 'Raid Dens',
     'workflow.trainerWhiteout': 'Trainer Whiteout',
     'workflow.starmobiles': 'Starmobiles',
@@ -35395,6 +35478,7 @@ function getPendingEditSection(edit: PendingEdit): WorkbenchSection | null {
     'workflow.habitatCoordinates': 'habitatCoordinates',
     'workflow.marnieBoosts': 'marnieBoosts',
     'workflow.heldItemChance': 'heldItemChance',
+    'workflow.gameOptions': 'gameOptions',
     'workflow.raidDens': 'raidDens',
     'workflow.trainerWhiteout': 'trainerWhiteout',
     'workflow.starmobiles': 'starmobiles',
@@ -35798,6 +35882,11 @@ function getPendingEditDisplayDetails(
       return createPendingEditDisplayDetails(edit, {
         editorLabel, recordLocalizationKey: 'heldItemChance.title', fieldLocalizationKey: 'heldItemChance.rates',
         newValueLabel: edit.newValue ?? ''
+      });
+    case 'workflow.gameOptions':
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel, recordLocalizationKey: 'gameOptions.title', fieldLocalizationKey: 'gameOptions.selections',
+        newValueLocalizationKey: 'gameOptions.staged'
       });
     case 'workflow.raidDens':
       return createPendingEditDisplayDetails(edit, {
@@ -57224,6 +57313,7 @@ type PendingEdit = EditSession['pendingEdits'][number];
 export type PendingEditContext = {
   marnieBoostsWorkflow?: MarnieBoostsWorkflow | null;
   heldItemChanceWorkflow?: HeldItemChanceWorkflow | null;
+  gameOptionsWorkflow?: GameOptionsWorkflow | null;
   raidDensWorkflow?: RaidDensWorkflow | null;
   fixAiFlagsWorkflow?: FixAiFlagsWorkflow | null;
   trainerWhiteoutWorkflow?: TrainerWhiteoutWorkflow | null;

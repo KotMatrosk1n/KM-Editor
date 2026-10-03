@@ -174,12 +174,14 @@ public static class KmCommandNames
     public const string RestoreFpsPatch = "fpsPatch.restore";
     public const string LoadMarnieBoosts = "marnieBoosts.load";
     public const string LoadHeldItemChance = "heldItemChance.load";
+    public const string LoadGameOptions = "gameOptions.load";
     public const string LoadRaidDens = "raidDens.load";
     public const string LoadFixAiFlags = "fixAiFlags.load";
     public const string StageFixAiFlags = "fixAiFlags.stage";
     public const string LoadTrainerWhiteout = "trainerWhiteout.load";
     public const string StageMarnieBoosts = "marnieBoosts.stage";
     public const string StageHeldItemChance = "heldItemChance.stage";
+    public const string StageGameOptions = "gameOptions.stage";
     public const string StageRaidDens = "raidDens.stage";
     public const string StageTrainerWhiteout = "trainerWhiteout.stage";
     public const string LoadProfanityFilter = "profanityFilter.load";

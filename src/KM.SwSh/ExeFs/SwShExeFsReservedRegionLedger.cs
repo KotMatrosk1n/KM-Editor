@@ -52,6 +52,7 @@ internal static class SwShExeFsReservedRegionLedger
     public const string OwnerShinyRate = "Shiny Rate";
     public const string OwnerStartingItems = "Starting Items";
     public const string OwnerHeldItemChance = "Held Item Chance";
+    public const string OwnerGameOptions = "Game Options";
     public const string OwnerTypeChart = "Type Chart";
 
     public const string ExeFsMainPath = SwShExeFsPatchWorkflowService.ExeFsMainPath;
@@ -59,6 +60,7 @@ internal static class SwShExeFsReservedRegionLedger
 
     private static readonly SwShExeFsReservedRegion[] regions =
     [
+        .. KM.SwSh.GameOptions.SwShGameOptionsPatcher.CreateReservations(),
         new(OwnerHeldItemChance, "held-item-chance-rates", ExeFsMainPath, "main.ro", 0x0075FB5C, 6, "Normal and boosted held item percentages", "payload-only"),
         new(OwnerHeldItemChance, "held-item-chance-sword-picker", ExeFsMainPath, "main.text", 0x00D317F0, 0x114, "Sword held item picker", "requires-vanilla"),
         new(OwnerHeldItemChance, "held-item-chance-shield-picker", ExeFsMainPath, "main.text", 0x00D31820, 0x114, "Shield held item picker", "requires-vanilla"),
@@ -409,7 +411,8 @@ internal static class SwShExeFsReservedRegionLedger
                 || string.Equals(owner, OwnerShinyRate, StringComparison.Ordinal)
                 || string.Equals(owner, OwnerDynamaxAdventures, StringComparison.Ordinal)
                 || string.Equals(owner, OwnerTrainerDynamax, StringComparison.Ordinal)
-                || string.Equals(owner, OwnerHeldItemChance, StringComparison.Ordinal))
+                || string.Equals(owner, OwnerHeldItemChance, StringComparison.Ordinal)
+                || string.Equals(owner, OwnerGameOptions, StringComparison.Ordinal))
             && game is ProjectGame.Sword or ProjectGame.Shield)
         {
             var inactiveGameToken = game == ProjectGame.Sword ? "-shield-" : "-sword-";
@@ -488,7 +491,8 @@ internal static class SwShExeFsReservedRegionLedger
             reservations = reservations
                 .Where(region => (!string.Equals(region.Owner, OwnerDynamaxAdventures, StringComparison.Ordinal)
                         && !string.Equals(region.Owner, OwnerTrainerDynamax, StringComparison.Ordinal)
-                        && !string.Equals(region.Owner, OwnerHeldItemChance, StringComparison.Ordinal))
+                        && !string.Equals(region.Owner, OwnerHeldItemChance, StringComparison.Ordinal)
+                        && !string.Equals(region.Owner, OwnerGameOptions, StringComparison.Ordinal))
                     || !region.FeatureId.Contains(inactiveDynamaxGameToken, StringComparison.Ordinal))
                 .ToArray();
         }
