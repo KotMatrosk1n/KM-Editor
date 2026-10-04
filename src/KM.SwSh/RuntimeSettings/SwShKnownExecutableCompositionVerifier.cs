@@ -220,8 +220,8 @@ public static class SwShKnownExecutableCompositionVerifier
     {
         var original = SwShHeldItemChancePatcher.Rates(NsoFile.Parse(retail));
         var current = SwShHeldItemChancePatcher.Rates(NsoFile.Parse(normalized));
-        if (original.SequenceEqual(current)) return true;
-        normalized = SwShHeldItemChancePatcher.Apply(retail, normalized, expectedGame, original);
+        if (original.SequenceEqual(current) && SwShHeldItemChancePatcher.Overrides(NsoFile.Parse(normalized), expectedGame).Count == 0) return true;
+        normalized = SwShHeldItemChancePatcher.Apply(retail, normalized, expectedGame, original, []);
         recognizedTransformation = true;
         return true;
     }

@@ -123,7 +123,7 @@ const registrations = {
   profanityFilter: operationScoped('profanityFilter'),
   trainerDynamax: operationScoped('trainerDynamax'),
   marnieBoosts: fixedSchemaSlot('marnieBoosts', 'Wyndon cheering answer outcomes'),
-  heldItemChance: fixedSchemaSlot('heldItemChance', 'Global normal and boosted held item percentages'),
+  heldItemChance: sourceRevisionBound('heldItemChance', 'personal record, species and form plus exact source revision'),
   gameOptions: fixedSchemaSlot('gameOptions', 'Starting values and hidden game option selections'),
   raidDens: fixedSchemaSlot('raidDens', 'den interaction dispatch'),
   fixAiFlags: intrinsic('fixAiFlags', 'stored trainer ID'),

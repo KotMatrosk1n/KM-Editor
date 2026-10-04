@@ -30,3 +30,8 @@
 .wild-held-items { margin-block: 1rem; }
 .wild-held-items .held-item-slot-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
 .wild-held-items .held-item-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-block: .8rem; }
+
+.held-item-pokemon-details { min-width: 0; order: 2; }
+.held-item-chance.swsh-pokemon-section .pokemon-toolbar { margin-block-start: 1rem; grid-template-columns: minmax(0, 1fr); }
+.held-item-choices { margin-block: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
+.held-item-custom { display: flex; align-items: center; gap: .5rem; overflow-wrap: anywhere; }

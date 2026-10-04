@@ -1,3 +1,5 @@
+import { InteractiveTableRow, VirtualTableBody } from './components/VirtualTable';
+import { PokemonSearchBox, PokemonTable, filterPokemonRecords, formatPokemonTypes, type PokemonSelectionRecord } from './components/PokemonSelection';
 import { stageModelAsset, stageModelTexture } from './features/model-viewer/modelTextureBridge';
 /* SPDX-License-Identifier: GPL-3.0-only */
 
@@ -57,7 +59,6 @@ import {
   Zap,
   type LucideIcon
 } from 'lucide-react';
-import { type ReactVirtualizerOptions, useVirtualizer } from '@tanstack/react-virtual';
 import { listen } from '@tauri-apps/api/event';
 import { getVersion } from '@tauri-apps/api/app';
 import {
@@ -100,7 +101,6 @@ import {
 } from './features/trainers/trainerBatchUpdates';
 import {
   type Dispatch,
-  type HTMLAttributes,
   type ReactNode,
   type SetStateAction,
   Component,
@@ -466,7 +466,7 @@ import { GameOptionsSection } from './features/game-options/GameOptionsSection';
 import { RaidDensSection } from './features/raid-dens/RaidDensSection';
 import { FixAiFlagsSection } from './features/fix-ai-flags/FixAiFlagsSection';
 import { TrainerWhiteoutSection } from './features/trainer-whiteout/TrainerWhiteoutSection';
-import { encodeHeldItemRates, getHeldItemPendingRates, type HeldItemChanceWorkflow } from './bridge/heldItemChanceContracts';
+import { type HeldItemChanceUpdate, type HeldItemChanceWorkflow } from './bridge/heldItemChanceContracts';
 import { encodeGameOptionsSelections, getGameOptionsPendingSelections, type GameOptionsWorkflow } from './bridge/gameOptionsContracts';
 import { encodeMarnieBoostSelections, getMarnieBoostPendingSelections, type MarnieBoostsWorkflow } from './bridge/marnieBoostsContracts';
 import { type RaidDensWorkflow } from './bridge/raidDensContracts';
@@ -2008,24 +2008,7 @@ const placementSpeciesFormFieldPairs = [
   { formField: 'fixed.form', speciesField: 'fixed.speciesId' },
   { formField: 'coin.form', speciesField: 'coin.speciesId' }
 ] as const;
-const virtualTableInitialRect = { height: 480, width: 800 };
-const virtualTableOverscan = 8;
-const virtualTableRowHeight = 40;
 const placementVirtualTableRowHeight = 56;
-
-function calculateVirtualTableScrollMargin({
-  bodyTop,
-  clientTop,
-  scrollTop,
-  scrollViewportTop
-}: {
-  bodyTop: number;
-  clientTop: number;
-  scrollTop: number;
-  scrollViewportTop: number;
-}) {
-  return Math.max(0, bodyTop - scrollViewportTop - clientTop + scrollTop);
-}
 const swShPlacementPageSize = 200;
 const CancelEditSessionContext = createContext<((onDiscard?: () => void) => void) | null>(
   null
@@ -2033,15 +2016,6 @@ const CancelEditSessionContext = createContext<((onDiscard?: () => void) => void
 const EditorDraftDirtyContext = createContext<
   ((section: WorkbenchSection, isDirty: boolean) => void) | null
 >(null);
-const observeVirtualTableElementRect:
-  | ReactVirtualizerOptions<HTMLDivElement, HTMLDivElement>['observeElementRect']
-  | undefined =
-  typeof ResizeObserver === 'undefined'
-    ? (_instance, callback) => {
-        callback(virtualTableInitialRect);
-        return () => undefined;
-      }
-    : undefined;
 const textLikeInputTypes = new Set([
   '',
   'email',
@@ -10531,7 +10505,7 @@ export function App({
       () => generation === heldItemChanceGenerationRef.current);
   };
 
-  const handleStageHeldItemChance = async (rates: number[]) => {
+  const handleStageHeldItemChance = async (pokemon: HeldItemChanceUpdate[]) => {
     const activeSession = getEditSessionForSection('heldItemChance');
     if (!activeSession) return false;
     let accepted = false;
@@ -10540,12 +10514,12 @@ export function App({
     prepareScopedEditorPanelAction('heldItemChance');
     try {
       await runEditSessionMutation(async session => {
-        const response = await bridge.stageHeldItemChance({ paths: createProjectPaths(draftPaths), session, rates });
-        const edits = response.session.pendingEdits.filter(edit => edit.domain === 'workflow.heldItemChance');
-        const pendingRates = getHeldItemPendingRates(response.session);
-        const acknowledged = edits.length === 0
-          ? encodeHeldItemRates(response.workflow.rates) === encodeHeldItemRates(rates)
-          : pendingRates !== null && encodeHeldItemRates(pendingRates) === encodeHeldItemRates(rates);
+        const response = await bridge.stageHeldItemChance({ paths: createProjectPaths(draftPaths), session, pokemon });
+        const acknowledged = pokemon.every(update => {
+          const row = response.workflow.pokemon.find(row => row.personalId === update.personalId);
+          return row && row.items.join(',') === update.items.join(',') && (update.rates === null
+            ? !row.customRates : row.customRates && row.rates.join(',') === update.rates.join(','));
+        });
         const matches = response.workflow.canEdit && response.workflow.detectedGame === draftPaths.selectedGame &&
           response.session.sessionId === activeSession.sessionId && acknowledged;
         const diagnostics = [...response.diagnostics, ...response.workflow.diagnostics];
@@ -21460,7 +21434,7 @@ export function App({
           ) : null}
           {activeSection === 'heldItemChance' ? (
             isHeldItemChanceLoading && !heldItemChanceWorkflow ? <WorkflowLoadingPanel label={t('heldItemChance.title')} /> :
-              <HeldItemChanceSection workflow={heldItemChanceWorkflow} session={getEditSessionForSection('heldItemChance')}
+              <HeldItemChanceSection formatPokemonName={(record) => formatPokemonRecordName(record, 'swsh')} workflow={heldItemChanceWorkflow} session={getEditSessionForSection('heldItemChance')}
                 key={getEditSessionForSection('heldItemChance')?.sessionId ?? 'viewing'}
                 isStaging={isHeldItemChanceStaging} isEditing={getEditSessionForSection('heldItemChance') !== null}
                 isEditStarting={isEditStarting} onStartEditSession={handleStartEditSession}
@@ -22026,167 +22000,6 @@ function WorkflowLoadingPanel({ label }: { label: string }) {
         </ol>
       </div>
     </section>
-  );
-}
-
-type InteractiveTableRowProps = HTMLAttributes<HTMLDivElement> & {
-  disabled?: boolean;
-};
-
-function InteractiveTableRow({
-  'aria-disabled': ariaDisabled,
-  className,
-  disabled = false,
-  onClick,
-  onKeyDown,
-  tabIndex,
-  ...rowProps
-}: InteractiveTableRowProps) {
-  const isDisabled = disabled || ariaDisabled === true || ariaDisabled === 'true';
-
-  return (
-    <div
-      {...rowProps}
-      aria-disabled={isDisabled || undefined}
-      className={`${className ?? ''} interactive-table-row`.trim()}
-      onClick={isDisabled ? undefined : onClick}
-      onKeyDown={(event) => {
-        onKeyDown?.(event);
-        if (
-          isDisabled ||
-          event.defaultPrevented ||
-          event.nativeEvent.isComposing ||
-          (event.key !== 'Enter' && event.key !== ' ')
-        ) {
-          return;
-        }
-
-        event.preventDefault();
-        event.currentTarget.click();
-      }}
-      role="row"
-      tabIndex={isDisabled ? -1 : (tabIndex ?? 0)}
-    />
-  );
-}
-
-function VirtualTableBody<T>({
-  estimateSize = virtualTableRowHeight,
-  getKey,
-  items,
-  measureRows = false,
-  renderRow,
-  resetKey
-}: {
-  estimateSize?: number;
-  getKey: (item: T, index: number) => string | number;
-  items: T[];
-  measureRows?: boolean;
-  renderRow: (item: T, index: number) => ReactNode;
-  resetKey?: string | number;
-}) {
-  const bodyRef = useRef<HTMLDivElement | null>(null);
-  const [scrollMargin, setScrollMargin] = useState(0);
-  const getScrollElement = useCallback(() => {
-    const tableElement = bodyRef.current?.parentElement;
-    return tableElement instanceof HTMLDivElement ? tableElement : null;
-  }, []);
-  const rowVirtualizer = useVirtualizer({
-    count: items.length,
-    estimateSize: () => estimateSize,
-    getItemKey: (index) => getKey(items[index]!, index),
-    getScrollElement,
-    initialRect: virtualTableInitialRect,
-    overscan: virtualTableOverscan,
-    scrollMargin,
-    ...(observeVirtualTableElementRect
-      ? { observeElementRect: observeVirtualTableElementRect }
-      : {})
-  });
-
-  useLayoutEffect(() => {
-    const bodyElement = bodyRef.current;
-    const scrollElement = getScrollElement();
-    if (!bodyElement || !scrollElement) {
-      return undefined;
-    }
-
-    const updateScrollMargin = () => {
-      const bodyRect = bodyElement.getBoundingClientRect();
-      const scrollRect = scrollElement.getBoundingClientRect();
-      const nextMargin = calculateVirtualTableScrollMargin({
-        bodyTop: bodyRect.top,
-        clientTop: scrollElement.clientTop,
-        scrollTop: scrollElement.scrollTop,
-        scrollViewportTop: scrollRect.top
-      });
-      setScrollMargin((currentMargin) =>
-        currentMargin === nextMargin ? currentMargin : nextMargin
-      );
-    };
-    updateScrollMargin();
-
-    const resizeObserver = typeof ResizeObserver === 'undefined'
-      ? null
-      : new ResizeObserver(updateScrollMargin);
-    resizeObserver?.observe(scrollElement);
-    resizeObserver?.observe(bodyElement);
-    const headingElement = bodyElement.previousElementSibling;
-    if (headingElement instanceof HTMLElement) {
-      resizeObserver?.observe(headingElement);
-    }
-    window.addEventListener('resize', updateScrollMargin);
-
-    return () => {
-      resizeObserver?.disconnect();
-      window.removeEventListener('resize', updateScrollMargin);
-    };
-  }, [getScrollElement]);
-
-  useLayoutEffect(() => {
-    if (resetKey === undefined) {
-      return;
-    }
-
-    const scrollElement = getScrollElement();
-    if (scrollElement) {
-      scrollElement.scrollTop = 0;
-      scrollElement.scrollLeft = 0;
-    }
-    rowVirtualizer.scrollToOffset(0);
-  }, [getScrollElement, resetKey]);
-
-  return (
-    <div className="virtual-table-body" ref={bodyRef} role="rowgroup">
-      <div
-        className="virtual-table-spacer"
-        style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
-      >
-        {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-          const item = items[virtualRow.index];
-
-          if (item === undefined) {
-            return null;
-          }
-
-          return (
-            <div
-              className="virtual-table-row"
-              data-index={virtualRow.index}
-              key={virtualRow.key}
-              ref={measureRows ? rowVirtualizer.measureElement : undefined}
-              role="presentation"
-              style={{
-                ...(measureRows ? {} : { height: `${virtualRow.size}px` }),
-                transform: `translateY(${virtualRow.start - scrollMargin}px)`
-              }}
-            >
-              {renderRow(item, virtualRow.index)}
-            </div>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 
@@ -24079,17 +23892,7 @@ function PokemonSection({
         </div>
 
         <div className="items-toolbar pokemon-toolbar">
-          <label className="search-box items-search">
-            <Search aria-hidden="true" size={18} />
-            <input
-              aria-label="Search Pokemon"
-              disabled={!workflow}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search Pokemon"
-              type="search"
-              value={searchText}
-            />
-          </label>
+          <PokemonSearchBox disabled={!workflow} value={searchText} onChange={onSearchChange} />
           <div className="pokemon-toolbar-side">
             <div className="pokemon-toolbar-metrics">
               <Metric
@@ -24164,44 +23967,9 @@ function PokemonSection({
               onStartEditSession={onStartEditSession}
               onSelectPokemonEvolution={onSelectPokemonEvolution}
               pokemonTable={
-                <div
-                  aria-colcount={3}
-                  aria-label="Pokemon"
-                  aria-rowcount={filteredPokemon.length + 1}
-                  className="items-table pokemon-table"
-                  role="table"
-                >
-                  <div className="items-row items-row-heading" role="row">
-                    <span role="columnheader">ID</span>
-                    <span role="columnheader">Name</span>
-                    <span role="columnheader">Types</span>
-                  </div>
-                  <VirtualTableBody
-                    getKey={(record) => record.personalId}
-                    items={filteredPokemon}
-                    renderRow={(record) => {
-                      return (
-                        <InteractiveTableRow
-                          className={`items-row ${
-                            selectedPokemon?.personalId === record.personalId
-                              ? 'items-row-selected'
-                              : ''
-                          } ${pendingPokemonIds.has(record.personalId) ? 'moves-row-pending' : ''}`}
-                          onClick={() => onSelectPokemon(record.personalId)}
-                          role="row"
-                        >
-                          <span role="cell">{record.personalId}</span>
-                          <span data-localization-ignore="true" role="cell">
-                            {formatPokemonRecordName(record, editorFamily)}
-                          </span>
-                          <span data-localization-ignore="true" role="cell">
-                            {formatPokemonTypes(record)}
-                          </span>
-                        </InteractiveTableRow>
-                      );
-                    }}
-                  />
-                </div>
+                <PokemonTable records={filteredPokemon} selectedId={selectedPokemon?.personalId}
+                  pendingIds={pendingPokemonIds} onSelect={onSelectPokemon} resetKey={searchText}
+                  formatName={(record) => formatPokemonRecordName(record, editorFamily)} />
               }
               onUpdatePokemonFields={onUpdatePokemonFields}
               onUpdatePokemonEvolution={onUpdatePokemonEvolution}
@@ -24318,7 +24086,7 @@ function SelectedPokemonSummaryCard({
   );
 }
 
-function formatPokemonRecordName(pokemon: PokemonRecord, editorFamily: EditorUiFamily) {
+function formatPokemonRecordName(pokemon: PokemonSelectionRecord, editorFamily: EditorUiFamily) {
   return formatSpeciesFormLabel(pokemon.name, pokemon.form, pokemon.speciesId, editorFamily);
 }
 
@@ -59052,24 +58820,7 @@ function filterPokemon(
   searchText: string,
   editorFamily: EditorUiFamily = 'swsh'
 ) {
-  const normalizedSearch = searchText.trim().toLocaleLowerCase();
-
-  if (normalizedSearch.length === 0) {
-    return pokemon;
-  }
-
-  return pokemon.filter((record) =>
-    [
-      record.personalId.toString(),
-      record.speciesId.toString(),
-      record.formLabel,
-      formatPokemonRecordName(record, editorFamily),
-      record.name,
-      record.type1,
-      record.type2,
-      formatPokemonTypes(record)
-    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
-  );
+  return filterPokemonRecords(pokemon, searchText, (record) => formatPokemonRecordName(record, editorFamily));
 }
 
 function filterPokemonCompatibilityEntries(
@@ -66326,11 +66077,6 @@ function getPlacementDraftSummary(
   return { changedFields, dirtyFieldCount, invalidFields };
 }
 
-function formatPokemonTypes(pokemon: PokemonRecord) {
-  return pokemon.type1 === pokemon.type2
-    ? pokemon.type1
-    : `${pokemon.type1} / ${pokemon.type2}`;
-}
 
 function formatPokemonDexPresence(
   pokemon: PokemonRecord,

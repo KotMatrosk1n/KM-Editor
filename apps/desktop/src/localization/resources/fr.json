@@ -4672,7 +4672,7 @@
     "marnieBoosts.diagnostic.stale": "Les sources ou la sortie des encouragements ont changé. Vérifiez à nouveau les modifications.",
     "marnieBoosts.diagnostic.apply": "Les encouragements n’ont pas pu être appliqués. Vérifiez les sources et le dossier de sortie, puis examinez à nouveau les modifications.",
     "heldItemChance.title": "Probabilité d’objet tenu",
-    "heldItemChance.subtitle": "Définissez les probabilités globales des objets tenus pour Épée et Bouclier 1.3.2. Choisissez les objets dans Rencontres sauvages ou dans l’éditeur de Pokémon.",
+    "heldItemChance.subtitle": "Choisissez un Pokémon et sa forme, puis définissez ses trois objets tenus et ses chances normales ou augmentées pour Épée et Bouclier 1.3.2.",
     "heldItemChance.readOnly": "Nécessite des sources compatibles Épée ou Bouclier 1.3.2 et une sortie configurée.",
     "heldItemChance.normal": "Probabilités normales",
     "heldItemChance.boosted": "Probabilités augmentées",
@@ -4705,13 +4705,13 @@
     "heldItemChance.wildFailed": "Impossible de préparer les objets tenus. Consultez les diagnostics et réessayez.",
     "heldItemChance.wildInvalid": "Choisissez un objet valide pour chaque emplacement. L’objet 0 signifie aucun objet.",
     "heldItemChance.wildDraftScope": "Les objets ci-dessous appartiennent à l’espèce et à la forme préparées de la rencontre. Préparez d’abord tout changement d’espèce ou de forme.",
-    "heldItemChance.diagnostic.source": "Vérifiez le jeu sélectionné, l’ExeFS originale 1.3.2 et la sortie. La routine de sélection doit rester intacte et chaque groupe doit totaliser au plus 100%.",
-    "heldItemChance.diagnostic.rates": "Saisissez six pourcentages entiers de 0 à 100. Les totaux normaux et augmentés ne doivent pas dépasser 100% chacun.",
-    "heldItemChance.diagnostic.session": "Les probabilités préparées sont invalides. Préparez à nouveau les pourcentages.",
+    "heldItemChance.diagnostic.source": "Vérifiez le jeu sélectionné, les ExeFS originaux de la version 1.3.2, les données Pokémon et la sortie. Les modifications des objets tenus doivent être compatibles et chaque groupe de chances doit totaliser au plus 100%.",
+    "heldItemChance.diagnostic.rates": "Choisissez trois objets valides et six pourcentages entiers de 0 à 100. Les totaux normaux et augmentés doivent chacun être de 100% au maximum.",
+    "heldItemChance.diagnostic.session": "Les objets ou les chances préparés du Pokémon sont invalides. Préparez de nouveau le Pokémon concerné.",
     "heldItemChance.diagnostic.stale": "Les sources ou probabilités ont changé depuis la vérification. Vérifiez à nouveau la sortie.",
     "heldItemChance.diagnostic.apply": "Impossible d’écrire la sortie. Vérifiez l’accès aux sources et à la sortie, puis vérifiez et appliquez à nouveau.",
     "workbench.section.held-item-chance.label": "Probabilité d’objet tenu",
-    "workbench.section.held-item-chance.description": "Définissez les probabilités globales des objets tenus pour Épée et Bouclier 1.3.2. Choisissez les objets dans Rencontres sauvages ou dans l’éditeur de Pokémon.",
+    "workbench.section.held-item-chance.description": "Choisissez un Pokémon et sa forme, puis définissez ses trois objets tenus et ses chances normales ou augmentées pour Épée et Bouclier 1.3.2.",
     "titanRecovery.planned": "Cette sortie réparera les fichiers KM Editor inchangés considérés comme provenant de la version 2.6.4 ou antérieure. Les remplacements compatibles des Dominants et de Pepper sont conservés et la Téracristallisation est désactivée pour ses cinq équipes de soutien.",
     "titanRecovery.source": "La sortie ancienne des Dominants ou de Pepper n’a pas pu être réparée de manière sûre. Vérifiez les données d’origine et la sortie concernée, puis relancez la vérification.",
     "titanRecovery.unsupported": "Un ancien remplacement d’un Dominant ou de Pepper utilise une identité ou une forme non prise en charge. Sélectionnez une forme de base compatible et relancez la vérification.",
@@ -4761,7 +4761,15 @@
     "fixAiFlags.failed": "Impossible de préparer les corrections sélectionnées. Votre sélection est conservée. Consultez les diagnostics et actualisez si les fichiers ont changé.",
     "workbench.section.fix-ai-flags.label": "Corriger les indicateurs IA",
     "workbench.section.fix-ai-flags.description": "Examinez les erreurs possibles du changement de Pokémon dans les données des Dresseurs d’Épée et Bouclier.",
-    "fixAiFlags.why": "Pourquoi les données de pkNX peuvent nécessiter une correction"
+    "fixAiFlags.why": "Pourquoi les données de pkNX peuvent nécessiter une correction",
+    "heldItemChance.pokemonSubtitle": "Choisissez un Pokémon et sa forme, puis définissez ses trois objets tenus et ses chances normales ou augmentées pour Épée et Bouclier 1.3.2.",
+    "heldItemChance.pokemon": "Pokémon et forme",
+    "heldItemChance.itemSlot": "Objet dans l’emplacement {number}",
+    "heldItemChance.customRates": "Utiliser des chances personnalisées pour ce Pokémon",
+    "heldItemChance.restoreRates": "Rétablir les chances par défaut",
+    "heldItemChance.pokemonScope": "Les objets et les chances sont partagés par ce Pokémon et cette forme dans tous les lieux de rencontre sauvage. Les autres Pokémon conservent leurs réglages. Les objets imposés par une rencontre peuvent rester prioritaires.",
+    "heldItemChance.customHelp": "Les chances personnalisées s’appliquent même si deux emplacements contiennent le même objet. Un emplacement vide ne donne aucun objet. Un Pokémon ne peut tenir qu’un seul objet.",
+    "heldItemChance.pokemonInvalid": "Choisissez des objets valides et des pourcentages entiers de 0 à 100. Les totaux normaux et augmentés doivent chacun rester inférieurs ou égaux à 100%."
   },
   "literals": {
     "League Staff Isaac": "Isaac, employé de la Ligue",
@@ -9202,6 +9210,7 @@
     "The AI scripts changed or need review. Refresh Fix AI Flags and acknowledge custom AI scripts.": "Les scripts IA ont changé ou doivent être examinés. Actualisez l’outil et confirmez l’examen des scripts IA modifiés.",
     "A selected trainer changed, was previously fixed, or is no longer a candidate. Refresh and review it again.": "Un Dresseur sélectionné a changé, a déjà été corrigé ou n’est plus candidat. Actualisez et examinez de nouveau.",
     "A selected trainer already has a staged AI flag edit. Apply or remove that edit before repairing this trainer.": "Un Dresseur sélectionné possède déjà une modification IA préparée. Appliquez ou supprimez cette modification avant de le corriger.",
-    "The reviewed AI flag repair no longer matches this trainer. Refresh Fix AI Flags and review it again.": "La correction IA examinée ne correspond plus à ce Dresseur. Actualisez l’outil et examinez de nouveau."
+    "The reviewed AI flag repair no longer matches this trainer. Refresh Fix AI Flags and review it again.": "La correction IA examinée ne correspond plus à ce Dresseur. Actualisez l’outil et examinez de nouveau.",
+    "Choose items and normal or boosted chances for each Pokemon and form.": "Choisissez un Pokémon et sa forme, puis définissez ses trois objets tenus et ses chances normales ou augmentées pour Épée et Bouclier 1.3.2."
   }
 }

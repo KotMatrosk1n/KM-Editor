@@ -4672,7 +4672,7 @@
     "marnieBoosts.diagnostic.stale": "Die Anfeuerungsquellen oder die Ausgabe wurden geändert. Prüfe die Änderungen erneut.",
     "marnieBoosts.diagnostic.apply": "Die Anfeuerungseffekte konnten nicht angewendet werden. Prüfe Quellen und Ausgabeordner und überprüfe die Änderungen erneut.",
     "heldItemChance.title": "Trageitem-Chance",
-    "heldItemChance.subtitle": "Lege die globalen Trageitem-Chancen für Schwert und Schild 1.3.2 fest. Die Items wählst du unter Wilde Begegnungen oder im Pokémon-Editor.",
+    "heldItemChance.subtitle": "Wähle ein Pokémon und seine Form und lege seine drei getragenen Items sowie die normalen oder erhöhten Chancen für Schwert und Schild 1.3.2 fest.",
     "heldItemChance.readOnly": "Benötigt kompatible Quellen für Schwert oder Schild 1.3.2 und eine konfigurierte Ausgabe.",
     "heldItemChance.normal": "Normale Chancen",
     "heldItemChance.boosted": "Erhöhte Chancen",
@@ -4705,13 +4705,13 @@
     "heldItemChance.wildFailed": "Trageitems konnten nicht vorgemerkt werden. Prüfe die Diagnose und versuche es erneut.",
     "heldItemChance.wildInvalid": "Wähle für jeden Platz ein gültiges Item. Item 0 bedeutet kein Item.",
     "heldItemChance.wildDraftScope": "Die Trageitems unten gehören zur vorgemerkten Art und Form der Begegnung. Merke Änderungen an Art oder Form zuerst vor.",
-    "heldItemChance.diagnostic.source": "Prüfe das gewählte Spiel, die originale ExeFS 1.3.2 und die Ausgabe. Die Itemauswahlroutine muss unverändert sein; jede Gruppe darf höchstens 100% ergeben.",
-    "heldItemChance.diagnostic.rates": "Gib sechs ganze Prozentsätze von 0 bis 100 ein. Normale und erhöhte Chancen dürfen jeweils höchstens 100% ergeben.",
-    "heldItemChance.diagnostic.session": "Die vorgemerkten Trageitem-Chancen sind ungültig. Merke die Prozentsätze erneut vor.",
+    "heldItemChance.diagnostic.source": "Prüfe das gewählte Spiel, die originalen ExeFS-Dateien von 1.3.2, die Pokémon-Daten und die Ausgabe. Trageitem-Anpassungen müssen kompatibel sein und jede Chancengruppe darf höchstens 100% ergeben.",
+    "heldItemChance.diagnostic.rates": "Wähle drei gültige Items und sechs ganze Prozentsätze von 0 bis 100. Normale und erhöhte Chancen dürfen jeweils höchstens 100% ergeben.",
+    "heldItemChance.diagnostic.session": "Die vorgemerkten Pokémon-Items oder Chancen sind ungültig. Merke das betroffene Pokémon erneut vor.",
     "heldItemChance.diagnostic.stale": "Quellen oder Trageitem-Chancen wurden seit der Prüfung geändert. Prüfe die Ausgabe erneut.",
     "heldItemChance.diagnostic.apply": "Trageitem-Chancen konnten nicht geschrieben werden. Prüfe den Zugriff auf Quellen und Ausgabe und prüfe und wende erneut an.",
     "workbench.section.held-item-chance.label": "Trageitem-Chance",
-    "workbench.section.held-item-chance.description": "Lege die globalen Trageitem-Chancen für Schwert und Schild 1.3.2 fest. Die Items wählst du unter Wilde Begegnungen oder im Pokémon-Editor.",
+    "workbench.section.held-item-chance.description": "Wähle ein Pokémon und seine Form und lege seine drei getragenen Items sowie die normalen oder erhöhten Chancen für Schwert und Schild 1.3.2 fest.",
     "titanRecovery.planned": "Diese Ausgabe repariert unveränderte KM Editor Dateien, die als Ausgabe aus Version 2.6.4 oder älter gelten. Unterstützte Ersetzungen für Herrscher und Peppers Pokémon bleiben erhalten. Die Terakristallisierung wird für seine fünf Partnerteams deaktiviert.",
     "titanRecovery.source": "Die ältere Ausgabe für Herrscher oder Pepper konnte nicht sicher repariert werden. Prüfe die Originaldaten und die betroffene Ausgabe und führe die Prüfung erneut aus.",
     "titanRecovery.unsupported": "Eine ältere Ersetzung für einen Herrscher oder Pepper verwendet eine nicht unterstützte Identität oder Form. Wähle eine unterstützte Grundform und prüfe erneut.",
@@ -4761,7 +4761,15 @@
     "fixAiFlags.failed": "KI Flags korrigieren konnte die ausgewählten Korrekturen nicht vormerken. Deine Auswahl bleibt erhalten. Prüfe die Diagnose und aktualisiere die Ansicht, falls sich Dateien geändert haben.",
     "workbench.section.fix-ai-flags.label": "KI Flags korrigieren",
     "workbench.section.fix-ai-flags.description": "Mögliche Fehler beim Wechselverhalten in Trainerdaten aus Schwert und Schild prüfen.",
-    "fixAiFlags.why": "Warum Daten aus pkNX eine Korrektur benötigen können"
+    "fixAiFlags.why": "Warum Daten aus pkNX eine Korrektur benötigen können",
+    "heldItemChance.pokemonSubtitle": "Wähle ein Pokémon und seine Form und lege seine drei getragenen Items sowie die normalen oder erhöhten Chancen für Schwert und Schild 1.3.2 fest.",
+    "heldItemChance.pokemon": "Pokémon und Form",
+    "heldItemChance.itemSlot": "Item in Platz {number}",
+    "heldItemChance.customRates": "Eigene Chancen für dieses Pokémon verwenden",
+    "heldItemChance.restoreRates": "Standardchancen wiederherstellen",
+    "heldItemChance.pokemonScope": "Items und Chancen gelten für dieses Pokémon und diese Form an allen wilden Begegnungsorten. Andere Pokémon behalten ihre Einstellungen. Explizite Itemvorgaben einer Begegnung können weiterhin Vorrang haben.",
+    "heldItemChance.customHelp": "Eigene Chancen gelten auch, wenn zwei Plätze dasselbe Item enthalten. Leere Plätze ergeben kein Item. Ein Pokémon kann nur ein Item tragen.",
+    "heldItemChance.pokemonInvalid": "Wähle gültige Items und ganze Prozentwerte von 0 bis 100. Normale und erhöhte Chancen dürfen jeweils insgesamt höchstens 100% betragen."
   },
   "literals": {
     "League Staff Isaac": "Liga-Mitarbeiter Isaac",
@@ -9202,6 +9210,7 @@
     "The AI scripts changed or need review. Refresh Fix AI Flags and acknowledge custom AI scripts.": "Die KI Skripte wurden geändert oder müssen geprüft werden. Aktualisiere KI Flags korrigieren und bestätige die Prüfung angepasster KI Skripte.",
     "A selected trainer changed, was previously fixed, or is no longer a candidate. Refresh and review it again.": "Ein ausgewählter Trainer wurde geändert, bereits korrigiert oder ist kein Kandidat mehr. Aktualisiere die Ansicht und prüfe ihn erneut.",
     "A selected trainer already has a staged AI flag edit. Apply or remove that edit before repairing this trainer.": "Für einen ausgewählten Trainer ist bereits eine Änderung der KI Flags vorgemerkt. Wende sie an oder entferne sie, bevor du diesen Trainer korrigierst.",
-    "The reviewed AI flag repair no longer matches this trainer. Refresh Fix AI Flags and review it again.": "Die geprüfte Korrektur der KI Flags passt nicht mehr zu diesem Trainer. Aktualisiere KI Flags korrigieren und prüfe ihn erneut."
+    "The reviewed AI flag repair no longer matches this trainer. Refresh Fix AI Flags and review it again.": "Die geprüfte Korrektur der KI Flags passt nicht mehr zu diesem Trainer. Aktualisiere KI Flags korrigieren und prüfe ihn erneut.",
+    "Choose items and normal or boosted chances for each Pokemon and form.": "Wähle ein Pokémon und seine Form und lege seine drei getragenen Items sowie die normalen oder erhöhten Chancen für Schwert und Schild 1.3.2 fest."
   }
 }

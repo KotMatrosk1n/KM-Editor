@@ -5513,15 +5513,22 @@ public sealed class ProjectBridgeDispatcher : IDisposable
     private string DispatchStageHeldItemChance(string requestJson)
     {
         var request = DeserializeRequest<StageHeldItemChanceRequest>(requestJson);
-        var result = heldItemChanceService.Stage(ProjectBridgeMapper.ToCore(request.Payload.Paths), request.Payload.Rates,
-            request.Payload.Session is null ? null : EditSessionBridgeMapper.ToCore(request.Payload.Session));
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var session = request.Payload.Session is null ? null : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        if (request.Payload.Pokemon is not null && request.Payload.Rates is not null)
+            throw new ArgumentException("Choose either Pokemon chances or legacy global rates.");
+        var result = request.Payload.Pokemon is { } pokemon
+            ? heldItemChanceService.StagePokemon(paths, pokemon.Select(row => new SwShHeldItemChanceUpdate(row.PersonalId, row.Items, row.Rates)).ToArray(), session)
+            : heldItemChanceService.Stage(paths, request.Payload.Rates, session);
         return SerializeSuccess(new StageHeldItemChanceResponse(ToDto(result.Workflow), EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray()), request.RequestId);
     }
 
     private static HeldItemChanceWorkflowDto ToDto(SwShHeldItemChanceWorkflow workflow) => new(
         workflow.CanEdit, workflow.DetectedGame is null ? null : ProjectBridgeMapper.ToDto(workflow.DetectedGame.Value),
-        workflow.Rates, workflow.SourceLayer, workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+        workflow.Rates, workflow.SourceLayer, workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray(),
+        workflow.Pokemon.Select(row => new HeldItemChancePokemonDto(row.PersonalId, row.Species, row.Form, row.Name, row.FormLabel, row.Type1, row.Type2, row.Items, row.Rates, row.CustomRates)).ToArray(),
+        workflow.ItemOptions.Select(option => new HeldItemChanceOptionDto(option.Value, option.Label)).ToArray());
 
     private string DispatchLoadGameOptions(string requestJson)
     {

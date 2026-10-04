@@ -54,6 +54,8 @@ public sealed partial class ZaCacheManager
     private static readonly TimeSpan BalancedWarmupStepTimeBudget = TimeSpan.FromMilliseconds(100);
     private static readonly TimeSpan PerformanceWarmupStepTimeBudget = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan OrphanTempFileAge = TimeSpan.FromMinutes(10);
+    private const int MaximumJsonPublishAttempts = 50;
+    private static readonly TimeSpan JsonPublishRetryDelay = TimeSpan.FromMilliseconds(20);
 
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private static readonly BoundedConcurrencyPolicy PerformanceWarmupPolicy = new(
@@ -1959,12 +1961,33 @@ public sealed partial class ZaCacheManager
             }
 
             var previousLength = GetTrackedFileLength(path);
-            File.Move(tempPath, path, overwrite: true);
+            PublishJsonFile(tempPath, path);
             TrackPersistentFileReplacement(path, previousLength);
         }
         finally
         {
             TryDeleteFile(tempPath);
+        }
+    }
+
+    private static void PublishJsonFile(string temporaryPath, string destinationPath)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                File.Move(temporaryPath, destinationPath, overwrite: true);
+                return;
+            }
+            catch (Exception exception) when (
+                OperatingSystem.IsWindows()
+                && attempt < MaximumJsonPublishAttempts
+                && exception is IOException or UnauthorizedAccessException
+                && (exception.HResult & 0xFFFF) is 5 or 32 or 33)
+            {
+                // Readers and filesystem services can briefly prevent atomic replacement.
+                Thread.Sleep(JsonPublishRetryDelay);
+            }
         }
     }
 

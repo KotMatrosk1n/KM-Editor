@@ -117,21 +117,45 @@ public sealed partial class SwShEditableDumpProvider
             case "heldItemChance":
             {
                 var diagnostics = new List<KM.Core.Diagnostics.ValidationDiagnostic>();
-                var pending = session.PendingEdits.Where(edit => edit.Domain == KM.SwSh.HeldItemChance.SwShHeldItemChanceService.Domain).ToArray();
-                var rates = pending.Length > 0
-                    ? KM.SwSh.HeldItemChance.SwShHeldItemChanceService.Decode(session with { PendingEdits = pending }, diagnostics)
-                    : documents[category].Records.Single().Fields.Select(field => int.Parse(field.Value, CultureInfo.InvariantCulture)).ToArray();
-                if (diagnostics.Count > 0) return new(session, diagnostics);
-                foreach (var update in updates) rates[Array.IndexOf(HeldItemRateFields, update.Field.Target)] = int.Parse(update.Value, CultureInfo.InvariantCulture);
-                for (var group = 0; group < 2; group++)
-                    if (rates.Skip(group * 3).Take(3).Sum() > 100)
-                        foreach (var update in updates.Where(update => Array.IndexOf(HeldItemRateFields, update.Field.Target) / 3 == group))
-                            diagnostics.Add(new(KM.Core.Diagnostics.DiagnosticSeverity.Error,
-                                "These three held item percentages must total 100% or less.", Field: update.Field.Target)
-                                { Code = KM.SwSh.HeldItemChance.SwShHeldItemChanceService.RatesCode });
-                if (diagnostics.Count > 0) return new(session, diagnostics);
-                var result = new KM.SwSh.HeldItemChance.SwShHeldItemChanceService().Stage(activePaths, rates, session);
-                return new(result.Session, result.Diagnostics);
+                var service = new KM.SwSh.HeldItemChance.SwShHeldItemChanceService();
+                var current = session;
+                var global = updates.Where(update => update.Record.TargetId == "global-held-items").ToArray();
+                if (global.Length > 0)
+                {
+                    var data = service.Load(activePaths, current);
+                    diagnostics.AddRange(data.Diagnostics);
+                    var rates = data.Rates.ToArray();
+                    foreach (var update in global) rates[Array.IndexOf(HeldItemRateFields, update.Field.Target)] = int.Parse(update.Value, CultureInfo.InvariantCulture);
+                    ValidateHeldRates(rates, global.Select(update => (update.Field.Target, Array.IndexOf(HeldItemRateFields, update.Field.Target))).ToArray(), diagnostics);
+                    if (diagnostics.Count > 0) return new(session, diagnostics);
+                    var result = service.Stage(activePaths, rates, current);
+                    if (result.Diagnostics.Any(d => d.Severity == KM.Core.Diagnostics.DiagnosticSeverity.Error)) return new(session, result.Diagnostics);
+                    current = result.Session;
+                }
+                var pokemon = updates.Where(update => update.Record.TargetId != "global-held-items").GroupBy(update => update.Record.TargetId).ToArray();
+                if (pokemon.Length > 0)
+                {
+                    var data = service.Load(activePaths, current);
+                    diagnostics.AddRange(data.Diagnostics);
+                    var changes = new List<KM.SwSh.HeldItemChance.SwShHeldItemChanceUpdate>();
+                    foreach (var group in pokemon)
+                    {
+                        var row = data.Pokemon.Single(value => value.PersonalId.ToString(CultureInfo.InvariantCulture) == group.Key);
+                        var rates = row.Rates.ToArray();
+                        var custom = row.CustomRates || group.Any(update => update.Field.Target != "customRates");
+                        foreach (var update in group)
+                            if (update.Field.Target == "customRates") custom = update.Value == "1";
+                            else rates[Array.IndexOf(HeldItemRateFields, update.Field.Target)] = int.Parse(update.Value, CultureInfo.InvariantCulture);
+                        ValidateHeldRates(rates, group.Where(update => update.Field.Target != "customRates")
+                            .Select(update => (update.Field.Target, Array.IndexOf(HeldItemRateFields, update.Field.Target))).ToArray(), diagnostics);
+                        changes.Add(new(row.PersonalId, row.Items, custom ? rates : null));
+                    }
+                    if (diagnostics.Count > 0) return new(session, diagnostics);
+                    var result = service.StagePokemon(activePaths, changes, current);
+                    if (result.Diagnostics.Any(d => d.Severity == KM.Core.Diagnostics.DiagnosticSeverity.Error)) return new(session, result.Diagnostics);
+                    current = result.Session;
+                }
+                return new(current, diagnostics);
             }
             case "typeChart":
             {
@@ -167,4 +191,15 @@ public sealed partial class SwShEditableDumpProvider
     }
 
     private static int Id(DumpUpdate update) => int.Parse(update.Record.TargetId, CultureInfo.InvariantCulture);
+
+    private static void ValidateHeldRates(int[] rates, (string Field, int Index)[] fields,
+        List<KM.Core.Diagnostics.ValidationDiagnostic> diagnostics)
+    {
+        for (var group = 0; group < 2; group++)
+            if (rates.Skip(group * 3).Take(3).Sum() > 100)
+                foreach (var field in fields.Where(field => field.Index / 3 == group))
+                    diagnostics.Add(new(KM.Core.Diagnostics.DiagnosticSeverity.Error,
+                        "These three held item percentages must total 100% or less.", Field: field.Field)
+                        { Code = KM.SwSh.HeldItemChance.SwShHeldItemChanceService.RatesCode });
+    }
 }

@@ -439,7 +439,7 @@ export const workbenchCapabilityRegistry = [
     games: swordShieldGames, icon: Sparkles, id: 'marnieBoosts', label: 'Marnie Wyndon Boosts'
   }),
   workflow({
-    description: 'Set global normal and boosted wild held item percentages.',
+    description: 'Choose items and normal or boosted chances for each Pokemon and form.',
     games: swordShieldGames, icon: Sparkles, id: 'heldItemChance', label: 'Held Item Chance'
   }),
   workflow({

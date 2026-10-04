@@ -4672,7 +4672,7 @@
     "marnieBoosts.diagnostic.stale": "Las fuentes o la salida han cambiado. Revisa los cambios de nuevo.",
     "marnieBoosts.diagnostic.apply": "No se pudo aplicar la salida de los ánimos. Revisa las fuentes y la carpeta de salida y vuelve a revisar los cambios.",
     "heldItemChance.title": "Probabilidad de objeto equipado",
-    "heldItemChance.subtitle": "Configura las probabilidades globales de objetos equipados en Espada y Escudo 1.3.2. Elige los objetos en Encuentros salvajes o en el editor de Pokémon.",
+    "heldItemChance.subtitle": "Elige un Pokémon y su forma, y configura sus tres objetos equipados y sus probabilidades normales o aumentadas para Espada y Escudo 1.3.2.",
     "heldItemChance.readOnly": "Requiere fuentes compatibles de Espada o Escudo 1.3.2 y una salida configurada.",
     "heldItemChance.normal": "Probabilidades normales",
     "heldItemChance.boosted": "Probabilidades aumentadas",
@@ -4705,13 +4705,13 @@
     "heldItemChance.wildFailed": "No se pudieron preparar los objetos equipados. Revisa Diagnósticos e inténtalo de nuevo.",
     "heldItemChance.wildInvalid": "Elige un objeto válido para cada casilla. El objeto 0 significa ninguno.",
     "heldItemChance.wildDraftScope": "Los objetos de abajo pertenecen a la especie y forma preparadas del encuentro. Prepara primero los cambios de especie o forma.",
-    "heldItemChance.diagnostic.source": "Comprueba el juego seleccionado, la ExeFS original 1.3.2 y la salida. La rutina de selección debe estar intacta y cada grupo debe sumar como máximo un 100%.",
-    "heldItemChance.diagnostic.rates": "Introduce seis porcentajes enteros de 0 a 100. Los totales normales y aumentados deben ser como máximo del 100% cada uno.",
-    "heldItemChance.diagnostic.session": "Las probabilidades preparadas no son válidas. Vuelve a preparar los porcentajes.",
+    "heldItemChance.diagnostic.source": "Comprueba el juego seleccionado, los ExeFS originales de 1.3.2, los datos de Pokémon y la salida. Las modificaciones de objetos equipados deben ser compatibles y cada grupo de probabilidades debe sumar como máximo un 100%.",
+    "heldItemChance.diagnostic.rates": "Elige tres objetos válidos y seis porcentajes enteros entre 0 y 100. Los totales normales y aumentados deben ser como máximo del 100% cada uno.",
+    "heldItemChance.diagnostic.session": "Los objetos o probabilidades preparados del Pokémon no son válidos. Vuelve a preparar el Pokémon afectado.",
     "heldItemChance.diagnostic.stale": "Las fuentes o probabilidades cambiaron desde la revisión. Vuelve a revisar la salida.",
     "heldItemChance.diagnostic.apply": "No se pudo escribir la salida. Comprueba el acceso a las fuentes y la salida, y vuelve a revisar y aplicar.",
     "workbench.section.held-item-chance.label": "Probabilidad de objeto equipado",
-    "workbench.section.held-item-chance.description": "Configura las probabilidades globales de objetos equipados en Espada y Escudo 1.3.2. Elige los objetos en Encuentros salvajes o en el editor de Pokémon.",
+    "workbench.section.held-item-chance.description": "Elige un Pokémon y su forma, y configura sus tres objetos equipados y sus probabilidades normales o aumentadas para Espada y Escudo 1.3.2.",
     "titanRecovery.planned": "Esta salida recuperará archivos de KM Editor sin cambios que se consideran anteriores o de la versión 2.6.4. Se conservan los reemplazos compatibles de los Pokémon dominantes y de Damián, y se desactiva la teracristalización de sus cinco equipos de apoyo.",
     "titanRecovery.source": "No se pudo recuperar de forma segura la salida antigua de los Pokémon dominantes o de Damián. Comprueba los datos originales y la salida afectada y vuelve a revisar.",
     "titanRecovery.unsupported": "Un reemplazo antiguo de un Pokémon dominante o de Damián usa una identidad o forma no compatible. Selecciona una forma base compatible y vuelve a revisar.",
@@ -4761,7 +4761,15 @@
     "fixAiFlags.failed": "No se pudieron preparar las reparaciones seleccionadas. Se conserva tu selección. Consulta Diagnósticos y actualiza si cambiaron los archivos.",
     "workbench.section.fix-ai-flags.label": "Corregir indicadores de IA",
     "workbench.section.fix-ai-flags.description": "Revisa posibles errores del indicador de cambio en los entrenadores de Espada y Escudo.",
-    "fixAiFlags.why": "Por qué los datos de pkNX pueden necesitar reparación"
+    "fixAiFlags.why": "Por qué los datos de pkNX pueden necesitar reparación",
+    "heldItemChance.pokemonSubtitle": "Elige un Pokémon y su forma, y configura sus tres objetos equipados y sus probabilidades normales o aumentadas para Espada y Escudo 1.3.2.",
+    "heldItemChance.pokemon": "Pokémon y forma",
+    "heldItemChance.itemSlot": "Objeto en la ranura {number}",
+    "heldItemChance.customRates": "Usar probabilidades personalizadas para este Pokémon",
+    "heldItemChance.restoreRates": "Restaurar probabilidades predeterminadas",
+    "heldItemChance.pokemonScope": "Los objetos y las probabilidades se comparten para este Pokémon y esta forma en todos los encuentros salvajes. Los demás Pokémon conservan sus ajustes. Los objetos explícitos de un encuentro pueden tener prioridad.",
+    "heldItemChance.customHelp": "Las probabilidades personalizadas se aplican aunque dos ranuras tengan el mismo objeto. Las ranuras vacías no dan ningún objeto. Un Pokémon solo puede llevar un objeto.",
+    "heldItemChance.pokemonInvalid": "Elige objetos válidos y porcentajes enteros entre 0 y 100. Cada grupo de probabilidades normales y aumentadas debe sumar como máximo 100%."
   },
   "literals": {
     "League Staff Isaac": "Isaac, personal de la Liga",
@@ -9202,6 +9210,7 @@
     "The AI scripts changed or need review. Refresh Fix AI Flags and acknowledge custom AI scripts.": "Los scripts de IA cambiaron o necesitan revisión. Actualiza Corregir indicadores de IA y confirma la revisión de los scripts modificados.",
     "A selected trainer changed, was previously fixed, or is no longer a candidate. Refresh and review it again.": "Un entrenador seleccionado cambió, ya fue corregido o dejó de ser candidato. Actualiza y revísalo de nuevo.",
     "A selected trainer already has a staged AI flag edit. Apply or remove that edit before repairing this trainer.": "Un entrenador seleccionado ya tiene una edición de IA preparada. Aplícala o elimínala antes de repararlo.",
-    "The reviewed AI flag repair no longer matches this trainer. Refresh Fix AI Flags and review it again.": "La reparación de IA revisada ya no coincide con este entrenador. Actualiza la herramienta y revísala de nuevo."
+    "The reviewed AI flag repair no longer matches this trainer. Refresh Fix AI Flags and review it again.": "La reparación de IA revisada ya no coincide con este entrenador. Actualiza la herramienta y revísala de nuevo.",
+    "Choose items and normal or boosted chances for each Pokemon and form.": "Elige un Pokémon y su forma, y configura sus tres objetos equipados y sus probabilidades normales o aumentadas para Espada y Escudo 1.3.2."
   }
 }

@@ -10,16 +10,21 @@ using KM.SwSh.Editing;
 using KM.SwSh.ExeFs;
 using KM.SwSh.HyperTraining;
 using KM.SwSh.Items;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 
 namespace KM.SwSh.HeldItemChance;
 
 public sealed record SwShHeldItemChanceWorkflow(bool CanEdit, ProjectGame? DetectedGame,
-    IReadOnlyList<int> Rates, string SourceLayer, IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<int> Rates, string SourceLayer, IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    public IReadOnlyList<SwShHeldItemChancePokemon> Pokemon { get; init; } = [];
+    public IReadOnlyList<SwShHeldItemOption> ItemOptions { get; init; } = [];
+}
 public sealed record SwShHeldItemChanceResult(SwShHeldItemChanceWorkflow Workflow, EditSession Session,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);
 
-public sealed class SwShHeldItemChanceService(ProjectWorkspaceService? workspace = null)
+public sealed partial class SwShHeldItemChanceService(ProjectWorkspaceService? workspace = null)
 {
     public const string Domain = "workflow.heldItemChance";
     public const string SourceCode = "KM-SWSH-HELD-ITEM-SOURCE-INVALID";
@@ -31,17 +36,16 @@ public sealed class SwShHeldItemChanceService(ProjectWorkspaceService? workspace
     private readonly ProjectWorkspaceService workspace = workspace ?? new ProjectWorkspaceService();
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project) => new(SwShWorkflowIds.HeldItemChance,
-        "Held Item Chance", "Set global normal and boosted wild held item percentages.",
+        "Held Item Chance", "Choose items and normal or boosted chances for each Pokemon and form.",
         !ProjectGameMetadata.IsSwordShield(project.Paths.SelectedGame) || !project.Health.CanOpenReadOnlyWorkflows
             ? SwShWorkflowAvailability.Disabled : project.Health.CanOpenEditableWorkflows
                 ? SwShWorkflowAvailability.Available : SwShWorkflowAvailability.ReadOnly, []);
 
-    public SwShHeldItemChanceWorkflow Load(ProjectPaths paths)
+    public SwShHeldItemChanceWorkflow Load(ProjectPaths paths, EditSession? session = null)
     {
         var diagnostics = new List<ValidationDiagnostic>();
         var state = Read(paths, diagnostics);
-        return new(state?.CanEdit == true, paths.SelectedGame, state?.Rates ?? [],
-            state?.Layer.ToString().ToLowerInvariant() ?? "missing", diagnostics);
+        return PopulatePokemon(paths, state, session, diagnostics);
     }
 
     public SwShHeldItemChanceResult Stage(ProjectPaths paths, IReadOnlyList<int>? rates, EditSession? session)
@@ -54,18 +58,19 @@ public sealed class SwShHeldItemChanceService(ProjectWorkspaceService? workspace
             "Enter six whole percentages from 0 to 100. Normal and boosted totals must each be at most 100%.", "rates"));
         if (state is not null && !HasErrors(diagnostics))
         {
-            var retained = current.PendingEdits.Where(edit => edit.Domain != Domain);
+            var retained = current.PendingEdits.Where(edit => edit.Domain != Domain || edit.RecordId != "global-held-items");
             current = current with { PendingEdits = (state.Rates.SequenceEqual(rates!)
                 ? retained : retained.Append(CreateEdit(rates!))).ToArray() };
         }
-        return new(Load(paths), current, diagnostics);
+        return new(Load(paths, current), current, diagnostics);
     }
 
     public SwShEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         var diagnostics = new List<ValidationDiagnostic>();
-        RequireEditable(Read(paths, diagnostics), diagnostics);
-        _ = Decode(session, diagnostics);
+        var state = Read(paths, diagnostics);
+        RequireEditable(state, diagnostics);
+        if (state is not null) _ = Desired(paths, state, session, diagnostics);
         return new(session, !HasErrors(diagnostics), diagnostics);
     }
 
@@ -74,13 +79,17 @@ public sealed class SwShHeldItemChanceService(ProjectWorkspaceService? workspace
         var diagnostics = new List<ValidationDiagnostic>();
         var state = Read(paths, diagnostics);
         RequireEditable(state, diagnostics);
-        var rates = Decode(session, diagnostics);
         if (state is null || HasErrors(diagnostics)) return new(session.Id, [], diagnostics);
+        var desired = Desired(paths, state, session, diagnostics);
+        if (HasErrors(diagnostics)) return new(session.Id, [], diagnostics);
         var sources = new ProjectFileReference[] { new(ProjectFileLayer.Base, MainPath) }
             .Concat(state.Layer == ProjectFileLayer.Layered ? [new ProjectFileReference(ProjectFileLayer.Layered, MainPath)] : [])
-            .Concat(CreateEdit(rates).Sources).ToArray();
-        PlannedFileWrite[] writes = state.Rates.SequenceEqual(rates) ? [] :
-            [new(MainPath, sources, File.Exists(state.Target), "Update the six held item percentages while preserving other executable edits.")];
+            .Concat(session.PendingEdits.SelectMany(edit => edit.Sources))
+            .Append(new ProjectFileReference(ProjectFileLayer.Base, SwShPokemonWorkflowService.PersonalDataPath))
+            .Concat(File.Exists(SwShHyperTrainingWorkflowService.ResolveOutputPath(paths, SwShPokemonWorkflowService.PersonalDataPath))
+                ? [new ProjectFileReference(ProjectFileLayer.Layered, SwShPokemonWorkflowService.PersonalDataPath)] : []).ToArray();
+        PlannedFileWrite[] writes = SameSettings(state.Rates, state.Overrides, desired.Rates, desired.Overrides) ? [] :
+            [new(MainPath, sources, File.Exists(state.Target), "Update Pokemon held item chances while preserving other executable edits.")];
         return SwShChangePlanSourceGuard.Capture(paths, new(session.Id, writes, diagnostics));
     }
 
@@ -98,10 +107,11 @@ public sealed class SwShHeldItemChanceService(ProjectWorkspaceService? workspace
             if (!verified.TryPrepareSnapshotPlan(CreateChangePlan(verified.ApplyPaths, session), out var prepared))
                 return Result(plan, [], [.. prepared.Diagnostics, Error(StaleCode, "Held item chance sources changed. Review again.")]);
             var state = Read(verified.ApplyPaths, diagnostics);
-            var rates = Decode(session, diagnostics);
             if (state is null || HasErrors(diagnostics)) return Result(plan, [], diagnostics);
+            var desired = Desired(verified.ApplyPaths, state, session, diagnostics);
+            if (HasErrors(diagnostics)) return Result(plan, [], diagnostics);
             if (prepared.Writes.Count == 0) return verified.Commit(Result(prepared, [], diagnostics));
-            var bytes = SwShHeldItemChancePatcher.Apply(state.Vanilla, state.Source, paths.SelectedGame, rates);
+            var bytes = SwShHeldItemChancePatcher.Apply(state.Vanilla, state.Source, paths.SelectedGame, desired.Rates, desired.Overrides);
             if (SwShExeFsMainComparison.IsSemanticallyEquivalentToBase(bytes, state.Vanilla)) File.Delete(state.Target);
             else
             {
@@ -134,11 +144,11 @@ public sealed class SwShHeldItemChanceService(ProjectWorkspaceService? workspace
             if (!SwShHeldItemChancePatcher.Rates(baseline).SequenceEqual(SwShHeldItemChancePatcher.Defaults)) throw new InvalidDataException();
             SwShExeFsMainComparison.EnsureCompatibleBaseLayout(baseline, effective, "Held Item Chance");
             return new(vanilla, source, target ?? "", exists ? ProjectFileLayer.Layered : ProjectFileLayer.Base,
-                SwShHeldItemChancePatcher.Rates(effective), target is not null && project.Health.CanOpenEditableWorkflows);
+                SwShHeldItemChancePatcher.Rates(effective), SwShHeldItemChancePatcher.Overrides(effective, paths.SelectedGame), target is not null && project.Health.CanOpenEditableWorkflows);
         }
         catch (Exception exception) when (IsSourceError(exception))
         {
-            diagnostics.Add(Error(SourceCode, "Held Item Chance requires readable selected-game 1.3.2 sources, original base rates, valid output rates and an unchanged held item picker."));
+            diagnostics.Add(Error(SourceCode, "Held Item Chance requires readable selected-game 1.3.2 sources, original base rates, valid Pokemon rates and compatible held item hooks."));
             return null;
         }
     }
@@ -175,5 +185,5 @@ public sealed class SwShHeldItemChanceService(ProjectWorkspaceService? workspace
         var id = Guid.NewGuid().ToString("N"); var now = DateTimeOffset.UtcNow;
         return new(id, now, written, new WriteManifest(id, now, plan.Writes), diagnostics);
     }
-    private sealed record State(byte[] Vanilla, byte[] Source, string Target, ProjectFileLayer Layer, int[] Rates, bool CanEdit);
+    private sealed record State(byte[] Vanilla, byte[] Source, string Target, ProjectFileLayer Layer, int[] Rates, IReadOnlyList<SwShHeldItemChanceOverride> Overrides, bool CanEdit);
 }
