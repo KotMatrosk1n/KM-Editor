@@ -251,7 +251,7 @@ impl Assets {
                 } else {
                     0.0
                 },
-                0.0,
+                surface.map(|s| s.effect as f32).unwrap_or(0.0),
             ]);
             let color = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Material color"),

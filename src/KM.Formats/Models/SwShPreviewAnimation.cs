@@ -3,7 +3,8 @@ namespace KM.Formats.Models;
 
 public static class SwShPreviewAnimation
 {
-    public static PreviewClip Read(ModelBuffer data, PreviewClip clip, ICollection<string> warnings)
+    public static PreviewClip Read(ModelBuffer data, PreviewClip clip, ICollection<string> warnings,
+        IReadOnlySet<string>? fireMaterials = null, IReadOnlySet<string>? emissionMaterials = null)
     {
         var visibility = new List<PreviewVisibility>();
         var materials = new List<PreviewMaterialTrack>();
@@ -19,8 +20,16 @@ public static class SwShPreviewAnimation
             foreach (var material in data.Tables(materialRoot, 0, 128))
             {
                 var name = data.Text(material, 0) ?? throw new InvalidDataException("Material animation target is missing.");
+                var fire = fireMaterials?.Contains(name) == true;
+                var effects = new Dictionary<string, PreviewKey[][]>(StringComparer.Ordinal);
                 foreach (var vector in data.Tables(material, 3, 256))
                 {
+                    if (fire && SwShPreviewFire.ColorSlot(data.Text(vector, 0) ?? "") is var slot && slot >= 0)
+                    {
+                        var color = Keys(data, vector, 1, 3, false, clip.Frames);
+                        materials.Add(new(name, $"FireValue{slot}", [color[0], color[1], color[2], []]));
+                        continue;
+                    }
                     if (data.Text(vector, 0) != "ConstantColor0") { warnings.Add("materialAnimationUnsupported"); continue; }
                     var channels = Keys(data, vector, 1, 3, false, clip.Frames);
                     materials.Add(new(name, "BaseColor", [channels[0], channels[1], channels[2], []]));
@@ -30,6 +39,26 @@ public static class SwShPreviewAnimation
                 PreviewKey[][] origins = [[], [], [], []];
                 foreach (var scalar in data.Tables(material, 2, 256))
                 {
+                    if (emissionMaterials?.Contains(name) == true && data.Text(scalar, 0) is "EmissionMaskVal" or "OnGameEmissionVal")
+                    {
+                        var target = data.Text(scalar, 0) == "EmissionMaskVal" ? "EmissionGain" : "EmissionScale";
+                        materials.Add(new(name, target, [Keys(data, scalar, 1, 1, false, clip.Frames)[0], [], [], []]));
+                        continue;
+                    }
+                    if (fire)
+                    {
+                        var scalarName = data.Text(scalar, 0) ?? "";
+                        var value = SwShPreviewFire.ScalarSlot(scalarName);
+                        var transform = SwShPreviewFire.UvChannel(scalarName);
+                        var target = value.Slot >= 0 ? $"FireValue{value.Slot}" : transform.Parameter;
+                        var component = value.Slot >= 0 ? value.Channel : transform.Channel;
+                        if (component >= 0)
+                        {
+                            if (!effects.TryGetValue(target, out var channels)) effects.Add(target, channels = [[], [], [], []]);
+                            channels[component] = Keys(data, scalar, 1, 1, false, clip.Frames)[0];
+                            continue;
+                        }
+                    }
                     var channel = data.Text(scalar, 0) switch
                     {
                         "ColorUVScaleU" => 0,
@@ -52,6 +81,7 @@ public static class SwShPreviewAnimation
                 if (uv.Any(channel => channel.Length > 0)) materials.Add(new(name, "UVScaleOffset", uv));
                 if (underlayUv.Any(channel => channel.Length > 0)) materials.Add(new(name, "UnderlayUV", underlayUv));
                 if (origins.Any(channel => channel.Length > 0)) materials.Add(new(name, "UvOrigins", origins));
+                foreach (var (parameter, channels) in effects) materials.Add(new(name, parameter, channels));
                 if (data.Tables(material, 1, 256).Length > 0)
                     warnings.Add("materialAnimationUnsupported");
             }

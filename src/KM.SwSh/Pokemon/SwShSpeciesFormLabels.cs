@@ -101,7 +101,9 @@ internal static class SwShSpeciesFormLabels
         {
             var baseRegionalFormLabel = ResolveBaseRegionalFormLabel(speciesId);
             var baseFormLabel = knownFormLabel ?? baseRegionalFormLabel;
-            return baseFormLabel is null || SpeciesAlreadyIncludesFormLabel(speciesName, baseFormLabel)
+            return baseFormLabel is null || speciesId == 800
+                || NormalizeFormLabel(speciesName) == NormalizeFormLabel(baseFormLabel)
+                || SpeciesAlreadyIncludesFormLabel(speciesName, baseFormLabel)
                 ? speciesName
                 : string.Create(
                     CultureInfo.InvariantCulture,

@@ -106,7 +106,10 @@ public sealed class SwShModelPreviewService
                 var bytes = source.Read(skeletal, clipArchives[chosen.Id]);
                 var data = new ModelBuffer(transform?.Invoke(skeletal, bytes) ?? bytes);
                 clip = PreviewRigReader.Animation(data, chosen.Id, scene.Rig.Bones);
-                clip = SwShPreviewAnimation.Read(data, clip, warnings);
+                clip = SwShPreviewAnimation.Read(data, clip, warnings, scene.Primitives
+                    .Where(p => p.Material.Surface?.Effect > 0).Select(p => p.Material.Name).ToHashSet(StringComparer.Ordinal), scene.Primitives
+                    .Where(p => p.Material.Surface is { Effect: 0 } surface && surface.Textures[3] >= 0)
+                    .Select(p => p.Material.Name).ToHashSet(StringComparer.Ordinal));
             }
             catch (IOException) { warnings.Add("animationUnsupported"); }
         }

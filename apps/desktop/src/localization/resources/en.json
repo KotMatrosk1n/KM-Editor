@@ -2611,7 +2611,7 @@
     "fieldHelp.catalog.trainer.battleSetup": "Controls a trainer-level battle setup value such as battle type or rank",
     "fieldHelp.catalog.trainer.ai": "Stores battle AI flags. Use named flag controls when available so unrelated bits remain unchanged",
     "fieldHelp.catalog.trainer.money": "Stores the game-specific trainer money rate rather than a final payout amount",
-    "fieldHelp.catalog.trainer.money.swsh": "Stores the raw Sword and Shield trainer money rate. Its exact payout behavior has not been verified, so KM does not present it as a final cash amount",
+    "fieldHelp.catalog.trainer.money.swsh": "Shows base prize money: the last occupied party slot's level x the money rate x 4. Changing that slot's level updates the amounts. Stores a rate from 0 to 255; player bonuses can increase the final reward.",
     "fieldHelp.catalog.trainer.money.sv": "Stores the signed Scarlet and Violet trainer money rate. KM exposes the raw rate because its exact payout behavior has not been verified",
     "fieldHelp.catalog.trainer.money.za": "Stores the Z-A trainer money rate as an unsigned value from 0 to 255. Base prize money is the highest party level x this rate x 4; separate player bonuses can increase the final reward",
     "fieldHelp.catalog.trainer.specialMechanic": "Enables a game-specific trainer battle mechanic. A compatible party Pokemon and valid battle context may still be required",
@@ -4769,7 +4769,8 @@
     "heldItemChance.restoreRates": "Restore default chances",
     "heldItemChance.pokemonScope": "Items and chances are shared by this Pokemon and form across wild encounter locations. Other Pokemon keep their own settings. Explicit encounter item overrides can still take priority.",
     "heldItemChance.customHelp": "Custom chances apply even when two slots contain the same item. Empty slots give no item. A Pokemon can hold only one item.",
-    "heldItemChance.pokemonInvalid": "Choose valid items and whole percentages from 0 to 100. Normal and boosted totals must each be at most 100%."
+    "heldItemChance.pokemonInvalid": "Choose valid items and whole percentages from 0 to 100. Normal and boosted totals must each be at most 100%.",
+    "modelViewer.warning.materialEffectApproximate": "Fire colors, scrolling textures and masks are previewed approximately. Their appearance may differ in game."
   },
   "literals": {
     "League Staff Isaac": "League Staff Isaac",

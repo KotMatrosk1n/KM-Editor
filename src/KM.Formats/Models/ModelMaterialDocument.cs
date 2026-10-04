@@ -32,6 +32,13 @@ public sealed class ModelMaterialDocument
         {
             var table = materials[m];
             var material = data.Text(table, 0) ?? throw new InvalidDataException("Material name is missing.");
+            var fire = packedModel ? SwShPreviewFire.Kind(data.Text(table, 1)) : 0;
+            var switches = packedModel ? data.Tables(table, 12, 256).ToDictionary(p => data.Text(p, 0) ?? "",
+                p => data.Field(p, 1) is var at && at != 0 ? data.U8(at) : 0, StringComparer.Ordinal) : [];
+            var emission = packedModel && fire == 0 && switches.GetValueOrDefault("EmissionMaskUse") != 0
+                && switches.GetValueOrDefault("SwitchEmissionMaskTexUV") == 0;
+            bool TexturePreviewed(string role) => fire != 0 ? SwShPreviewFire.TextureRole(fire, role) is not null
+                : RenderedTexture(role) || emission && role == "EmissionMaskTex";
             void Numeric(string key, string group, string name, string kind, int at, int components, double fallback = 0, string[]? options = null, FieldLocation? location = null)
             {
                 if (at != 0 && location is not null && at + components * 4 > location.Table + data.U16(location.Table - data.I32(location.Table) + 2))
@@ -44,6 +51,8 @@ public sealed class ModelMaterialDocument
                     || name.StartsWith("ColorUV", StringComparison.Ordinal) || name.StartsWith("Layer1UV", StringComparison.Ordinal)
                     || name is "LayerMaskScale1" or "LayerMaskScale2" or "LayerMaskScale3" or "LayerMaskScale4" or "EmissionIntensityLayer5" or "EmissionColorLayer5"
                         or "ColorBaseU" or "ColorBaseV" or "Layer1BaseU" or "Layer1BaseV";
+                if (fire != 0) previewed = SwShPreviewFire.Supports(fire, name);
+                else if (emission && name is "EmissionMaskVal" or "OnGameEmissionVal") previewed = true;
                 bindings.Add(new(new(key, material, group, name, kind, values, null, options ?? [], at != 0 || location is not null, previewed), at, location));
             }
             void Parameters(int field, string group, int components, string kind, double fallback = 0)
@@ -73,7 +82,7 @@ public sealed class ModelMaterialDocument
                 var index = packedModel ? checked((int)data.Value(binding, 1)) : 0;
                 if (packedModel && index >= paths.Length) throw new InvalidDataException("Texture binding is invalid.");
                 bindings.Add(new(new($"{m}/texture/{t}", material, "textures", role, packedModel ? "textureIndex" : "texture",
-                    packedModel ? [index] : [], packedModel ? paths[index] : data.Text(binding, 1), paths, at != 0, RenderedTexture(role)), at));
+                    packedModel ? [index] : [], packedModel ? paths[index] : data.Text(binding, 1), paths, at != 0, TexturePreviewed(role)), at));
                 if (packedModel && data.Table(binding, 2) is var sampler && sampler != 0)
                 {
                     Numeric($"{m}/wrap/{t}/u", "samplers", role + " U", "int", data.Field(sampler, 1), 1, options: ["0", "1", "2"], location: new(sampler, data.Field(binding, 2), 1, 1, false));
@@ -99,7 +108,7 @@ public sealed class ModelMaterialDocument
                 var field = bindings[i].Field;
                 if (field.Material != material || field.Group != "samplers") continue;
                 bool rendered;
-                if (packedModel) rendered = RenderedTexture(field.Name[..^2]);
+                if (packedModel) rendered = TexturePreviewed(field.Name[..^2]);
                 else
                 {
                     var parts = field.Key.Split('/'); var slot = int.Parse(parts[2], System.Globalization.CultureInfo.InvariantCulture);

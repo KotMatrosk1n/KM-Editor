@@ -66,7 +66,7 @@ impl Background {
             primitive: Default::default(),
             // The grid is a backdrop. It never occludes the inspected model.
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
+                format: wgpu::TextureFormat::Depth24PlusStencil8,
                 depth_write_enabled: false,
                 depth_compare: wgpu::CompareFunction::Always,
                 stencil: Default::default(),

@@ -88,6 +88,10 @@ pub struct SurfaceInfo {
     pub wraps: Vec<[f32; 4]>,
     #[serde(default, rename = "tintSubsurfaceByBaseColor")]
     pub tint_subsurface_by_base_color: bool,
+    #[serde(default)]
+    pub effect: u32,
+    #[serde(default, rename = "effectLink")]
+    pub effect_link: u32,
 }
 fn all_channels() -> [f32; 4] {
     [1.0; 4]
@@ -152,6 +156,15 @@ impl Rig {
                     "UVScaleOffset" => 20,
                     "UVScaleOffset1" if values.len() >= 44 => 40,
                     "UnderlayUV" if values.len() >= 60 => 48,
+                    "MaskUV" if values.len() >= 36 => 32,
+                    "EmissionGain" if values.len() >= 74 => 70,
+                    "EmissionScale" if values.len() >= 91 => 87,
+                    parameter if self.meshes[index].surface.as_ref().is_some_and(|s| s.effect > 0)
+                        && parameter.starts_with("FireValue") => {
+                        let Ok(slot) = parameter[9..].parse::<usize>() else { continue };
+                        if slot > 8 || values.len() < 64 + (slot + 1) * 4 { continue; }
+                        64 + slot * 4
+                    }
                     _ => continue,
                 };
                 for (channel, keys) in track.channels.iter().enumerate() {
