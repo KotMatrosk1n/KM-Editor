@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 import { createContext, useContext, useEffect, useState } from 'react';
 import { type EditSession, type PokemonRecord, type PokemonWorkflow } from '../../bridge/contracts';
-import { getHeldItemPendingRates, type HeldItemChanceWorkflow } from '../../bridge/heldItemChanceContracts';
+import { getHeldItemPendingRates, getHeldItemPokemonState, type HeldItemChanceWorkflow } from '../../bridge/heldItemChanceContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { parseEditableIntegerDraft } from '../../editableFieldHelpers';
@@ -39,7 +39,9 @@ export function WildHeldItems({ workflow, chances, session, speciesId, form, rec
   const row = workflow?.pokemon.find(value => value.speciesId === pendingIdentity('speciesId', speciesId)
     && value.form === pendingIdentity('form', form));
   const options = workflow?.editableFields.find(field => field.field === 'heldItem1')?.options ?? [];
-  const rates = getHeldItemPendingRates(session) ?? (chances?.rates.length === 6 ? chances.rates : null);
+  const chanceRow = chances?.pokemon.find(value => value.personalId === row?.personalId);
+  const effectiveChances = chanceRow ? getHeldItemPokemonState(chanceRow, session, chances?.rates) : null;
+  const rates = effectiveChances?.rates ?? getHeldItemPendingRates(session) ?? (chances?.rates.length === 6 ? chances.rates : null);
   const clean = row ? effectiveHeldItems(row, session) : [];
   const desired = row ? drafts[row.personalId] ?? clean.map(String) : [];
   const parse = (value: string) => {
@@ -92,7 +94,7 @@ export function WildHeldItems({ workflow, chances, session, speciesId, form, rec
             }} />
         </div>)}
       </div>
-      {first !== null && first === second ? <p role="status">{t(first === 0 ? 'heldItemChance.wildEqualNone' : 'heldItemChance.wildEqualItem')}</p> : null}
+      {!effectiveChances?.customRates && first !== null && first === second ? <p role="status">{t(first === 0 ? 'heldItemChance.wildEqualNone' : 'heldItemChance.wildEqualItem')}</p> : null}
       <p>{t('heldItemChance.boostedHelp')}</p>
     </> : <p>{t('heldItemChance.wildMissing')}</p>}
     {session ? <div className="held-item-actions">

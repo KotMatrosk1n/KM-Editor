@@ -104,7 +104,10 @@ public static class SwShExecutableMergeSupport
         }
         var originalRates = SwShHeldItemChancePatcher.Rates(NsoFile.Parse(original));
         var mergedRates = SwShHeldItemChancePatcher.Rates(NsoFile.Parse(merged));
-        if (!originalRates.SequenceEqual(mergedRates))
+        if (!originalRates.SequenceEqual(mergedRates) || SwShHeldItemChancePatcher.CreateReservations()
+            .Where(region => !region.FeatureId.Contains(game == ProjectGame.Sword ? "-shield-" : "-sword-", StringComparison.Ordinal))
+            .Any(region => !beforeOptions.Text.DecompressedData.AsSpan(region.StartOffset!.Value, region.Length!.Value)
+                .SequenceEqual(afterOptions.Text.DecompressedData.AsSpan(region.StartOffset.Value, region.Length.Value))))
         {
             if (!SwShHeldItemChancePatcher.AreValid(mergedRates)) return false;
             try { _ = SwShHeldItemChancePatcher.Read(merged, game); }

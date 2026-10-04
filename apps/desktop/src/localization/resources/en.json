@@ -4672,7 +4672,7 @@
     "marnieBoosts.diagnostic.stale": "Cheering sources or output changed. Review the changes again.",
     "marnieBoosts.diagnostic.apply": "Cheering output could not be applied. Check the sources and output folder, then review again.",
     "heldItemChance.title": "Held Item Chance",
-    "heldItemChance.subtitle": "Set the global held item chances for Sword and Shield 1.3.2. Choose the items separately in Wild Encounters or the Pokémon editor.",
+    "heldItemChance.subtitle": "Choose a Pokemon and form, then set its three held items and normal or boosted chances for Sword and Shield 1.3.2.",
     "heldItemChance.readOnly": "Requires compatible Sword or Shield 1.3.2 sources and a configured output.",
     "heldItemChance.normal": "Normal chances",
     "heldItemChance.boosted": "Boosted chances",
@@ -4705,13 +4705,13 @@
     "heldItemChance.wildFailed": "Could not stage held items. Check Diagnostics and try again.",
     "heldItemChance.wildInvalid": "Choose a valid item for every slot. Use item 0 for no item.",
     "heldItemChance.wildDraftScope": "Held items below belong to the staged encounter species and form. Stage a species or form change first to edit its items.",
-    "heldItemChance.diagnostic.source": "Check the selected game, original 1.3.2 ExeFS and output. The held item picker must be unchanged and each set of rates must total at most 100%.",
-    "heldItemChance.diagnostic.rates": "Enter six whole percentages from 0 to 100. Normal and boosted totals must each be at most 100%.",
-    "heldItemChance.diagnostic.session": "The staged held item chance settings are invalid. Stage the percentages again.",
+    "heldItemChance.diagnostic.source": "Check the selected game, original 1.3.2 ExeFS, Pokemon data and output. Held item hooks must be compatible and each set of chances must total at most 100%.",
+    "heldItemChance.diagnostic.rates": "Choose three valid items and six whole percentages from 0 to 100. Normal and boosted totals must each be at most 100%.",
+    "heldItemChance.diagnostic.session": "The staged Pokemon items or chances are invalid. Stage the affected Pokemon again.",
     "heldItemChance.diagnostic.stale": "Sources or held item chance settings changed since review. Review the output again.",
     "heldItemChance.diagnostic.apply": "Held item chance output could not be written. Check source and output access, then review and apply again.",
     "workbench.section.held-item-chance.label": "Held Item Chance",
-    "workbench.section.held-item-chance.description": "Set the global held item chances for Sword and Shield 1.3.2. Choose the items separately in Wild Encounters or the Pokémon editor.",
+    "workbench.section.held-item-chance.description": "Choose a Pokemon and form, then set its three held items and normal or boosted chances for Sword and Shield 1.3.2.",
     "titanRecovery.planned": "This output will recover unchanged KM Editor output treated as legacy from 2.6.4 or earlier. Supported Titan and Arven replacements are retained, and Terastallization is disabled for the five Titan partner teams.",
     "titanRecovery.source": "Older Titan or Arven output could not be recovered safely. Check the original data and affected output, then review again.",
     "titanRecovery.unsupported": "An older Titan or Arven replacement uses an unsupported identity or form. Select a supported base form and review again.",
@@ -4761,7 +4761,15 @@
     "fixAiFlags.failed": "Fix AI Flags could not stage the selected repairs. Your selections have been kept. Check Diagnostics and refresh if the files changed.",
     "workbench.section.fix-ai-flags.label": "Fix AI Flags",
     "workbench.section.fix-ai-flags.description": "Review suspected switching flag mismatches in Sword and Shield trainer data.",
-    "fixAiFlags.why": "Why pkNX data may need repair"
+    "fixAiFlags.why": "Why pkNX data may need repair",
+    "heldItemChance.pokemonSubtitle": "Choose a Pokemon and form, then set its three held items and normal or boosted chances for Sword and Shield 1.3.2.",
+    "heldItemChance.pokemon": "Pokemon and form",
+    "heldItemChance.itemSlot": "Item in slot {number}",
+    "heldItemChance.customRates": "Use custom chances for this Pokemon",
+    "heldItemChance.restoreRates": "Restore default chances",
+    "heldItemChance.pokemonScope": "Items and chances are shared by this Pokemon and form across wild encounter locations. Other Pokemon keep their own settings. Explicit encounter item overrides can still take priority.",
+    "heldItemChance.customHelp": "Custom chances apply even when two slots contain the same item. Empty slots give no item. A Pokemon can hold only one item.",
+    "heldItemChance.pokemonInvalid": "Choose valid items and whole percentages from 0 to 100. Normal and boosted totals must each be at most 100%."
   },
   "literals": {
     "League Staff Isaac": "League Staff Isaac",
@@ -9202,6 +9210,7 @@
     "The AI scripts changed or need review. Refresh Fix AI Flags and acknowledge custom AI scripts.": "The AI scripts changed or need review. Refresh Fix AI Flags and acknowledge custom AI scripts.",
     "A selected trainer changed, was previously fixed, or is no longer a candidate. Refresh and review it again.": "A selected trainer changed, was previously fixed, or is no longer a candidate. Refresh and review it again.",
     "A selected trainer already has a staged AI flag edit. Apply or remove that edit before repairing this trainer.": "A selected trainer already has a staged AI flag edit. Apply or remove that edit before repairing this trainer.",
-    "The reviewed AI flag repair no longer matches this trainer. Refresh Fix AI Flags and review it again.": "The reviewed AI flag repair no longer matches this trainer. Refresh Fix AI Flags and review it again."
+    "The reviewed AI flag repair no longer matches this trainer. Refresh Fix AI Flags and review it again.": "The reviewed AI flag repair no longer matches this trainer. Refresh Fix AI Flags and review it again.",
+    "Choose items and normal or boosted chances for each Pokemon and form.": "Choose a Pokemon and form, then set its three held items and normal or boosted chances for Sword and Shield 1.3.2."
   }
 }

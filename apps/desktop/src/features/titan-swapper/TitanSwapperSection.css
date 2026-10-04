@@ -7,8 +7,8 @@
 .titan-swapper-beta p { margin-top: 12px; }
 .titan-swapper-layout { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(0, 3fr); gap: 24px; }
 .titan-swapper-list { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
-.titan-swapper-rows { display: grid; align-content: start; gap: 6px; max-height: 680px; overflow: auto; padding: 2px; }
-.titan-swapper-row { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 10px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-canvas); color: var(--color-text); text-align: start; }
+.titan-swapper-rows { display: grid; grid-auto-rows: max-content; align-content: start; gap: 6px; max-height: 680px; overflow: auto; padding: 2px; }
+.titan-swapper-row { display: flex; align-items: center; justify-content: flex-start; gap: 10px; width: 100%; min-width: 0; height: auto; min-height: max-content; padding: 10px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-canvas); color: var(--color-text); text-align: start; }
 .titan-swapper-row[aria-pressed='true'] { border-color: var(--color-gold); box-shadow: inset 3px 0 var(--color-gold); }
 .titan-swapper-row > span:last-child { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
 .titan-swapper-row small { color: var(--color-text-muted); }

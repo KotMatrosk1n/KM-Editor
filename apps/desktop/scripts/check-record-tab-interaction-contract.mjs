@@ -1514,14 +1514,15 @@ assert.doesNotMatch(
 assert.match(cssBlock(tabStyles, '.km-record-tab-item'), /max-width: min\(220px, 72vw\)/u);
 assert.match(cssBlock(tabStyles, '.km-record-tab span:first-child'), /text-overflow: ellipsis/u);
 
-const virtualTableBody = between(app, 'function VirtualTableBody<T>(', 'function HealthSection(');
+const virtualTableSource = read('src/components/VirtualTable.tsx');
+const virtualTableBody = virtualTableSource.slice(virtualTableSource.indexOf('export function VirtualTableBody<T>('));
 const interactiveTableRow = between(
-  app,
+  virtualTableSource,
   'type InteractiveTableRowProps =',
-  'function VirtualTableBody<T>('
+  'export function VirtualTableBody<T>('
 );
 const virtualTableGeometry = between(
-  app,
+  virtualTableSource,
   'function calculateVirtualTableScrollMargin({',
   'const observeVirtualTableElementRect'
 );
@@ -1577,7 +1578,7 @@ assert.match(
   'Virtual scroll margin must track heading-size changes across layouts.'
 );
 assert.equal(
-  [...app.matchAll(/<VirtualTableBody\b/gu)].length,
+  [...`${app}\n${read('src/components/PokemonSelection.tsx')}`.matchAll(/<VirtualTableBody\b/gu)].length,
   11,
   'Every current VirtualTableBody owner must share the parent-scroller contract.'
 );

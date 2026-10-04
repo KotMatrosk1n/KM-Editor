@@ -228,6 +228,7 @@ const embeddedEditableSurfaceInventory = {
  * not weaken the native-control inventory gate.
  */
 const sharedNativeControlInventory = {
+  pokemonSearchBox: ['src/components/PokemonSelection.tsx', 'PokemonSearchBox'],
   searchableOptionInput: ['src/components/SearchableOptionInput.tsx', 'SearchableOptionInput']
 };
 

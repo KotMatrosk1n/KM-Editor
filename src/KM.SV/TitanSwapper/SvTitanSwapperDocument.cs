@@ -14,13 +14,13 @@ internal sealed class SvTitanSwapperDocument
     public const string Prefix = "km_titan_";
     public static readonly (string Label, int Species, string Edition)[] Encounters =
     [
-        ("nusi_962_01", 950, "both"), ("nusi_962_02", 950, "both"),
-        ("nusi_959_01", 962, "both"), ("nusi_959_02", 962, "both"),
-        ("nusi_944_01", 968, "both"), ("nusi_944_02", 968, "both"),
-        ("nusi_978_01", 984, "scarlet"), ("nusi_978_02", 984, "scarlet"),
-        ("nusi_986_01", 990, "violet"), ("nusi_986_02", 990, "violet"),
-        ("nusi_931_01", 977, "both"), ("nusi_931_02", 977, "both"),
-        ("nusi_952_01", 978, "both"),
+        ("nusi_962_01", 962, "both"), ("nusi_962_02", 962, "both"),
+        ("nusi_959_01", 959, "both"), ("nusi_959_02", 959, "both"),
+        ("nusi_944_01", 944, "both"), ("nusi_944_02", 944, "both"),
+        ("nusi_978_01", 978, "scarlet"), ("nusi_978_02", 978, "scarlet"),
+        ("nusi_986_01", 986, "violet"), ("nusi_986_02", 986, "violet"),
+        ("nusi_931_01", 931, "both"), ("nusi_931_02", 931, "both"),
+        ("nusi_952_01", 952, "both"),
     ];
     private readonly EventBattlePokemonArray table;
     private readonly Dictionary<string, EventBattlePokemon> records;
@@ -71,7 +71,7 @@ internal sealed class SvTitanSwapperDocument
             var pokemon = current.PokeData!.Value;
             var originalPokemon = original.PokeData!.Value;
             if (pokemon.DevId == originalPokemon.DevId && pokemon.FormId == originalPokemon.FormId) continue;
-            // Event labels use development IDs, while StorySpecies is the display index.
+            // Story and combat identities use the same game species IDs as names and models.
             if ((int)originalPokemon.DevId != int.Parse(encounter.Label.AsSpan(5, 3), System.Globalization.CultureInfo.InvariantCulture))
                 throw new InvalidDataException("The original Titan identity is not supported.");
             if (!records.ContainsKey(Prefix + encounter.Label) && (pokemon.FormId != 0 || pokemon.Level is < 1 or > 100))

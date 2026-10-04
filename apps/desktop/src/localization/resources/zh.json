@@ -4672,7 +4672,7 @@
     "marnieBoosts.diagnostic.stale": "助威源文件或输出已更改。请重新检查更改。",
     "marnieBoosts.diagnostic.apply": "无法应用助威输出。请检查源文件和输出文件夹，然后重新检查更改。",
     "heldItemChance.title": "携带道具概率",
-    "heldItemChance.subtitle": "设置剑／盾 1.3.2 的全局携带道具概率。在野生遭遇或宝可梦编辑器中单独选择道具。",
+    "heldItemChance.subtitle": "选择宝可梦及形态，然后为《剑／盾》1.3.2 设置三个携带道具及普通或提升后的概率。",
     "heldItemChance.readOnly": "需要兼容的剑／盾 1.3.2 源文件及已配置的输出目录。",
     "heldItemChance.normal": "普通概率",
     "heldItemChance.boosted": "提升后的概率",
@@ -4705,13 +4705,13 @@
     "heldItemChance.wildFailed": "无法暂存携带道具。请查看诊断后重试。",
     "heldItemChance.wildInvalid": "请为每个槽位选择有效道具。道具 0 表示无道具。",
     "heldItemChance.wildDraftScope": "下方道具属于遭遇中已暂存的种类及形态。请先暂存种类或形态更改，再编辑对应道具。",
-    "heldItemChance.diagnostic.source": "请检查所选游戏、原版 1.3.2 ExeFS 和输出文件。携带道具选择程序必须保持原样，每组概率合计不得超过 100%。",
-    "heldItemChance.diagnostic.rates": "请输入六个 0 至 100 的整数百分比。普通和提升后的概率合计分别不得超过 100%。",
-    "heldItemChance.diagnostic.session": "已暂存的携带道具概率无效。请重新暂存百分比。",
+    "heldItemChance.diagnostic.source": "请检查所选游戏、1.3.2 原版 ExeFS、宝可梦数据及输出。携带道具修改必须兼容，每组概率合计不得超过 100%。",
+    "heldItemChance.diagnostic.rates": "请选择三个有效道具，并输入六个 0 至 100 的整数百分比。普通概率与提升概率各自的合计均不得超过 100%。",
+    "heldItemChance.diagnostic.session": "已暂存的宝可梦道具或概率无效。请重新暂存受影响的宝可梦。",
     "heldItemChance.diagnostic.stale": "源文件或携带道具概率在审查后发生变化。请重新审查输出。",
     "heldItemChance.diagnostic.apply": "无法写入携带道具概率。请检查源文件和输出目录的访问权限，然后重新审查并应用。",
     "workbench.section.held-item-chance.label": "携带道具概率",
-    "workbench.section.held-item-chance.description": "设置剑／盾 1.3.2 的全局携带道具概率。在野生遭遇或宝可梦编辑器中单独选择道具。",
+    "workbench.section.held-item-chance.description": "选择宝可梦及形态，然后为《剑／盾》1.3.2 设置三个携带道具及普通或提升后的概率。",
     "titanRecovery.planned": "本次输出将修复未被外部修改、视为由 KM Editor 2.6.4 或更早版本生成的旧文件。保留受支持的宝主及派帕宝可梦替换，并禁用派帕五支宝主搭档队伍的太晶化。",
     "titanRecovery.source": "无法安全修复旧版宝主或派帕输出。请检查原始数据和受影响的输出文件，然后重新审查。",
     "titanRecovery.unsupported": "旧版宝主或派帕宝可梦替换使用了不受支持的种类或形态。请选择受支持的基础形态，然后重新审查。",
@@ -4761,7 +4761,15 @@
     "fixAiFlags.failed": "无法暂存所选修复。已保留您的选择。请检查诊断；若文件已更改，请刷新。",
     "workbench.section.fix-ai-flags.label": "修复 AI 标志",
     "workbench.section.fix-ai-flags.description": "检查《剑／盾》训练家数据中可能错误的换宝可梦标志。",
-    "fixAiFlags.why": "为什么 pkNX 数据可能需要修复"
+    "fixAiFlags.why": "为什么 pkNX 数据可能需要修复",
+    "heldItemChance.pokemonSubtitle": "选择宝可梦及形态，然后为《剑／盾》1.3.2 设置三个携带道具及普通或提升后的概率。",
+    "heldItemChance.pokemon": "宝可梦及形态",
+    "heldItemChance.itemSlot": "栏位 {number} 的道具",
+    "heldItemChance.customRates": "为此宝可梦使用自定义概率",
+    "heldItemChance.restoreRates": "恢复默认概率",
+    "heldItemChance.pokemonScope": "道具和概率由此宝可梦及形态在所有野生遭遇地点共享。其他宝可梦保留各自的设置。遭遇中明确指定的道具仍可能优先。",
+    "heldItemChance.customHelp": "即使两个栏位含有相同道具，自定义概率仍会生效。空栏位不提供道具。每只宝可梦只能携带一个道具。",
+    "heldItemChance.pokemonInvalid": "请选择有效道具，并输入 0 到 100 的整数百分比。普通概率和提升后概率的总和分别不得超过 100%。"
   },
   "literals": {
     "League Staff Isaac": "联盟工作人员 Isaac",
@@ -9202,6 +9210,7 @@
     "The AI scripts changed or need review. Refresh Fix AI Flags and acknowledge custom AI scripts.": "AI 脚本已更改或需要审核。请刷新“修复 AI 标志”，并确认已审核自定义 AI 脚本。",
     "A selected trainer changed, was previously fixed, or is no longer a candidate. Refresh and review it again.": "所选训练家已更改、之前已修复或不再符合候选条件。请刷新并重新审核。",
     "A selected trainer already has a staged AI flag edit. Apply or remove that edit before repairing this trainer.": "所选训练家已有暂存的 AI 标志编辑。修复此训练家前请应用或移除该编辑。",
-    "The reviewed AI flag repair no longer matches this trainer. Refresh Fix AI Flags and review it again.": "已审核的 AI 标志修复不再匹配此训练家。请刷新“修复 AI 标志”并重新审核。"
+    "The reviewed AI flag repair no longer matches this trainer. Refresh Fix AI Flags and review it again.": "已审核的 AI 标志修复不再匹配此训练家。请刷新“修复 AI 标志”并重新审核。",
+    "Choose items and normal or boosted chances for each Pokemon and form.": "选择宝可梦及形态，然后为《剑／盾》1.3.2 设置三个携带道具及普通或提升后的概率。"
   }
 }

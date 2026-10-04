@@ -210,7 +210,17 @@ public sealed partial class SwShEditableDumpProvider : IEditableDumpProvider
                     for (var index = 0; index < 6; index++)
                         record.Fields.Add(new(HeldItemRateFields[index], HeldItemRateFields[index], Value(data.Rates[index]), Minimum: 0, Maximum: 100));
                     records.Add(record);
-                    sourceFileCount = 1;
+                    foreach (var pokemon in data.Pokemon)
+                    {
+                        var id = pokemon.PersonalId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                        var label = string.IsNullOrWhiteSpace(pokemon.FormLabel) ? pokemon.Name : $"{pokemon.Name} ({pokemon.FormLabel})";
+                        var entry = new DumpRecord(id, label, category, id);
+                        entry.Fields.Add(new("custom_rates", "customRates", pokemon.CustomRates ? "1" : "0", Minimum: 0, Maximum: 1));
+                        for (var index = 0; index < 6; index++)
+                            entry.Fields.Add(new(HeldItemRateFields[index], HeldItemRateFields[index], Value(pokemon.Rates[index]), Minimum: 0, Maximum: 100));
+                        records.Add(entry);
+                    }
+                    sourceFileCount = 2;
                 }
                 break;
             }
