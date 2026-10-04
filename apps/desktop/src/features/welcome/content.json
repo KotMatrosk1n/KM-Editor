@@ -2,8 +2,243 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "version": "2.6.5",
+      "summary": {
+        "en": "KM Editor 2.6.5 adds editable YAML game dumps, Game Options and per Pokemon held item chances for Sword and Shield, and the Beta Titan Swapper for Scarlet and Violet. It also adds trainer AI flag repair and Mum's starting money, improves custom model previews, and fixes cache reuse, scrolling input and trainer controls."
+      },
+      "sections": [
+        {
+          "title": {
+            "en": "Editing And Output"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Game Dump exports readable, editable YAML for every available category across all five games. Named fields and nested records separate editable values from reference information, and large categories split into numbered files at record boundaries."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Dump Importer accepts YAML through the existing editor validators. Invalid entries identify the file, line, column and field while preserving the previous pending session. Valid reimports replace their own prior batch and retain unrelated edits. Existing CSV, TSV and JSON item price imports remain available."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Prepared caches are reused after projects reopen. Missing, changed or invalid entries are verified or rebuilt while current output remains separate from reusable base data."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Trainer search matches the name displayed in the trainer table. Party Pokemon, moves and source metadata no longer produce unrelated results."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Sword And Shield"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Game Options sets starting values and hides individual selections for all 16 stock options in version 1.3.2. On takes priority over Default; Off excludes a starting choice but leaves it available to players. Hide removes that choice from navigation. Existing saves retain visible player choices, while hidden saved values fall back to the configured start."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Held Item Chance provides three searchable item choices and separate normal and boosted percentages for each Pokemon and form. It uses the Pokemon editor's selector and search. Each rate group totals at most 100%, with the remainder and empty slots giving no item. Restoring default chances retains the selected items and other Pokemon's settings."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Custom held item rates apply literally even when the first two slots contain the same item. Pokemon without a custom override retain inherited rates and the original matching slot behavior. Explicit encounter items can still take priority. Refresh and upgrade an installed Gameplay Settings package after changing or restoring Held Item Chance or Game Options."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Fix AI Flags reviews possible legacy switching selections per trainer or as a batch. It stages the proposed Fire Gym Rival to Switch Pokemon correction through ordinary trainer editing, preserves other flags and unknown bits, and never changes records automatically on load. AI help explains the native script meanings and custom script limits."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "NPC Item Gift includes Mum's starting pocket money with one Amount field from 0 through 9,999,999 and a default of 30,000. The event adds the amount when it runs; this does not directly change an existing save balance. Other supported script edits remain preserved."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "The 60FPS Patch consumes each accepted list input once and retains queued directions through scrolling. Existing output needs the patch reapplied to receive the correction. Base prize money choices show calculated amounts using the last occupied trainer party slot's level x stored rate x 4. Necrozma, Dusk Mane and Dawn Wings retain distinct names and sprites."
+              },
+              "audience": [
+                "swsh"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Scarlet And Violet"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Titan Swapper is a Beta Editor for version 4.0.0. Choose a separate battle Pokemon and level for each of eleven phases while retaining the original story actor. The roster includes Klawf, Bombirdier, Orthworm, the edition's Great Tusk or Iron Treads, Dondozo and final Tatsugiri. Full encounter behavior remains pending in game verification, and native Gameplay Options cannot be combined with this editor."
+              },
+              "audience": [
+                "sv"
+              ]
+            },
+            {
+              "body": {
+                "en": "The five Titan partner teams synchronize supported base form lead changes with their scene actors. Terastallization is blocked for these teams because it can prevent the battle from progressing. Other partner teams keep their existing controls."
+              },
+              "audience": [
+                "sv"
+              ]
+            },
+            {
+              "body": {
+                "en": "The next editor output can repair eligible older KM owned Titan and Arven edits, including when applying an unrelated edit. Current choices and externally modified files are preserved. Titan phase rows also accommodate longer text without overlapping labels."
+              },
+              "audience": [
+                "sv"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Legends Z-A"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Project reopening reuses prepared cache progress and supported payloads within the selected cache mode and limits. Invalid entries still fall back to their original sources."
+              },
+              "audience": [
+                "za"
+              ]
+            },
+            {
+              "body": {
+                "en": "Atomic cache publication retries brief Windows access and sharing failures. The previous complete cache file remains available until replacement succeeds; persistent failures still report normally."
+              },
+              "audience": [
+                "za"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "3D Model Editor"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Supported custom replacements in the existing game formats use their current geometry, materials, textures and animations for preview and editing. Original comparison and restoration resolve clean base dependencies separately, preserving unrelated resources."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Preview handles additional BGRA textures, stored mip tails, repeated node labels, incomplete preview triangles and BC7 edge blocks. Malformed or unsupported resources remain rejected rather than being rewritten to fit the preview."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Supported fire materials use their source colors, textures, linked masks and animation channels. Enabled emission maps retain their authored gain. Fire rendering remains approximate; these improvements do not add geometry, skeleton or animation authoring."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Interface And Navigation"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Editor guidance and diagnostics have improved translations across all seven interface languages. The welcome hub includes the 2.6.5 notes and a new developer message, with contextual help for Game Options, Held Item Chance, Fix AI Flags and Titan Swapper."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Release Metadata"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Application, setup, updater and window title metadata identify KM Editor 2.6.5 consistently."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "The Windows release includes the custom x64 setup executable, its updater signature, the updater manifest and checksums."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": {
+            "en": "Full changelog"
+          },
+          "url": "https://github.com/KotMatrosk1n/KM-Editor/compare/v2.6.4...v2.6.5"
+        }
+      ]
+    },
+    {
       "version": "2.6.3",
-      "hotfixVersions": ["2.6.4"],
+      "hotfixVersions": [
+        "2.6.4"
+      ],
       "summary": {
         "en": "KM Editor 2.6.3 introduces Basic and Advanced mod merging with archive imports and optional package selection. It adds Legends Z-A Behavior and Alpha Size controls, Marnie Wyndon Boosts for Sword and Shield, clearer evolution and relearn moves, and fixes for editing performance, output compatibility and 60 FPS timing."
       },
@@ -1474,6 +1709,46 @@
   ],
   "announcements": [
     {
+      "id": "build-your-adventure-2-6-5",
+      "title": {
+        "en": "Build the adventure you want to play",
+        "de": "Gestalte das Abenteuer, das du spielen möchtest",
+        "es": "Crea la aventura que quieres jugar",
+        "fr": "Créez l’aventure à laquelle vous voulez jouer",
+        "ru": "Создайте приключение, в которое хочется играть",
+        "uk": "Створіть пригоду, у яку хочеться грати",
+        "zh": "创造你想玩的冒险"
+      },
+      "body": {
+        "en": "KM Editor helps turn your ideas into playable adventures, from small tweaks to complete overhauls. Your feedback helps me improve it. Thanks for creating with KM Editor!",
+        "de": "KM Editor macht aus deinen Ideen spielbare Abenteuer, von kleinen Anpassungen bis zu umfassenden Überarbeitungen. Dein Feedback hilft mir, den Editor zu verbessern. Danke, dass du mit KM Editor kreativ wirst!",
+        "es": "KM Editor te ayuda a convertir tus ideas en aventuras jugables, desde pequeños ajustes hasta transformaciones completas. Tus comentarios me ayudan a mejorarlo. ¡Gracias por crear con KM Editor!",
+        "fr": "KM Editor vous aide à transformer vos idées en aventures jouables, des petits ajustements aux refontes complètes. Vos retours m’aident à l’améliorer. Merci de créer avec KM Editor !",
+        "ru": "KM Editor помогает превратить ваши идеи в игровые приключения: от небольших изменений до полной переработки игры. Ваши отзывы помогают мне делать редактор лучше. Спасибо, что создаёте с KM Editor!",
+        "uk": "KM Editor допомагає втілити ваші ідеї в ігрові пригоди: від невеликих змін до повного переосмислення гри. Ваші відгуки допомагають мені вдосконалювати редактор. Дякую, що творите з KM Editor!",
+        "zh": "KM Editor 帮助你将想法变成可以亲自游玩的冒险，无论是细微调整还是全面改造。你的反馈帮助我不断改进。感谢你使用 KM Editor 进行创作！"
+      },
+      "audience": [
+        "all"
+      ],
+      "published": "2026-10-04",
+      "featured": true,
+      "links": [
+        {
+          "label": {
+            "en": "Report an issue",
+            "de": "Problem melden",
+            "es": "Informar de un problema",
+            "fr": "Signaler un problème",
+            "ru": "Сообщить о проблеме",
+            "uk": "Повідомити про проблему",
+            "zh": "报告问题"
+          },
+          "url": "https://github.com/KotMatrosk1n/KM-Editor/issues/new/choose"
+        }
+      ]
+    },
+    {
       "id": "mod-merger-2-6-3",
       "title": {
         "en": "Make the game your own",
@@ -1497,7 +1772,7 @@
         "all"
       ],
       "published": "2026-09-24",
-      "featured": true,
+      "featured": false,
       "links": [
         {
           "label": {

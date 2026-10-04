@@ -14,12 +14,15 @@ KM Editor is a Windows desktop modding toolkit for Pokémon Sword and Shield, Po
 ## Editors and Tools
 
 - Edit Pokémon, trainer teams, moves, items, encounters, and other supported records with names, sprites, search, and controls specific to each game.
+- Choose Sword and Shield starting settings and hidden selections in [Game Options](https://github.com/KotMatrosk1n/KM-Editor/wiki/Game-Options), or set three items and separate normal and boosted rates per Pokémon and form in [Held Item Chance](https://github.com/KotMatrosk1n/KM-Editor/wiki/Held-Item-Chance).
 - Control Sword and Shield trainer battle permissions in [Trainer Dynamax](https://github.com/KotMatrosk1n/KM-Editor/wiki/Trainer-Dynamax), loss behavior in [Trainer Whiteout](https://github.com/KotMatrosk1n/KM-Editor/wiki/Trainer-Whiteout), and den interaction in [Raid Dens](https://github.com/KotMatrosk1n/KM-Editor/wiki/Raid-Dens). Trainer Dynamax and Trainer Whiteout are Beta editors.
 - Adjust Sword and Shield cheering outcomes in [Marnie Wyndon Boosts](https://github.com/KotMatrosk1n/KM-Editor/wiki/Marnie-Wyndon-Boosts), or wild temperament and perception in the Legends Z-A [Behavior editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/Legends-Z-A-Behavior-Editor).
 - Edit Team Star bosses in the Scarlet and Violet [Starmobiles editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/Starmobiles-Editor), including supported stats, types, abilities, and moves.
+- Choose separate Scarlet and Violet Titan battle replacements while retaining their story actors in [Titan Swapper](https://github.com/KotMatrosk1n/KM-Editor/wiki/Titan-Swapper). This Beta editor still needs full encounter verification and cannot be combined with native Gameplay Options.
 - Inspect models and animations, recolor textures, edit supported materials, and restore original assets in the [3D Model Editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/3D-Model-Editor) for all five games.
 - Browse and play discovered game recordings in [Sound Studio](https://github.com/KotMatrosk1n/KM-Editor/wiki/Sound-Studio), with seeking, loops, volume controls, and audio meters.
 - Review staged changes and output plans, inspect completed History entries, and manage checkpoints and recovery through the shared output tools.
+- Export and edit supported records as [YAML game dumps](docs/game-dump-yaml.md), then import them through the normal editor checks and output review.
 - Organize projects with recents, pins, bookmarks, saved views, and notes. Workbench adds exploration, comparison, and analysis tools that do not write game data.
 
 Supported fields and output rules differ by game. The [wiki](https://github.com/KotMatrosk1n/KM-Editor/wiki) explains each editor's workflow, data model, and limits.
@@ -75,7 +78,7 @@ Clean Base RomFS and Base ExeFS inputs remain untouched. Normal edits write to a
 
 ## Learn More
 
-The [editable YAML Game Dump guide](docs/game-dump-yaml.md) explains category exports, editable fields, import validation and source error locations for all supported games.
+The [editable YAML Game Dump guide](docs/game-dump-yaml.md) explains category exports, editable fields, import validation and source error locations for all supported games. Sword and Shield's [Fix AI Flags](https://github.com/KotMatrosk1n/KM-Editor/wiki/Fix-AI-Flags) tool also provides a reviewed repair for possible legacy switching selections.
 
 | What do you need?              | Start here                                                                                                |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------- |
