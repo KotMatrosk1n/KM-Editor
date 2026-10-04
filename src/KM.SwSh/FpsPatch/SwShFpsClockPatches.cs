@@ -253,7 +253,8 @@ internal static class SwShFpsClockPatches
     ];
 
     public static IReadOnlyList<SwShFpsMainPatcher.MainPatch> ForGame(ProjectGame game) =>
-        game == ProjectGame.Sword ? Sword : Shield;
+        (game == ProjectGame.Sword ? Sword : Shield)
+            .Concat(SwShFpsListInputPatches.ForGame(game)).ToArray();
 
     public static IEnumerable<SwShExeFsReservedRegion> CreateReservations()
     {

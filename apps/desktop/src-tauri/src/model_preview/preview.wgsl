@@ -111,6 +111,47 @@ fn game_highlight(value: vec3<f32>) -> vec3<f32> {
     return value / (1.0 + peak / .22);
 }
 @fragment fn fs_main(input: VertexOutput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    if material.flags.w > 0.0 {
+        // Fire masks write only stencil coverage. The linked core uses its own
+        // color textures; the mask mesh must never become an opaque white shell.
+        let first_uv = transform_uv(input.uv, material.uv);
+        let second_uv = transform_uv(input.uv, material.mask_uv);
+        let first = textureSample(base_color, base_sampler, coordinates(first_uv, material.wrap.xy, material.texture_scale.xy, textureDimensions(base_color))).r;
+        let second = textureSample(layer_mask, base_sampler, coordinates(second_uv, material.wrap.zw, material.texture_scale.zw, textureDimensions(layer_mask))).r;
+        if material.flags.w == 2.0 {
+            if first + second < material.surface[7].y { discard; }
+            return vec4<f32>(0.0);
+        }
+        let third_uv = transform_uv(input.uv, material.underlay_uv);
+        let third = textureSample(underlay_texture, base_sampler, coordinates(third_uv, material.underlay_wrap.xy, material.underlay_scale.xy, textureDimensions(underlay_texture))).r;
+        let layer = clamp(mix(second, third, first), 0.0, 1.0);
+        let color_lerp = clamp(material.surface[6].x, 0.0, 1.0);
+        var n = normalize(input.normal + vec3<f32>(0.00001));
+        n = select(-n, n, front);
+        let v = normalize(camera.eye.xyz - input.world + vec3<f32>(0.00001));
+        let rim = pow(1.0 - abs(dot(n, v)), max(material.surface[8].x, .01)) * material.surface[8].y;
+        let outer = mix(material.surface[0].rgb, material.surface[1].rgb, color_lerp) * (1.0 + rim * material.surface[7].z);
+        let inner = mix(material.surface[2].rgb, material.surface[3].rgb, color_lerp) * (1.0 + rim * material.surface[7].w);
+        let albedo = mix(outer, inner, layer) * mix(vec3<f32>(1.0), material.surface[5].rgb, clamp(material.surface[6].y, 0.0, 1.0)) * material.surface[4].rgb * material.surface[6].z;
+        let to_light = camera.light.xyz - input.world;
+        let d2 = max(dot(to_light, to_light), .000001);
+        let in_game = camera.environment.x > 0.0;
+        let l = select(to_light * inverseSqrt(d2), normalize(vec3<f32>(-.5, .75, .45)), in_game);
+        let illumination = select(vec3<f32>(max(dot(n, l), 0.0) * camera.light.w / d2), game_fill(n) + vec3<f32>(game_key(dot(n, l))), in_game);
+        let gain = max(material.surface[6].w, 0.0);
+        var rgb = albedo * (illumination * (1.0 - clamp(gain, 0.0, 1.0)) + vec3<f32>(gain));
+        switch u32(camera.eye.w) {
+            case 1u: { rgb = albedo; }
+            case 2u: { rgb = n * .5 + .5; }
+            case 3u, 5u: { rgb = vec3<f32>(1.0); }
+            case 4u: { rgb = vec3<f32>(0.0); }
+            case 6u: { rgb = vec3<f32>(layer); }
+            default: {}
+        }
+        let alpha = clamp(material.surface[7].x, 0.0, 1.0);
+        if alpha < .001 { discard; }
+        return vec4<f32>(rgb, alpha);
+    }
     // Source tiles share a material texture; animated offsets apply within that tile.
     let uv = rotate_uv(transform_uv(input.uv, material.uv), material.surface[10].x, material.surface[36].xy);
     var base = textureSample(base_color, base_sampler, coordinates(uv, material.wrap.xy, material.texture_scale.xy, textureDimensions(base_color))) * material.color;
@@ -217,7 +258,7 @@ fn game_highlight(value: vec3<f32>) -> vec3<f32> {
         let albedo = rgb;
         rgb = lit + emission_color + highlight.r * material.highlight_color.rgb;
         if material.surface[39].w > 0.0 {
-            let emission_weight = emission * max(material.surface[1].z, 0.0);
+            let emission_weight = emission * max(material.surface[1].z * material.surface[5].w, 0.0);
             rgb = lit * (vec3<f32>(1.0) - clamp(emission_weight, vec3<f32>(0.0), vec3<f32>(1.0))) + albedo * emission_weight;
         }
         if base.a < max(.001, material.surface[1].w) || any(cutout < material.surface[40]) { discard; }

@@ -40,6 +40,12 @@ public sealed class SwShPreviewReader(Func<string, byte[]> read)
         {
             var name = data.Text(material, 0) ?? throw new InvalidDataException("Material identity is missing.");
             var surface = PreviewSurface.Read(data, material, true);
+            var fire = SwShPreviewFire.Kind(data.Text(material, 1));
+            var switches = data.Tables(material, 12, 256).ToDictionary(p => data.Text(p, 0) ?? "",
+                p => data.Field(p, 1) is var at && at != 0 ? data.U8(at) : 0, StringComparer.Ordinal);
+            var emission = fire == 0 && switches.GetValueOrDefault("EmissionMaskUse") != 0
+                && switches.GetValueOrDefault("SwitchEmissionMaskTexUV") == 0;
+            if (emission) surface.Values[1][2] = 1;
             var color = Vector4.One;
             var layers = new[] { Vector4.One, Vector4.One, Vector4.One, Vector4.One };
             foreach (var parameter in data.Tables(material, 14, 256))
@@ -62,6 +68,7 @@ public sealed class SwShPreviewReader(Func<string, byte[]> read)
             var underlayWrap = Vector4.Zero;
             var wrap = Vector4.Zero;
             var uv = new Vector4(1, 1, 0, 0);
+            Vector4? maskUv = null;
             var origins = Vector4.Zero;
             foreach (var parameter in data.Tables(material, 13, 256))
             {
@@ -81,15 +88,29 @@ public sealed class SwShPreviewReader(Func<string, byte[]> read)
                     case "ColorBaseV": origins.Y = value; break;
                     case "Layer1BaseU": origins.Z = value; break;
                     case "Layer1BaseV": origins.W = value; break;
+                    case "EmissionMaskVal" when emission: surface.Values[1][2] = value; break;
                 }
+            }
+            if (emission)
+            {
+                var gain = data.Tables(material, 13, 256).FirstOrDefault(p => data.Text(p, 0) == "OnGameEmissionVal");
+                if (gain != 0) surface.Values[5][3] = data.Field(gain, 1) is var at && at != 0 ? data.Float(at) : 0;
+            }
+            if (fire != 0)
+            {
+                warnings.Add("materialEffectApproximate");
+                surface = SwShPreviewFire.Read(data, material, surface, fire, out uv, out var fireMaskUv, out underlayUv);
+                maskUv = fireMaskUv;
             }
             foreach (var binding in data.Tables(material, 11, 32))
             {
                 var role = data.Text(binding, 0);
+                if (fire != 0) role = SwShPreviewFire.TextureRole(fire, role ?? "");
+                else if (role == "EmissionMaskTex" && emission) role = "EmissionMap";
                 var surfaceSlot = PreviewSurface.TextureSlot(role ?? "");
                 if (role is not ("Col0Tex" or "LyCol0Tex" or "Col0ColChangeTex") && surfaceSlot < 0) continue;
                 // An identity color change does not consume its placeholder mask.
-                if (role == "Col0ColChangeTex" && layers.Take(3).All(layer => layer == Vector4.One)) continue;
+                if (fire == 0 && role == "Col0ColChangeTex" && layers.Take(3).All(layer => layer == Vector4.One)) continue;
                 var index = checked((int)data.Value(binding, 1));
                 if (index >= names.Length) throw new InvalidDataException("Material texture index is invalid.");
                 var textureName = names[index] + ".bntx";
@@ -115,10 +136,10 @@ public sealed class SwShPreviewReader(Func<string, byte[]> read)
                 else if (role == "Col0ColChangeTex") { mask = loaded; wrap.Z = Address(1); wrap.W = Address(2); }
                 else { underlay = loaded; underlayWrap = new(Address(1), Address(2), 0, 0); }
             }
-            color = new(surface.Values[39][0], surface.Values[39][1], surface.Values[39][2], color.W);
+            color = fire != 0 ? Vector4.One : new(surface.Values[39][0], surface.Values[39][1], surface.Values[39][2], color.W);
             return new PreviewMaterial(name, texture, mask, color, layers,
                 uv, data.Value(material, 6) == 0 ? "Opaque" : "Blend")
-            { Surface = surface, Wrap = wrap, UvOrigins = origins, MaskChannels = new(1, 1, 1, 0), Underlay = underlay, UnderlayUv = underlayUv, UnderlayWrap = underlayWrap };
+            { Surface = surface, Wrap = wrap, MaskUv = maskUv, UvOrigins = origins, MaskChannels = new(1, 1, 1, 0), Underlay = underlay, UnderlayUv = underlayUv, UnderlayWrap = underlayWrap };
         }).ToArray();
     }
 

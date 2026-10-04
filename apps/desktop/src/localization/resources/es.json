@@ -2611,7 +2611,7 @@
     "fieldHelp.catalog.trainer.battleSetup": "Controla un valor de preparación general del combate, como el tipo o rango",
     "fieldHelp.catalog.trainer.ai": "Guarda indicadores de IA de combate. Usa los controles con nombre para conservar los bits no relacionados",
     "fieldHelp.catalog.trainer.money": "Guarda la tasa de dinero del entrenador específica de cada juego, no el pago final",
-    "fieldHelp.catalog.trainer.money.swsh": "Guarda la tasa de dinero interna del entrenador de Espada y Escudo. Su cálculo exacto no está verificado, así que KM no la presenta como una cantidad final",
+    "fieldHelp.catalog.trainer.money.swsh": "Muestra el premio base: nivel del último puesto ocupado del equipo x tasa de dinero x 4. Cambiar el nivel de ese puesto actualiza las cantidades. Guarda una tasa de 0 a 255; las bonificaciones del jugador pueden aumentar el premio final.",
     "fieldHelp.catalog.trainer.money.sv": "Guarda la tasa de dinero con signo del entrenador de Escarlata y Púrpura. KM muestra la tasa interna porque su cálculo exacto no está verificado",
     "fieldHelp.catalog.trainer.money.za": "Guarda la tasa de dinero del entrenador de Z-A como un valor sin signo de 0 a 255. El premio base es nivel más alto del equipo x tasa x 4; otros bonos del jugador pueden aumentar la recompensa final",
     "fieldHelp.catalog.trainer.specialMechanic": "Habilita una mecánica de combate propia del juego. Aun puede requerir un Pokémon compatible y un contexto de combate válido",
@@ -4769,7 +4769,8 @@
     "heldItemChance.restoreRates": "Restaurar probabilidades predeterminadas",
     "heldItemChance.pokemonScope": "Los objetos y las probabilidades se comparten para este Pokémon y esta forma en todos los encuentros salvajes. Los demás Pokémon conservan sus ajustes. Los objetos explícitos de un encuentro pueden tener prioridad.",
     "heldItemChance.customHelp": "Las probabilidades personalizadas se aplican aunque dos ranuras tengan el mismo objeto. Las ranuras vacías no dan ningún objeto. Un Pokémon solo puede llevar un objeto.",
-    "heldItemChance.pokemonInvalid": "Elige objetos válidos y porcentajes enteros entre 0 y 100. Cada grupo de probabilidades normales y aumentadas debe sumar como máximo 100%."
+    "heldItemChance.pokemonInvalid": "Elige objetos válidos y porcentajes enteros entre 0 y 100. Cada grupo de probabilidades normales y aumentadas debe sumar como máximo 100%.",
+    "modelViewer.warning.materialEffectApproximate": "Los colores del fuego, las texturas en movimiento y las máscaras se muestran de forma aproximada. Su aspecto puede variar en el juego."
   },
   "literals": {
     "League Staff Isaac": "Isaac, personal de la Liga",

@@ -33546,7 +33546,8 @@ function createContextualTrainerFields(
   pokemonFields: TrainerEditableField[],
   draftsByTrainerSlot: Record<string, Record<string, string>>
 ) {
-  const projectedHighestLevel = getProjectedTrainerHighestLevel(
+  const projectedPrizeLevel = getProjectedTrainerPrizeLevel(
+    editorFamily,
     trainer,
     pokemonFields,
     draftsByTrainerSlot
@@ -33556,14 +33557,12 @@ function createContextualTrainerFields(
       ? {
           ...field,
           label:
-            editorFamily === 'swsh'
-              ? 'Prize money rate'
-              : editorFamily === 'za'
-                ? 'Base prize money'
-                : field.label,
+            editorFamily === 'swsh' || editorFamily === 'za'
+              ? 'Base prize money'
+              : field.label,
           options:
-            editorFamily === 'za'
-              ? createZaTrainerPrizeMoneyOptions(projectedHighestLevel, formatLocale)
+            editorFamily === 'swsh' || editorFamily === 'za'
+              ? createTrainerPrizeMoneyOptions(projectedPrizeLevel, formatLocale)
               : field.options
         }
       : field
@@ -33878,17 +33877,19 @@ function clampInteger(value: number, minimum: number, maximum: number) {
   return Math.min(Math.max(value, minimum), maximum);
 }
 
-function getProjectedTrainerHighestLevel(
+function getProjectedTrainerPrizeLevel(
+  editorFamily: EditorUiFamily,
   trainer: TrainerRecord | null,
   fields: TrainerEditableField[],
   draftsByTrainerSlot: Record<string, Record<string, string>>
 ) {
   if (!trainer || trainer.team.length === 0) {
-    return 0;
+    return editorFamily === 'za' ? 1 : 0;
   }
 
-  return Math.max(
-    ...trainer.team.map((pokemon) => {
+  const occupiedLevels = [...trainer.team]
+    .sort((left, right) => left.slot - right.slot)
+    .flatMap((pokemon) => {
       const drafts = canonicalizeTrainerPokemonDrafts(
         pokemon,
         fields,
@@ -33898,15 +33899,17 @@ function getProjectedTrainerHighestLevel(
         getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, speciesIdFieldName) ??
         pokemon.speciesId;
       if (speciesId === 0) {
-        return 0;
+        return [];
       }
 
-      return (
+      return [
         getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, levelFieldName) ??
         pokemon.level
-      );
-    })
-  );
+      ];
+    });
+  return editorFamily === 'swsh'
+    ? occupiedLevels.at(-1) ?? 0
+    : Math.max(1, ...occupiedLevels);
 }
 
 function getOccupiedTrainerPokemonCount(trainer: TrainerRecord) {
@@ -34100,24 +34103,18 @@ function isTrainerPokemonSlotEmpty(
   return (draftedSpeciesId ?? pokemon.speciesId) === 0;
 }
 
-function createZaTrainerPrizeMoneyOptions(
-  highestLevel: number,
+function createTrainerPrizeMoneyOptions(
+  prizeLevel: number,
   formatLocale: string
 ): EditableFieldOption[] {
-  const normalizedHighestLevel = Math.max(1, highestLevel);
-
   return Array.from({ length: 256 }, (_, rate) => {
-    const payout = getZaTrainerBasePrizeMoney(normalizedHighestLevel, rate);
+    const payout = prizeLevel * rate * 4;
 
     return {
       label: `$${payout.toLocaleString(formatLocale)} (rate ${rate})`,
       value: rate
     };
   });
-}
-
-function getZaTrainerBasePrizeMoney(highestLevel: number, rate: number) {
-  return highestLevel * rate * 4;
 }
 
 type NumericEditableFieldSource = EditableFieldWithOptions & {
@@ -59703,13 +59700,6 @@ function filterTextEntries(entries: TextEntryRecord[], searchText: string) {
   );
 }
 
-function matchesSearchPrefix(value: string, normalizedSearch: string) {
-  const normalizedValue = value.toLocaleLowerCase();
-  return normalizedValue.includes(normalizedSearch) || normalizedValue
-    .split(/[^a-z0-9]+/)
-    .some((token) => token.startsWith(normalizedSearch));
-}
-
 type TrainerCategory = {
   count: number;
   description: string;
@@ -59829,16 +59819,6 @@ function getZaTrainerCategoryId(
   return 'named';
 }
 
-function getZaGeneratedTrainerCategoryLabel(trainer: TrainerRecord) {
-  const categoryId = getZaTrainerCategoryId(trainer);
-
-  if (categoryId === 'named') {
-    return '';
-  }
-
-  return zaTrainerCategoryDetails[categoryId]?.label ?? zaTrainerCategoryDetails.generated.label;
-}
-
 function isGeneratedZaTrainerRow(trainer: TrainerRecord) {
   const location = trainer.location.toLocaleLowerCase();
   const name = trainer.name.toLocaleLowerCase();
@@ -59864,45 +59844,7 @@ function filterTrainers(trainers: TrainerRecord[], searchText: string) {
   }
 
   return trainers.filter((trainer) =>
-    [
-      trainer.trainerId.toString(),
-      trainer.name,
-      trainer.location,
-      trainer.trainerClass,
-      trainer.trainerClassId.toString(),
-      trainer.classBall ?? '',
-      trainer.classBallId?.toString() ?? '',
-      trainer.classBallScope,
-      trainer.battleType,
-      getZaGeneratedTrainerCategoryLabel(trainer),
-      ...trainer.itemIds.map((itemId) => itemId.toString()),
-      ...trainer.items,
-      trainer.aiFlags.toString(),
-      ...trainer.aiFlagStates.flatMap((flag) => [
-        flag.label,
-        flag.description,
-        flag.enabled ? 'enabled' : ''
-      ]),
-      trainer.heal ? 'heal' : '',
-      trainer.money.toString(),
-      trainer.gift.toString(),
-      trainer.provenance.sourceFile,
-      trainer.provenance.teamSourceFile,
-      ...trainer.team.flatMap((pokemon) => [
-        pokemon.species,
-        pokemon.speciesId.toString(),
-        pokemon.level.toString(),
-        pokemon.heldItem ?? '',
-        pokemon.genderLabel,
-        pokemon.gender.toString(),
-        pokemon.abilityLabel,
-        pokemon.ability.toString(),
-        pokemon.natureLabel,
-        pokemon.nature.toString(),
-        ...pokemon.moves,
-        ...pokemon.moveIds.map((moveId) => moveId.toString())
-      ])
-    ].some((value) => matchesSearchPrefix(value, normalizedSearch))
+    trainer.name.toLocaleLowerCase().includes(normalizedSearch)
   );
 }
 
@@ -64265,7 +64207,9 @@ function getPokemonIdentityFormSpriteIds({
   speciesId,
   spriteName
 }: PokemonSpriteIdentity) {
-  const normalizedSpriteName = spriteName?.trim();
+  const normalizedSpriteName = spriteName
+    ? stripTrailingKnownSpeciesFormLabels(spriteName, speciesId, editorFamily)
+    : undefined;
   if (!normalizedSpriteName || form === undefined) {
     return [];
   }
@@ -67073,9 +67017,14 @@ export function formatSpeciesFormLabel(
   }
 
   const displaySpecies =
-    formLabel === undefined ? species : stripTrailingGenericFormLabel(species, form);
+    formLabel === undefined
+      ? species
+      : stripTrailingKnownSpeciesFormLabels(species, speciesId, gameFamily);
   if (form === 0) {
-    return formLabel === undefined || speciesAlreadyIncludesFormLabel(displaySpecies, formLabel)
+    return formLabel === undefined ||
+      speciesId === 800 ||
+      normalizeSpeciesName(displaySpecies) === normalizeSpeciesName(formLabel) ||
+      speciesAlreadyIncludesFormLabel(displaySpecies, formLabel)
       ? displaySpecies
       : `${displaySpecies} (${formLabel})`;
   }
@@ -67089,12 +67038,36 @@ export function formatSpeciesFormLabel(
     : `${displaySpecies} (${displayLabel})`;
 }
 
-function stripTrailingGenericFormLabel(species: string, form: number) {
-  if (form < 0) {
-    return species;
+function stripTrailingKnownSpeciesFormLabels(
+  species: string,
+  speciesId?: number,
+  gameFamily?: EditorUiFamily
+) {
+  const labels = getSpeciesFormLabelData(gameFamily);
+  const knownLabels = new Set<string>();
+  if (speciesId !== undefined) {
+    for (const [key, label] of labels.labelsBySpeciesId) {
+      if (key.startsWith(`${speciesId}:`)) {
+        knownLabels.add(normalizeSpeciesName(label));
+      }
+    }
+    const baseLabel = labels.baseLabelsBySpeciesId.get(speciesId);
+    if (baseLabel) {
+      knownLabels.add(normalizeSpeciesName(baseLabel));
+    }
   }
-
-  return species.replace(new RegExp(`\\s*\\(Form\\s+${form}\\)\\s*$`, 'i'), '').trim();
+  let result = species.trim();
+  while (true) {
+    const suffix = result.match(/\s*\(([^()]*)\)\s*$/);
+    if (
+      !suffix ||
+      (!/^form\s+\d+$/i.test(suffix[1]) &&
+        !knownLabels.has(normalizeSpeciesName(suffix[1])))
+    ) {
+      return result;
+    }
+    result = result.slice(0, suffix.index).trimEnd();
+  }
 }
 
 function formatSpeciesFormOptionLabel(form: number, context: SpeciesFormOptionContext) {

@@ -27,6 +27,8 @@ pub struct Renderer {
     config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
     blend_pipeline: wgpu::RenderPipeline,
+    fire_pipeline: wgpu::RenderPipeline,
+    mask_pipeline: wgpu::RenderPipeline,
     wire_pipeline: wgpu::RenderPipeline,
     pub inspection: super::inspection::Inspection,
     display: u32,
@@ -240,23 +242,33 @@ impl Renderer {
             bind_group_layouts: &[&camera_layout, &material_layout],
             push_constant_ranges: &[],
         });
-        let create_pipeline = |blend: bool, wire: bool| {
+        let create_pipeline = |blend: bool, wire: bool, effect: u32| {
+            let stencil_face = wgpu::StencilFaceState {
+                compare: if effect == 1 { wgpu::CompareFunction::Equal } else { wgpu::CompareFunction::Always },
+                fail_op: wgpu::StencilOperation::Keep,
+                depth_fail_op: wgpu::StencilOperation::Keep,
+                pass_op: if effect == 2 { wgpu::StencilOperation::Replace } else { wgpu::StencilOperation::Keep },
+            };
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Static model"), layout: Some(&layout),
             vertex: wgpu::VertexState { module: &shader, entry_point: Some(if wire { "vs_wire" } else { "vs_main" }), compilation_options: Default::default(),
                 buffers: &[wgpu::VertexBufferLayout { array_stride: 64, step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32x4, 4 => Float32x4] }] },
             fragment: Some(wgpu::FragmentState { module: &shader, entry_point: Some(if wire { "fs_wire" } else { "fs_main" }), compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState { format: config.format, blend: if blend { Some(wgpu::BlendState::ALPHA_BLENDING) } else { None }, write_mask: wgpu::ColorWrites::ALL })] }),
+                targets: &[Some(wgpu::ColorTargetState { format: config.format, blend: if blend { Some(wgpu::BlendState::ALPHA_BLENDING) } else { None }, write_mask: if effect == 2 { wgpu::ColorWrites::empty() } else { wgpu::ColorWrites::ALL } })] }),
             primitive: wgpu::PrimitiveState { topology: if wire { wgpu::PrimitiveTopology::LineList } else { wgpu::PrimitiveTopology::TriangleList }, cull_mode: None, ..Default::default() },
-            depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth32Float, depth_write_enabled: !blend && !wire,
-                depth_compare: wgpu::CompareFunction::LessEqual, stencil: Default::default(), bias: wgpu::DepthBiasState { constant: if wire { -2 } else { 0 }, ..Default::default() } }),
+            depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth24PlusStencil8, depth_write_enabled: !blend && !wire && effect == 0,
+                depth_compare: if effect == 2 { wgpu::CompareFunction::Always } else { wgpu::CompareFunction::LessEqual },
+                stencil: wgpu::StencilState { front: stencil_face, back: stencil_face, read_mask: 255, write_mask: if effect == 2 { 255 } else { 0 } },
+                bias: wgpu::DepthBiasState { constant: if wire { -2 } else { 0 }, ..Default::default() } }),
             multisample: Default::default(), multiview: None, cache: None
         })
         };
-        let pipeline = create_pipeline(false, false);
-        let blend_pipeline = create_pipeline(true, false);
-        let wire_pipeline = create_pipeline(false, true);
+        let pipeline = create_pipeline(false, false, 0);
+        let blend_pipeline = create_pipeline(true, false, 0);
+        let wire_pipeline = create_pipeline(false, true, 0);
+        let fire_pipeline = create_pipeline(true, false, 1);
+        let mask_pipeline = create_pipeline(false, false, 2);
         let inspection = super::inspection::Inspection::take(&mut scene);
         let background = super::background::Background::new(&device, config.format);
         let mut result = Self {
@@ -267,6 +279,8 @@ impl Renderer {
             config,
             pipeline,
             blend_pipeline,
+            fire_pipeline,
+            mask_pipeline,
             wire_pipeline,
             inspection,
             display: 0,
@@ -344,7 +358,7 @@ impl Renderer {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Depth32Float,
+                format: wgpu::TextureFormat::Depth24PlusStencil8,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                 view_formats: &[],
             })
@@ -643,7 +657,7 @@ impl Renderer {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Discard,
                     }),
-                    stencil_ops: None,
+                    stencil_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(0), store: wgpu::StoreOp::Discard }),
                 }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
@@ -662,6 +676,7 @@ impl Renderer {
                     .enumerate()
                     .filter(|(_, mesh)| mesh.blend == blend)
                 {
+                    if self.rig.meshes[i].surface.as_ref().is_some_and(|s| s.effect > 0) { continue; }
                     if self.hidden.contains(&i) || !self.rig.visible(i, frame_position) {
                         continue;
                     }
@@ -669,6 +684,25 @@ impl Renderer {
                     pass.set_vertex_buffer(0, mesh.vertices.slice(..));
                     pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
                     pass.draw_indexed(0..mesh.count, 0, 0..1);
+                }
+            }
+            // Each mask group is immediately followed by its linked cores, so
+            // overlapping effects cannot replace another group's coverage.
+            let links: std::collections::BTreeSet<_> = self.rig.meshes.iter()
+                .filter_map(|m| m.surface.as_ref().filter(|s| s.effect == 1).map(|s| s.effect_link)).collect();
+            for link in links {
+                let masked = self.rig.meshes.iter().any(|m| m.surface.as_ref().is_some_and(|s| s.effect == 2 && s.effect_link == link));
+                for effect in [2, 1] {
+                    pass.set_pipeline(if effect == 2 { &self.mask_pipeline } else if masked { &self.fire_pipeline } else { &self.blend_pipeline });
+                    pass.set_stencil_reference(link + 1);
+                    for (i, mesh) in self.meshes.iter().enumerate() {
+                        if !self.rig.meshes[i].surface.as_ref().is_some_and(|s| s.effect == effect && s.effect_link == link)
+                            || self.hidden.contains(&i) || !self.rig.visible(i, frame_position) { continue; }
+                        pass.set_bind_group(1, &mesh.material, &[]);
+                        pass.set_vertex_buffer(0, mesh.vertices.slice(..));
+                        pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
+                        pass.draw_indexed(0..mesh.count, 0, 0..1);
+                    }
                 }
             }
             pass.set_pipeline(&self.wire_pipeline);

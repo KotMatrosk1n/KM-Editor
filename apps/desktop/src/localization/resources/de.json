@@ -2611,7 +2611,7 @@
     "fieldHelp.catalog.trainer.battleSetup": "Steuert einen trainerweiten Kampfwert wie Kampftyp oder Rang",
     "fieldHelp.catalog.trainer.ai": "Speichert Kampf-KI-Flags. Nutze benannte Flag-Steuerelemente, damit andere Bits unverändert bleiben",
     "fieldHelp.catalog.trainer.money": "Speichert die spielspezifische Trainergeldrate und nicht den endgültigen Auszahlungsbetrag",
-    "fieldHelp.catalog.trainer.money.swsh": "Speichert die rohe Trainergeldrate von Schwert und Schild. Das genaue Auszahlungsverhalten ist nicht verifiziert, daher zeigt KM sie nicht als endgültigen Geldbetrag an",
+    "fieldHelp.catalog.trainer.money.swsh": "Zeigt das Basispreisgeld: Level des letzten belegten Teamplatzes x Geldrate x 4. Änderungen am Level dieses Platzes aktualisieren die Beträge. Gespeichert wird eine Rate von 0 bis 255; Spielerboni können die endgültige Belohnung erhöhen.",
     "fieldHelp.catalog.trainer.money.sv": "Speichert die vorzeichenbehaftete Trainergeldrate von Karmesin und Purpur. KM zeigt die rohe Rate an, da das genaue Auszahlungsverhalten nicht verifiziert ist",
     "fieldHelp.catalog.trainer.money.za": "Speichert die Z-A-Trainergeldrate als vorzeichenlosen Wert von 0 bis 255. Das Basispreisgeld ist höchste Teamstufe x Rate x 4; separate Spielerboni können die endgültige Belohnung erhöhen",
     "fieldHelp.catalog.trainer.specialMechanic": "Aktiviert eine spielspezifische Trainerkampf-Mechanik. Ein kompatibles Team-Pokémon und ein gültiger Kampfkontext können weiterhin erforderlich sein",
@@ -4769,7 +4769,8 @@
     "heldItemChance.restoreRates": "Standardchancen wiederherstellen",
     "heldItemChance.pokemonScope": "Items und Chancen gelten für dieses Pokémon und diese Form an allen wilden Begegnungsorten. Andere Pokémon behalten ihre Einstellungen. Explizite Itemvorgaben einer Begegnung können weiterhin Vorrang haben.",
     "heldItemChance.customHelp": "Eigene Chancen gelten auch, wenn zwei Plätze dasselbe Item enthalten. Leere Plätze ergeben kein Item. Ein Pokémon kann nur ein Item tragen.",
-    "heldItemChance.pokemonInvalid": "Wähle gültige Items und ganze Prozentwerte von 0 bis 100. Normale und erhöhte Chancen dürfen jeweils insgesamt höchstens 100% betragen."
+    "heldItemChance.pokemonInvalid": "Wähle gültige Items und ganze Prozentwerte von 0 bis 100. Normale und erhöhte Chancen dürfen jeweils insgesamt höchstens 100% betragen.",
+    "modelViewer.warning.materialEffectApproximate": "Feuerfarben, bewegte Texturen und Masken werden näherungsweise dargestellt. Ihr Aussehen kann im Spiel abweichen."
   },
   "literals": {
     "League Staff Isaac": "Liga-Mitarbeiter Isaac",

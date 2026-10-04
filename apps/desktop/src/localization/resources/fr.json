@@ -2611,7 +2611,7 @@
     "fieldHelp.catalog.trainer.battleSetup": "Contrôle une valeur générale de préparation du combat, telle que le type ou le rang",
     "fieldHelp.catalog.trainer.ai": "Stocke les indicateurs d'IA de combat. Utilisez les commandes nommées afin de préserver les bits sans rapport",
     "fieldHelp.catalog.trainer.money": "Stocke le coefficient d'argent du Dresseur propre au jeu, et non le montant final",
-    "fieldHelp.catalog.trainer.money.swsh": "Stocke le coefficient brut d'argent du Dresseur dans Épée et Bouclier. Son calcul exact n'est pas vérifié, donc KM ne le présente pas comme un montant final",
+    "fieldHelp.catalog.trainer.money.swsh": "Affiche le gain de base : niveau du dernier emplacement occupé de l'équipe x coefficient d'argent x 4. Modifier le niveau de cet emplacement actualise les montants. Stocke un coefficient de 0 à 255 ; les bonus du joueur peuvent augmenter le gain final.",
     "fieldHelp.catalog.trainer.money.sv": "Stocke le coefficient signé d'argent du Dresseur dans Écarlate et Violet. KM affiche le coefficient brut car son calcul exact n'est pas vérifié",
     "fieldHelp.catalog.trainer.money.za": "Stocke le coefficient d'argent du Dresseur de Z-A sous forme de valeur non signée de 0 à 255. Le gain de base est niveau maximal de l'équipe x coefficient x 4 ; des bonus du joueur peuvent augmenter la récompense finale",
     "fieldHelp.catalog.trainer.specialMechanic": "Active une mécanique de combat de Dresseur propre au jeu. Un Pokémon compatible et un contexte valide peuvent encore être nécessaires",
@@ -4769,7 +4769,8 @@
     "heldItemChance.restoreRates": "Rétablir les chances par défaut",
     "heldItemChance.pokemonScope": "Les objets et les chances sont partagés par ce Pokémon et cette forme dans tous les lieux de rencontre sauvage. Les autres Pokémon conservent leurs réglages. Les objets imposés par une rencontre peuvent rester prioritaires.",
     "heldItemChance.customHelp": "Les chances personnalisées s’appliquent même si deux emplacements contiennent le même objet. Un emplacement vide ne donne aucun objet. Un Pokémon ne peut tenir qu’un seul objet.",
-    "heldItemChance.pokemonInvalid": "Choisissez des objets valides et des pourcentages entiers de 0 à 100. Les totaux normaux et augmentés doivent chacun rester inférieurs ou égaux à 100%."
+    "heldItemChance.pokemonInvalid": "Choisissez des objets valides et des pourcentages entiers de 0 à 100. Les totaux normaux et augmentés doivent chacun rester inférieurs ou égaux à 100%.",
+    "modelViewer.warning.materialEffectApproximate": "Les couleurs du feu, les textures défilantes et les masques sont affichés de manière approximative. Leur apparence peut différer dans le jeu."
   },
   "literals": {
     "League Staff Isaac": "Isaac, employé de la Ligue",
