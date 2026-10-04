@@ -49,13 +49,17 @@ The importer rejects duplicate fields or record IDs, unknown fields, invalid typ
 
 | Game family | YAML categories |
 | --- | --- |
-| Sword / Shield | Items, Pokémon, Moves, Text, Trainers, Encounters, Gifts, Trades, Static Encounters, Rental Pokémon, Raid Battles, Raid Rewards, Raid Bonus Rewards, Shops, Placement, Behavior, Type Chart |
+| Sword / Shield | Items, Pokémon, Moves, Text, Trainers, Encounters, Gifts, Trades, Static Encounters, Rental Pokémon, Raid Battles, Raid Rewards, Raid Bonus Rewards, Shops, Placement, Behavior, Held Item Chance, Type Chart |
 | Scarlet / Violet | Items, Pokémon, Moves, Text, Trainers, Encounters, Tera Raids with fixed and lottery rewards, Static Encounters, Gifts, Trades, Placement, Shops, Type Chart |
 | Legends: Z-A | Items, Pokémon, Moves, Text, Trainers, Encounters, Scripted Bosses, Gifts, Trades, Placement, Shops, Behavior, Type Chart |
 
 Available fields follow the current editor and source data. Unsupported fields stay read only. Pokémon data includes existing learnsets, evolution rows and compatibility. Z-A also includes supported alpha moves and verified alpha size configurations. A shared alpha size configuration affects every form using it; conflicting values for the same configuration in one file are rejected.
 
 Shop prices shown as reference values in Scarlet, Violet and Z-A should be edited in the Items dump. Z-A scripted boss action changes use the existing supported selector and move rules; reference phase information does not become editable through YAML. Type Chart retains its separate session requirement and is staged as one complete table. Apply or discard another pending chart before importing a different chart document.
+
+Sword and Shield's Held Item Chance category contains per Pokemon and form `custom_rates` settings with six normal and boosted percentages, plus the legacy global entry. The `custom_rates` field uses integer `0` or `1`, and each percentage group must total at most 100. Setting `custom_rates` to `0` restores inherited chances for that Pokemon without changing its items. The three item choices belong to the Pokemon category. An independently staged rate setting remains protected from a competing import.
+
+The five Scarlet and Violet Titan partner teams cannot enable Terastallization through YAML. Their supported lead identity edits follow the same base form and scene synchronization rules as Trainers. Titan Swapper's Beta battle replacement settings and Sword and Shield Game Options are not YAML categories.
 
 ## Reimports and source changes
 
