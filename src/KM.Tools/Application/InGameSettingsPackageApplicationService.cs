@@ -140,6 +140,7 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
     private static readonly StringComparer ExternalSourcePathComparer =
         OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
     private const int MaximumExternalSourceDependencies = 64;
+    private const int MaximumOutputSourceDependencies = 128;
     private const long MaximumRetainedReviewBytes = OutputLimits.MaximumWriteBytesPerApply;
 
     private readonly object syncRoot = new();
@@ -781,12 +782,12 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
         var sourceDependencies = (resolution.SourceDependencies ?? [])
             .OrderBy(dependency => dependency.Path.CanonicalKey, StringComparer.Ordinal)
             .ToImmutableArray();
-        if (sourceDependencies.Length > 8
+        if (sourceDependencies.Length > MaximumOutputSourceDependencies
             || sourceDependencies.Select(dependency => dependency.Path.CanonicalKey)
                 .Distinct(StringComparer.Ordinal).Count() != sourceDependencies.Length)
         {
             throw new InvalidDataException(
-                "The native-menu executable source dependency inventory is invalid.");
+                "The native-menu source dependency inventory is invalid.");
         }
         var externalSourceDependencies = (resolution.ExternalSourceDependencies ?? [])
             .OrderBy(

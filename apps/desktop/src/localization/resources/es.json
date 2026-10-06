@@ -74,7 +74,7 @@
     "titanSwapper.sourceUnavailable": "Titan Swapper necesita un script compatible con S/V 4.0.0, tablas de eventos y Pokémon, y un catálogo con modelos disponibles. Comprueba los archivos del juego y recarga.",
     "titanSwapper.outputFailed": "No se pudo escribir la salida de los Titanes. Comprueba su estado y revisa los cambios antes de reintentar.",
     "titanSwapper.pendingRecord": "{pokemon}, {phase}",
-    "titanSwapper.compatibility": "Titan Swapper y Gameplay Options no se pueden combinar en esta beta. Restaura los combates originales o elimina el paquete Gameplay Options antes de usar el otro editor. Se admite la visibilidad de materiales de MT.",
+    "titanSwapper.compatibility": "Titan Swapper funciona con la visibilidad de materiales de MT y Gameplay Settings. Tras cambiar o restaurar estos editores, actualiza el estado y aplica una actualización al paquete Gameplay Settings instalado.",
     "titanSwapper.title": "Titan Swapper",
     "workbench.section.titan-swapper.label": "Titan Swapper",
     "workbench.section.titan-swapper.description": "Elige el Pokémon de cada fase del dominante. El dominante original sigue asignado a las escenas de la historia.",
@@ -3152,8 +3152,8 @@
     "settings.layout.focused.description": "Centra el explorador sobre el registro seleccionado para que los detalles usen todo el ancho del editor.",
     "settings.layout.groupLabel": "Diseño del editor",
     "settings.layout.title": "Diseño",
-    "randomizer.recovery.confirm": "KM Editor solo restaurará los archivos rastreados cuyo contenido actual siga coincidiendo con la salida registrada del aleatorizador. Recuperará la salida previa cuando esté disponible y eliminará los archivos sin cambios creados por el aleatorizador. Los cambios posteriores se conservarán y se notificarán.",
-    "randomizer.recovery.description": "Devuelve los archivos rastreados al estado anterior al aleatorizador. Recupera la salida previa cuando está disponible, elimina los archivos sin cambios creados por el aleatorizador y conserva los archivos modificados después.",
+    "randomizer.recovery.confirm": "KM Editor deshará los cambios registrados del aleatorizador y conservará las ediciones y eliminaciones posteriores. En ejecuciones antiguas, se conservan los archivos modificados después.",
+    "randomizer.recovery.description": "Deshacer los cambios del aleatorizador conservando las ediciones posteriores. Las ejecuciones antiguas pueden conservar un archivo modificado completo.",
     "randomizer.recovery.resultHelp": "El resultado enumera los archivos restaurados o eliminados. Los diagnósticos identifican los cambios posteriores conservados y las entradas que aún requieren atención.",
     "randomizer.reset.help": "Restablece las selecciones predeterminadas del aleatorizador y borra el resultado generado. La semilla base y la semilla compartida pegada no cambian. No modifica archivos en la raíz de salida.",
     "randomizer.seed.baseHelp": "Texto opcional que solo se usa al generar una nueva tirada. No es una semilla de repetición completa.",
@@ -4770,7 +4770,9 @@
     "heldItemChance.pokemonScope": "Los objetos y las probabilidades se comparten para este Pokémon y esta forma en todos los encuentros salvajes. Los demás Pokémon conservan sus ajustes. Los objetos explícitos de un encuentro pueden tener prioridad.",
     "heldItemChance.customHelp": "Las probabilidades personalizadas se aplican aunque dos ranuras tengan el mismo objeto. Las ranuras vacías no dan ningún objeto. Un Pokémon solo puede llevar un objeto.",
     "heldItemChance.pokemonInvalid": "Elige objetos válidos y porcentajes enteros entre 0 y 100. Cada grupo de probabilidades normales y aumentadas debe sumar como máximo 100%.",
-    "modelViewer.warning.materialEffectApproximate": "Los colores del fuego, las texturas en movimiento y las máscaras se muestran de forma aproximada. Su aspecto puede variar en el juego."
+    "modelViewer.warning.materialEffectApproximate": "Los colores del fuego, las texturas en movimiento y las máscaras se muestran de forma aproximada. Su aspecto puede variar en el juego.",
+    "gifts.synchronizeStarterScenes": "Sincronizar escenas iniciales",
+    "gifts.starterScenesHelp": "Prepara los regalos iniciales actuales para la selección, Hop y Lionel, y mamá, incluidos nombres y gritos. Prepara o descarta primero los cambios locales."
   },
   "literals": {
     "League Staff Isaac": "Isaac, personal de la Liga",

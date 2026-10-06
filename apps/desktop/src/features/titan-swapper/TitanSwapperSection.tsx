@@ -97,8 +97,6 @@ export function TitanSwapperSection({ workflow, isStaging, isEditing, isEditStar
     <section className="panel wide-panel titan-swapper-panel" aria-labelledby="titan-swapper-heading">
       <div className="panel-heading"><ArrowRightLeft size={20} aria-hidden="true" /><h2 id="titan-swapper-heading">{t('titanSwapper.title')}</h2></div>
       <p className="muted">{t('titanSwapper.intro')}</p>
-      {workflow?.diagnostics.some(diagnostic => diagnostic.code === 'KM-SV-TITAN-SWAPPER-SCRIPT-CONFLICT')
-        ? <p role="alert">{t('titanSwapper.compatibility')}</p> : null}
       <details className="titan-swapper-beta">
         <summary><FlaskConical size={16} aria-hidden="true" />{t('titanSwapper.beta')}</summary>
         <p>{t('titanSwapper.betaHelp')}</p><p>{t('titanSwapper.limits')}</p><p>{t('titanSwapper.compatibility')}</p><p>{t('titanSwapper.fallback')}</p>

@@ -16,6 +16,8 @@ export const kmErrorCodeSchema = z
   );
 
 export const projectBridgeErrorCodes = {
+  giftPresentationSourceInvalid: "KM-SWSH-GIFT-PRESENTATION-SOURCE-INVALID",
+  giftPresentationTextPreserved: "KM-SWSH-GIFT-PRESENTATION-TEXT-PRESERVED",
   npcGiftMoneyAmountInvalid: "KM-SWSH-NPC-GIFT-MONEY-AMOUNT-INVALID",
   npcGiftMoneySourceInvalid: "KM-SWSH-NPC-GIFT-MONEY-SOURCE-INVALID",
   dumpYamlSyntax: "KM-DUMP-YAML-SYNTAX",
@@ -92,7 +94,6 @@ export const projectBridgeErrorCodes = {
   titanSwapperOutputFailed: "KM-SV-TITAN-SWAPPER-OUTPUT-FAILED",
   starmobilesEditInvalid: "KM-SV-STARMOBILES-EDIT-INVALID",
   titanSwapperEditInvalid: "KM-SV-TITAN-SWAPPER-EDIT-INVALID",
-  titanSwapperScriptConflict: "KM-SV-TITAN-SWAPPER-SCRIPT-CONFLICT",
   svTitanRecoveryPlanned: "KM-SV-TITAN-RECOVERY-PLANNED",
   svTitanRecoverySourceInvalid: "KM-SV-TITAN-RECOVERY-SOURCE-INVALID",
   svTitanRecoveryUnsupported: "KM-SV-TITAN-RECOVERY-UNSUPPORTED",

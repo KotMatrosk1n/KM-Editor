@@ -24022,11 +24022,13 @@ function SelectedPokemonSummaryCard({
 }) {
   const isContext = variant === 'context';
   const pokemonLabel = formatPokemonRecordName(pokemon, editorFamily);
-  const pokemonFormLabel = formatSpeciesFormOptionLabel(pokemon.form, {
-    gameFamily: editorFamily,
-    species: pokemon.name,
-    speciesId: pokemon.speciesId
-  });
+  const pokemonFormLabel = editorFamily === 'swsh'
+    ? pokemon.formLabel
+    : formatSpeciesFormOptionLabel(pokemon.form, {
+        gameFamily: editorFamily,
+        species: pokemon.name,
+        speciesId: pokemon.speciesId
+      });
 
   return (
     <div
@@ -24039,7 +24041,7 @@ function SelectedPokemonSummaryCard({
           <PokemonSprite
             className="pokemon-summary-sprite"
             editorFamily={editorFamily}
-            form={pokemon.form}
+            form={getPokemonRecordDisplayForm(pokemon, editorFamily)}
             name={pokemonLabel}
             speciesId={pokemon.speciesId}
             spriteName={pokemon.spriteName}
@@ -24086,8 +24088,21 @@ function SelectedPokemonSummaryCard({
   );
 }
 
+function getPokemonRecordDisplayForm(pokemon: PokemonSelectionRecord, editorFamily: EditorUiFamily) {
+  if (editorFamily !== 'swsh') {
+    return pokemon.form;
+  }
+
+  // SwSh's stored Form is not the alternate-form index. Its backend resolves
+  // alternate names and sprite names through personal table ownership.
+  return pokemon.personalId === pokemon.speciesId ? 0 : undefined;
+}
+
 function formatPokemonRecordName(pokemon: PokemonSelectionRecord, editorFamily: EditorUiFamily) {
-  return formatSpeciesFormLabel(pokemon.name, pokemon.form, pokemon.speciesId, editorFamily);
+  const form = getPokemonRecordDisplayForm(pokemon, editorFamily);
+  return form === undefined
+    ? pokemon.name
+    : formatSpeciesFormLabel(pokemon.name, form, pokemon.speciesId, editorFamily);
 }
 
 function SelectedPokemonSessionIdentity({ pokemon, editorFamily }: {
@@ -24100,7 +24115,7 @@ function SelectedPokemonSessionIdentity({ pokemon, editorFamily }: {
       <PokemonSprite
         className="pokemon-session-sprite"
         editorFamily={editorFamily}
-        form={pokemon.form}
+        form={getPokemonRecordDisplayForm(pokemon, editorFamily)}
         name={label}
         speciesId={pokemon.speciesId}
         spriteName={pokemon.spriteName}
@@ -38785,6 +38800,20 @@ function SelectedGiftPokemonPanel({
                     label="Stage"
                   />
                 </button>
+                {editorFamily === 'swsh' && [0, 3, 4].includes(gift.giftIndex) ? (
+                  <button
+                    className="secondary-button"
+                    disabled={!canEditGifts || isGiftPokemonUpdating || giftDraftSummary.changedFields.length > 0}
+                    onClick={() => onUpdateGiftPokemonFields(gift.giftIndex, [
+                      { field: giftSpeciesFieldName, value: gift.speciesId.toString() },
+                      { field: formFieldName, value: gift.form.toString() }
+                    ])}
+                    title={t('gifts.starterScenesHelp')}
+                    type="button"
+                  >
+                    {t('gifts.synchronizeStarterScenes')}
+                  </button>
+                ) : null}
                 {nextGiftDraftKey !== null ? (
                   <button
                     className="secondary-button"

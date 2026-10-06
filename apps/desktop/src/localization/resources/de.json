@@ -74,7 +74,7 @@
     "titanSwapper.sourceUnavailable": "Titan Swapper benötigt ein unterstütztes S/V 4.0.0 Skript, Ereignis und Pokémon Daten sowie einen Modellkatalog mit verfügbaren Modellen. Prüfe den Spieldump und lade neu.",
     "titanSwapper.outputFailed": "Die Titanenausgabe konnte nicht geschrieben werden. Prüfe den Ausgabestatus und die Änderungen vor einem erneuten Versuch.",
     "titanSwapper.pendingRecord": "{pokemon}, {phase}",
-    "titanSwapper.compatibility": "Titan Swapper und Gameplay Options können in dieser Beta nicht kombiniert werden. Stelle die ursprünglichen Titanenkämpfe wieder her oder entferne das Gameplay Options Paket, bevor du den anderen Editor verwendest. Die Sichtbarkeit von TM Materialien wird unterstützt.",
+    "titanSwapper.compatibility": "Titan Swapper funktioniert mit der Sichtbarkeit von TM Materialien und Gameplay Settings. Aktualisiere nach Änderungen oder Wiederherstellungen in diesen Editoren den Paketstatus und führe ein Upgrade des installierten Gameplay Settings Pakets aus.",
     "titanSwapper.title": "Titan Swapper",
     "workbench.section.titan-swapper.label": "Titan Swapper",
     "workbench.section.titan-swapper.description": "Wähle das Pokémon für jede Herrscherphase. Der ursprüngliche Herrscher bleibt den Storyszenen zugeordnet.",
@@ -3152,8 +3152,8 @@
     "settings.layout.focused.description": "Den Browser zentriert über dem ausgewählten Eintrag anzeigen, damit die Details die volle Editorbreite nutzen können.",
     "settings.layout.groupLabel": "Editor-Layout",
     "settings.layout.title": "Layout",
-    "randomizer.recovery.confirm": "KM Editor stellt nachverfolgte Dateien nur wieder her, wenn ihr aktueller Inhalt noch mit der aufgezeichneten Randomizer-Ausgabe übereinstimmt. Frühere Ausgaben werden wiederhergestellt, wenn sie verfügbar sind, und unveränderte vom Randomizer erstellte Dateien werden entfernt. Spätere Änderungen bleiben erhalten und werden gemeldet.",
-    "randomizer.recovery.description": "Versetzt nachverfolgte Dateien in den Zustand vor dem Randomizer zurück. Frühere Ausgaben werden wiederhergestellt, wenn sie verfügbar sind, unveränderte vom Randomizer erstellte Dateien werden entfernt und später geänderte Dateien bleiben erhalten.",
+    "randomizer.recovery.confirm": "KM Editor macht aufgezeichnete Randomizer Änderungen rückgängig und behält spätere Änderungen und Löschungen bei. Bei älteren Durchläufen bleiben nachträglich geänderte Dateien erhalten.",
+    "randomizer.recovery.description": "Randomizer Änderungen rückgängig machen und spätere Änderungen beibehalten. Bei älteren Durchläufen kann eine geänderte Datei vollständig erhalten bleiben.",
     "randomizer.recovery.resultHelp": "Das Ergebnis listet wiederhergestellte oder entfernte Dateien auf. Diagnosen zeigen erhaltene spätere Änderungen und Einträge, die noch Aufmerksamkeit erfordern.",
     "randomizer.reset.help": "Stellt die standardmäßige Randomizer-Auswahl wieder her und löscht das erzeugte Ergebnis. Basis-Seed und eingefügter geteilter Seed bleiben unverändert. Dateien im Ausgabe-Stammordner werden nicht geändert.",
     "randomizer.seed.baseHelp": "Optionaler Text, der nur beim Erzeugen eines neuen Durchlaufs verwendet wird. Er ist kein vollständiger Seed zur Wiederholung.",
@@ -4770,7 +4770,9 @@
     "heldItemChance.pokemonScope": "Items und Chancen gelten für dieses Pokémon und diese Form an allen wilden Begegnungsorten. Andere Pokémon behalten ihre Einstellungen. Explizite Itemvorgaben einer Begegnung können weiterhin Vorrang haben.",
     "heldItemChance.customHelp": "Eigene Chancen gelten auch, wenn zwei Plätze dasselbe Item enthalten. Leere Plätze ergeben kein Item. Ein Pokémon kann nur ein Item tragen.",
     "heldItemChance.pokemonInvalid": "Wähle gültige Items und ganze Prozentwerte von 0 bis 100. Normale und erhöhte Chancen dürfen jeweils insgesamt höchstens 100% betragen.",
-    "modelViewer.warning.materialEffectApproximate": "Feuerfarben, bewegte Texturen und Masken werden näherungsweise dargestellt. Ihr Aussehen kann im Spiel abweichen."
+    "modelViewer.warning.materialEffectApproximate": "Feuerfarben, bewegte Texturen und Masken werden näherungsweise dargestellt. Ihr Aussehen kann im Spiel abweichen.",
+    "gifts.synchronizeStarterScenes": "Starter-Szenen abgleichen",
+    "gifts.starterScenesHelp": "Die aktuellen Starter-Geschenke für die Auswahl, Hop und Leon sowie Mama einschließlich Namen und Rufen vormerken. Lokale Feldänderungen zuerst vormerken oder verwerfen."
   },
   "literals": {
     "League Staff Isaac": "Liga-Mitarbeiter Isaac",

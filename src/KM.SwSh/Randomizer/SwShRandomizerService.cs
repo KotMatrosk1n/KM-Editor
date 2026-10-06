@@ -5,6 +5,7 @@ using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Output;
 using KM.Core.Projects;
+using KM.Formats.SwSh;
 using KM.SwSh.Editing;
 using KM.SwSh.Encounters;
 using KM.SwSh.Gifts;
@@ -22,7 +23,7 @@ using System.Text.Json;
 
 namespace KM.SwSh.Randomizer;
 
-public sealed class SwShRandomizerService
+public sealed partial class SwShRandomizerService
 {
     private const int ExpandedLearnsetMoveCount = 25;
     private const int ExpandedLearnsetMaxLevel = 75;
@@ -224,8 +225,20 @@ public sealed class SwShRandomizerService
 
             var appliedWrites = new List<ProjectFileReference>();
             var manifestWrites = new List<PlannedFileWrite>();
+            IReadOnlyDictionary<string, RandomizerCurrentValue>? semanticBefore = null;
+            try
+            {
+                if (restoreCapture.Semantic)
+                    semanticBefore = ReadRandomizerValues(paths, domainPlans.Select(plan => plan.Label), diagnostics);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or ArgumentException)
+            {
+                diagnostics.Add(CreateDiagnostic(DiagnosticSeverity.Error,
+                    "Randomizer could not capture the current values for restoration: " + exception.Message));
+            }
             foreach (var (domainPlan, _) in reviewedDomainPlans)
             {
+                if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)) break;
                 try
                 {
                     var currentPlan = domainPlan.CreateChangePlan(paths, domainPlan.Session);
@@ -259,7 +272,7 @@ public sealed class SwShRandomizerService
                 var writtenFilesBeforeManifest = appliedWrites
                     .DistinctBy(file => $"{file.Layer}:{file.RelativePath}", StringComparer.OrdinalIgnoreCase)
                     .ToArray();
-                RecordRandomizerManifest(paths, writtenFilesBeforeManifest, restoreCapture, diagnostics);
+                RecordRandomizerManifest(paths, writtenFilesBeforeManifest, restoreCapture, diagnostics, semanticBefore);
             }
 
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -535,11 +548,11 @@ public sealed class SwShRandomizerService
         RestoreFilePreimage manifestPreimage;
         try
         {
-            var manifestBytes = File.ReadAllBytes(manifestPath);
+            var manifestBytes = ReadRandomizerManifestBytes(manifestPath);
             manifest = JsonSerializer.Deserialize<RandomizerRestoreManifest>(manifestBytes, JsonOptions);
             manifestPreimage = RestoreFilePreimage.ForFile(manifestBytes);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -547,6 +560,11 @@ public sealed class SwShRandomizerService
                 file: RandomizerManifestRelativePath,
                 expected: "Readable Randomizer restore manifest"));
             return CreateApplyResult(diagnostics);
+        }
+
+        if (manifest?.Version == 3)
+        {
+            return RestoreRandomizerValues(paths, manifest, manifestPreimage);
         }
 
         if (manifest is null || manifest.Version is not (1 or 2))
@@ -1178,6 +1196,9 @@ public sealed class SwShRandomizerService
         var rng = DeterministicRandom.Create(generationKey, "staticEncounters");
         var edits = new List<PendingEdit>();
         var personalSource = SwShPokemonWorkflowService.ResolvePersonalDataSource(project);
+        var staticSource = SwShStaticEncountersWorkflowService.ResolveStaticEncounterDataSource(project);
+        var archive = staticSource is null ? null : SwShStaticEncounterArchive.Parse(File.ReadAllBytes(staticSource.AbsolutePath));
+        var baseFormTargets = pokemonTargets.Where(target => target.Form == 0).ToArray();
 
         foreach (var encounter in workflow.Encounters.OrderBy(encounter => encounter.EncounterIndex))
         {
@@ -1186,7 +1207,15 @@ public sealed class SwShRandomizerService
                 continue;
             }
 
-            var target = rng.Pick(pokemonTargets);
+            // An omitted default form has no writable cell. Choose an encodable identity
+            // without rebuilding this archive and losing fields unknown to this editor.
+            var eligibleTargets = archive?.SupportsFormChanges(encounter.EncounterIndex) == false ? baseFormTargets : pokemonTargets;
+            if (eligibleTargets.Count == 0)
+            {
+                diagnostics.Add(CreateDiagnostic(DiagnosticSeverity.Error, "No encodable static encounter identity is available."));
+                continue;
+            }
+            var target = rng.Pick(eligibleTargets);
             var recordId = SwShStaticEncountersWorkflowService.CreateEncounterRecordId(
                 encounter.EncounterIndex,
                 encounter.EncounterKey);
@@ -2005,11 +2034,22 @@ public sealed class SwShRandomizerService
             ? strictTargets
             : workflow.Pokemon.Where(IsPresentPokemonTarget);
 
+        var personalById = workflow.Pokemon.ToDictionary(record => record.PersonalId);
+        int TargetForm(SwShPokemonRecord record)
+        {
+            if (record.PersonalId == record.SpeciesId) return 0;
+            if (!personalById.TryGetValue(record.SpeciesId, out var species)
+                || species.Personal.FormStatsIndex <= 0) return -1;
+            var form = record.PersonalId - species.Personal.FormStatsIndex + 1;
+            return form > 0 && form < species.Personal.FormCount ? form : -1;
+        }
+
         return targets
+            .Where(record => TargetForm(record) >= 0)
             .Select(record => new PokemonCandidate(
                 record.PersonalId,
                 record.SpeciesId,
-                Math.Clamp(record.Form, byte.MinValue, byte.MaxValue),
+                TargetForm(record),
                 record.Personal.Type1,
                 record.Personal.Type2,
                 record.EvolutionStage,
@@ -2274,6 +2314,8 @@ public sealed class SwShRandomizerService
         var entries = new Dictionary<string, RandomizerRestoreEntry>(StringComparer.OrdinalIgnoreCase);
         var newRelativePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var createdBackupRelativePaths = new List<string>();
+        var semantic = true;
+        IReadOnlyList<RandomizerValueOwnership> values = [];
         var manifestPath = ResolveOutputPath(paths, RandomizerManifestRelativePath);
         if (manifestPath is null)
         {
@@ -2290,18 +2332,20 @@ public sealed class SwShRandomizerService
             try
             {
                 var existingManifest = JsonSerializer.Deserialize<RandomizerRestoreManifest>(
-                    File.ReadAllText(manifestPath),
+                    ReadRandomizerManifestBytes(manifestPath),
                     JsonOptions);
-                if (existingManifest is null || existingManifest.Version is not (1 or 2))
+                if (existingManifest is null || existingManifest.Version is not (1 or 2 or 3))
                 {
                     diagnostics.Add(CreateDiagnostic(
                         DiagnosticSeverity.Error,
                         "Randomizer cannot apply while the existing restore manifest version is unsupported.",
                         file: RandomizerManifestRelativePath,
-                        expected: "KM Editor Randomizer restore manifest version 1 or 2"));
+                        expected: "KM Editor Randomizer restore manifest version 1, 2 or 3"));
                     return new RandomizerRestoreCapture(entries, newRelativePaths, createdBackupRelativePaths);
                 }
 
+                semantic = existingManifest.Version == 3;
+                if (semantic) values = ValidateRandomizerValues(existingManifest);
                 foreach (var entry in CreateRestoreEntries(existingManifest))
                 {
                     var relativePath = NormalizeRelativePath(entry.RelativePath);
@@ -2311,7 +2355,7 @@ public sealed class SwShRandomizerService
                     }
                 }
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
@@ -2333,6 +2377,7 @@ public sealed class SwShRandomizerService
         {
             if (entries.TryGetValue(relativePath, out var existingEntry))
             {
+                if (semantic) continue;
                 try
                 {
                     var currentPath = ResolveOutputPath(paths, relativePath);
@@ -2436,14 +2481,15 @@ public sealed class SwShRandomizerService
             }
         }
 
-        return new RandomizerRestoreCapture(entries, newRelativePaths, createdBackupRelativePaths);
+        return new RandomizerRestoreCapture(entries, newRelativePaths, createdBackupRelativePaths, semantic, values);
     }
 
-    private static void RecordRandomizerManifest(
+    private void RecordRandomizerManifest(
         ProjectPaths paths,
         IReadOnlyList<ProjectFileReference> writtenFiles,
         RandomizerRestoreCapture restoreCapture,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        IReadOnlyDictionary<string, RandomizerCurrentValue>? semanticBefore)
     {
         var trackedPaths = writtenFiles
             .Where(file => file.Layer == ProjectFileLayer.Generated)
@@ -2518,9 +2564,13 @@ public sealed class SwShRandomizerService
 
         try
         {
-            WriteRandomizerManifest(paths, entries.Values);
+            var values = semanticBefore is null ? null : MergeRandomizerValues(
+                restoreCapture.Values ?? [], semanticBefore,
+                ReadRandomizerValues(paths, semanticBefore.Values.Select(value => value.Domain).Distinct(), diagnostics));
+            if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+                WriteRandomizerManifest(paths, entries.Values, values);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -2546,7 +2596,7 @@ public sealed class SwShRandomizerService
 
     private static IReadOnlyList<RandomizerRestoreEntry> CreateRestoreEntries(RandomizerRestoreManifest manifest)
     {
-        if (manifest.Version == 2)
+        if (manifest.Version is 2 or 3)
         {
             return (manifest.Entries ?? Array.Empty<RandomizerRestoreEntry>())
                 .Where(entry => !string.IsNullOrWhiteSpace(entry.RelativePath))
@@ -2564,9 +2614,10 @@ public sealed class SwShRandomizerService
 
     private static void WriteRandomizerManifest(
         ProjectPaths paths,
-        IEnumerable<RandomizerRestoreEntry> entries)
+        IEnumerable<RandomizerRestoreEntry> entries,
+        IReadOnlyList<RandomizerValueOwnership>? values = null)
     {
-        var contents = CreateRandomizerManifestBytes(entries);
+        var contents = CreateRandomizerManifestBytes(entries, values);
         if (!SwShOutputTransactionWriter.TryApply(
                 paths,
                 [SwShOutputFileMutation.Write(RandomizerManifestRelativePath, contents)],
@@ -2579,7 +2630,8 @@ public sealed class SwShRandomizerService
     }
 
     private static byte[] CreateRandomizerManifestBytes(
-        IEnumerable<RandomizerRestoreEntry> entries)
+        IEnumerable<RandomizerRestoreEntry> entries,
+        IReadOnlyList<RandomizerValueOwnership>? values = null)
     {
         var normalizedEntries = entries
             .Select(entry => entry with { RelativePath = NormalizeRelativePath(entry.RelativePath) })
@@ -2588,11 +2640,14 @@ public sealed class SwShRandomizerService
             .OrderBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         var manifest = new RandomizerRestoreManifest(
-            Version: 2,
+            Version: values is null ? 2 : 3,
             UpdatedAt: DateTimeOffset.UtcNow,
             WrittenRelativePaths: normalizedEntries.Select(entry => entry.RelativePath).ToArray(),
-            Entries: normalizedEntries);
-        return JsonSerializer.SerializeToUtf8Bytes(manifest, JsonOptions);
+            Entries: normalizedEntries,
+            Values: values);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(manifest, JsonOptions);
+        if (bytes.Length > MaximumRandomizerManifestBytes) throw new InvalidDataException("Randomizer restore metadata exceeds its supported size.");
+        return bytes;
     }
 
     private static string CreateRandomizerBackupRelativePath(string relativePath)
@@ -2689,7 +2744,8 @@ public sealed class SwShRandomizerService
     {
         if (string.IsNullOrWhiteSpace(relativePath)
             || Path.IsPathRooted(relativePath)
-            || relativePath.Split('/').Any(part => string.Equals(part, "..", StringComparison.Ordinal)))
+            || relativePath.Contains('\\') || relativePath.Contains(':')
+            || relativePath.Split('/').Any(part => part is ".." or "." or ""))
         {
             return false;
         }
@@ -3013,7 +3069,8 @@ public sealed class SwShRandomizerService
         int Version,
         DateTimeOffset UpdatedAt,
         IReadOnlyList<string>? WrittenRelativePaths = null,
-        IReadOnlyList<RandomizerRestoreEntry>? Entries = null);
+        IReadOnlyList<RandomizerRestoreEntry>? Entries = null,
+        IReadOnlyList<RandomizerValueOwnership>? Values = null);
 
     private sealed record RandomizerRestoreEntry(
         string RelativePath,
@@ -3025,7 +3082,9 @@ public sealed class SwShRandomizerService
     private sealed record RandomizerRestoreCapture(
         IReadOnlyDictionary<string, RandomizerRestoreEntry> Entries,
         IReadOnlySet<string> NewRelativePaths,
-        IReadOnlyList<string> CreatedBackupRelativePaths);
+        IReadOnlyList<string> CreatedBackupRelativePaths,
+        bool Semantic = false,
+        IReadOnlyList<RandomizerValueOwnership>? Values = null);
 
     private sealed record PreparedRandomizerRestoreEntry(
         string RelativePath,

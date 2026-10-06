@@ -56,6 +56,7 @@ public sealed record SwShGiftPokemonEntry(
         Array.Empty<SwShGiftPokemonEditableFieldOption>();
 
     internal string SourceIdentity { get; init; } = string.Empty;
+    internal bool IsStarter { get; init; }
 }
 
 public sealed record SwShGiftPokemonEditableField(

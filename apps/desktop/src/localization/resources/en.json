@@ -74,7 +74,7 @@
     "titanSwapper.sourceUnavailable": "Titan Swapper needs a supported S/V 4.0.0 script, event table, personal table, and model catalog with available models. Check the game dump and reload.",
     "titanSwapper.outputFailed": "Titan output could not be written. Check the output status and review the changes before retrying.",
     "titanSwapper.pendingRecord": "{pokemon}, {phase}",
-    "titanSwapper.compatibility": "Titan Swapper and Gameplay Options cannot be combined in this beta. Restore Titan replacements or remove the Gameplay Options package before using the other editor. TM material visibility is supported.",
+    "titanSwapper.compatibility": "Titan Swapper works with TM material visibility and Gameplay Settings. After changing or restoring these editors, refresh and upgrade any installed Gameplay Settings package.",
     "titanSwapper.title": "Titan Swapper",
     "workbench.section.titan-swapper.label": "Titan Swapper",
     "workbench.section.titan-swapper.description": "Choose the Pokemon fought in each Titan phase. The original Titan stays assigned to story scenes.",
@@ -3152,8 +3152,8 @@
     "settings.layout.focused.description": "Center the browser above the selected record so details can use the full editor width.",
     "settings.layout.groupLabel": "Editor layout",
     "settings.layout.title": "Layout",
-    "randomizer.recovery.confirm": "KM Editor will restore tracked files only when their current contents still match the recorded Randomizer output. Previous output is recovered when available, and unchanged files created by Randomizer are removed. Later changes are kept and reported.",
-    "randomizer.recovery.description": "Return tracked files to their pre-Randomizer state. Previous output is recovered when available, unchanged files created by Randomizer are removed, and files changed afterward are preserved.",
+    "randomizer.recovery.confirm": "KM Editor will undo recorded Randomizer changes while keeping later edits and deletions. For older runs, files changed afterward are preserved.",
+    "randomizer.recovery.description": "Undo Randomizer changes while preserving later edits. Older runs may preserve an entire changed file.",
     "randomizer.recovery.resultHelp": "The result lists files restored or removed. Diagnostics identify later changes that were preserved and entries that still need attention.",
     "randomizer.reset.help": "Restore the default Randomizer selections and clear the generated result. Base Seed and the pasted Shared Randomization Seed stay unchanged. Files in Output Root are not changed.",
     "randomizer.seed.baseHelp": "Optional text used only when generating a new roll. It is not a complete replay seed.",
@@ -4770,7 +4770,9 @@
     "heldItemChance.pokemonScope": "Items and chances are shared by this Pokemon and form across wild encounter locations. Other Pokemon keep their own settings. Explicit encounter item overrides can still take priority.",
     "heldItemChance.customHelp": "Custom chances apply even when two slots contain the same item. Empty slots give no item. A Pokemon can hold only one item.",
     "heldItemChance.pokemonInvalid": "Choose valid items and whole percentages from 0 to 100. Normal and boosted totals must each be at most 100%.",
-    "modelViewer.warning.materialEffectApproximate": "Fire colors, scrolling textures and masks are previewed approximately. Their appearance may differ in game."
+    "modelViewer.warning.materialEffectApproximate": "Fire colors, scrolling textures and masks are previewed approximately. Their appearance may differ in game.",
+    "gifts.synchronizeStarterScenes": "Sync starter scenes",
+    "gifts.starterScenesHelp": "Stage the current starter gifts for selection, Hop and Leon, and Mum, including names and cries. Stage or discard local field changes first."
   },
   "literals": {
     "League Staff Isaac": "League Staff Isaac",

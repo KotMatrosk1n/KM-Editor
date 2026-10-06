@@ -88,20 +88,11 @@ internal sealed record SvLegacyTitanRecovery(
                     sources.Add(SvWorkflowFileSource.CreateReference(baseline));
                     currentFile = SvTitanSwapperScript.VirtualPath;
                     var script = files.Read(project, currentFile);
-                    if (SvTitanSwapperScript.Remove(script.Bytes).HasGameplayOptions
-                        || SvTitanSwapperCompatibility.HasGameplayPackage(paths))
-                    {
-                        diagnostics.Add(new(DiagnosticSeverity.Error, SvTitanSwapperCompatibility.Message,
-                            Domain: Domain) { Code = "KM-SV-TITAN-SWAPPER-SCRIPT-CONFLICT" });
-                    }
-                    else
-                    {
-                        sources.Add(SvWorkflowFileSource.CreateReference(script));
-                        var migrated = new SvTitanSwapperDocument(bytes);
-                        writes.Add(new(SvDataPaths.EventBattlePokemonArray, bytes));
-                        writes.Add(new(currentFile, SvTitanSwapperScript.Apply(script.Bytes,
-                            migrated.Rows.Where(row => row.Values["enabled"] == 1).Select(row => row.Id))));
-                    }
+                    sources.Add(SvWorkflowFileSource.CreateReference(script));
+                    var migrated = new SvTitanSwapperDocument(bytes);
+                    writes.Add(new(SvDataPaths.EventBattlePokemonArray, bytes));
+                    writes.Add(new(currentFile, SvTitanSwapperScript.Apply(script.Bytes,
+                        migrated.Rows.Where(row => row.Values["enabled"] == 1).Select(row => row.Id))));
                 }
             }
         }

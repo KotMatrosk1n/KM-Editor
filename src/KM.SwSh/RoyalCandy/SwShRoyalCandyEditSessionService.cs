@@ -1221,7 +1221,7 @@ public sealed class SwShRoyalCandyEditSessionService
 
             var baseBytes = File.ReadAllBytes(basePath);
             var baseShopData = SwShShopDataFile.Parse(baseBytes);
-            var mapping = SwShRoyalCandyShopPatchMapper.Analyze(shopData, baseShopData);
+            var mapping = SwShRoyalCandyShopPatchMapper.Analyze(shopData, baseShopData, preserveMissingOccurrences: true);
             if (mapping.BaseOccurrences == 0)
             {
                 diagnostics.Add(CreateDiagnostic(
@@ -1232,7 +1232,6 @@ public sealed class SwShRoyalCandyEditSessionService
                 return null;
             }
 
-            var isInstalledRefresh = string.Equals(selectedWorkflow.Status, "installed", StringComparison.Ordinal);
             var hasAcquisitionOwnership =
                 SwShRoyalCandyAcquisitionOwnershipService.Inspect(project).IsValid;
             if (mapping.OwnedReplacementOccurrences > 0 && !hasAcquisitionOwnership)
@@ -1245,18 +1244,16 @@ public sealed class SwShRoyalCandyEditSessionService
                 return null;
             }
 
-            if (mapping.LegacyMissingOccurrences > 0 && !isInstalledRefresh)
+            if (mapping.LegacyMissingOccurrences > 0)
             {
                 diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    "Royal Candy preserved the layered shop file because a vanilla item 1128 slot was already replaced or missing before this workflow was installed.",
+                    DiagnosticSeverity.Warning,
+                    "Royal Candy preserved missing shop entries while updating the remaining verified item references.",
                     file: relativePath,
-                    expected: "Every verified vanilla item 1128 shop slot still present before a fresh Royal Candy install"));
-                return null;
+                    expected: "Later shop deletions remain unchanged"));
             }
 
-            if (mapping.OriginalOccurrences == 0
-                && mapping.LegacyMissingOccurrences == 0)
+            if (mapping.OriginalOccurrences == 0)
             {
                 return sourceBytes;
             }
@@ -1266,8 +1263,8 @@ public sealed class SwShRoyalCandyEditSessionService
                 SwShShopDataFile.Parse(output),
                 baseShopData);
             if (outputMapping.OriginalOccurrences != 0
-                || outputMapping.LegacyMissingOccurrences != 0
-                || outputMapping.OwnedReplacementOccurrences != outputMapping.BaseOccurrences)
+                || outputMapping.LegacyMissingOccurrences != mapping.LegacyMissingOccurrences
+                || outputMapping.OwnedReplacementOccurrences + outputMapping.LegacyMissingOccurrences != outputMapping.BaseOccurrences)
             {
                 throw new InvalidDataException("Royal Candy shop output did not replace every uniquely mapped vanilla item 1128 occurrence with item 50.");
             }
@@ -1694,11 +1691,10 @@ public sealed class SwShRoyalCandyEditSessionService
         {
             var conflict = analysis.Conflicts[0];
             diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Royal Candy preserved '{relativePath}' because {analysis.ConflictOccurrenceCount:N0} verified vanilla {label} reference(s) contain a foreign value. First conflict: {conflict.Location}.",
+                DiagnosticSeverity.Warning,
+                $"Royal Candy preserved {analysis.ConflictOccurrenceCount:N0} edited {label} reference(s) in '{relativePath}' while updating the remaining verified references. First preserved reference: {conflict.Location}.",
                 file: relativePath,
-                expected: "Every verified vanilla reference still item 1128 or a KM-owned item 50 replacement"));
-            return false;
+                expected: "Edited references remain unchanged"));
         }
 
         if (analysis.ReplacementOccurrenceCount > 0

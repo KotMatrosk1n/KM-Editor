@@ -11,7 +11,8 @@ internal static class SwShRoyalCandyShopPatchMapper
 
     public static SwShRoyalCandyShopPatchMapping Analyze(
         SwShShopDataFile targetData,
-        SwShShopDataFile baseData)
+        SwShShopDataFile baseData,
+        bool preserveMissingOccurrences = false)
     {
         ArgumentNullException.ThrowIfNull(targetData);
         ArgumentNullException.ThrowIfNull(baseData);
@@ -46,6 +47,7 @@ internal static class SwShRoyalCandyShopPatchMapper
                 targetIndex,
                 targetData.SingleShops[targetIndex].Inventory.Items,
                 baseShop.Inventory.Items,
+                preserveMissingOccurrences,
                 ref baseOccurrences,
                 ref originalOccurrences,
                 ref ownedReplacementOccurrences,
@@ -95,6 +97,7 @@ internal static class SwShRoyalCandyShopPatchMapper
                     targetIndex,
                     targetShop.Inventories[inventoryIndex].Items,
                     baseShop.Inventories[inventoryIndex].Items,
+                    preserveMissingOccurrences,
                     ref baseOccurrences,
                     ref originalOccurrences,
                     ref ownedReplacementOccurrences,
@@ -120,6 +123,7 @@ internal static class SwShRoyalCandyShopPatchMapper
         int targetShopIndex,
         IReadOnlyList<int> targetItems,
         IReadOnlyList<int> baseItems,
+        bool preserveMissingOccurrences,
         ref int baseOccurrences,
         ref int originalOccurrences,
         ref int ownedReplacementOccurrences,
@@ -142,7 +146,7 @@ internal static class SwShRoyalCandyShopPatchMapper
         legacyMissingOccurrences += mapping.LegacyMissingOccurrences.Count;
 
         if (mapping.OriginalTargetSlots.Count > 0
-            || mapping.LegacyMissingOccurrences.Count > 0)
+            || (!preserveMissingOccurrences && mapping.LegacyMissingOccurrences.Count > 0))
         {
             var installedItems = targetItems.ToList();
             foreach (var slot in mapping.OriginalTargetSlots)
@@ -150,7 +154,9 @@ internal static class SwShRoyalCandyShopPatchMapper
                 installedItems[slot] = RareCandyItemId;
             }
 
-            foreach (var occurrence in mapping.LegacyMissingOccurrences.OrderByDescending(occurrence => occurrence.TargetSlot))
+            foreach (var occurrence in mapping.LegacyMissingOccurrences
+                .Where(_ => !preserveMissingOccurrences)
+                .OrderByDescending(occurrence => occurrence.TargetSlot))
             {
                 installedItems.Insert(occurrence.TargetSlot, RareCandyItemId);
             }
@@ -164,7 +170,7 @@ internal static class SwShRoyalCandyShopPatchMapper
         }
 
         if (mapping.OwnedReplacementTargetSlots.Count > 0
-            || mapping.LegacyMissingOccurrences.Count > 0)
+            || (!preserveMissingOccurrences && mapping.LegacyMissingOccurrences.Count > 0))
         {
             var uninstalledItems = targetItems.ToList();
             foreach (var slot in mapping.OwnedReplacementTargetSlots)
@@ -172,7 +178,9 @@ internal static class SwShRoyalCandyShopPatchMapper
                 uninstalledItems[slot] = RoyalCandyItemId;
             }
 
-            foreach (var occurrence in mapping.LegacyMissingOccurrences.OrderByDescending(occurrence => occurrence.TargetSlot))
+            foreach (var occurrence in mapping.LegacyMissingOccurrences
+                .Where(_ => !preserveMissingOccurrences)
+                .OrderByDescending(occurrence => occurrence.TargetSlot))
             {
                 uninstalledItems.Insert(occurrence.TargetSlot, RoyalCandyItemId);
             }
