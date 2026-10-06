@@ -129,7 +129,8 @@ public sealed class SwShGiftPokemonEditSessionService
             var restoresSourceValue = sourceValue == int.Parse(
                 pendingEdit.NewValue!,
                 CultureInfo.InvariantCulture);
-            workingSession = restoresSourceValue
+            var synchronizeStarter = sourceGift.IsStarter && pendingEdit.Field is "species" or "form";
+            workingSession = restoresSourceValue && !synchronizeStarter
                 ? RemovePendingGiftField(workingSession, gift.GiftIndex, pendingEdit.Field!)
                 : ReplacePendingGiftEdit(workingSession, pendingEdit);
             effectiveWorkflow = restoresSourceValue || normalizedDependentIvs
@@ -226,19 +227,29 @@ public sealed class SwShGiftPokemonEditSessionService
             .OrderBy(source => source.Layer)
             .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
             .ToArray();
+        var presentation = BuildPresentation(project, giftEdits, diagnostics);
+        if (diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error)) return new ChangePlan(session.Id, [], diagnostics);
+        var allSources = sources.Concat(presentation?.Sources ?? []).Distinct().ToArray();
         var write = new PlannedFileWrite(
             giftSource.GraphEntry.RelativePath,
-            sources,
+            allSources,
             File.Exists(targetPath),
             CreatePlanReason(giftEdits));
 
+        var writes = new List<PlannedFileWrite> { write };
+        if (presentation is not null)
+            foreach (var path in presentation.Outputs.Keys.Order(StringComparer.Ordinal))
+            {
+                var target = ResolveOutputPath(paths, path, diagnostics);
+                if (target is not null) writes.Add(new(path, allSources, File.Exists(target), "Synchronize starter scenes with Gift Pokemon."));
+            }
         diagnostics.Add(CreateDiagnostic(
             DiagnosticSeverity.Info,
-            "Change plan preview contains 1 target file."));
+            $"Change plan preview contains {writes.Count} target file(s)."));
 
         return SwShChangePlanSourceGuard.Capture(
             paths,
-            new ChangePlan(session.Id, [write], diagnostics));
+            new ChangePlan(session.Id, writes, diagnostics));
     }
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
@@ -348,6 +359,15 @@ public sealed class SwShGiftPokemonEditSessionService
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
+        var presentation = BuildPresentation(project, GetGiftEdits(session).ToArray(), diagnostics, output);
+        if (diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        var outputs = presentation?.Outputs ?? new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        outputs[giftSource.GraphEntry.RelativePath] = output;
+        if (!outputs.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(currentPlan.Writes.Select(w => w.TargetRelativePath)))
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles,
+                [CreateDiagnostic(DiagnosticSeverity.Error, "Starter presentation targets changed. Review the gift changes again.")]);
+
         if (!SwShOutputRollbackScope.TryCapture(
                 paths,
                 currentPlan.Writes.Select(write => write.TargetRelativePath),
@@ -366,10 +386,13 @@ public sealed class SwShGiftPokemonEditSessionService
         {
             try
             {
-                WriteAllBytesAtomically(targetPath, output);
-                writtenFiles.Add(new ProjectFileReference(
-                    ProjectFileLayer.Generated,
-                    giftSource.GraphEntry.RelativePath));
+                foreach (var (relative, bytes) in outputs)
+                {
+                    var target = ResolveOutputPath(paths, relative, diagnostics)
+                        ?? throw new IOException("Gift output target is unavailable.");
+                    WriteAllBytesAtomically(target, bytes);
+                    writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, relative));
+                }
                 outputRollback.Commit();
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -424,7 +447,7 @@ public sealed class SwShGiftPokemonEditSessionService
             return null;
         }
 
-        AddLinkedPlacementWarning(normalizedField, diagnostics);
+        AddLinkedPlacementWarning(normalizedField, sourceGift.IsStarter, diagnostics);
         return new PendingEdit(
             SwShGiftPokemonWorkflowService.GiftPokemonEditDomain,
             $"Set {effectiveGift.Label} {editableField.Label} to {parsedValue.Value}.",
@@ -693,7 +716,7 @@ public sealed class SwShGiftPokemonEditSessionService
             ValidateOptionBackedValue(sourceWorkflow, effectiveGift, editableField, parsedValue.Value, diagnostics);
         }
 
-        AddLinkedPlacementWarning(edit.Field, diagnostics);
+        AddLinkedPlacementWarning(edit.Field, sourceGift.IsStarter, diagnostics);
         return effectiveGift;
     }
 
@@ -920,7 +943,8 @@ public sealed class SwShGiftPokemonEditSessionService
                         field: SwShGiftPokemonWorkflowService.CanGigantamaxField,
                         expected: "Species/form permitted to Dynamax or Can Gigantamax disabled"));
                 }
-                else if (!IsGigantamaxCapableSpeciesForm(gift.SpeciesId, gift.Form))
+                else if (!IsGigantamaxCapableSpeciesForm(gift.SpeciesId, gift.Form)
+                    && !MatchesBaseGigantamaxIdentity(project.Paths, gift))
                 {
                     diagnostics.Add(CreateDiagnostic(
                         DiagnosticSeverity.Error,
@@ -960,6 +984,25 @@ public sealed class SwShGiftPokemonEditSessionService
                 expected: "Readable Sword/Shield personal data table",
                 file: source.GraphEntry.RelativePath));
             return [];
+        }
+    }
+
+    private static bool MatchesBaseGigantamaxIdentity(ProjectPaths paths, SwShGiftPokemonEntry gift)
+    {
+        // Some vanilla gifts carry the factor before their Gigantamax-capable evolution.
+        // A reset must be able to restore that exact row's original identity and factor.
+        if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath)) return false;
+        var path = Path.Combine(paths.BaseRomFsPath, "bin", "script_event_data", "add_poke.bin");
+        try
+        {
+            var original = SwShGiftPokemonArchive.Parse(File.ReadAllBytes(path)).Gifts
+                .SingleOrDefault(row => row.Index == gift.GiftIndex);
+            return original is not null && original.Species == gift.SpeciesId
+                && original.Form == gift.Form && original.CanGigantamax == gift.CanGigantamax;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            return false;
         }
     }
 
@@ -1134,6 +1177,11 @@ public sealed class SwShGiftPokemonEditSessionService
         foreach (var source in CreateExpectedSources(project, gift, edit.Field))
         {
             yield return source;
+        }
+        if (edit.Field is SwShGiftPokemonWorkflowService.SpeciesField or SwShGiftPokemonWorkflowService.FormField
+            or SwShGiftPokemonWorkflowService.CanGigantamaxField)
+        {
+            yield return new ProjectFileReference(ProjectFileLayer.Base, SwShGiftPokemonWorkflowService.GiftPokemonDataPath);
         }
     }
 
@@ -1729,18 +1777,47 @@ public sealed class SwShGiftPokemonEditSessionService
         destination.Append('|');
     }
 
+    private static SwShStarterPresentation? BuildPresentation(OpenedProject project, IReadOnlyList<PendingEdit> edits,
+        ICollection<ValidationDiagnostic> diagnostics, byte[]? finalTable = null)
+    {
+        try
+        {
+            var source = SwShGiftPokemonWorkflowService.ResolveGiftPokemonDataSource(project)
+                ?? throw new InvalidDataException("Gift source is unavailable.");
+            var archive = SwShGiftPokemonArchive.Parse(File.ReadAllBytes(source.AbsolutePath));
+            if (!edits.Any(edit => edit.Field is "species" or "form"
+                && SwShGiftPokemonWorkflowService.TryParseGiftRecordId(edit.RecordId, out var index)
+                && archive.Gifts.Any(g => g.Index == index && SwShStarterPresentation.IsStarter(g)))) return null;
+            finalTable ??= archive.WriteEdits(edits.Select(edit => ToGiftEdit(archive, edit, diagnostics)).OfType<SwShGiftPokemonEdit>());
+            if (diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error)) return null;
+            var result = new SwShStarterPresentation(project);
+            result.Build(finalTable);
+            foreach (var diagnostic in result.Diagnostics) diagnostics.Add(diagnostic);
+            return result;
+        }
+        catch (Exception exception) when (exception is InvalidDataException or ArgumentException or OverflowException or IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(CreateDiagnostic(DiagnosticSeverity.Error,
+                $"Starter scenes could not be synchronized: {exception.Message}", expected: "Readable compatible starter scene sources and model resources")
+                with { Code = SwShStarterPresentation.SourceInvalidCode });
+            return null;
+        }
+    }
+
     private static void AddLinkedPlacementWarning(
         string? field,
+        bool starter,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (field is SwShGiftPokemonWorkflowService.SpeciesField
             or SwShGiftPokemonWorkflowService.FormField)
         {
             diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Warning,
-                "Species and form edits update the gift table only; some visible overworld placements may need a separate placement review.",
+                starter ? DiagnosticSeverity.Info : DiagnosticSeverity.Warning,
+                starter ? "Starter species and form changes also synchronize selection, Hop and Leon's choices, and the first visit home, including dialogue and cries."
+                    : "Species and form edits update the gift table only; some visible overworld placements may need a separate placement review.",
                 field: field,
-                expected: "Review linked placement assets when changing visible gift Pokemon"));
+                expected: starter ? "Review the linked starter scene files with the gift changes" : "Review linked placement assets when changing visible gift Pokemon"));
         }
     }
 

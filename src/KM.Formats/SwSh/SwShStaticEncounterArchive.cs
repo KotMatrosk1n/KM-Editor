@@ -125,6 +125,14 @@ public sealed record SwShStaticEncounterArchive(IReadOnlyList<SwShStaticEncounte
         return writer.ToArray();
     }
 
+    public bool SupportsFormChanges(int encounterIndex)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(encounterIndex);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(encounterIndex, Encounters.Count);
+        return SourceData is null || SourceEncounterTableOffsets is null
+            || ReadTableFieldOffset(SourceData, SourceEncounterTableOffsets[encounterIndex], 8) != 0;
+    }
+
     public byte[] WriteEdits(IEnumerable<SwShStaticEncounterEdit> edits)
     {
         ArgumentNullException.ThrowIfNull(edits);

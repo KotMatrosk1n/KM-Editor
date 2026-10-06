@@ -569,6 +569,9 @@ public sealed record SwShGiftPokemonArchive(IReadOnlyList<SwShGiftPokemonRecord>
         WriteUInt16At(output, expandedVtableOffset, checked((ushort)expandedVtableLength));
 
         AlignBuffer(output, sizeof(ulong));
+        // Retained field offsets need the table's original alignment residue.
+        // The table header itself can start four bytes before an aligned ulong.
+        GrowBuffer(output, tableOffset % sizeof(ulong));
         var expandedTableOffset = output.Count;
         output.AddRange(source.Slice(tableOffset, layout.ObjectSize).ToArray());
         WriteInt32At(

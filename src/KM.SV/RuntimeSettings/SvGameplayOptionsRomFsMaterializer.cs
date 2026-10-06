@@ -159,7 +159,8 @@ internal static class SvGameplayOptionsRomFsMaterializer
     /// </summary>
     public static IReadOnlyDictionary<string, byte[]> Build(
         ProjectPaths paths,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<string, byte[], byte[]>? resolveCurrent = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         cancellationToken.ThrowIfCancellationRequested();
@@ -181,7 +182,8 @@ internal static class SvGameplayOptionsRomFsMaterializer
             baseMain,
             SvGameplayOptionsLuaTransformer.VanillaSourceSha256);
         var transformedMain =
-            SvGameplayOptionsLuaTransformer.TransformVanillaSource(baseMain);
+            SvGameplayOptionsLuaTransformer.TransformSupportedSource(
+                resolveCurrent?.Invoke(MainScriptPath, baseMain) ?? baseMain);
 
         var originalSources = new List<CoordinatedGameTextSource>(Locales.Length);
         foreach (var locale in Locales)
@@ -195,8 +197,8 @@ internal static class SvGameplayOptionsRomFsMaterializer
             EnsureHash(tablePath, table, CommonTableSha256);
             originalSources.Add(new CoordinatedGameTextSource(
                 locale.Language,
-                data,
-                table));
+                resolveCurrent?.Invoke(dataPath, data) ?? data,
+                resolveCurrent?.Invoke(tablePath, table) ?? table));
         }
 
         IReadOnlyList<CoordinatedGameTextSource> current = originalSources;

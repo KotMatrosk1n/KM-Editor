@@ -4,6 +4,8 @@ namespace KM.Api.Bridge;
 
 public static class BridgeErrorCodes
 {
+    public const string GiftPresentationSourceInvalid = "KM-SWSH-GIFT-PRESENTATION-SOURCE-INVALID";
+    public const string GiftPresentationTextPreserved = "KM-SWSH-GIFT-PRESENTATION-TEXT-PRESERVED";
     public const string NpcGiftMoneyAmountInvalid = "KM-SWSH-NPC-GIFT-MONEY-AMOUNT-INVALID";
     public const string NpcGiftMoneySourceInvalid = "KM-SWSH-NPC-GIFT-MONEY-SOURCE-INVALID";
     public const string SvTitanRecoveryPlanned = "KM-SV-TITAN-RECOVERY-PLANNED";

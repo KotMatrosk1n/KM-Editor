@@ -462,6 +462,7 @@ public sealed class SwShGiftPokemonWorkflowService
             AbilityOptions = CreateAbilityOptions(lookupTables, gift.Species, gift.Form),
             GenderOptions = CreateGenderOptions(lookupTables.AbilityResolver, gift.Species, gift.Form),
             SourceIdentity = CreateSourceIdentity(gift),
+            IsStarter = SwShStarterPresentation.IsStarter(gift),
         };
     }
 

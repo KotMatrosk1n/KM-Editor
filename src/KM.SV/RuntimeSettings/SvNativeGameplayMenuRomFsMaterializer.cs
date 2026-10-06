@@ -15,8 +15,9 @@ public static class SvNativeGameplayMenuRomFsMaterializer
 
     public static IReadOnlyDictionary<string, byte[]> Build(
         ProjectPaths paths,
-        CancellationToken cancellationToken = default) =>
-        SvGameplayOptionsRomFsMaterializer.Build(paths, cancellationToken);
+        CancellationToken cancellationToken = default,
+        Func<string, byte[], byte[]>? resolveCurrent = null) =>
+        SvGameplayOptionsRomFsMaterializer.Build(paths, cancellationToken, resolveCurrent);
 
     public static IReadOnlyDictionary<string, byte[]> Build(
         string baseRomFsRoot,

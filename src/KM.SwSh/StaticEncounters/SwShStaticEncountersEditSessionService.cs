@@ -1633,7 +1633,7 @@ public sealed class SwShStaticEncountersEditSessionService
     {
         return pendingEdits.Count == 1
             ? $"Apply pending Static Encounter edit: {pendingEdits[0].Summary}"
-            : $"Apply {pendingEdits.Count} pending Static Encounter edits: {string.Join(" ", pendingEdits.Select(edit => edit.Summary))}";
+            : $"Apply {pendingEdits.Count} pending Static Encounter edits.";
     }
 
     private static ApplyResult CreateApplyResult(

@@ -74,7 +74,7 @@
     "titanSwapper.sourceUnavailable": "Titan Swapper nécessite un script S/V 4.0.0 compatible, les tables des événements et des Pokémon, ainsi qu'un catalogue de modèles disponibles. Vérifiez les fichiers du jeu et rechargez.",
     "titanSwapper.outputFailed": "Impossible d'écrire les fichiers des Titans. Vérifiez l'état de la sortie et les modifications avant de réessayer.",
     "titanSwapper.pendingRecord": "{pokemon}, {phase}",
-    "titanSwapper.compatibility": "Titan Swapper et Gameplay Options ne peuvent pas être combinés dans cette bêta. Restaurez les combats originaux ou retirez le paquet Gameplay Options avant d'utiliser l'autre éditeur. La visibilité des matériaux de CT est prise en charge.",
+    "titanSwapper.compatibility": "Titan Swapper fonctionne avec la visibilité des matériaux de CT et Gameplay Settings. Après une modification ou une restauration dans ces éditeurs, actualisez l’état et mettez à niveau le paquet Gameplay Settings installé.",
     "titanSwapper.title": "Titan Swapper",
     "workbench.section.titan-swapper.label": "Titan Swapper",
     "workbench.section.titan-swapper.description": "Choisissez le Pokémon affronté à chaque phase du Dominant. Le Dominant original reste associé aux scènes de l’histoire.",
@@ -3152,8 +3152,8 @@
     "settings.layout.focused.description": "Centre le navigateur au-dessus de l'élément sélectionné afin que les détails utilisent toute la largeur de l'éditeur.",
     "settings.layout.groupLabel": "Disposition de l'éditeur",
     "settings.layout.title": "Disposition",
-    "randomizer.recovery.confirm": "KM Editor ne restaure les fichiers suivis que si leur contenu actuel correspond encore à la sortie enregistrée du Randomizer. La sortie précédente est récupérée lorsqu'elle est disponible et les fichiers inchangés créés par le Randomizer sont supprimés. Les modifications ultérieures sont conservées et signalées.",
-    "randomizer.recovery.description": "Rétablit les fichiers suivis dans leur état antérieur au Randomizer. La sortie précédente est récupérée lorsqu'elle est disponible, les fichiers inchangés créés par le Randomizer sont supprimés et les fichiers modifiés par la suite sont conservés.",
+    "randomizer.recovery.confirm": "KM Editor annulera les modifications enregistrées du Randomizer en conservant les modifications et suppressions ultérieures. Pour les anciennes exécutions, les fichiers modifiés ensuite sont conservés.",
+    "randomizer.recovery.description": "Annuler les modifications du Randomizer en conservant les modifications ultérieures. Les anciennes exécutions peuvent conserver un fichier modifié dans son intégralité.",
     "randomizer.recovery.resultHelp": "Le résultat répertorie les fichiers restaurés ou supprimés. Les diagnostics indiquent les modifications ultérieures conservées et les entrées qui nécessitent encore une intervention.",
     "randomizer.reset.help": "Rétablit les sélections par défaut du Randomizer et efface le résultat généré. La graine de base et la graine partagée collée restent inchangées. Aucun fichier du dossier de sortie n'est modifié.",
     "randomizer.seed.baseHelp": "Texte facultatif utilisé uniquement pour générer un nouveau tirage. Ce n'est pas une graine de répétition complète.",
@@ -4770,7 +4770,9 @@
     "heldItemChance.pokemonScope": "Les objets et les chances sont partagés par ce Pokémon et cette forme dans tous les lieux de rencontre sauvage. Les autres Pokémon conservent leurs réglages. Les objets imposés par une rencontre peuvent rester prioritaires.",
     "heldItemChance.customHelp": "Les chances personnalisées s’appliquent même si deux emplacements contiennent le même objet. Un emplacement vide ne donne aucun objet. Un Pokémon ne peut tenir qu’un seul objet.",
     "heldItemChance.pokemonInvalid": "Choisissez des objets valides et des pourcentages entiers de 0 à 100. Les totaux normaux et augmentés doivent chacun rester inférieurs ou égaux à 100%.",
-    "modelViewer.warning.materialEffectApproximate": "Les couleurs du feu, les textures défilantes et les masques sont affichés de manière approximative. Leur apparence peut différer dans le jeu."
+    "modelViewer.warning.materialEffectApproximate": "Les couleurs du feu, les textures défilantes et les masques sont affichés de manière approximative. Leur apparence peut différer dans le jeu.",
+    "gifts.synchronizeStarterScenes": "Synchroniser les scènes de départ",
+    "gifts.starterScenesHelp": "Prépare les cadeaux de départ actuels pour la sélection, Nabil et Tarak, et Maman, avec les noms et les cris. Préparez ou abandonnez d’abord les modifications locales."
   },
   "literals": {
     "League Staff Isaac": "Isaac, employé de la Ligue",

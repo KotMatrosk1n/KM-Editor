@@ -165,7 +165,7 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
             var outputRuntimeSlot = reviewedSources[2];
             sourceDependencies = reviewedSources
                 .Select(source => new OutputReadDependency(source.Path, source.State))
-                .Concat(KM.SV.TitanSwapper.SvTitanSwapperCompatibility.ReviewGameplayMenuSources(paths))
+                .Concat(preparedRomFs.OutputDependencies)
                 .ToArray();
             usesComposedMain = outputMain.Exists;
             usesComposedMainNpdm = outputNpdm.Exists;
@@ -270,18 +270,19 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var current = new NativeGameplayMenuRomFsSources(paths, cancellationToken);
         var components = game switch
         {
             ProjectGame.Scarlet or ProjectGame.Violet =>
-                SvNativeGameplayMenuRomFsMaterializer.Build(paths, cancellationToken),
+                SvNativeGameplayMenuRomFsMaterializer.Build(paths, cancellationToken, current.Resolve),
             ProjectGame.Sword or ProjectGame.Shield when
                 !string.IsNullOrWhiteSpace(paths.BaseRomFsPath) =>
                 SwShNativeGameplayMenuRomFsMaterializer.Build(
                     game,
                     paths.BaseRomFsPath,
-                    cancellationToken),
+                    cancellationToken, current.Resolve),
             ProjectGame.ZA =>
-                ZaNativeGameplayMenuRomFsMaterializer.Build(paths, cancellationToken),
+                ZaNativeGameplayMenuRomFsMaterializer.Build(paths, cancellationToken, current.Resolve),
             _ => throw new ArgumentOutOfRangeException(nameof(game)),
         };
         var dependencies = ReviewRomFsDependencies(
@@ -289,7 +290,7 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
             game,
             components.Keys,
             cancellationToken);
-        return new PreparedRomFs(components, dependencies);
+        return new PreparedRomFs(components, dependencies, current.Dependencies);
     }
 
     private static IReadOnlyList<InGameSettingsExternalSourceDependency>
@@ -829,5 +830,6 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
 
     private sealed record PreparedRomFs(
         IReadOnlyDictionary<string, byte[]> Components,
-        IReadOnlyList<InGameSettingsExternalSourceDependency> Dependencies);
+        IReadOnlyList<InGameSettingsExternalSourceDependency> Dependencies,
+        IReadOnlyList<OutputReadDependency> OutputDependencies);
 }

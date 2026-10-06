@@ -109,7 +109,8 @@ internal static class SwShOutputTransactionWriter
         IEnumerable<SwShOutputFileMutation> requestedMutations,
         string operationId,
         out OutputApplyResult? result,
-        out SwShOutputTransactionFailure? failure)
+        out SwShOutputTransactionFailure? failure,
+        IEnumerable<OutputReadDependency>? readDependencies = null)
     {
         return TryApply(
             paths,
@@ -118,7 +119,8 @@ internal static class SwShOutputTransactionWriter
             MaximumFpsPatchFilesPerTransaction,
             FpsPatchCoordinatorOptions,
             out result,
-            out failure);
+            out failure,
+            readDependencies);
     }
 
     private static bool TryApply(
@@ -128,7 +130,8 @@ internal static class SwShOutputTransactionWriter
         int maximumFilesPerTransaction,
         OutputTransactionCoordinatorOptions coordinatorOptions,
         out OutputApplyResult? result,
-        out SwShOutputTransactionFailure? failure)
+        out SwShOutputTransactionFailure? failure,
+        IEnumerable<OutputReadDependency>? readDependencies = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(requestedMutations);
@@ -457,6 +460,7 @@ internal static class SwShOutputTransactionWriter
                 OutputReviewFingerprint.FromMutations(mutations),
                 origins,
                 mutations,
+                readDependencies: readDependencies,
                 ownershipInventoryRevision: ownershipSnapshot?.Revision);
             result = coordinator
                 .ApplyAsync(plan)
@@ -474,6 +478,14 @@ internal static class SwShOutputTransactionWriter
                     : "The output transaction did not commit and was rolled back.",
                 result.Receipt.OutcomeCode,
                 RecoveryRequired: result.Outcome == OutputApplyOutcome.RecoveryRequired);
+            return false;
+        }
+        catch (OutputPreimageConflictException exception)
+        {
+            failure = new SwShOutputTransactionFailure(
+                exception.Path.Value,
+                exception.Message,
+                "KM-OUTPUT-PREIMAGE-CHANGED");
             return false;
         }
         catch (OutputRecoveryRequiredException exception)

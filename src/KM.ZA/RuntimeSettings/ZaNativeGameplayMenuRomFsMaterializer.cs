@@ -189,7 +189,8 @@ public static class ZaNativeGameplayMenuRomFsMaterializer
     /// </summary>
     public static IReadOnlyDictionary<string, byte[]> Build(
         ProjectPaths paths,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<string, byte[], byte[]>? resolveCurrent = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         cancellationToken.ThrowIfCancellationRequested();
@@ -206,13 +207,15 @@ public static class ZaNativeGameplayMenuRomFsMaterializer
         return BuildCore(
             paths.BaseRomFsPath,
             paths.PokemonLegendsZASupportFolderPath,
-            cancellationToken);
+            cancellationToken,
+            resolveCurrent);
     }
 
     private static IReadOnlyDictionary<string, byte[]> BuildCore(
         string baseRomFsRoot,
         string? compressionSupportFolderPath,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<string, byte[], byte[]>? resolveCurrent = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         using var source = new BaseRomFsSource(
@@ -233,7 +236,9 @@ public static class ZaNativeGameplayMenuRomFsMaterializer
             var table = source.Read(tablePath, MaximumMessageBytes);
             EnsureHash(dataPath, data, locale.DataSha256);
             EnsureHash(tablePath, table, CommonTableSha256);
-            originals.Add(new CoordinatedGameTextSource(locale.Language, data, table));
+            originals.Add(new CoordinatedGameTextSource(locale.Language,
+                resolveCurrent?.Invoke(dataPath, data) ?? data,
+                resolveCurrent?.Invoke(tablePath, table) ?? table));
         }
 
         IReadOnlyList<CoordinatedGameTextSource> current = originals;
@@ -294,6 +299,10 @@ public static class ZaNativeGameplayMenuRomFsMaterializer
             throw new InvalidDataException(
                 "The Z-A layered Trinity descriptor did not preserve its exact empty inverse.");
         }
+        if (resolveCurrent is not null)
+            descriptor = ZaTrinityDescriptorPatcher.RemoveFileHashes(
+                resolveCurrent("romfs/arc/data.trpfd", baseDescriptor),
+                virtualPaths.Select(ZaTrinityPathHasher.HashPath).ToHashSet());
         result.Add("romfs/arc/data.trpfd", descriptor);
 
         if (result.Count != 1 + (Locales.Length * 2)

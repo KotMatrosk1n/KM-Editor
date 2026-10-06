@@ -416,7 +416,7 @@ internal static class SwShRoyalCandyCleanup
 
         try
         {
-            var mapping = SwShRoyalCandyShopPatchMapper.Analyze(sourceData, baseData);
+            var mapping = SwShRoyalCandyShopPatchMapper.Analyze(sourceData, baseData, preserveMissingOccurrences: true);
             if (mapping.BaseOccurrences == 0)
             {
                 message = "Royal Candy shop cleanup cannot find any base item 1128 occurrence to verify.";
@@ -431,16 +431,15 @@ internal static class SwShRoyalCandyCleanup
                 return true;
             }
 
-            if (mapping.OwnedReplacementOccurrences > 0
-                || mapping.LegacyMissingOccurrences > 0)
+            if (mapping.OwnedReplacementOccurrences > 0)
             {
                 var restoredBytes = sourceData.WriteEdits(mapping.UninstallEdits);
                 var restoredMapping = SwShRoyalCandyShopPatchMapper.Analyze(
                     SwShShopDataFile.Parse(restoredBytes),
                     baseData);
-                if (restoredMapping.OriginalOccurrences != restoredMapping.BaseOccurrences
+                if (restoredMapping.OriginalOccurrences + restoredMapping.LegacyMissingOccurrences != restoredMapping.BaseOccurrences
                     || restoredMapping.OwnedReplacementOccurrences != 0
-                    || restoredMapping.LegacyMissingOccurrences != 0)
+                    || restoredMapping.LegacyMissingOccurrences != mapping.LegacyMissingOccurrences)
                 {
                     message = "Royal Candy shop cleanup cannot restore every uniquely mapped vanilla item 1128 occurrence.";
                     return true;
@@ -535,15 +534,9 @@ internal static class SwShRoyalCandyCleanup
                 return true;
             }
 
-            if (result.Before.HasConflicts)
-            {
-                message = $"Royal Candy acquisition cleanup found {result.Before.ConflictOccurrenceCount:N0} foreign value(s) in verified vanilla references in '{entry.RelativePath}'.";
-                return true;
-            }
-
-            if (result.After.OriginalOccurrenceCount != result.After.BaseOccurrenceCount
+            if (result.After.OriginalOccurrenceCount + result.After.ConflictOccurrenceCount != result.After.BaseOccurrenceCount
                 || result.After.ReplacementOccurrenceCount != 0
-                || result.After.HasConflicts)
+                || !result.After.Conflicts.SequenceEqual(result.Before.Conflicts))
             {
                 message = $"Royal Candy acquisition cleanup cannot restore every verified vanilla item 1128 reference in '{entry.RelativePath}'.";
                 return true;
@@ -805,16 +798,15 @@ internal static class SwShRoyalCandyCleanup
 
         var targetData = SwShShopDataFile.Parse(targetBytes);
         var baseData = SwShShopDataFile.Parse(baseBytes);
-        var mapping = SwShRoyalCandyShopPatchMapper.Analyze(targetData, baseData);
-        if (mapping.OwnedReplacementOccurrences == 0
-            && mapping.LegacyMissingOccurrences == 0)
+        var mapping = SwShRoyalCandyShopPatchMapper.Analyze(targetData, baseData, preserveMissingOccurrences: true);
+        if (mapping.OwnedReplacementOccurrences == 0)
         {
             diagnostics.Add(CreateDiagnostic(
                 diagnosticDomain,
                 DiagnosticSeverity.Warning,
                 $"Preserved Royal Candy shop cleanup target '{targetRelativePath}' because no uniquely mapped Royal Candy-owned replacement was detected.",
                 file: targetRelativePath,
-                expected: "A uniquely mapped item 50 replacement or legacy missing vanilla item 1128 occurrence"));
+                expected: "A uniquely mapped item 50 replacement"));
             return false;
         }
 
@@ -1209,8 +1201,7 @@ internal static class SwShRoyalCandyCleanup
             var targetData = SwShShopDataFile.Parse(File.ReadAllBytes(sourcePath));
             var baseData = SwShShopDataFile.Parse(File.ReadAllBytes(basePath));
             var mapping = SwShRoyalCandyShopPatchMapper.Analyze(targetData, baseData);
-            return mapping.LegacyMissingOccurrences == 0
-                && mapping.OwnedReplacementOccurrences > 0
+            return mapping.OwnedReplacementOccurrences > 0
                 && SwShRoyalCandyAcquisitionOwnershipService.Inspect(project).IsValid;
         }
         catch (InvalidDataException)
@@ -1249,8 +1240,7 @@ internal static class SwShRoyalCandyCleanup
                 StringComparison.OrdinalIgnoreCase)
                 ? SwShRoyalCandyAcquisitionPatcher.AnalyzeRaidRewards(sourceBytes, baseBytes)
                 : AnalyzePlacementAcquisition(project.Paths, sourceBytes, baseBytes);
-            return analysis.ReplacementOccurrenceCount > 0
-                && !analysis.HasConflicts;
+            return analysis.ReplacementOccurrenceCount > 0;
         }
         catch (Exception exception) when (exception is InvalidDataException
             or IOException

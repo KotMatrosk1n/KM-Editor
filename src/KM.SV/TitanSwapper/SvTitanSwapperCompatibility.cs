@@ -6,27 +6,16 @@ using KM.Core.Semantics;
 
 namespace KM.SV.TitanSwapper;
 
-/// <summary>Guards the beta runtime against separate packages that shadow its shared script.</summary>
+/// <summary>Reviews shared script sources for package composition.</summary>
 public static class SvTitanSwapperCompatibility
 {
-    public const string Message = "Titan Swapper and Gameplay Options cannot be combined in this beta. Restore Titan replacements or remove the Gameplay Options package before using the other editor.";
-
-    internal static bool HasGameplayPackage(ProjectPaths paths)
-    {
-        var title = paths.SelectedGame == ProjectGame.Scarlet ? "0100A3D008C5C000" : "01008F6008C5E000";
-        return ReadOutput(paths, $"config/km-editor/gameplay-settings/{title}/bundle.manifest").State.Exists
-            || new[] { $"atmosphere/contents/{title}", $"mods/contents/{title}/KM-Gameplay-Settings", $"load/{title}/KM-Gameplay-Settings" }
-                .Any(root => ReadOutput(paths, $"{root}/romfs/{SvTitanSwapperScript.VirtualPath}").State.Exists);
-    }
-
     public static IReadOnlyList<OutputReadDependency> ReviewGameplayMenuSources(ProjectPaths paths)
     {
         if (paths.SelectedGame is not (ProjectGame.Scarlet or ProjectGame.Violet)) return [];
         var sources = new[] { $"romfs/{SvTitanSwapperScript.VirtualPath}", SvTitanSwapperScript.VirtualPath }
             .Select(path => (Path: new RelativeOutputPath(path), Source: ReadOutput(paths, path))).ToArray();
         foreach (var source in sources)
-            if (source.Source.State.Exists && SvTitanSwapperScript.ReadLabels(source.Source.Bytes).Count != 0)
-                throw new InvalidDataException(Message);
+            if (source.Source.State.Exists) SvTitanSwapperScript.ReadLabels(source.Source.Bytes);
         return sources.Select(source => new OutputReadDependency(source.Path, source.Source.State)).ToArray();
     }
 

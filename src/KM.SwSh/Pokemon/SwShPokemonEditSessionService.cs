@@ -1660,7 +1660,7 @@ public sealed class SwShPokemonEditSessionService
         return parsedValue.Value;
     }
 
-    private static int? TryGetCurrentEditableValue(SwShPokemonRecord pokemon, string field)
+    internal static int? TryGetCurrentEditableValue(SwShPokemonRecord pokemon, string field)
     {
         return field switch
         {

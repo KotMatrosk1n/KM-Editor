@@ -100,6 +100,27 @@ public static class SvGameplayOptionsLuaTransformer
     public static bool IsSupportedVanillaSource(ReadOnlySpan<byte> sourceBytes) =>
         SourceHashMatches(sourceBytes);
 
+    /// <summary>Adds menu hooks while preserving the supported shared script editors.</summary>
+    public static byte[] TransformSupportedSource(byte[] sourceBytes)
+    {
+        if (IsSupportedVanillaSource(sourceBytes)) return TransformVanillaSource(sourceBytes);
+        var current = TitanSwapper.SvTitanSwapperScript.Remove(sourceBytes);
+        if (current.HasGameplayOptions) return sourceBytes.ToArray();
+        // The shared-script validator proves the other supported features. These
+        // three prototypes are disjoint from their instructions and helpers.
+        var chunk = Lua54BinaryChunk.Parse(sourceBytes);
+        var children = chunk.Root.Children.ToArray();
+        foreach (var target in Targets)
+        {
+            var original = children[target.RootChildIndex];
+            ValidateBasePrototype(original, target);
+            children[target.RootChildIndex] = PatchPrototype(original, target);
+        }
+        var output = chunk.WithRoot(chunk.Root.WithChildren(children)).Serialize();
+        VerifyOutputAndInverse(output, sourceBytes);
+        return output;
+    }
+
     public static byte[] TransformVanillaSource(ReadOnlySpan<byte> sourceBytes)
     {
         if (!SourceHashMatches(sourceBytes))

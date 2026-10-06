@@ -29,7 +29,6 @@ internal sealed class SvTitanSwapperService(ProjectWorkspaceService projects)
     private readonly SvWorkflowFileSource files = new(bypassReusableBaseCache: true, maximumReadBytes: 32 * 1024 * 1024);
     private sealed record Intent(string Revision, int Previous, int Value, IReadOnlyList<string> Fingerprints,
         IReadOnlyDictionary<string, int> Row);
-    private sealed class ScriptConflictException : IOException;
     private sealed record Source(SvTitanSwapperDocument Document, byte[] Script, string Revision,
         IReadOnlyList<ProjectFileReference> References, IReadOnlyList<SvTitanSpeciesOption> Species, IReadOnlyList<string> Fingerprints);
 
@@ -43,8 +42,7 @@ internal sealed class SvTitanSwapperService(ProjectWorkspaceService projects)
         var script = files.Read(project, SvTitanSwapperScript.VirtualPath);
         var personal = files.Read(project, SvDataPaths.PersonalArray);
         var catalogSource = files.Read(project, CatalogPath);
-        if (SvTitanSwapperScript.Remove(script.Bytes).HasGameplayOptions || SvTitanSwapperCompatibility.HasGameplayPackage(paths))
-            throw new ScriptConflictException();
+        SvTitanSwapperScript.ReadLabels(script.Bytes);
         var document = new SvTitanSwapperDocument(data.Bytes);
         var labels = SvTextLabelLookup.LoadPokemonNames(project, files, diagnostics, paths);
         var table = global::personal_table.GetRootAspersonal_table(new ByteBuffer(personal.Bytes));
@@ -93,11 +91,6 @@ internal sealed class SvTitanSwapperService(ProjectWorkspaceService projects)
                 if (Resolve(source, edit, paths, diagnostics, out var value)) values[edit.RecordId!][edit.Field!] = value;
             return new(summary, source.Revision, source.Document.Rows.Where(row => Supports(row, paths))
                 .Select(row => row with { Values = values[row.Id] }).ToArray(), source.Species, diagnostics);
-        }
-        catch (ScriptConflictException)
-        {
-            diagnostics.Add(Error(SvTitanSwapperCompatibility.Message, "compatibility"));
-            return new(summary with { Availability = SvWorkflowAvailability.Disabled }, "", [], [], diagnostics);
         }
         catch (Exception exception) when (SourceFailure(exception))
         {
@@ -311,6 +304,6 @@ internal sealed class SvTitanSwapperService(ProjectWorkspaceService projects)
         or InvalidOperationException or ArgumentException or OverflowException or IndexOutOfRangeException or KeyNotFoundException;
     private static ValidationDiagnostic Error(string message, string field) => new(DiagnosticSeverity.Error, message,
         $"romfs/{TablePath}", Domain, field) { Code = field switch
-        { "compatibility" => "KM-SV-TITAN-SWAPPER-SCRIPT-CONFLICT", "sourceRevision" or "review" => "KM-SV-TITAN-SWAPPER-SOURCE-STALE", "source" => "KM-SV-TITAN-SWAPPER-SOURCE-UNAVAILABLE",
+        { "sourceRevision" or "review" => "KM-SV-TITAN-SWAPPER-SOURCE-STALE", "source" => "KM-SV-TITAN-SWAPPER-SOURCE-UNAVAILABLE",
             "output" => "KM-SV-TITAN-SWAPPER-OUTPUT-FAILED", _ => "KM-SV-TITAN-SWAPPER-EDIT-INVALID" } };
 }

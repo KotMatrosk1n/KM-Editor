@@ -40,7 +40,8 @@ public static class SwShNativeGameplayMenuRomFsMaterializer
     ];
 
     public static IReadOnlyDictionary<string, byte[]> Build(
-        ProjectGame game, string baseRomFsRoot, CancellationToken cancellationToken = default)
+        ProjectGame game, string baseRomFsRoot, CancellationToken cancellationToken = default,
+        Func<string, byte[], byte[]>? resolveCurrent = null)
     {
         if (game is not ProjectGame.Sword and not ProjectGame.Shield)
             throw new InvalidOperationException("The Options gameplay page requires Sword or Shield.");
@@ -49,8 +50,8 @@ public static class SwShNativeGameplayMenuRomFsMaterializer
         cancellationToken.ThrowIfCancellationRequested();
         var sources = Languages.Select((language, index) => new CoordinatedGameTextSource(
             language,
-            ReadExactSource(root, $"bin/message/{language}/{MessagePath}.dat", DataHashes[index]),
-            ReadExactSource(root, $"bin/message/{language}/{MessagePath}.tbl", KeysHash))).ToArray();
+            ReadSource($"bin/message/{language}/{MessagePath}.dat", DataHashes[index]),
+            ReadSource($"bin/message/{language}/{MessagePath}.tbl", KeysHash))).ToArray();
         foreach (var message in Messages)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -66,6 +67,12 @@ public static class SwShNativeGameplayMenuRomFsMaterializer
             outputs[$"romfs/bin/message/{source.Language}/{MessagePath}.tbl"] = source.Keys;
         }
         return outputs;
+
+        byte[] ReadSource(string path, string expectedHash)
+        {
+            var original = ReadExactSource(root, path, expectedHash);
+            return resolveCurrent?.Invoke($"romfs/{path}", original) ?? original;
+        }
     }
 
     private static byte[] ReadExactSource(string root, string relativePath, string expectedSha256)
