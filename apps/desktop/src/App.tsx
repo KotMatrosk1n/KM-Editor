@@ -20626,7 +20626,7 @@ export function App({
                 onStartEditSession={handleStartEditSession}
                 onRemoveGiftPokemonShinyLocks={handleRemoveGiftPokemonShinyLocks}
                 onStageGiftPokemonVanilla={
-                  isPokemonLegendsZAProject ? handleStageGiftPokemonVanilla : undefined
+                  isPokemonLegendsZAProject || isSwordShieldProject ? handleStageGiftPokemonVanilla : undefined
                 }
                 onUpdateGiftPokemonFields={handleUpdateGiftPokemonFields}
                 pokemonWorkflow={pokemonWorkflow}
@@ -35383,6 +35383,13 @@ function getPendingEditDisplayDetails(
       const gift = context.giftPokemonWorkflow?.gifts.find(
         (candidate) => candidate.giftIndex === giftIndex
       );
+      if (edit.field === 'restoreVanilla') {
+        return createPendingEditDisplayDetails(edit, {
+          editorLabel, recordLabel: gift?.label, fieldLabel: 'Restore Vanilla',
+          fieldLocalizationKey: 'gifts.restoreVanilla', newValueLabel: 'Vanilla',
+          newValueLocalizationKey: 'trainerWhiteout.restoreValue'
+        });
+      }
       const editableField = findPendingEditableField(
         context.giftPokemonWorkflow?.editableFields,
         edit.field
@@ -38436,7 +38443,9 @@ function SelectedGiftPokemonPanel({
   const giftRevertMessage = hasSelectedGiftLocalDrafts
     ? t('za.gifts.revertDraftBlocked')
     : gift?.revertToVanillaBlockedReason ??
-      t('za.gifts.revertHelp');
+      (editorFamily === 'swsh'
+        ? t(gift?.canRevertToVanilla ? 'gifts.restoreHelp' : 'gifts.restoreUnavailable')
+        : t('za.gifts.revertHelp'));
   const canRevertSelectedGift =
     gift !== null &&
     onStageGiftPokemonVanilla !== undefined &&
@@ -38858,7 +38867,7 @@ function SelectedGiftPokemonPanel({
                     busyLabel={t('za.encounters.reverting')}
                     icon={<RotateCcw aria-hidden="true" size={16} />}
                     isBusy={isGiftPokemonUpdating}
-                    label={t('za.encounters.revertToVanilla')}
+                    label={t(editorFamily === 'swsh' ? 'gifts.restoreVanilla' : 'za.encounters.revertToVanilla')}
                   />
                 </button>
                 <small

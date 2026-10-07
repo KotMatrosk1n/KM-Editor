@@ -4772,7 +4772,10 @@
     "heldItemChance.pokemonInvalid": "Elige objetos válidos y porcentajes enteros entre 0 y 100. Cada grupo de probabilidades normales y aumentadas debe sumar como máximo 100%.",
     "modelViewer.warning.materialEffectApproximate": "Los colores del fuego, las texturas en movimiento y las máscaras se muestran de forma aproximada. Su aspecto puede variar en el juego.",
     "gifts.synchronizeStarterScenes": "Sincronizar escenas iniciales",
-    "gifts.starterScenesHelp": "Prepara los regalos iniciales actuales para la selección, Hop y Lionel, y mamá, incluidos nombres y gritos. Prepara o descarta primero los cambios locales."
+    "gifts.starterScenesHelp": "Prepara los regalos iniciales actuales para la selección, Hop y Lionel, y mamá, incluidos nombres y gritos. Prepara o descarta primero los cambios locales.",
+    "gifts.restoreVanilla": "Restaurar valores originales",
+    "gifts.restoreHelp": "Prepara los valores originales de este regalo. Los cambios reconocidos en escenas y diálogos se restauran solo para este Pokémon inicial. Las ediciones antiguas restauran únicamente el regalo; se conservan los cambios independientes.",
+    "gifts.restoreUnavailable": "Se necesita un registro de regalo correspondiente en el RomFS base para restaurarlo."
   },
   "literals": {
     "League Staff Isaac": "Isaac, personal de la Liga",

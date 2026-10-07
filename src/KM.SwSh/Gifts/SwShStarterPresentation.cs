@@ -7,7 +7,7 @@ using KM.Formats.SwSh;
 
 namespace KM.SwSh.Gifts;
 
-internal sealed class SwShStarterPresentation(OpenedProject project)
+internal sealed partial class SwShStarterPresentation(OpenedProject project)
 {
     internal const string SourceInvalidCode = "KM-SWSH-GIFT-PRESENTATION-SOURCE-INVALID";
     internal const string TextPreservedCode = "KM-SWSH-GIFT-PRESENTATION-TEXT-PRESERVED";
@@ -23,7 +23,7 @@ internal sealed class SwShStarterPresentation(OpenedProject project)
 
     internal static bool IsStarter(SwShGiftPokemonRecord gift) => GiftHashes.Contains(gift.Hash1);
 
-    internal void Build(byte[] finalGiftTable)
+    internal void Build(byte[] finalGiftTable, IReadOnlySet<int>? slots = null)
     {
         var gifts = SwShGiftPokemonArchive.Parse(finalGiftTable).Gifts;
         var values = GiftHashes.Select(hash =>
@@ -41,16 +41,19 @@ internal sealed class SwShStarterPresentation(OpenedProject project)
             var path = $"romfs/bin/script/amx/{SwShStarterPresentationScript.Names[script]}.amx";
             var source = Read(path);
             previous[script] = SwShStarterPresentationScript.Read(source, script);
-            Outputs[path] = SwShStarterPresentationScript.Write(source, script, values);
+            var mapped = previous[script].ToArray();
+            for (var slot = 0; slot < 3; slot++) if (slots is null || slots.Contains(slot)) mapped[slot] = values[slot];
+            Outputs[path] = SwShStarterPresentationScript.Write(source, script, mapped);
         }
-        VerifyModels(values);
+        VerifyModels(values.Where((_, slot) => slots is null || slots.Contains(slot)).ToArray());
         var pack = SwShGfPackFile.Parse(Read(PlacementPath));
         var members = new[] { "a_0101.bin", "a_t0101_i0101.bin" };
         for (var area = 0; area < 2; area++)
         {
             var member = pack.GetFileByName(members[area]);
             for (var slot = 0; slot < 3; slot++)
-                member = SwShPlacementSpeciesWriter.Write(member, Actors[area][slot], (uint)values[slot].Species, (uint)values[slot].Form);
+                if (slots is null || slots.Contains(slot))
+                    member = SwShPlacementSpeciesWriter.Write(member, Actors[area][slot], (uint)values[slot].Species, (uint)values[slot].Form);
             pack.SetFileByName(members[area], member);
         }
         Outputs[PlacementPath] = pack.Write();
@@ -62,8 +65,8 @@ internal sealed class SwShStarterPresentation(OpenedProject project)
             var names = SwShGameTextFile.Parse(Read(SwShGameTextLanguage.CommonMessagePath(language, "monsname.dat"))).Lines;
             // Other surviving scripts and the effective gift table identify our generated wording
             // even when a user deleted only one of the generated scene files.
-            WriteText(selection, language, names, values, [.. previous, currentValues], false);
-            WriteText(mum, language, names, values, [.. previous, currentValues], true);
+            WriteText(selection, language, names, values, [.. previous, currentValues], false, slots);
+            WriteText(mum, language, names, values, [.. previous, currentValues], true, slots);
         }
     }
 
@@ -110,7 +113,7 @@ internal sealed class SwShStarterPresentation(OpenedProject project)
         ? Read("romfs/" + path) : pack.GetFileByName(Path.GetFileName(path));
 
     private void WriteText(string path, string language, IReadOnlyList<SwShGameTextLine> names,
-        SwShStarterIdentity[] values, SwShStarterIdentity[][] previous, bool mum)
+        SwShStarterIdentity[] values, SwShStarterIdentity[][] previous, bool mum, IReadOnlySet<int>? slots = null)
     {
         if (!graph.ContainsKey(path)) return;
         var source = SwShGameTextFile.Parse(Read(path));
@@ -120,6 +123,7 @@ internal sealed class SwShStarterPresentation(OpenedProject project)
         var lines = source.Lines.ToArray();
         for (var slot = 0; slot < 3; slot++)
         {
+            if (slots is not null && !slots.Contains(slot)) continue;
             var original = SwShStarterPresentationScript.Original[slot];
             var positions = mum ? new[] { slot == 0 ? 2 : slot - 1, slot == 0 ? 10 : slot + 7 }
                 : new[] { slot == 0 ? 5 : slot + 2, slot == 0 ? 14 : slot + 11 };
@@ -146,6 +150,7 @@ internal sealed class SwShStarterPresentation(OpenedProject project)
 
     private byte[] Read(string path, bool vanilla = false)
     {
+        if (!vanilla && Outputs.TryGetValue(path, out var output)) return output;
         if (!graph.TryGetValue(path, out var entry)) throw new InvalidDataException($"Starter presentation source is missing: {path}.");
         var reference = vanilla ? entry.BaseFile : entry.LayeredFile ?? entry.BaseFile;
         if (reference is null) throw new InvalidDataException($"Starter presentation base source is missing: {path}.");

@@ -2944,11 +2944,10 @@ public sealed class ProjectBridgeDispatcher : IDisposable
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var response = ZaBridgeMapper.ToGiftPokemonVanillaDto(
-            zaWorkflowService.StageGiftPokemonVanilla(
-                ProjectBridgeMapper.ToCore(request.Payload.Paths),
-                session,
-                request.Payload.GiftIndex));
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        object response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToGiftPokemonVanillaDto(zaWorkflowService.StageGiftPokemonVanilla(paths, session, request.Payload.GiftIndex))
+            : SwShBridgeMapper.ToGiftPokemonVanillaDto(giftPokemonEditSessionService.RestoreVanilla(paths, session, request.Payload.GiftIndex));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -8454,7 +8453,6 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.StagePokemonDexMegaSync or
             KmCommandNames.StageItemVanilla or
             KmCommandNames.StageMoveVanilla or
-            KmCommandNames.StageGiftPokemonVanilla or
             KmCommandNames.StageEncounterSlotVanilla or
             KmCommandNames.LoadAngeFightWorkflow or
             KmCommandNames.StageAngeFight or

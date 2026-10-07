@@ -4772,7 +4772,10 @@
     "heldItemChance.pokemonInvalid": "Choisissez des objets valides et des pourcentages entiers de 0 à 100. Les totaux normaux et augmentés doivent chacun rester inférieurs ou égaux à 100%.",
     "modelViewer.warning.materialEffectApproximate": "Les couleurs du feu, les textures défilantes et les masques sont affichés de manière approximative. Leur apparence peut différer dans le jeu.",
     "gifts.synchronizeStarterScenes": "Synchroniser les scènes de départ",
-    "gifts.starterScenesHelp": "Prépare les cadeaux de départ actuels pour la sélection, Nabil et Tarak, et Maman, avec les noms et les cris. Préparez ou abandonnez d’abord les modifications locales."
+    "gifts.starterScenesHelp": "Prépare les cadeaux de départ actuels pour la sélection, Nabil et Tarak, et Maman, avec les noms et les cris. Préparez ou abandonnez d’abord les modifications locales.",
+    "gifts.restoreVanilla": "Restaurer les valeurs d’origine",
+    "gifts.restoreHelp": "Prépare les valeurs d’origine de ce cadeau. Les changements reconnus de scènes et de dialogues sont restaurés uniquement pour ce Pokémon de départ. Les anciennes modifications restaurent seulement le cadeau ; les modifications indépendantes sont conservées.",
+    "gifts.restoreUnavailable": "Un cadeau correspondant dans le RomFS de base est nécessaire à la restauration."
   },
   "literals": {
     "League Staff Isaac": "Isaac, employé de la Ligue",

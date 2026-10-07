@@ -164,8 +164,25 @@ public sealed class SwShGiftPokemonWorkflowService
         {
             var archive = SwShGiftPokemonArchive.Parse(File.ReadAllBytes(giftSource.AbsolutePath));
             var provenance = CreateProvenance(giftSource.GraphEntry);
+            SwShGiftPokemonArchive? vanilla = null;
+            try
+            {
+                if (giftSource.GraphEntry.BaseFile is not null)
+                    vanilla = SwShGiftPokemonArchive.Parse(File.ReadAllBytes(Path.Combine(project.Paths.BaseRomFsPath!, GiftPokemonDataPath[6..])));
+            }
+            catch (Exception exception) when (exception is InvalidDataException or IOException or UnauthorizedAccessException)
+            {
+                diagnostics.Add(CreateDiagnostic(DiagnosticSeverity.Warning,
+                    "Base RomFS gifts are unavailable for restoration.", file: GiftPokemonDataPath));
+            }
             var gifts = archive.Gifts
-                .Select(gift => ToGiftEntry(gift, lookupTables, provenance))
+                .Select(gift => ToGiftEntry(gift, lookupTables, provenance) with
+                {
+                    Vanilla = vanilla?.Gifts.SingleOrDefault(row => row.Index == gift.Index && row.Hash1 == gift.Hash1) is { } original
+                        && archive.Gifts.Count(row => row.Hash1 == gift.Hash1) == 1
+                        && vanilla.Gifts.Count(row => row.Hash1 == gift.Hash1) == 1
+                        ? ToGiftEntry(original, lookupTables, provenance) : null,
+                })
                 .ToArray();
             var sourceFileCount = 1 + lookupTables.SourceFileCount;
 
