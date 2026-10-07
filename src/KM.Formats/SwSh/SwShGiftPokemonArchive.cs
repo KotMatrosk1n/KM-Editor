@@ -193,6 +193,30 @@ public sealed record SwShGiftPokemonArchive(IReadOnlyList<SwShGiftPokemonRecord>
         return new SwShGiftPokemonArchive(gifts).Write();
     }
 
+    public byte[] RestoreRecords(SwShGiftPokemonArchive vanilla, IEnumerable<int> indexes)
+    {
+        ArgumentNullException.ThrowIfNull(vanilla);
+        ArgumentNullException.ThrowIfNull(indexes);
+        if (SourceData is null || SourceGiftVectorElementOffsets is null
+            || vanilla.SourceData is null || vanilla.SourceGiftTableOffsets is null)
+            throw new InvalidDataException("Gift restoration requires parsed current and Base RomFS tables.");
+        var output = new List<byte>(SourceData);
+        foreach (var index in indexes.Distinct())
+        {
+            if ((uint)index >= Gifts.Count || (uint)index >= vanilla.Gifts.Count
+                || Gifts[index].Hash1 != vanilla.Gifts[index].Hash1
+                || Gifts.Count(g => g.Hash1 == Gifts[index].Hash1) != 1
+                || vanilla.Gifts.Count(g => g.Hash1 == Gifts[index].Hash1) != 1)
+                throw new InvalidDataException("The gift does not have one matching Base RomFS record.");
+            if (Gifts[index] == vanilla.Gifts[index]) continue;
+            var table = AppendGiftTableCopy(output, vanilla.SourceData, vanilla.SourceGiftTableOffsets[index], []);
+            PatchUOffset(output, SourceGiftVectorElementOffsets[index], table);
+        }
+        var bytes = output.ToArray();
+        _ = Parse(bytes);
+        return bytes;
+    }
+
     private static void ValidateTouchedIvLayouts(
         IReadOnlyList<SwShGiftPokemonRecord> gifts,
         IReadOnlyList<SwShGiftPokemonEdit> edits)

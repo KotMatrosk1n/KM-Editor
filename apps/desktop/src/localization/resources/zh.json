@@ -4772,7 +4772,10 @@
     "heldItemChance.pokemonInvalid": "请选择有效道具，并输入 0 到 100 的整数百分比。普通概率和提升后概率的总和分别不得超过 100%。",
     "modelViewer.warning.materialEffectApproximate": "火焰颜色、滚动纹理和遮罩为近似预览，游戏中的效果可能有所不同。",
     "gifts.synchronizeStarterScenes": "同步初始宝可梦场景",
-    "gifts.starterScenesHelp": "将当前初始赠送宝可梦同步到选择、赫普和丹帝以及回家见妈妈的场景，包括名称和叫声。请先暂存或放弃本地字段更改。"
+    "gifts.starterScenesHelp": "将当前初始赠送宝可梦同步到选择、赫普和丹帝以及回家见妈妈的场景，包括名称和叫声。请先暂存或放弃本地字段更改。",
+    "gifts.restoreVanilla": "恢复原版",
+    "gifts.restoreHelp": "暂存此赠送宝可梦的原始数值。仅还原该初始宝可梦已识别的场景和对话更改。旧版编辑仅还原赠送数据，保留其他独立更改。",
+    "gifts.restoreUnavailable": "还原需要基础 RomFS 中存在匹配的赠送记录。"
   },
   "literals": {
     "League Staff Isaac": "联盟工作人员 Isaac",

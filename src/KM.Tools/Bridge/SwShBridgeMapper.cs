@@ -837,6 +837,12 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static StageGiftPokemonVanillaResponse ToGiftPokemonVanillaDto(SwShGiftPokemonEditResult result)
+    {
+        return new(ToGiftPokemonWorkflowDto(result.Workflow), EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static UpdateGiftPokemonFieldsResponse ToGiftPokemonFieldsDto(SwShGiftPokemonEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -1184,6 +1190,7 @@ public static class SwShBridgeMapper
         {
             AbilityOptions = gift.AbilityOptions.Select(ToDto).ToArray(),
             GenderOptions = gift.GenderOptions.Select(ToDto).ToArray(),
+            CanRevertToVanilla = gift.CanRevertToVanilla,
         };
     }
 

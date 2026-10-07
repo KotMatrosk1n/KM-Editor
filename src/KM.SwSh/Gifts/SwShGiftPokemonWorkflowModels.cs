@@ -57,6 +57,8 @@ public sealed record SwShGiftPokemonEntry(
 
     internal string SourceIdentity { get; init; } = string.Empty;
     internal bool IsStarter { get; init; }
+    internal SwShGiftPokemonEntry? Vanilla { get; init; }
+    public bool CanRevertToVanilla => Vanilla is not null;
 }
 
 public sealed record SwShGiftPokemonEditableField(

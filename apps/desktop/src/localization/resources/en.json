@@ -4772,7 +4772,10 @@
     "heldItemChance.pokemonInvalid": "Choose valid items and whole percentages from 0 to 100. Normal and boosted totals must each be at most 100%.",
     "modelViewer.warning.materialEffectApproximate": "Fire colors, scrolling textures and masks are previewed approximately. Their appearance may differ in game.",
     "gifts.synchronizeStarterScenes": "Sync starter scenes",
-    "gifts.starterScenesHelp": "Stage the current starter gifts for selection, Hop and Leon, and Mum, including names and cries. Stage or discard local field changes first."
+    "gifts.starterScenesHelp": "Stage the current starter gifts for selection, Hop and Leon, and Mum, including names and cries. Stage or discard local field changes first.",
+    "gifts.restoreVanilla": "Restore Vanilla",
+    "gifts.restoreHelp": "Stage the original values for this gift. Recognized starter scene and dialogue changes are restored for this starter only. Legacy gift edits restore only the gift; independent edits are preserved.",
+    "gifts.restoreUnavailable": "A matching gift record in Base RomFS is required for restoration."
   },
   "literals": {
     "League Staff Isaac": "League Staff Isaac",

@@ -16,7 +16,7 @@ using System.Text;
 
 namespace KM.SwSh.Gifts;
 
-public sealed class SwShGiftPokemonEditSessionService
+public sealed partial class SwShGiftPokemonEditSessionService
 {
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShGiftPokemonWorkflowService giftPokemonWorkflowService;
@@ -125,7 +125,9 @@ public sealed class SwShGiftPokemonEditSessionService
                 pendingEdit.Field!);
             var normalizedDependentIvs = !ReferenceEquals(normalizedSession, workingSession);
             workingSession = normalizedSession;
-            var sourceValue = GetGiftFieldValue(sourceGift, pendingEdit.Field!);
+            var restorePending = GetGiftEdits(workingSession).Any(edit => edit.Field == RestoreVanillaField
+                && SwShGiftPokemonWorkflowService.TryParseGiftRecordId(edit.RecordId, out var index) && index == gift.GiftIndex);
+            var sourceValue = GetGiftFieldValue(restorePending ? sourceGift.Vanilla ?? sourceGift : sourceGift, pendingEdit.Field!);
             var restoresSourceValue = sourceValue == int.Parse(
                 pendingEdit.NewValue!,
                 CultureInfo.InvariantCulture);
@@ -191,7 +193,7 @@ public sealed class SwShGiftPokemonEditSessionService
             ValidateLoadedSession(project, workflow, session, diagnostics, addSuccessDiagnostic: true);
         }
 
-        var giftEdits = GetGiftEdits(session).ToArray();
+        var giftEdits = GetGiftEdits(session).OrderBy(edit => edit.Field == RestoreVanillaField ? 0 : 1).ToArray();
         if (giftEdits.Length == 0)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -327,18 +329,12 @@ public sealed class SwShGiftPokemonEditSessionService
         byte[] output;
         try
         {
-            var archive = SwShGiftPokemonArchive.Parse(File.ReadAllBytes(giftSource.AbsolutePath));
-            var edits = GetGiftEdits(session)
-                .Select(edit => ToGiftEdit(archive, edit, diagnostics))
-                .Where(edit => edit is not null)
-                .Select(edit => edit!)
-                .ToArray();
+            output = WriteGiftEdits(project, GetGiftEdits(session).ToArray(), diagnostics);
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
                 return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
-            output = archive.WriteEdits(edits);
         }
         catch (Exception exception) when (exception is InvalidDataException or ArgumentException or OverflowException)
         {
@@ -550,7 +546,7 @@ public sealed class SwShGiftPokemonEditSessionService
         bool addSuccessDiagnostic)
     {
         session = RebindDeletedOutputEdits(project, workflow, session);
-        var giftEdits = GetGiftEdits(session).ToArray();
+        var giftEdits = GetGiftEdits(session).OrderBy(edit => edit.Field == RestoreVanillaField ? 0 : 1).ToArray();
         var effectiveWorkflow = workflow;
         var seenFields = new HashSet<(int GiftIndex, string Field)>();
         var ivRecords = new HashSet<int>();
@@ -638,7 +634,7 @@ public sealed class SwShGiftPokemonEditSessionService
         return session with { PendingEdits = session.PendingEdits.Select(edit =>
         {
             if (!IsGiftEdit(edit) || !SwShDeletedOutputSource.Any(project.Paths, edit)
-                || !SwShGiftPokemonWorkflowService.IsEditableField(edit.Field)
+                || !(SwShGiftPokemonWorkflowService.IsEditableField(edit.Field) || edit.Field == RestoreVanillaField)
                 || !SwShGiftPokemonWorkflowService.TryParseGiftRecordId(edit.RecordId, out var index, out var identity)) return edit;
             var gift = workflow.Gifts.SingleOrDefault(candidate => candidate.GiftIndex == index);
             if (gift is null || (identity is not null
@@ -660,7 +656,9 @@ public sealed class SwShGiftPokemonEditSessionService
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var editableField = SwShGiftPokemonWorkflowService.GetEditableField(edit.Field);
+        var editableField = edit.Field == RestoreVanillaField
+            ? new SwShGiftPokemonEditableField(RestoreVanillaField, "Restore Vanilla", "action", null, null)
+            : SwShGiftPokemonWorkflowService.GetEditableField(edit.Field);
         if (editableField is null)
         {
             diagnostics.Add(CreateUnsupportedFieldDiagnostic(edit.Field ?? "(missing)"));
@@ -709,6 +707,13 @@ public sealed class SwShGiftPokemonEditSessionService
             return null;
         }
 
+        if (edit.Field == RestoreVanillaField)
+        {
+            if (edit.NewValue != "vanilla" || sourceGift.Vanilla is null)
+                diagnostics.Add(CreateDiagnostic(DiagnosticSeverity.Error,
+                    "Gift restoration requires one matching Base RomFS record.", field: RestoreVanillaField));
+            return effectiveGift;
+        }
         var sourceValue = GetGiftFieldValue(sourceGift, editableField.Field);
         var parsedValue = TryParseFieldValue(editableField, edit.NewValue, sourceValue, diagnostics);
         if (parsedValue is not null && parsedValue != sourceValue)
@@ -1055,18 +1060,7 @@ public sealed class SwShGiftPokemonEditSessionService
 
         try
         {
-            var archive = SwShGiftPokemonArchive.Parse(File.ReadAllBytes(source.AbsolutePath));
-            var edits = giftEdits
-                .Select(edit => ToGiftEdit(archive, edit, diagnostics))
-                .Where(edit => edit is not null)
-                .Select(edit => edit!)
-                .ToArray();
-            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
-            {
-                return;
-            }
-
-            _ = archive.WriteEdits(edits);
+            _ = WriteGiftEdits(project, giftEdits, diagnostics);
         }
         catch (Exception exception) when (exception is InvalidDataException or ArgumentException or OverflowException)
         {
@@ -1095,6 +1089,9 @@ public sealed class SwShGiftPokemonEditSessionService
         {
             new(gift.Provenance.SourceLayer, gift.Provenance.SourceFile),
         };
+
+        if (field == RestoreVanillaField)
+            sources.Add(new(ProjectFileLayer.Base, SwShGiftPokemonWorkflowService.GiftPokemonDataPath));
 
         if (IsSemanticField(field))
         {
@@ -1369,7 +1366,7 @@ public sealed class SwShGiftPokemonEditSessionService
         IEnumerable<PendingEdit> edits)
     {
         var updatedWorkflow = workflow;
-        foreach (var edit in edits.Where(IsGiftEdit))
+        foreach (var edit in edits.Where(IsGiftEdit).OrderBy(edit => edit.Field == RestoreVanillaField ? 0 : 1))
         {
             updatedWorkflow = OverlayPendingEdit(updatedWorkflow, edit);
         }
@@ -1381,6 +1378,15 @@ public sealed class SwShGiftPokemonEditSessionService
         SwShGiftPokemonWorkflow workflow,
         PendingEdit edit)
     {
+        if (IsGiftEdit(edit) && edit.Field == RestoreVanillaField && edit.NewValue == "vanilla"
+            && SwShGiftPokemonWorkflowService.TryParseGiftRecordId(edit.RecordId, out var restoredIndex, out var restoredIdentity))
+        {
+            var restored = workflow.Gifts.Select(gift => gift.GiftIndex == restoredIndex && gift.Vanilla is { } vanilla
+                && (restoredIdentity is null || restoredIdentity == gift.SourceIdentity)
+                ? vanilla with { SourceIdentity = gift.SourceIdentity, Vanilla = vanilla } : gift).ToArray();
+            return workflow with { Gifts = restored, Stats = workflow.Stats with
+            { EggGiftCount = restored.Count(gift => gift.IsEgg), FixedIvGiftCount = restored.Count(gift => gift.FlawlessIvCount != 0) } };
+        }
         if (!IsGiftEdit(edit)
             || !SwShGiftPokemonWorkflowService.IsEditableField(edit.Field)
             || !SwShGiftPokemonWorkflowService.TryParseGiftRecordId(
@@ -1785,13 +1791,22 @@ public sealed class SwShGiftPokemonEditSessionService
             var source = SwShGiftPokemonWorkflowService.ResolveGiftPokemonDataSource(project)
                 ?? throw new InvalidDataException("Gift source is unavailable.");
             var archive = SwShGiftPokemonArchive.Parse(File.ReadAllBytes(source.AbsolutePath));
-            if (!edits.Any(edit => edit.Field is "species" or "form"
+            if (!edits.Any(edit => edit.Field is "species" or "form" or RestoreVanillaField
                 && SwShGiftPokemonWorkflowService.TryParseGiftRecordId(edit.RecordId, out var index)
                 && archive.Gifts.Any(g => g.Index == index && SwShStarterPresentation.IsStarter(g)))) return null;
-            finalTable ??= archive.WriteEdits(edits.Select(edit => ToGiftEdit(archive, edit, diagnostics)).OfType<SwShGiftPokemonEdit>());
+            finalTable ??= WriteGiftEdits(project, edits, diagnostics);
             if (diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error)) return null;
             var result = new SwShStarterPresentation(project);
-            result.Build(finalTable);
+            HashSet<int> Slots(bool restore) => edits.Where(edit => restore ? edit.Field == RestoreVanillaField : edit.Field is "species" or "form")
+                .Select(edit => SwShGiftPokemonWorkflowService.TryParseGiftRecordId(edit.RecordId, out var index)
+                    ? archive.Gifts.SingleOrDefault(g => g.Index == index)?.Hash1 : null)
+                .Where(hash => hash is not null).Select(hash => Array.IndexOf(SwShStarterPresentation.GiftHashes, hash!.Value))
+                .Where(slot => slot >= 0).ToHashSet();
+            var synchronized = Slots(false);
+            if (synchronized.Count > 0) result.Build(finalTable, synchronized);
+            var restored = Slots(true);
+            restored.ExceptWith(synchronized);
+            if (restored.Count > 0) result.Restore(restored);
             foreach (var diagnostic in result.Diagnostics) diagnostics.Add(diagnostic);
             return result;
         }

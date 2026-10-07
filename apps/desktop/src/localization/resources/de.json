@@ -4772,7 +4772,10 @@
     "heldItemChance.pokemonInvalid": "Wähle gültige Items und ganze Prozentwerte von 0 bis 100. Normale und erhöhte Chancen dürfen jeweils insgesamt höchstens 100% betragen.",
     "modelViewer.warning.materialEffectApproximate": "Feuerfarben, bewegte Texturen und Masken werden näherungsweise dargestellt. Ihr Aussehen kann im Spiel abweichen.",
     "gifts.synchronizeStarterScenes": "Starter-Szenen abgleichen",
-    "gifts.starterScenesHelp": "Die aktuellen Starter-Geschenke für die Auswahl, Hop und Leon sowie Mama einschließlich Namen und Rufen vormerken. Lokale Feldänderungen zuerst vormerken oder verwerfen."
+    "gifts.starterScenesHelp": "Die aktuellen Starter-Geschenke für die Auswahl, Hop und Leon sowie Mama einschließlich Namen und Rufen vormerken. Lokale Feldänderungen zuerst vormerken oder verwerfen.",
+    "gifts.restoreVanilla": "Original wiederherstellen",
+    "gifts.restoreHelp": "Stellt die ursprünglichen Werte dieses Geschenks bereit. Erkannte Änderungen an Szenen und Dialogen werden nur für dieses Starter-Pokémon zurückgesetzt. Bei älteren Änderungen wird nur das Geschenk wiederhergestellt; unabhängige Änderungen bleiben erhalten.",
+    "gifts.restoreUnavailable": "Zum Wiederherstellen ist ein passender Geschenkeintrag im Basis-RomFS erforderlich."
   },
   "literals": {
     "League Staff Isaac": "Liga-Mitarbeiter Isaac",

@@ -16,6 +16,7 @@ export const kmErrorCodeSchema = z
   );
 
 export const projectBridgeErrorCodes = {
+  giftPresentationPlacementPreserved: "KM-SWSH-GIFT-PRESENTATION-PLACEMENT-PRESERVED",
   giftPresentationSourceInvalid: "KM-SWSH-GIFT-PRESENTATION-SOURCE-INVALID",
   giftPresentationTextPreserved: "KM-SWSH-GIFT-PRESENTATION-TEXT-PRESERVED",
   npcGiftMoneyAmountInvalid: "KM-SWSH-NPC-GIFT-MONEY-AMOUNT-INVALID",
