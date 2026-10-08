@@ -30,6 +30,8 @@ using KM.SV.Text;
 using KM.SV.TmMachine;
 using KM.SV.Trainers;
 using KM.SV.Trades;
+using KM.SV.Blueberry;
+using KM.Formats.SV.Blueberry;
 using KM.SV.Starmobiles;
 using KM.SV.TitanSwapper;
 using KM.SV.TypeChart;
@@ -1029,6 +1031,9 @@ public sealed partial class SvWorkflowService
             shopsWorkflowService.CreateSummary(project),
             tmMachineControlsWorkflowService.CreateSummary(project),
             habitatCoordinatesWorkflowService.CreateSummary(project),
+            Blueberry(SvBlueberryKind.BbqRewards).CreateSummary(project),
+            Blueberry(SvBlueberryKind.SupportBoard).CreateSummary(project),
+            Blueberry(SvBlueberryKind.Snacksworth).CreateSummary(project),
             starmobilesService.CreateSummary(project),
             titanSwapperService.CreateSummary(project),
             giftPokemonWorkflowService.CreateSummary(project),
@@ -1121,6 +1126,12 @@ public sealed partial class SvWorkflowService
         var project = projectWorkspaceService.Open(paths);
         return tmMachineControlsWorkflowService.Load(project);
     }
+
+    private SvBlueberryService Blueberry(SvBlueberryKind kind) => new(projectWorkspaceService, kind);
+    public SvBlueberryWorkflow LoadBlueberry(ProjectPaths paths, SvBlueberryKind kind, EditSession? session = null)
+        => Blueberry(kind).Load(paths, session);
+    public SvBlueberryEditResult StageBlueberry(ProjectPaths paths, SvBlueberryKind kind, EditSession? session,
+        string revision, IReadOnlyList<SvBlueberryUpdate> updates) => Blueberry(kind).Stage(paths, session, revision, updates);
 
     public SvStarmobilesWorkflow LoadStarmobiles(ProjectPaths paths, EditSession? session = null)
         => starmobilesService.Load(paths, session);
@@ -1725,6 +1736,9 @@ public sealed partial class SvWorkflowService
             SvEditSessionDomain.Shops => shopsEditSessionService.Validate(paths, session),
             SvEditSessionDomain.TmMachineControls => tmMachineControlsEditSessionService.Validate(paths, session),
             SvEditSessionDomain.HabitatCoordinates => habitatCoordinatesEditSessionService.Validate(paths, session),
+            SvEditSessionDomain.BbqRewards => Blueberry(SvBlueberryKind.BbqRewards).Validate(paths, session),
+            SvEditSessionDomain.SupportBoard => Blueberry(SvBlueberryKind.SupportBoard).Validate(paths, session),
+            SvEditSessionDomain.Snacksworth => Blueberry(SvBlueberryKind.Snacksworth).Validate(paths, session),
             SvEditSessionDomain.Starmobiles => starmobilesService.Validate(paths, session),
             SvEditSessionDomain.TitanSwapper => titanSwapperService.Validate(paths, session),
             SvEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.Validate(paths, session),
@@ -1758,6 +1772,9 @@ public sealed partial class SvWorkflowService
             SvEditSessionDomain.Shops => shopsEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.TmMachineControls => tmMachineControlsEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.HabitatCoordinates => habitatCoordinatesEditSessionService.CreateChangePlan(paths, session, outputMode),
+            SvEditSessionDomain.BbqRewards => Blueberry(SvBlueberryKind.BbqRewards).CreateChangePlan(paths, session, outputMode),
+            SvEditSessionDomain.SupportBoard => Blueberry(SvBlueberryKind.SupportBoard).CreateChangePlan(paths, session, outputMode),
+            SvEditSessionDomain.Snacksworth => Blueberry(SvBlueberryKind.Snacksworth).CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Starmobiles => starmobilesService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.TitanSwapper => titanSwapperService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
@@ -1792,6 +1809,9 @@ public sealed partial class SvWorkflowService
             SvEditSessionDomain.Shops => shopsEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.TmMachineControls => tmMachineControlsEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.HabitatCoordinates => habitatCoordinatesEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
+            SvEditSessionDomain.BbqRewards => Blueberry(SvBlueberryKind.BbqRewards).ApplyChangePlan(paths, session, changePlan, outputMode),
+            SvEditSessionDomain.SupportBoard => Blueberry(SvBlueberryKind.SupportBoard).ApplyChangePlan(paths, session, changePlan, outputMode),
+            SvEditSessionDomain.Snacksworth => Blueberry(SvBlueberryKind.Snacksworth).ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Starmobiles => starmobilesService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.TitanSwapper => titanSwapperService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
@@ -2166,6 +2186,9 @@ public sealed partial class SvWorkflowService
             [SvEditSessionSupport.ShopsDomain] => SvEditSessionDomain.Shops,
             [SvTmMachineControlsEditSessionService.EditDomain] => SvEditSessionDomain.TmMachineControls,
             [SvHabitatCoordinatesEditSessionService.EditDomain] => SvEditSessionDomain.HabitatCoordinates,
+            ["workflow.bbqRewards"] => SvEditSessionDomain.BbqRewards,
+            ["workflow.supportBoard"] => SvEditSessionDomain.SupportBoard,
+            ["workflow.snacksworth"] => SvEditSessionDomain.Snacksworth,
             [SvStarmobilesService.Domain] => SvEditSessionDomain.Starmobiles,
             [SvTitanSwapperService.Domain] => SvEditSessionDomain.TitanSwapper,
             [SvEditSessionSupport.GiftPokemonDomain] => SvEditSessionDomain.GiftPokemon,
@@ -2232,6 +2255,9 @@ public sealed partial class SvWorkflowService
             SvEditSessionSupport.ShopsDomain => SvEditSessionDomain.Shops,
             SvTmMachineControlsEditSessionService.EditDomain => SvEditSessionDomain.TmMachineControls,
             SvHabitatCoordinatesEditSessionService.EditDomain => SvEditSessionDomain.HabitatCoordinates,
+            "workflow.bbqRewards" => SvEditSessionDomain.BbqRewards,
+            "workflow.supportBoard" => SvEditSessionDomain.SupportBoard,
+            "workflow.snacksworth" => SvEditSessionDomain.Snacksworth,
             SvStarmobilesService.Domain => SvEditSessionDomain.Starmobiles,
             SvTitanSwapperService.Domain => SvEditSessionDomain.TitanSwapper,
             SvEditSessionSupport.GiftPokemonDomain => SvEditSessionDomain.GiftPokemon,
@@ -2260,6 +2286,9 @@ public sealed partial class SvWorkflowService
             SvEditSessionDomain.Shops or
             SvEditSessionDomain.TmMachineControls or
             SvEditSessionDomain.HabitatCoordinates or
+            SvEditSessionDomain.BbqRewards or
+            SvEditSessionDomain.SupportBoard or
+            SvEditSessionDomain.Snacksworth or
             SvEditSessionDomain.Starmobiles or
             SvEditSessionDomain.TitanSwapper or
             SvEditSessionDomain.GiftPokemon or
@@ -2364,6 +2393,9 @@ public sealed partial class SvWorkflowService
             SvEditSessionDomain.Shops => SvEditSessionSupport.ShopsDomain,
             SvEditSessionDomain.TmMachineControls => SvTmMachineControlsEditSessionService.EditDomain,
             SvEditSessionDomain.HabitatCoordinates => SvHabitatCoordinatesEditSessionService.EditDomain,
+            SvEditSessionDomain.BbqRewards => "workflow.bbqRewards",
+            SvEditSessionDomain.SupportBoard => "workflow.supportBoard",
+            SvEditSessionDomain.Snacksworth => "workflow.snacksworth",
             SvEditSessionDomain.Starmobiles => SvStarmobilesService.Domain,
             SvEditSessionDomain.TitanSwapper => SvTitanSwapperService.Domain,
             SvEditSessionDomain.GiftPokemon => SvEditSessionSupport.GiftPokemonDomain,
@@ -2534,6 +2566,9 @@ public sealed partial class SvWorkflowService
         Shops,
         TmMachineControls,
         HabitatCoordinates,
+        BbqRewards,
+        SupportBoard,
+        Snacksworth,
         Starmobiles,
         TitanSwapper,
         GiftPokemon,

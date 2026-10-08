@@ -44,6 +44,7 @@ import { type BattleCafeRewardsWorkflow } from './bridge/battleCafeRewardsContra
 import { type FashionUnlockWorkflow } from './bridge/fashionUnlockContracts';
 import { type FashionCatalogWorkflow } from './bridge/fashionCatalogContracts';
 import { type GymUniformRemovalWorkflow } from './bridge/gymUniformRemovalContracts';
+import { type BlueberryWorkflow } from './bridge/blueberryContracts';
 import { type StarmobilesWorkflow } from './bridge/starmobilesContracts';
 import { type TitanSwapperWorkflow } from './bridge/titanSwapperContracts';
 import { type MarnieBoostsWorkflow } from './bridge/marnieBoostsContracts';
@@ -196,6 +197,9 @@ type WorkbenchState = {
   shopsWorkflow: ShopsWorkflow | null;
   tmMachineControlsWorkflow: TmMachineControlsWorkflow | null;
   habitatCoordinatesWorkflow: HabitatCoordinatesWorkflow | null;
+  bbqRewardsWorkflow: BlueberryWorkflow | null;
+  supportBoardWorkflow: BlueberryWorkflow | null;
+  snacksworthWorkflow: BlueberryWorkflow | null;
   starmobilesWorkflow: StarmobilesWorkflow | null;
   titanSwapperWorkflow: TitanSwapperWorkflow | null;
   marnieBoostsWorkflow: MarnieBoostsWorkflow | null;
@@ -322,6 +326,9 @@ type WorkbenchState = {
   setShopSearchText: (shopSearchText: string) => void;
   setShopsWorkflow: (shopsWorkflow: ShopsWorkflow) => void;
   setTmMachineControlsWorkflow: (tmMachineControlsWorkflow: TmMachineControlsWorkflow) => void;
+  setBbqRewardsWorkflow: (bbqRewardsWorkflow: BlueberryWorkflow) => void;
+  setSupportBoardWorkflow: (supportBoardWorkflow: BlueberryWorkflow) => void;
+  setSnacksworthWorkflow: (snacksworthWorkflow: BlueberryWorkflow) => void;
   setStarmobilesWorkflow: (starmobilesWorkflow: StarmobilesWorkflow) => void;
   setTitanSwapperWorkflow: (titanSwapperWorkflow: TitanSwapperWorkflow) => void;
   setHeldItemChanceWorkflow: (heldItemChanceWorkflow: HeldItemChanceWorkflow) => void;
@@ -521,6 +528,9 @@ function createLoadedWorkflowResetState(): Partial<WorkbenchState> {
     shopsWorkflow: null,
     tmMachineControlsWorkflow: null,
     habitatCoordinatesWorkflow: null,
+    bbqRewardsWorkflow: null,
+    supportBoardWorkflow: null,
+    snacksworthWorkflow: null,
     starmobilesWorkflow: null,
     titanSwapperWorkflow: null,
     marnieBoostsWorkflow: null,
@@ -646,6 +656,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   shopsWorkflow: null,
   tmMachineControlsWorkflow: null,
   habitatCoordinatesWorkflow: null,
+  bbqRewardsWorkflow: null,
+  supportBoardWorkflow: null,
+  snacksworthWorkflow: null,
   starmobilesWorkflow: null,
   titanSwapperWorkflow: null,
   marnieBoostsWorkflow: null,
@@ -1020,6 +1033,15 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       activeSection: resolveWorkflowLoadSection(state.activeSection, 'tmMachineControls'),
       tmMachineControlsWorkflow
     })),
+  setBbqRewardsWorkflow: (bbqRewardsWorkflow) => set((state) => ({
+    activeSection: resolveWorkflowLoadSection(state.activeSection, 'bbqRewards'), bbqRewardsWorkflow
+  })),
+  setSupportBoardWorkflow: (supportBoardWorkflow) => set((state) => ({
+    activeSection: resolveWorkflowLoadSection(state.activeSection, 'supportBoard'), supportBoardWorkflow
+  })),
+  setSnacksworthWorkflow: (snacksworthWorkflow) => set((state) => ({
+    activeSection: resolveWorkflowLoadSection(state.activeSection, 'snacksworth'), snacksworthWorkflow
+  })),
   setStarmobilesWorkflow: (starmobilesWorkflow) => set((state) => ({
     activeSection: resolveWorkflowLoadSection(state.activeSection, 'starmobiles'), starmobilesWorkflow
   })),

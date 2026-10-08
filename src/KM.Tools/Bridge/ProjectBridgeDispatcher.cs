@@ -23,6 +23,8 @@ using KM.Api.Gifts;
 using KM.Api.GymUniformRemoval;
 using KM.Api.GuidedDesign;
 using KM.Api.HabitatCoordinates;
+using KM.Api.Blueberry;
+using KM.Formats.SV.Blueberry;
 using KM.Api.Starmobiles;
 using KM.Api.TitanSwapper;
 using KM.Api.HyperspaceBypass;
@@ -657,6 +659,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.LoadTmMachineControls => DispatchLoadTmMachineControls(requestJson),
                 KmCommandNames.StageTmRecipeAvailability => DispatchStageTmRecipeAvailability(requestJson),
                 KmCommandNames.StageTmMaterialVisibility => DispatchStageTmMaterialVisibility(requestJson),
+                KmCommandNames.LoadBlueberry => DispatchBlueberry(requestJson, false),
+                KmCommandNames.StageBlueberry => DispatchBlueberry(requestJson, true),
                 KmCommandNames.LoadStarmobiles => DispatchStarmobiles(requestJson, false),
                 KmCommandNames.LoadTitanSwapper => DispatchTitanSwapper(requestJson, false),
                 KmCommandNames.StageStarmobiles => DispatchStarmobiles(requestJson, true),
@@ -3745,6 +3749,33 @@ public sealed class ProjectBridgeDispatcher : IDisposable
                 session,
                 request.Payload.AlwaysVisible));
         return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchBlueberry(string requestJson, bool stage)
+    {
+        static SvBlueberryKind Kind(string editor) => editor switch
+        { "bbqRewards" => SvBlueberryKind.BbqRewards, "supportBoard" => SvBlueberryKind.SupportBoard,
+          "snacksworth" => SvBlueberryKind.Snacksworth, _ => throw new ArgumentException("Unknown Blueberry editor.") };
+        if (stage)
+        {
+            var request = DeserializeRequest<StageBlueberryRequest>(requestJson);
+            var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+            if (!IsScarletViolet(paths)) return SerializeFailure(BridgeErrorCodes.GameMismatch, "Blueberry editors require a Scarlet or Violet project.", request.RequestId);
+            var session = request.Payload.Session is null ? null : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+            var result = svWorkflowService.StageBlueberry(paths, Kind(request.Payload.Editor), session, request.Payload.SourceRevision,
+                request.Payload.Updates.Select(update => new KM.SV.Blueberry.SvBlueberryUpdate(update.RowId, update.Field, update.Value)).ToArray());
+            return SerializeSuccess(new StageBlueberryResponse(SvBlueberryBridgeMapper.ToDto(result.Workflow),
+                EditSessionBridgeMapper.ToDto(result.Session), result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray()), request.RequestId);
+        }
+        else
+        {
+            var request = DeserializeRequest<LoadBlueberryRequest>(requestJson);
+            var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+            if (!IsScarletViolet(paths)) return SerializeFailure(BridgeErrorCodes.GameMismatch, "Blueberry editors require a Scarlet or Violet project.", request.RequestId);
+            var session = request.Payload.Session is null ? null : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+            return SerializeSuccess(new LoadBlueberryResponse(SvBlueberryBridgeMapper.ToDto(
+                svWorkflowService.LoadBlueberry(paths, Kind(request.Payload.Editor), session))), request.RequestId);
+        }
     }
 
     private string DispatchStarmobiles(string requestJson, bool stage)
@@ -8427,6 +8458,8 @@ public sealed class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.LoadTmMachineControls or
             KmCommandNames.StageTmRecipeAvailability or
             KmCommandNames.StageTmMaterialVisibility or
+            KmCommandNames.LoadBlueberry or
+            KmCommandNames.StageBlueberry or
             KmCommandNames.LoadStarmobiles or
             KmCommandNames.LoadTitanSwapper or
             KmCommandNames.StageStarmobiles or

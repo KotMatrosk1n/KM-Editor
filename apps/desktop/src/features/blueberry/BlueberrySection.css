@@ -1,0 +1,47 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+.blueberry-editor { min-width: 0; width: 100%; container-type: inline-size; }
+.blueberry-panel { min-width: 0; width: 100%; }
+.blueberry-editor .field { display: grid; min-width: 0; gap: .4rem; }
+.blueberry-editor .field > input { width: 100%; min-width: 0; }
+.blueberry-toolbar, .blueberry-bulk { display: flex; align-items: end; flex-wrap: wrap; gap: 1rem; margin-block: 1rem; }
+.blueberry-search { flex: 1 1 18rem; min-width: 0; }
+.blueberry-toolbar .field { margin: 0; }
+.blueberry-count { padding-block: .65rem; }
+.blueberry-bulk .field { flex: 0 1 14rem; min-width: 0; margin: 0; }
+.blueberry-bulk button { white-space: normal; }
+.blueberry-layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(19rem, 1fr); gap: 1.25rem; align-items: start; }
+.blueberry-list { min-width: 0; display: grid; gap: .35rem; max-height: 65vh; overflow: auto; scrollbar-gutter: stable; padding: .2rem; }
+.blueberry-row { display: flex; align-items: center; gap: .75rem; width: 100%; text-align: start; padding: .85rem; min-width: 0; height: auto; white-space: normal; }
+.blueberry-row[aria-pressed="true"] { border-color: var(--color-gold); background: color-mix(in srgb, var(--color-gold) 12%, var(--color-canvas)); box-shadow: inset 3px 0 var(--color-gold); }
+.blueberry-row-copy { display: grid; gap: .35rem; min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.blueberry-quest-summary { display: flex; flex-wrap: wrap; column-gap: 1.25rem; row-gap: .25rem; line-height: 1.45; }
+.blueberry-row-value { display: grid; gap: .25rem; text-align: end; flex: 0 0 auto; }
+.blueberry-changed { font-size: .85em; color: var(--color-gold); }
+.blueberry-detail { min-width: 0; border: 1px solid var(--color-border); border-radius: .75rem; padding: 1.25rem; display: grid; gap: 1.1rem; }
+.blueberry-detail-heading { display: flex; align-items: center; gap: .75rem; }
+.blueberry-detail h3 { margin: 0; overflow-wrap: anywhere; }
+.blueberry-detail > button { justify-self: start; white-space: normal; }
+.blueberry-amount { margin: 0; }
+.blueberry-amount input { width: 100%; font-size: 1.3rem; }
+.blueberry-eligibility { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .75rem; }
+.blueberry-eligibility fieldset { min-width: 0; padding: .85rem; display: grid; gap: .75rem; border: 1px solid var(--color-border); border-radius: .5rem; }
+.blueberry-eligibility legend { padding-inline: .35rem; }
+.blueberry-eligibility .checkbox-field { display: grid; grid-template-columns: 1.2rem minmax(0, 1fr); align-items: center; gap: .65rem; padding: .65rem .75rem; font-size: 1rem; font-weight: 500; line-height: 1.45; overflow-wrap: anywhere; }
+.blueberry-eligibility .checkbox-field input { width: 1.2rem; height: 1.2rem; margin: 0; }
+.blueberry-eligibility input:disabled:checked { background-color: var(--color-accent); border-color: var(--color-accent-bright); opacity: .8; }
+.blueberry-vanilla-quests { margin: 0; line-height: 1.45; overflow-wrap: anywhere; }
+.blueberry-facts { margin: 0; display: flex; flex-wrap: wrap; gap: 1.5rem; }
+.blueberry-facts dt { font-size: .85em; opacity: .75; }
+.blueberry-facts dd { margin: .3rem 0 0; }
+.blueberry-help { margin: 0; line-height: 1.55; }
+@container (max-width: 850px) {
+  .blueberry-layout { grid-template-columns: minmax(0, 1fr); }
+  .blueberry-detail { grid-row: 1; }
+  .blueberry-list { max-height: 55vh; }
+}
+@container (max-width: 430px) {
+  .blueberry-eligibility { grid-template-columns: minmax(0, 1fr); }
+  .blueberry-bulk > * { flex-basis: 100%; }
+  .blueberry-row { flex-wrap: wrap; }
+  .blueberry-row-value { text-align: start; }
+}

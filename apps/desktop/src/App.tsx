@@ -472,6 +472,8 @@ import { encodeMarnieBoostSelections, getMarnieBoostPendingSelections, type Marn
 import { type RaidDensWorkflow } from './bridge/raidDensContracts';
 import { type FixAiFlagsWorkflow, type FixAiFlagsSelection } from './bridge/fixAiFlagsContracts';
 import { type TrainerWhiteoutWorkflow, type TrainerWhiteoutChange } from './bridge/trainerWhiteoutContracts';
+import { BlueberrySection } from './features/blueberry/BlueberrySection';
+import { type BlueberryUpdate, type BlueberryWorkflow } from './bridge/blueberryContracts';
 import { StarmobilesSection } from './features/starmobiles/StarmobilesSection';
 import { TitanSwapperSection } from './features/titan-swapper/TitanSwapperSection';
 import { type StarmobileUpdate, type StarmobilesWorkflow } from './bridge/starmobilesContracts';
@@ -3217,6 +3219,9 @@ export function App({
   const [isTrainerPoolsStaging, setIsTrainerPoolsStaging] = useState(false);
   const [isFashionCatalogLoading, setIsFashionCatalogLoading] = useState(false);
   const [isFashionCatalogStaging, setIsFashionCatalogStaging] = useState(false);
+  const bbqRewardsWorkflow = useWorkbenchStore(state => state.bbqRewardsWorkflow);
+  const supportBoardWorkflow = useWorkbenchStore(state => state.supportBoardWorkflow);
+  const snacksworthWorkflow = useWorkbenchStore(state => state.snacksworthWorkflow);
   const starmobilesWorkflow = useWorkbenchStore(state => state.starmobilesWorkflow);
   const titanSwapperWorkflow = useWorkbenchStore(state => state.titanSwapperWorkflow);
   const marnieBoostsWorkflow = useWorkbenchStore(state => state.marnieBoostsWorkflow);
@@ -3225,6 +3230,9 @@ export function App({
   const raidDensWorkflow = useWorkbenchStore(state => state.raidDensWorkflow);
   const fixAiFlagsWorkflow = useWorkbenchStore(state => state.fixAiFlagsWorkflow);
   const trainerWhiteoutWorkflow = useWorkbenchStore(state => state.trainerWhiteoutWorkflow);
+  const setBbqRewardsWorkflow = useWorkbenchStore(state => state.setBbqRewardsWorkflow);
+  const setSupportBoardWorkflow = useWorkbenchStore(state => state.setSupportBoardWorkflow);
+  const setSnacksworthWorkflow = useWorkbenchStore(state => state.setSnacksworthWorkflow);
   const setStarmobilesWorkflow = useWorkbenchStore(state => state.setStarmobilesWorkflow);
   const setTitanSwapperWorkflow = useWorkbenchStore(state => state.setTitanSwapperWorkflow);
   const setMarnieBoostsWorkflow = useWorkbenchStore(state => state.setMarnieBoostsWorkflow);
@@ -3233,6 +3241,9 @@ export function App({
   const setRaidDensWorkflow = useWorkbenchStore(state => state.setRaidDensWorkflow);
   const setFixAiFlagsWorkflow = useWorkbenchStore(state => state.setFixAiFlagsWorkflow);
   const setTrainerWhiteoutWorkflow = useWorkbenchStore(state => state.setTrainerWhiteoutWorkflow);
+  const [isBbqRewardsLoading, setIsBbqRewardsLoading] = useState(false);
+  const [isSupportBoardLoading, setIsSupportBoardLoading] = useState(false);
+  const [isSnacksworthLoading, setIsSnacksworthLoading] = useState(false);
   const [isStarmobilesLoading, setIsStarmobilesLoading] = useState(false);
   const [isTitanSwapperLoading, setIsTitanSwapperLoading] = useState(false);
   const [isMarnieBoostsLoading, setIsMarnieBoostsLoading] = useState(false);
@@ -3241,6 +3252,9 @@ export function App({
   const [isRaidDensLoading, setIsRaidDensLoading] = useState(false);
   const [isFixAiFlagsLoading, setIsFixAiFlagsLoading] = useState(false);
   const [isTrainerWhiteoutLoading, setIsTrainerWhiteoutLoading] = useState(false);
+  const [isBbqRewardsStaging, setIsBbqRewardsStaging] = useState(false);
+  const [isSupportBoardStaging, setIsSupportBoardStaging] = useState(false);
+  const [isSnacksworthStaging, setIsSnacksworthStaging] = useState(false);
   const [isStarmobilesStaging, setIsStarmobilesStaging] = useState(false);
   const [isTitanSwapperStaging, setIsTitanSwapperStaging] = useState(false);
   const [isMarnieBoostsStaging, setIsMarnieBoostsStaging] = useState(false);
@@ -3249,6 +3263,9 @@ export function App({
   const [isRaidDensStaging, setIsRaidDensStaging] = useState(false);
   const [isFixAiFlagsStaging, setIsFixAiFlagsStaging] = useState(false);
   const [isTrainerWhiteoutStaging, setIsTrainerWhiteoutStaging] = useState(false);
+  const bbqRewardsGenerationRef = useRef(0);
+  const supportBoardGenerationRef = useRef(0);
+  const snacksworthGenerationRef = useRef(0);
   const starmobilesGenerationRef = useRef(0);
   const titanSwapperGenerationRef = useRef(0);
   const marnieBoostsGenerationRef = useRef(0);
@@ -4166,6 +4183,9 @@ export function App({
           fairyGymBoostsWorkflow,
           fashionCatalogWorkflow,
           habitatCoordinatesWorkflow,
+          bbqRewardsWorkflow,
+          supportBoardWorkflow,
+          snacksworthWorkflow,
           starmobilesWorkflow,
           titanSwapperWorkflow,
           marnieBoostsWorkflow,
@@ -4217,6 +4237,9 @@ export function App({
       fairyGymBoostsWorkflow,
       fashionCatalogWorkflow,
       habitatCoordinatesWorkflow,
+      bbqRewardsWorkflow,
+      supportBoardWorkflow,
+      snacksworthWorkflow,
       starmobilesWorkflow,
       titanSwapperWorkflow,
       marnieBoostsWorkflow,
@@ -4335,6 +4358,9 @@ export function App({
     angeFightWorkflow, bagHookWorkflow, battleCafeRewardsWorkflow, behaviorWorkflow, catchCapWorkflow, dynamaxAdventuresWorkflow,
     encountersWorkflow, exeFsPatchWorkflow, fairyGymBoostsWorkflow, fashionCatalogWorkflow,
     habitatCoordinatesWorkflow,
+    bbqRewardsWorkflow,
+    supportBoardWorkflow,
+    snacksworthWorkflow,
     starmobilesWorkflow,
     titanSwapperWorkflow,
     marnieBoostsWorkflow,
@@ -4477,6 +4503,12 @@ export function App({
     (dirty: boolean) => registerEditorDraftDirty('trainerWhiteout', dirty), [registerEditorDraftDirty]);
   const handleTrainerDynamaxDirtyChange = useCallback(
     (dirty: boolean) => registerEditorDraftDirty('trainerDynamax', dirty), [registerEditorDraftDirty]);
+  const handleBbqRewardsDirtyChange = useCallback(
+    (dirty: boolean) => registerEditorDraftDirty('bbqRewards', dirty), [registerEditorDraftDirty]);
+  const handleSupportBoardDirtyChange = useCallback(
+    (dirty: boolean) => registerEditorDraftDirty('supportBoard', dirty), [registerEditorDraftDirty]);
+  const handleSnacksworthDirtyChange = useCallback(
+    (dirty: boolean) => registerEditorDraftDirty('snacksworth', dirty), [registerEditorDraftDirty]);
   const handleStarmobilesDirtyChange = useCallback(
     (dirty: boolean) => registerEditorDraftDirty('starmobiles', dirty), [registerEditorDraftDirty]);
   const handleTitanSwapperDirtyChange = useCallback(
@@ -10714,6 +10746,144 @@ export function App({
     return accepted;
   };
 
+  const handleOpenBbqRewardsWorkflow = async () => {
+    const session = getEditSessionForSection('bbqRewards');
+    const signature = getEditSessionSignature(session);
+    const generation = bbqRewardsGenerationRef.current;
+    await runRetainedWorkflowLoad('bbqRewards', setIsBbqRewardsLoading,
+      () => bridge.loadBlueberry({ editor: 'bbqRewards', paths: createProjectPaths(draftPaths), session }),
+      response => setBbqRewardsWorkflow(response.workflow),
+      () => generation === bbqRewardsGenerationRef.current && signature === getEditSessionSignature(editSessionRef.current));
+  };
+
+  const handleStageBbqRewards = async (sourceRevision: string, updates: BlueberryUpdate[]) => {
+    const activeSession = getEditSessionForSection('bbqRewards');
+    if (!activeSession) return false;
+    let accepted = false;
+    bbqRewardsGenerationRef.current += 1;
+    setIsBbqRewardsStaging(true);
+    prepareScopedEditorPanelAction('bbqRewards');
+    try {
+      await runEditSessionMutation(async session => {
+        const response = await bridge.stageBlueberry({ editor: 'bbqRewards', paths: createProjectPaths(draftPaths), session, sourceRevision, updates });
+        const matches = response.workflow.sourceRevision === sourceRevision &&
+          response.workflow.summary.availability === 'available' &&
+          (session === null || response.session.sessionId === session.sessionId) &&
+          updates.every(update => response.workflow.rows.find(row => row.id === update.rowId)?.values[update.field] === update.value);
+        const diagnostics = [...response.diagnostics, ...response.workflow.diagnostics];
+        if (!matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error')) {
+          diagnostics.push({ severity: 'error', domain: 'workflow.bbqRewards',
+            code: 'KM-SV-BLUEBERRY-EDIT-INVALID', message: t('blueberry.failed') });
+        }
+        const didSucceed = matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error');
+        return { ...response, diagnostics, didSucceed, session: didSucceed ? response.session : session };
+      }, response => {
+        setScopedEditorPanelDiagnostics('bbqRewards', response.diagnostics);
+        if (response.didSucceed) {
+          accepted = true;
+          setBbqRewardsWorkflow(response.workflow);
+          setEditSessionSection('bbqRewards');
+        }
+      }, activeSession);
+    } catch (error) {
+      setScopedEditorPanelDiagnostics('bbqRewards', toBridgeDiagnostics(error));
+    } finally { setIsBbqRewardsStaging(false); }
+    return accepted;
+  };
+
+
+  const handleOpenSupportBoardWorkflow = async () => {
+    const session = getEditSessionForSection('supportBoard');
+    const signature = getEditSessionSignature(session);
+    const generation = supportBoardGenerationRef.current;
+    await runRetainedWorkflowLoad('supportBoard', setIsSupportBoardLoading,
+      () => bridge.loadBlueberry({ editor: 'supportBoard', paths: createProjectPaths(draftPaths), session }),
+      response => setSupportBoardWorkflow(response.workflow),
+      () => generation === supportBoardGenerationRef.current && signature === getEditSessionSignature(editSessionRef.current));
+  };
+
+  const handleStageSupportBoard = async (sourceRevision: string, updates: BlueberryUpdate[]) => {
+    const activeSession = getEditSessionForSection('supportBoard');
+    if (!activeSession) return false;
+    let accepted = false;
+    supportBoardGenerationRef.current += 1;
+    setIsSupportBoardStaging(true);
+    prepareScopedEditorPanelAction('supportBoard');
+    try {
+      await runEditSessionMutation(async session => {
+        const response = await bridge.stageBlueberry({ editor: 'supportBoard', paths: createProjectPaths(draftPaths), session, sourceRevision, updates });
+        const matches = response.workflow.sourceRevision === sourceRevision &&
+          response.workflow.summary.availability === 'available' &&
+          (session === null || response.session.sessionId === session.sessionId) &&
+          updates.every(update => response.workflow.rows.find(row => row.id === update.rowId)?.values[update.field] === update.value);
+        const diagnostics = [...response.diagnostics, ...response.workflow.diagnostics];
+        if (!matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error')) {
+          diagnostics.push({ severity: 'error', domain: 'workflow.supportBoard',
+            code: 'KM-SV-BLUEBERRY-EDIT-INVALID', message: t('blueberry.failed') });
+        }
+        const didSucceed = matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error');
+        return { ...response, diagnostics, didSucceed, session: didSucceed ? response.session : session };
+      }, response => {
+        setScopedEditorPanelDiagnostics('supportBoard', response.diagnostics);
+        if (response.didSucceed) {
+          accepted = true;
+          setSupportBoardWorkflow(response.workflow);
+          setEditSessionSection('supportBoard');
+        }
+      }, activeSession);
+    } catch (error) {
+      setScopedEditorPanelDiagnostics('supportBoard', toBridgeDiagnostics(error));
+    } finally { setIsSupportBoardStaging(false); }
+    return accepted;
+  };
+
+
+  const handleOpenSnacksworthWorkflow = async () => {
+    const session = getEditSessionForSection('snacksworth');
+    const signature = getEditSessionSignature(session);
+    const generation = snacksworthGenerationRef.current;
+    await runRetainedWorkflowLoad('snacksworth', setIsSnacksworthLoading,
+      () => bridge.loadBlueberry({ editor: 'snacksworth', paths: createProjectPaths(draftPaths), session }),
+      response => setSnacksworthWorkflow(response.workflow),
+      () => generation === snacksworthGenerationRef.current && signature === getEditSessionSignature(editSessionRef.current));
+  };
+
+  const handleStageSnacksworth = async (sourceRevision: string, updates: BlueberryUpdate[]) => {
+    const activeSession = getEditSessionForSection('snacksworth');
+    if (!activeSession) return false;
+    let accepted = false;
+    snacksworthGenerationRef.current += 1;
+    setIsSnacksworthStaging(true);
+    prepareScopedEditorPanelAction('snacksworth');
+    try {
+      await runEditSessionMutation(async session => {
+        const response = await bridge.stageBlueberry({ editor: 'snacksworth', paths: createProjectPaths(draftPaths), session, sourceRevision, updates });
+        const matches = response.workflow.sourceRevision === sourceRevision &&
+          response.workflow.summary.availability === 'available' &&
+          (session === null || response.session.sessionId === session.sessionId) &&
+          updates.every(update => response.workflow.rows.find(row => row.id === update.rowId)?.values[update.field] === update.value);
+        const diagnostics = [...response.diagnostics, ...response.workflow.diagnostics];
+        if (!matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error')) {
+          diagnostics.push({ severity: 'error', domain: 'workflow.snacksworth',
+            code: 'KM-SV-BLUEBERRY-EDIT-INVALID', message: t('blueberry.failed') });
+        }
+        const didSucceed = matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error');
+        return { ...response, diagnostics, didSucceed, session: didSucceed ? response.session : session };
+      }, response => {
+        setScopedEditorPanelDiagnostics('snacksworth', response.diagnostics);
+        if (response.didSucceed) {
+          accepted = true;
+          setSnacksworthWorkflow(response.workflow);
+          setEditSessionSection('snacksworth');
+        }
+      }, activeSession);
+    } catch (error) {
+      setScopedEditorPanelDiagnostics('snacksworth', toBridgeDiagnostics(error));
+    } finally { setIsSnacksworthStaging(false); }
+    return accepted;
+  };
+
+
   const handleOpenStarmobilesWorkflow = async () => {
     const session = getEditSessionForSection('starmobiles');
     const signature = getEditSessionSignature(session);
@@ -12546,6 +12716,15 @@ export function App({
         case 'trainerWhiteout':
           if (!currentState.trainerWhiteoutWorkflow) await handleOpenTrainerWhiteoutWorkflow();
           break;
+        case 'bbqRewards':
+          if (!currentState.bbqRewardsWorkflow) await handleOpenBbqRewardsWorkflow();
+          break;
+        case 'supportBoard':
+          if (!currentState.supportBoardWorkflow) await handleOpenSupportBoardWorkflow();
+          break;
+        case 'snacksworth':
+          if (!currentState.snacksworthWorkflow) await handleOpenSnacksworthWorkflow();
+          break;
         case 'starmobiles':
           if (!currentState.starmobilesWorkflow) await handleOpenStarmobilesWorkflow();
           break;
@@ -12940,6 +13119,15 @@ export function App({
       case 'trainerWhiteout':
         if (!trainerWhiteoutWorkflow && !isTrainerWhiteoutLoading) { markLazyLoadStarted(); void handleOpenTrainerWhiteoutWorkflow(); }
         break;
+      case 'bbqRewards':
+        if (!bbqRewardsWorkflow && !isBbqRewardsLoading) { markLazyLoadStarted(); void handleOpenBbqRewardsWorkflow(); }
+        break;
+      case 'supportBoard':
+        if (!supportBoardWorkflow && !isSupportBoardLoading) { markLazyLoadStarted(); void handleOpenSupportBoardWorkflow(); }
+        break;
+      case 'snacksworth':
+        if (!snacksworthWorkflow && !isSnacksworthLoading) { markLazyLoadStarted(); void handleOpenSnacksworthWorkflow(); }
+        break;
       case 'starmobiles':
         if (!starmobilesWorkflow && !isStarmobilesLoading) { markLazyLoadStarted(); void handleOpenStarmobilesWorkflow(); }
         break;
@@ -13200,6 +13388,9 @@ export function App({
     fairyGymBoostsWorkflow,
     fashionCatalogWorkflow,
     habitatCoordinatesWorkflow,
+    bbqRewardsWorkflow,
+    supportBoardWorkflow,
+    snacksworthWorkflow,
     starmobilesWorkflow,
     titanSwapperWorkflow,
     marnieBoostsWorkflow,
@@ -13234,6 +13425,9 @@ export function App({
     isFairyGymBoostsLoading,
     isFashionCatalogLoading,
     isHabitatCoordinatesLoading,
+    isBbqRewardsLoading,
+    isSupportBoardLoading,
+    isSnacksworthLoading,
     isStarmobilesLoading,
     isTitanSwapperLoading,
     isMarnieBoostsLoading,
@@ -18526,6 +18720,9 @@ export function App({
       'trainerPools',
       'fashionCatalog',
       'habitatCoordinates',
+      'bbqRewards',
+      'supportBoard',
+      'snacksworth',
       'starmobiles',
       'titanSwapper',
       'marnieBoosts',
@@ -18582,6 +18779,9 @@ export function App({
       fairyGymBoosts: setIsFairyGymBoostsLoading,
       fashionCatalog: setIsFashionCatalogLoading,
       habitatCoordinates: setIsHabitatCoordinatesLoading,
+      bbqRewards: setIsBbqRewardsLoading,
+      supportBoard: setIsSupportBoardLoading,
+      snacksworth: setIsSnacksworthLoading,
       starmobiles: setIsStarmobilesLoading,
       titanSwapper: setIsTitanSwapperLoading,
       marnieBoosts: setIsMarnieBoostsLoading,
@@ -18826,6 +19026,24 @@ export function App({
       reloadTasks.push(async () => {
         const response = await bridge.loadTrainerWhiteout({ paths });
         if (canCommitRefresh()) setTrainerWhiteoutWorkflow(response.workflow);
+      });
+    }
+    if (bbqRewardsWorkflow && refreshSections.has('bbqRewards')) {
+      reloadTasks.push(async () => {
+        const response = await bridge.loadBlueberry({ editor: 'bbqRewards', paths, session: getEditSessionForSection('bbqRewards') });
+        if (canCommitRefresh()) setBbqRewardsWorkflow(response.workflow);
+      });
+    }
+    if (supportBoardWorkflow && refreshSections.has('supportBoard')) {
+      reloadTasks.push(async () => {
+        const response = await bridge.loadBlueberry({ editor: 'supportBoard', paths, session: getEditSessionForSection('supportBoard') });
+        if (canCommitRefresh()) setSupportBoardWorkflow(response.workflow);
+      });
+    }
+    if (snacksworthWorkflow && refreshSections.has('snacksworth')) {
+      reloadTasks.push(async () => {
+        const response = await bridge.loadBlueberry({ editor: 'snacksworth', paths, session: getEditSessionForSection('snacksworth') });
+        if (canCommitRefresh()) setSnacksworthWorkflow(response.workflow);
       });
     }
     if (starmobilesWorkflow && refreshSections.has('starmobiles')) {
@@ -20576,6 +20794,33 @@ export function App({
               />
             )
           ) : null}
+          {activeSection === 'bbqRewards' ? (
+            isBbqRewardsLoading && !bbqRewardsWorkflow ? <WorkflowLoadingPanel label={t('workbench.section.bbqRewards.label')} /> :
+              <BlueberrySection editor="bbqRewards" renderPokemon={(species, name) => <PokemonSprite speciesId={species} form={0} editorFamily="sv" name={name} preferStatic />} workflow={bbqRewardsWorkflow} isStaging={isBbqRewardsStaging}
+                key={getEditSessionForSection('bbqRewards')?.sessionId ? 'bbqRewards-' + getEditSessionForSection('bbqRewards')!.sessionId : 'bbqRewards-viewing'}
+                isEditing={getEditSessionForSection('bbqRewards') !== null} isEditStarting={isEditStarting}
+                onStartEditSession={handleStartEditSession} onCancelEditSession={requestCancelEditSession}
+                onStage={handleStageBbqRewards} onDirtyStateChange={handleBbqRewardsDirtyChange}
+                panelOutput={getOutputSafeScopedEditorPanelOutput('bbqRewards')} />
+          ) : null}
+          {activeSection === 'supportBoard' ? (
+            isSupportBoardLoading && !supportBoardWorkflow ? <WorkflowLoadingPanel label={t('workbench.section.supportBoard.label')} /> :
+              <BlueberrySection editor="supportBoard" renderPokemon={(species, name) => <PokemonSprite speciesId={species} form={0} editorFamily="sv" name={name} preferStatic />} workflow={supportBoardWorkflow} isStaging={isSupportBoardStaging}
+                key={getEditSessionForSection('supportBoard')?.sessionId ? 'supportBoard-' + getEditSessionForSection('supportBoard')!.sessionId : 'supportBoard-viewing'}
+                isEditing={getEditSessionForSection('supportBoard') !== null} isEditStarting={isEditStarting}
+                onStartEditSession={handleStartEditSession} onCancelEditSession={requestCancelEditSession}
+                onStage={handleStageSupportBoard} onDirtyStateChange={handleSupportBoardDirtyChange}
+                panelOutput={getOutputSafeScopedEditorPanelOutput('supportBoard')} />
+          ) : null}
+          {activeSection === 'snacksworth' ? (
+            isSnacksworthLoading && !snacksworthWorkflow ? <WorkflowLoadingPanel label={t('workbench.section.snacksworth.label')} /> :
+              <BlueberrySection editor="snacksworth" renderPokemon={(species, name) => <PokemonSprite speciesId={species} form={0} editorFamily="sv" name={name} preferStatic />} workflow={snacksworthWorkflow} isStaging={isSnacksworthStaging}
+                key={getEditSessionForSection('snacksworth')?.sessionId ? 'snacksworth-' + getEditSessionForSection('snacksworth')!.sessionId : 'snacksworth-viewing'}
+                isEditing={getEditSessionForSection('snacksworth') !== null} isEditStarting={isEditStarting}
+                onStartEditSession={handleStartEditSession} onCancelEditSession={requestCancelEditSession}
+                onStage={handleStageSnacksworth} onDirtyStateChange={handleSnacksworthDirtyChange}
+                panelOutput={getOutputSafeScopedEditorPanelOutput('snacksworth')} />
+          ) : null}
           {activeSection === 'starmobiles' ? (
             isStarmobilesLoading && !starmobilesWorkflow ? <WorkflowLoadingPanel label={t('starmobiles.title')} /> :
               <StarmobilesSection workflow={starmobilesWorkflow} isStaging={isStarmobilesStaging}
@@ -21600,6 +21845,9 @@ export function App({
               diagnostics={editValidationDiagnostics}
               editSession={editSession}
               pendingEditContext={{
+                bbqRewardsWorkflow,
+                supportBoardWorkflow,
+                snacksworthWorkflow,
                 starmobilesWorkflow,
                 titanSwapperWorkflow,
                 marnieBoostsWorkflow,
@@ -35196,6 +35444,9 @@ function formatPendingEditDomain(domain: string) {
     'workflow.gameOptions': 'Game Options',
     'workflow.raidDens': 'Raid Dens',
     'workflow.trainerWhiteout': 'Trainer Whiteout',
+    'workflow.bbqRewards': 'BBQ Rewards',
+    'workflow.supportBoard': 'Support Board',
+    'workflow.snacksworth': 'Snacksworth',
     'workflow.starmobiles': 'Starmobiles',
     'workflow.titan-swapper': 'Titan Swapper',
     'workflow.fashionUnlock': 'Fashion Unlock',
@@ -35261,6 +35512,9 @@ function getPendingEditSection(edit: PendingEdit): WorkbenchSection | null {
     'workflow.gameOptions': 'gameOptions',
     'workflow.raidDens': 'raidDens',
     'workflow.trainerWhiteout': 'trainerWhiteout',
+    'workflow.bbqRewards': 'bbqRewards',
+    'workflow.supportBoard': 'supportBoard',
+    'workflow.snacksworth': 'snacksworth',
     'workflow.starmobiles': 'starmobiles',
     'workflow.titan-swapper': 'titanSwapper',
     'workflow.fashionUnlock': 'fashionUnlock',
@@ -35712,6 +35966,22 @@ function getPendingEditDisplayDetails(
         recordLocalizationParamKeys: row ? { phase: `titanSwapper.phase.${row.phase}` } : undefined,
         newValueLocalizationKey: edit.field === 'enabled' ? value === '1' ? 'titanSwapper.active' : 'titanSwapper.original' : undefined,
         fieldLocalizationKey: `titanSwapper.field.${edit.field}`, newValueLabel: value });
+    }
+    case 'workflow.bbqRewards':
+    case 'workflow.supportBoard':
+    case 'workflow.snacksworth': {
+      const editor = edit.domain.slice('workflow.'.length) as 'bbqRewards' | 'supportBoard' | 'snacksworth';
+      const workflow = context[`${editor}Workflow`];
+      let value = '';
+      try { const payload = JSON.parse(edit.newValue ?? '{}'); if (typeof payload.Value === 'number') value = String(payload.Value); }
+      catch { /* Malformed values remain diagnostic data. */ }
+      const rowLabel = workflow?.rows.find(row => row.id === edit.recordId)?.label;
+      const unnamedRequest = editor === 'supportBoard' && /^\s*(?:\[~\s*\d+\])?\s*$/u.test(rowLabel ?? '');
+      return createPendingEditDisplayDetails(edit, { editorLabel,
+        recordLabel: rowLabel ?? edit.recordId ?? '',
+        recordLocalizationKey: editor === 'bbqRewards' ? 'blueberry.recordId' : unnamedRequest ? 'blueberry.unnamedRequest' : undefined,
+        recordLocalizationParams: editor === 'bbqRewards' || unnamedRequest ? { id: edit.recordId ?? '' } : undefined,
+        fieldLocalizationKey: `blueberry.field.${edit.field}`, newValueLabel: value });
     }
     case 'workflow.starmobiles': {
       let value = '';
@@ -57120,6 +57390,9 @@ export type PendingEditContext = {
   raidDensWorkflow?: RaidDensWorkflow | null;
   fixAiFlagsWorkflow?: FixAiFlagsWorkflow | null;
   trainerWhiteoutWorkflow?: TrainerWhiteoutWorkflow | null;
+  bbqRewardsWorkflow?: BlueberryWorkflow | null;
+  supportBoardWorkflow?: BlueberryWorkflow | null;
+  snacksworthWorkflow?: BlueberryWorkflow | null;
   starmobilesWorkflow?: StarmobilesWorkflow | null;
   titanSwapperWorkflow?: TitanSwapperWorkflow | null;
   angeFightWorkflow: AngeFightWorkflow | null;

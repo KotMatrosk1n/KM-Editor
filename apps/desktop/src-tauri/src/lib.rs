@@ -331,6 +331,8 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "spreadsheetImport.load",
     "spreadsheetImport.preview",
     "starmobiles.fields.stage",
+    "blueberry.load",
+    "blueberry.fields.stage",
     "starmobiles.load",
     "startingItems.load",
     "startingItems.stage",
@@ -2824,6 +2826,7 @@ fn is_project_bridge_workflow_load_command(command: &str) -> bool {
             | "giftPokemon.load"
             | "gymUniformRemoval.load"
             | "habitatCoordinates.load"
+            | "blueberry.load"
             | "starmobiles.load"
             | "titan-swapper.load"
             | "hyperspaceBypass.load"
@@ -2991,6 +2994,7 @@ fn is_replay_safe_edit_session_command(command: &str) -> bool {
             | "gymUniformRemoval.install.stage"
             | "gymUniformRemoval.uninstall.stage"
             | "habitatCoordinates.coordinate.stage"
+            | "blueberry.fields.stage"
             | "starmobiles.fields.stage"
             | "titan-swapper.fields.stage"
             | "heldItemChance.stage"

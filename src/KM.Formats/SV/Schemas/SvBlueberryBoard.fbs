@@ -1,0 +1,17 @@
+// SPDX-License-Identifier: GPL-3.0-only
+namespace KM.Formats.SV.Blueberry.Generated;
+table BlueberryBoardEntry {
+  id:byte;
+  name_key:string;
+  club:byte;
+  lock_condition:byte;
+  prerequisite:byte;
+  lock_display:byte;
+  price_bp:int;
+  description_key:string;
+  reward_key:string;
+  one_time:bool;
+  sort_order:byte;
+}
+table BlueberryBoardArray { entries:[BlueberryBoardEntry]; }
+root_type BlueberryBoardArray;

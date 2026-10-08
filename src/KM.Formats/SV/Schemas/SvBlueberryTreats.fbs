@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: GPL-3.0-only
+namespace KM.Formats.SV.Blueberry.Generated;
+table BlueberryTreat {
+  id:int;
+  state_key:string;
+  species:ushort;
+  item:int;
+  solo_scarlet:bool;
+  solo_violet:bool;
+  group_scarlet:bool;
+  group_violet:bool;
+}
+table BlueberryTreatArray { entries:[BlueberryTreat]; }
+root_type BlueberryTreatArray;

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 using KM.Core.ModMerging;
 using KM.SV.Data;
+using KM.SV.Blueberry;
+using KM.Formats.SV.Blueberry;
+using KM.Formats.SV.Blueberry.Generated;
 using KM.ZA.Data;
 using KM.Formats.ZA.Generated.GameData;
 using KM.Formats.ZA.Generated.BattleMoves;
@@ -40,6 +43,9 @@ internal static class MergeSchemaCatalog
             })).ToArray());
         var behaviors = new MergeTableSchema("SwShBehaviors", new MergeTableSchema.Field("Entries", "table", behavior, true));
         entries.Add(new("swsh", "bin/field/param/symbol_encount_mons_param/symbol_encount_mons_param.bin", bytes => behaviors.Read(bytes, "behavior")));
+        entries.Add(new("sv", SvBlueberryDocument.PathFor(SvBlueberryKind.BbqRewards), SvBlueberryQuestMergeDocument.Read));
+        Add<BlueberryBoardArray>("sv", SvBlueberryDocument.PathFor(SvBlueberryKind.SupportBoard), "blueberry-board");
+        Add<BlueberryTreatArray>("sv", SvBlueberryDocument.PathFor(SvBlueberryKind.Snacksworth), "blueberry-treats");
         Table("sv", SvDataPaths.EvolutionItemConversionArray, "EvolutionItemConversions", "evolution-items");
         Table("za", ZaDataPaths.EvolutionItemConversionArray, "EvolutionItemConversions", "evolution-items");
         Table("za", ZaDataPaths.BattleTrainerSpawnerDataArray, "ZaTrainerPoolSpawnerDatabaseArray", "spawners");

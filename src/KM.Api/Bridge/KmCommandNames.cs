@@ -70,6 +70,8 @@ public static class KmCommandNames
     public const string LoadTmMachineControls = "tmMachineControls.load";
     public const string StageTmRecipeAvailability = "tmMachineControls.recipeAvailability.stage";
     public const string StageTmMaterialVisibility = "tmMachineControls.materialVisibility.stage";
+    public const string LoadBlueberry = "blueberry.load";
+    public const string StageBlueberry = "blueberry.fields.stage";
     public const string LoadStarmobiles = "starmobiles.load";
     public const string LoadTitanSwapper = "titan-swapper.load";
     public const string StageStarmobiles = "starmobiles.fields.stage";
