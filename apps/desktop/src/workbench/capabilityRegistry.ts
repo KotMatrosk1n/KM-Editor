@@ -5,17 +5,27 @@ import {
   ArrowLeftRight,
   BadgeCheck,
   BadgePlus,
+  Ban,
   Box,
+  BrainCircuit,
   Cable,
   Candy,
   ClipboardCheck,
+  ClipboardList,
   Coffee,
+  Coins,
+  ContactRound,
+  Cookie,
+  Dices,
+  Disc3,
   Dna,
   Download,
   Dumbbell,
   Expand,
+  Flag,
   Flower2,
   FlaskConical,
+  Gauge,
   Gem,
   Gift,
   GitMerge,
@@ -24,11 +34,14 @@ import {
   ListChecks,
   ListOrdered,
   LayoutDashboard,
+  Map as MapIcon,
   MapPin,
   MapPinned,
+  Megaphone,
   MessageSquareOff,
   Mountain,
   Music,
+  Orbit,
   Package,
   PackagePlus,
   Palette,
@@ -40,11 +53,15 @@ import {
   Shirt,
   Skull,
   Shuffle,
+  SlidersHorizontal,
   Sparkle,
   Sparkles,
   Star,
   Store,
+  Swords,
   Table2,
+  TextCursorInput,
+  TicketCheck,
   Trees,
   Upload,
   UsersRound,
@@ -119,10 +136,10 @@ function toContractSegment(section: WorkbenchSection) {
 }
 
 export const workbenchCapabilityRegistry = [
-  workflow({ id: 'bbqRewards', label: 'BBQ Rewards', games: scarletVioletGames, icon: HandCoins, description: 'Edit Blueberry Quest BP rewards.' }),
-  workflow({ id: 'supportBoard', label: 'Support Board', games: scarletVioletGames, icon: HandCoins, description: 'Edit Support Board BP prices.' }),
-  workflow({ id: 'snacksworth', label: 'Snacksworth', domain: 'workflow.snacksworth', games: scarletVioletGames, icon: Gift, description: 'Choose solo and group quest eligibility for legendary treats.' }),
-  workflow({ id: 'titanSwapper', label: 'Titan Swapper', games: scarletVioletGames, icon: Star,
+  workflow({ id: 'bbqRewards', label: 'BBQ Rewards', games: scarletVioletGames, icon: Coins, description: 'Edit Blueberry Quest BP rewards.' }),
+  workflow({ id: 'supportBoard', label: 'Support Board', games: scarletVioletGames, icon: ClipboardList, description: 'Edit Support Board BP prices.' }),
+  workflow({ id: 'snacksworth', label: 'Snacksworth', domain: 'workflow.snacksworth', games: scarletVioletGames, icon: Cookie, description: 'Choose solo and group quest eligibility for legendary treats.' }),
+  workflow({ id: 'titanSwapper', label: 'Titan Swapper', games: scarletVioletGames, icon: Swords,
     description: 'Choose a separate combat Pokemon for each Titan battle phase.' }),
   workflow({ id: 'starmobiles', label: 'Starmobiles', games: scarletVioletGames,
     icon: Star, description: 'Edit Team Star Starmobile levels and combat stats.' }),
@@ -205,7 +222,7 @@ export const workbenchCapabilityRegistry = [
     description:
       'Swap exact trainer identities across synchronized Story and Infinity pool mirrors without changing pool sizes.',
     games: ['za'],
-    icon: Shuffle,
+    icon: ContactRound,
     id: 'trainerPools',
     label: 'Trainer Pools'
   }),
@@ -241,7 +258,7 @@ export const workbenchCapabilityRegistry = [
   workflow({
     description: 'Rental Pokemon records, fixed IVs, EVs, items, moves, and source provenance.',
     games: swordShieldGames,
-    icon: Dna,
+    icon: TicketCheck,
     id: 'rentalPokemon',
     label: 'Rental Pokemon'
   }),
@@ -264,7 +281,7 @@ export const workbenchCapabilityRegistry = [
     description:
       'Control TM recipe availability and tracking-window material visibility independently.',
     games: scarletVioletGames,
-    icon: ListChecks,
+    icon: Disc3,
     id: 'tmMachineControls',
     label: 'TM Machine Controls'
   }),
@@ -272,7 +289,7 @@ export const workbenchCapabilityRegistry = [
     description:
       'Edit existing Pokedex distribution cells using coordinates observed in each exact region source.',
     games: scarletVioletGames,
-    icon: MapPinned,
+    icon: MapIcon,
     id: 'habitatCoordinates',
     label: 'Habitat Coordinates'
   }),
@@ -321,14 +338,14 @@ export const workbenchCapabilityRegistry = [
   workflow({
     description: 'Game-specific Pokemon behavior settings and source provenance.',
     games: [...swordShieldGames, 'za'],
-    icon: Activity,
+    icon: BrainCircuit,
     id: 'behavior',
     label: 'Behavior'
   }),
   workflow({
     description: 'Text entries, dialogue references, and source provenance.',
     games: allGames,
-    icon: ListChecks,
+    icon: TextCursorInput,
     id: 'text',
     label: 'Text',
     workflowDashboardLabel: 'Text and Dialogue Map'
@@ -439,15 +456,15 @@ export const workbenchCapabilityRegistry = [
   }),
   workflow({
     description: 'Edit Marnie cheering outcomes in the three Wyndon battles.',
-    games: swordShieldGames, icon: Sparkles, id: 'marnieBoosts', label: 'Marnie Wyndon Boosts'
+    games: swordShieldGames, icon: Megaphone, id: 'marnieBoosts', label: 'Marnie Wyndon Boosts'
   }),
   workflow({
     description: 'Choose items and normal or boosted chances for each Pokemon and form.',
-    games: swordShieldGames, icon: Sparkles, id: 'heldItemChance', label: 'Held Item Chance'
+    games: swordShieldGames, icon: Dices, id: 'heldItemChance', label: 'Held Item Chance'
   }),
   workflow({
     description: 'Choose new game option values and hide individual menu selections.',
-    games: swordShieldGames, icon: Sparkles, id: 'gameOptions', label: 'Game Options'
+    games: swordShieldGames, icon: SlidersHorizontal, id: 'gameOptions', label: 'Game Options'
   }),
   workflow({
     description:
@@ -461,7 +478,7 @@ export const workbenchCapabilityRegistry = [
     description:
       'Independent ExeFS editor that keeps gym challenge and gym leader battle scripts from changing the player into the gym uniform.',
     games: swordShieldGames,
-    icon: Shirt,
+    icon: Ban,
     id: 'gymUniformRemoval',
     label: 'Gym Uniform Removal'
   }),
@@ -469,7 +486,7 @@ export const workbenchCapabilityRegistry = [
     description:
       'Advanced S/V ExeFS editor that lets any Pokemon pass the Hyperspace Hole/Fury Hoopa runtime gate.',
     games: scarletVioletGames,
-    icon: Sparkle,
+    icon: Orbit,
     id: 'hyperspaceBypass',
     label: 'Hyperspace Bypass'
   }),
@@ -485,7 +502,7 @@ export const workbenchCapabilityRegistry = [
   workflow({
     description: 'Install, inspect, or restore the verified 60FPS patch.',
     games: swordShieldGames,
-    icon: Zap,
+    icon: Gauge,
     id: 'fpsPatch',
     label: '60FPS Patch',
     showInWorkflowDashboard: false,
@@ -507,7 +524,7 @@ export const workbenchCapabilityRegistry = [
   }),
   workflow({
     description: 'Review and repair migrated trainer AI flags.',
-    games: swordShieldGames, icon: Wrench, id: 'fixAiFlags', label: 'Fix AI Flags',
+    games: swordShieldGames, icon: Flag, id: 'fixAiFlags', label: 'Fix AI Flags',
     showInWorkflowDashboard: false, standalone: true
   }),
   workflow({
