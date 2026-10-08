@@ -5,6 +5,8 @@ import { type LoadTrainerDynamaxRequest, type LoadTrainerDynamaxResponse,
   loadTrainerDynamaxResponseSchema, reviewTrainerDynamaxResponseSchema, applyTrainerDynamaxResponseSchema
 } from './trainerDynamaxContracts';
 
+import { type LoadBlueberryRequest, type LoadBlueberryResponse, type StageBlueberryRequest, type StageBlueberryResponse,
+  loadBlueberryRequestSchema, loadBlueberryResponseSchema, stageBlueberryRequestSchema, stageBlueberryResponseSchema } from './blueberryContracts';
 import { type LoadStarmobilesRequest, type LoadStarmobilesResponse, type StageStarmobilesRequest, type StageStarmobilesResponse,
   loadStarmobilesRequestSchema, loadStarmobilesResponseSchema, stageStarmobilesRequestSchema, stageStarmobilesResponseSchema } from './starmobilesContracts';
 import { type LoadTitanSwapperRequest, type LoadTitanSwapperResponse, type StageTitanSwapperRequest, type StageTitanSwapperResponse,
@@ -847,6 +849,7 @@ export type ProjectBridge = {
   stageTmMaterialVisibility: (
     request: StageTmMaterialVisibilityRequest,
   ) => Promise<StageTmMaterialVisibilityResponse>;
+  loadBlueberry: (request: LoadBlueberryRequest) => Promise<LoadBlueberryResponse>;
   loadStarmobiles: (request: LoadStarmobilesRequest) => Promise<LoadStarmobilesResponse>;
   loadTitanSwapper: (request: LoadTitanSwapperRequest) => Promise<LoadTitanSwapperResponse>;
   loadMarnieBoosts: (request: LoadMarnieBoostsRequest) => Promise<LoadMarnieBoostsResponse>;
@@ -856,6 +859,7 @@ export type ProjectBridge = {
   loadFixAiFlags: (request: LoadFixAiFlagsRequest) => Promise<LoadFixAiFlagsResponse>;
   stageFixAiFlags: (request: StageFixAiFlagsRequest) => Promise<StageFixAiFlagsResponse>;
   loadTrainerWhiteout: (request: LoadTrainerWhiteoutRequest) => Promise<LoadTrainerWhiteoutResponse>;
+  stageBlueberry: (request: StageBlueberryRequest) => Promise<StageBlueberryResponse>;
   stageStarmobiles: (request: StageStarmobilesRequest) => Promise<StageStarmobilesResponse>;
   stageTitanSwapper: (request: StageTitanSwapperRequest) => Promise<StageTitanSwapperResponse>;
   stageMarnieBoosts: (request: StageMarnieBoostsRequest) => Promise<StageMarnieBoostsResponse>;
@@ -1687,6 +1691,8 @@ export function createProjectBridge(
         stageTmMaterialVisibilityResponseSchema,
       );
     },
+    loadBlueberry: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadBlueberry,
+      loadBlueberryRequestSchema.parse(request), loadBlueberryResponseSchema),
     loadStarmobiles: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadStarmobiles,
       loadStarmobilesRequestSchema.parse(request), loadStarmobilesResponseSchema),
     loadTitanSwapper: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadTitanSwapper,
@@ -1705,6 +1711,8 @@ export function createProjectBridge(
       stageFixAiFlagsRequestSchema.parse(request), stageFixAiFlagsResponseSchema),
     loadTrainerWhiteout: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadTrainerWhiteout,
       loadTrainerWhiteoutRequestSchema.parse(request), loadTrainerWhiteoutResponseSchema),
+    stageBlueberry: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageBlueberry,
+      stageBlueberryRequestSchema.parse(request), stageBlueberryResponseSchema),
     stageStarmobiles: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageStarmobiles,
       stageStarmobilesRequestSchema.parse(request), stageStarmobilesResponseSchema),
     stageTitanSwapper: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageTitanSwapper,

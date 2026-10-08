@@ -38,6 +38,7 @@ import { type BattleCafeRewardsWorkflow } from './bridge/battleCafeRewardsContra
 import { type FashionUnlockWorkflow } from './bridge/fashionUnlockContracts';
 import { type FashionCatalogWorkflow } from './bridge/fashionCatalogContracts';
 import { type GymUniformRemovalWorkflow } from './bridge/gymUniformRemovalContracts';
+import { type BlueberryWorkflow } from './bridge/blueberryContracts';
 import { type StarmobilesWorkflow } from './bridge/starmobilesContracts';
 import { type TitanSwapperWorkflow } from './bridge/titanSwapperContracts';
 import { type MarnieBoostsWorkflow } from './bridge/marnieBoostsContracts';
@@ -95,6 +96,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
       'habitatCoordinates',
       'staticEncounters',
       'giftPokemon',
+      'snacksworth',
       'tradePokemon',
       'rentalPokemon',
       'teraRaids',
@@ -104,7 +106,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
   {
     id: 'economy',
     label: 'Economy',
-    sectionIds: ['shops', 'battleCafeRewards', 'tmMachineControls', 'raidRewards', 'raidBonusRewards']
+    sectionIds: ['bbqRewards', 'supportBoard', 'shops', 'battleCafeRewards', 'tmMachineControls', 'raidRewards', 'raidBonusRewards']
   },
   { id: 'tools', label: 'Tools', sectionIds: ['modelViewer', 'soundStudio', 'fashionCatalog', 'fpsPatch', 'profanityFilter', 'raidDens', 'fixAiFlags', 'randomizer', 'gameDump', 'spreadsheetImport', 'modMerger'] },
   { id: 'hooks', label: 'Hooks', sectionIds: ['bagHook'] },
@@ -180,6 +182,9 @@ export const sharedStagedEditorSectionIds = new Set<WorkbenchSection>([
   'modelViewer',
   'pokemon',
   'trainers',
+  'bbqRewards',
+  'supportBoard',
+  'snacksworth',
   'starmobiles',
   'titanSwapper',
   'marnieBoosts',
@@ -210,6 +215,9 @@ export const sharedStagedEditorDomains = new Set([
   'workflow.modelTextures',
   'workflow.pokemon',
   'workflow.trainers',
+  'workflow.bbqRewards',
+  'workflow.supportBoard',
+  'workflow.snacksworth',
   'workflow.starmobiles',
   'workflow.titan-swapper',
   'workflow.marnieBoosts',
@@ -298,6 +306,9 @@ export type LoadedWorkflowStateBySection = {
   shopsWorkflow: ShopsWorkflow | null;
   tmMachineControlsWorkflow: TmMachineControlsWorkflow | null;
   habitatCoordinatesWorkflow: HabitatCoordinatesWorkflow | null;
+  bbqRewardsWorkflow: BlueberryWorkflow | null;
+  supportBoardWorkflow: BlueberryWorkflow | null;
+  snacksworthWorkflow: BlueberryWorkflow | null;
   starmobilesWorkflow: StarmobilesWorkflow | null;
   titanSwapperWorkflow: TitanSwapperWorkflow | null;
   marnieBoostsWorkflow: MarnieBoostsWorkflow | null;
@@ -430,6 +441,12 @@ export function getLoadedWorkflowStateForSection(
       return state.shopsWorkflow !== null;
     case 'tmMachineControls':
       return state.tmMachineControlsWorkflow !== null;
+    case 'bbqRewards':
+      return state.bbqRewardsWorkflow !== null;
+    case 'supportBoard':
+      return state.supportBoardWorkflow !== null;
+    case 'snacksworth':
+      return state.snacksworthWorkflow !== null;
     case 'starmobiles':
       return state.starmobilesWorkflow !== null;
     case 'titanSwapper':

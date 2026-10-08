@@ -116,6 +116,15 @@ export async function loadHistoryDisplayContext(
     case 'workflow.exefsPatches':
       context.exeFsPatchWorkflow = (await bridge.loadExeFsPatchWorkflow({ paths })).workflow;
       break;
+    case 'workflow.bbqRewards':
+      context.bbqRewardsWorkflow = (await bridge.loadBlueberry({ paths, session: null, editor: 'bbqRewards' })).workflow;
+      break;
+    case 'workflow.supportBoard':
+      context.supportBoardWorkflow = (await bridge.loadBlueberry({ paths, session: null, editor: 'supportBoard' })).workflow;
+      break;
+    case 'workflow.snacksworth':
+      context.snacksworthWorkflow = (await bridge.loadBlueberry({ paths, session: null, editor: 'snacksworth' })).workflow;
+      break;
     case 'workflow.starmobiles':
       context.starmobilesWorkflow = (await bridge.loadStarmobiles({ paths, session: null })).workflow;
       break;

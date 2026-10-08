@@ -119,6 +119,9 @@ function toContractSegment(section: WorkbenchSection) {
 }
 
 export const workbenchCapabilityRegistry = [
+  workflow({ id: 'bbqRewards', label: 'BBQ Rewards', games: scarletVioletGames, icon: HandCoins, description: 'Edit Blueberry Quest BP rewards.' }),
+  workflow({ id: 'supportBoard', label: 'Support Board', games: scarletVioletGames, icon: HandCoins, description: 'Edit Support Board BP prices.' }),
+  workflow({ id: 'snacksworth', label: 'Snacksworth', domain: 'workflow.snacksworth', games: scarletVioletGames, icon: Gift, description: 'Choose solo and group quest eligibility for legendary treats.' }),
   workflow({ id: 'titanSwapper', label: 'Titan Swapper', games: scarletVioletGames, icon: Star,
     description: 'Choose a separate combat Pokemon for each Titan battle phase.' }),
   workflow({ id: 'starmobiles', label: 'Starmobiles', games: scarletVioletGames,

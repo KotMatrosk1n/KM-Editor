@@ -1313,6 +1313,11 @@ internal sealed class SvWorkflowFileSource
                         relativePath.Value,
                         ToOutputRelativePath(TmMachine.SvTmMachineControlsWorkflowService.MaterialTrackingScriptPath, outputMode),
                         StringComparison.OrdinalIgnoreCase));
+            var isSharedDialogueWrite = mutation.Bytes is not null
+                && Blueberry.SvSnacksworthDialogue.VirtualPaths.Any(path => string.Equals(
+                    relativePath.Value,
+                    ToOutputRelativePath(path, outputMode),
+                    StringComparison.OrdinalIgnoreCase));
             var ownership = new OwnedTarget(
                 GameFamily.ScarletViolet,
                 new OwnedTargetAddress(relativePath),
@@ -1339,7 +1344,7 @@ internal sealed class SvWorkflowFileSource
                     && (claim.PreservationRule == ownership.PreservationRule || SvLegacyTitanRecovery.IsExclusion(claim))
                     && claim.OwnerId.Value is "workflow.sv.output" or "workflow.sv.mixed");
             var ownershipClaims = new[] { ownership };
-            if ((isComposedExecutable || isSharedDescriptorWrite || isSharedControlWrite || isLegacyDataOwnership)
+            if ((isComposedExecutable || isSharedDescriptorWrite || isSharedControlWrite || isSharedDialogueWrite || isLegacyDataOwnership)
                 && ownedRecord is not null)
             {
                 ValidateComposedOutputOwnership(

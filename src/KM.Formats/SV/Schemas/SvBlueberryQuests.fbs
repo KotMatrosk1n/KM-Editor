@@ -1,0 +1,17 @@
+// SPDX-License-Identifier: GPL-3.0-only
+namespace KM.Formats.SV.Blueberry.Generated;
+struct BlueberryQuestValues {
+  category:byte;
+  quest_type:int;
+  quest_id:int;
+  goal:short;
+  reward_bp:int;
+  reroll_bp:int;
+  release_condition:int;
+  grade:byte;
+  difficulty:byte;
+  weight:float;
+}
+table BlueberryQuest { values:BlueberryQuestValues; }
+table BlueberryQuestArray { entries:[BlueberryQuest]; }
+root_type BlueberryQuestArray;
