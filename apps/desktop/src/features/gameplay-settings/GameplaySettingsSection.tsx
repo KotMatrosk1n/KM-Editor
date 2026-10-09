@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { FlaskConical, ShieldAlert } from 'lucide-react';
+import { Camera, FlaskConical, ShieldAlert } from 'lucide-react';
 import { useMemo } from 'react';
 import type { OutputSafetyScope } from '../../bridge/outputSafetyContracts';
 import type { ProjectBridge } from '../../bridge/projectBridge';
@@ -15,7 +15,8 @@ type GameplaySettingsBridge = Pick<
   | 'previewInGameSettingsPackage'
 >;
 
-type GameplaySettingsSectionProps = GameplaySettingsDestinations & {
+export type GameplaySettingsSectionProps = GameplaySettingsDestinations & {
+  cameraControl?: boolean;
   armCriticalWriteGuard: () => Promise<boolean>;
   bridge: GameplaySettingsBridge;
   canApply?: boolean;
@@ -33,6 +34,7 @@ type GameplaySettingsSectionProps = GameplaySettingsDestinations & {
 };
 
 export function GameplaySettingsSection({
+  cameraControl = false,
   armCriticalWriteGuard,
   destinations,
   onRememberDestination,
@@ -47,6 +49,7 @@ export function GameplaySettingsSection({
   scope
 }: GameplaySettingsSectionProps) {
   const { t } = useLocalization();
+  const HeadingIcon = cameraControl ? Camera : FlaskConical;
   const stableScope = useMemo<OutputSafetyScope | null>(
     () => (hasGameplaySettingsOutputScope(scope) ? copyGameplaySettingsScope(scope) : null),
     [
@@ -69,16 +72,26 @@ export function GameplaySettingsSection({
     >
       <header className="gameplay-settings__header">
         <div className="gameplay-settings__heading">
-          <FlaskConical aria-hidden="true" size={20} />
+          <HeadingIcon aria-hidden="true" size={20} />
           <div>
             <div className="gameplay-settings__title-row">
-              <h2 id="gameplay-settings-title">{t('gameplaySettings.title')}</h2>
+              <h2 id="gameplay-settings-title">{t(cameraControl ? 'cameraControl.title' : 'gameplaySettings.title')}</h2>
               <span className="gameplay-settings__beta-badge">{t('gameplaySettings.betaBadge')}</span>
             </div>
 
           </div>
         </div>
       </header>
+
+      {cameraControl ? <div className="camera-control__overview">
+        <p>{t('cameraControl.instructions')}</p>
+        <div className="camera-control__choices">
+          <div><h3>{t('cameraControl.yes')}</h3><p>{t('cameraControl.yesDescription')}</p></div>
+          <div><h3>{t('cameraControl.no')}</h3><p>{t('cameraControl.noDescription')}</p></div>
+        </div>
+        <p>{t('cameraControl.scenes')}</p>
+        <p className="field-note">{t('cameraControl.sharedPackage')}</p>
+      </div> : null}
 
       <div className="gameplay-settings__beta-notice" role="note">
         <ShieldAlert aria-hidden="true" size={20} />

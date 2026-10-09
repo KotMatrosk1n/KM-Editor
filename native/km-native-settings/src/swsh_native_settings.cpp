@@ -2,6 +2,7 @@
 
 #include "km_swsh_native_settings.hpp"
 #include "km_swsh_options.hpp"
+#include "km_swsh_camera.hpp"
 
 extern "C" {
 __attribute__((visibility("hidden"))) uintptr_t km_swsh_level_cap_continue;
@@ -22,7 +23,7 @@ constexpr uint64_t SwordTitleId = 0x0100ABF008968000ULL;
 constexpr uint64_t ShieldTitleId = 0x01008DB008C2C000ULL;
 constexpr uint64_t RequiredPresence =
     km::PresenceExperienceShare | km::PresenceExperienceRate
-    | km::PresenceLevelCap;
+    | km::PresenceLevelCap | km::PresenceUnlockedCamera;
 constexpr uintptr_t ExpectedRoOffset = 0x01901000;
 constexpr uintptr_t ExpectedDataOffset = 0x024DB000;
 constexpr uintptr_t ExperienceAdditiveTransitionOffset = 0x007E4EA0;
@@ -268,6 +269,8 @@ bool InstallImmutableHooks(const ModuleRange& main,
                            const SwShNativeSettingsProfileView& profile) {
     km::ExecutablePatch options[2]{};
     if (!km::PrepareSwShOptions(main, profile.edition, options)) return false;
+    km::ExecutablePatch camera[4]{};
+    if (!km::PrepareSwShCamera(main, profile.edition, camera)) return false;
     const auto share_bridge = MakeLiteralBridge(
         ShareBridgeOffset, ShareTargetSlotOffset);
     const auto rate_bridge = MakeLiteralBridge(
@@ -317,6 +320,7 @@ bool InstallImmutableHooks(const ModuleRange& main,
          &cap_hook, sizeof(cap_hook)},
         options[0],
         options[1],
+        camera[0], camera[1], camera[2], camera[3],
     };
     return km::PatchExecutableTransaction(
         patches, sizeof(patches) / sizeof(patches[0]));
@@ -444,7 +448,8 @@ bool CommitAndPublishSnapshot(uint64_t packed_snapshot) {
         && current.experience_rate_basis_points
             == requested.experience_rate_basis_points
         && current.level_cap_enabled == requested.level_cap_enabled
-        && current.level_cap == requested.level_cap) {
+        && current.level_cap == requested.level_cap
+        && current.unlocked_camera == requested.unlocked_camera) {
         ReleaseSettingsLock();
         return true;
     }

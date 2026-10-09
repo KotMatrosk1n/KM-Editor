@@ -269,7 +269,8 @@ public static class GameplayBundleArchive
             (ushort)manifest.PackageVersion.Major,
             (ushort)manifest.PackageVersion.Minor,
             (ushort)manifest.PackageVersion.Patch);
-        if (inspection.ActiveSnapshot.WriterVersion != expectedVersion)
+        if (inspection.ActiveSnapshot.WriterVersion != expectedVersion
+            || inspection.SlotA.Schema != manifest.SettingsSchema)
         {
             throw new InvalidDataException("The archive settings journal package version does not match the manifest.");
         }

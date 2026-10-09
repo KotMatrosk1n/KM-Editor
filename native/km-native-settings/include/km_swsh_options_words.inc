@@ -2,8 +2,8 @@
 // Exact Sword and Shield 1.3.2 Options view operand changes.
 // The descriptor array moves to 0xC50 and the visible row map to 0x5D8.
 constexpr OptionsWord OptionsWords[] = {
-    {0x014D7C48, 0x52818A01, 0x52821001},
-    {0x014D7C84, 0x52818A08, 0x52821008},
+    {0x014D7C48, 0x52818A01, 0x52821601},
+    {0x014D7C84, 0x52818A08, 0x52821608},
     {0x014D85AC, 0x91174260, 0x91314260},
     {0x014D85C8, 0x9126B268, 0x91183268},
     {0x014D85D8, 0x9125D276, 0x91175276},

@@ -28,13 +28,14 @@ constexpr uintptr_t DescriptorsOffset = 0xC50;
 constexpr uintptr_t CountOffset = 0x5D4;
 constexpr uintptr_t MapOffset = 0x5D8;
 constexpr uint32_t StockCount = 16;
-constexpr uint32_t TotalCount = 19;
+constexpr uint32_t TotalCount = 20;
+constexpr uint32_t AddedCount = TotalCount - StockCount;
 constexpr uintptr_t RetryFlagOffset = 0x628;
 constexpr uintptr_t RetrySelectionOffset = 0x62C;
 constexpr uintptr_t RetryValuesOffset = 0x630;
 constexpr uint32_t RetryDraftTag = 0x4B4D4452;
 constexpr uint64_t Presence = km::PresenceExperienceShare
-    | km::PresenceExperienceRate | km::PresenceLevelCap;
+    | km::PresenceExperienceRate | km::PresenceLevelCap | km::PresenceUnlockedCamera;
 
 struct Descriptor {
     uint32_t kind;
@@ -46,8 +47,9 @@ struct Descriptor {
     uint32_t original;
 };
 static_assert(sizeof(Descriptor) == 0x38);
-static_assert(DescriptorsOffset + TotalCount * sizeof(Descriptor) <= 0x1080);
+static_assert(DescriptorsOffset + TotalCount * sizeof(Descriptor) <= 0x10B0);
 static_assert(MapOffset + TotalCount * sizeof(uint32_t) < 0x950);
+static_assert(MapOffset + TotalCount * sizeof(uint32_t) <= RetryFlagOffset);
 static_assert(RetryValuesOffset + TotalCount * 8 < 0x950);
 
 struct OptionsWord { uintptr_t offset; uint32_t expected; uint32_t replacement; };
@@ -78,9 +80,11 @@ Descriptor* Rows(uintptr_t view) {
 }
 bool HasKmRows(uintptr_t view) {
     const auto count = Field<uint32_t>(view, CountOffset);
-    if (count < 3 || count > TotalCount) return false;
+    if (count < AddedCount || count > TotalCount) return false;
     const auto* map = reinterpret_cast<const uint32_t*>(view + MapOffset);
-    return map[count - 3] == 16 && map[count - 2] == 17 && map[count - 1] == 18;
+    for (uint32_t index = 0; index < AddedCount; ++index)
+        if (map[count - AddedCount + index] != StockCount + index) return false;
+    return true;
 }
 void LoadDraft(uintptr_t view) {
     km::SettingsValues values = km::VanillaSettings;
@@ -95,6 +99,10 @@ void LoadDraft(uintptr_t view) {
     const uint32_t cap = values.level_cap_enabled ? values.level_cap : 0;
     rows[18] = {2, 18, Hash("km_level_cap"), {Hash(""), Hash(""), Hash("")},
         Hash("km_level_cap_help"), cap, cap};
+    const uint32_t unlocked = values.unlocked_camera ? 1U : 0U;
+    rows[19] = {0, 19, Hash("km_unlocked_camera"),
+        {Hash("km_no"), Hash("km_yes"), Hash("")}, Hash("km_unlocked_camera_help"),
+        unlocked, unlocked};
 }
 void Refresh(uintptr_t view) {
     reinterpret_cast<void (*)(uintptr_t)>(g_main + 0x014D9C90 + g_delta)(view);
@@ -163,7 +171,7 @@ extern "C" void km_swsh_options_input(uintptr_t* callback, const int32_t* direct
     if (index < StockCount) { km_swsh_options_input_original(callback, direction); return; }
     if (index >= TotalCount || !HasKmRows(view)) return;
     auto& row = Rows(view)[index];
-    const int32_t maximum = index == 16 ? 1 : index == 17 ? 50 : 100;
+    const int32_t maximum = index == 16 || index == 19 ? 1 : index == 17 ? 50 : 100;
     auto value = static_cast<int32_t>(row.value) + (*direction == 0 ? 1 : -1);
     if (value < 0) value = 0;
     if (value > maximum) value = maximum;
@@ -228,12 +236,14 @@ extern "C" bool km_swsh_options_apply(uintptr_t owner) {
     auto& count = Field<uint32_t>(view, CountOffset);
     if (!HasKmRows(view)) return false;
     auto* rows = Rows(view);
-    if (rows[16].value > 1 || rows[17].value > 50 || rows[18].value > 100) return false;
+    if (rows[16].value > 1 || rows[17].value > 50 || rows[18].value > 100 || rows[19].value > 1) return false;
     km::SettingsState requested{km::SettingsFamily::SwordShield, 0, 0, Presence,
         {rows[16].value != 0, rows[17].value * 1000, rows[18].value != 0,
-         static_cast<uint8_t>(rows[18].value == 0 ? 100 : rows[18].value)}, -1, false};
+         static_cast<uint8_t>(rows[18].value == 0 ? 100 : rows[18].value),
+         rows[19].value != 0}, -1, false};
     const bool changed = rows[16].value != rows[16].original
-        || rows[17].value != rows[17].original || rows[18].value != rows[18].original;
+        || rows[17].value != rows[17].original || rows[18].value != rows[18].original
+        || rows[19].value != rows[19].original;
     if (changed && !km_swsh_write_settings(km::PackSettingsSnapshot(requested))) {
         PreserveFailedDraft(view);
         // Follow the stock confirmation's return to editing transition. The
@@ -243,7 +253,7 @@ extern "C" bool km_swsh_options_apply(uintptr_t owner) {
         return false;
     }
     const auto visible = count;
-    count -= 3;
+    count -= AddedCount;
     reinterpret_cast<void (*)(uintptr_t)>(g_main + 0x014DD330 + g_delta)(owner);
     count = visible;
     for (uint32_t index = StockCount; index < TotalCount; ++index) rows[index].original = rows[index].value;

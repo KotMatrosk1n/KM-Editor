@@ -104,7 +104,8 @@ public static class GameplaySettingsEditPlanner
             request.ExperienceShareEnabled ?? before.Values.ExperienceShareEnabled,
             request.ExperienceRateBasisPoints ?? before.Values.ExperienceRateBasisPoints,
             capEnabled,
-            request.LevelCap ?? before.Values.LevelCap);
+            request.LevelCap ?? before.Values.LevelCap,
+            before.Values.UnlockedCamera);
         var update = GameplaySettingsJournal.CreateUpdate(
             reviewedBytes,
             family,

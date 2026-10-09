@@ -10,6 +10,7 @@ import {
   BrainCircuit,
   Cable,
   Candy,
+  Camera,
   ClipboardCheck,
   ClipboardList,
   Coffee,
@@ -563,6 +564,16 @@ export const workbenchCapabilityRegistry = [
     icon: FlaskConical,
     id: 'gameplaySettings',
     label: 'Gameplay Settings',
+    maturity: 'mixed',
+    showInWorkflowDashboard: false,
+    standalone: true
+  }),
+  workflow({
+    description: 'Unlock the exploration camera with an in game Options setting.',
+    games: swordShieldGames,
+    icon: Camera,
+    id: 'cameraControl',
+    label: 'Camera Control',
     maturity: 'mixed',
     showInWorkflowDashboard: false,
     standalone: true

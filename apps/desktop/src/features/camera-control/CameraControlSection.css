@@ -1,0 +1,36 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+.camera-control {
+  min-width: 0;
+  width: 100%;
+}
+
+.camera-control__overview {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+  text-align: center;
+}
+
+.camera-control__overview p,
+.camera-control__choices h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.camera-control__choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  gap: 0.75rem;
+}
+
+.camera-control__choices > div {
+  display: grid;
+  align-content: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  min-width: 0;
+}

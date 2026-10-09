@@ -1,5 +1,18 @@
 {
   "keys": {
+    "cameraControl.conflict": "无法安装镜头控制，因为其他可执行文件修改与镜头或场景控制发生冲突。请使用兼容的修改，然后重新检查安装包。",
+    "cameraControl.title": "镜头控制",
+    "workbench.section.camera-control.label": "镜头控制",
+    "cameraControl.description": "通过游戏内选项解锁探索镜头。",
+    "workbench.section.camera-control.description": "通过游戏内选项解锁探索镜头。",
+    "cameraControl.instructions": "安装或升级组件包，然后打开游戏内的选项，将自由镜头设为是或否。",
+    "cameraControl.yes": "是",
+    "cameraControl.yesDescription": "探索时可围绕角色旋转镜头，包括原本使用固定镜头的区域。",
+    "cameraControl.no": "否",
+    "cameraControl.noDescription": "保留各区域原有的镜头行为。旷野地带的镜头仍可自由旋转。",
+    "cameraControl.scenes": "剧情场景保留镜头控制权。恢复探索后会重新应用已保存的选择。",
+    "cameraControl.sharedPackage": "镜头控制与游戏设置共用一个组件包。升级会保留设置；移除组件包会同时移除这两项功能。",
+    "cameraControl.packageControls": "在游戏内选项中调整自由镜头、经验分享、经验倍率和经验等级上限。",
     "gameOptions.title": "游戏选项",
     "gameOptions.subtitle": "设置《剑／盾》的初始值并隐藏单独的选项。",
     "gameOptions.help": "“开启”指定初始值，优先于“默认”。“默认”尽可能沿用游戏设定。“关闭”仅排除初始选择；只有“隐藏”才会禁止玩家选择。",

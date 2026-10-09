@@ -1,5 +1,18 @@
 {
   "keys": {
+    "cameraControl.conflict": "No se puede instalar Control de cámara porque otra modificación del ejecutable afecta a los controles de cámara o escenas. Usa modificaciones compatibles y revisa el paquete de nuevo.",
+    "cameraControl.title": "Control de cámara",
+    "workbench.section.camera-control.label": "Control de cámara",
+    "cameraControl.description": "Desbloquea la cámara de exploración desde las opciones del juego.",
+    "workbench.section.camera-control.description": "Desbloquea la cámara de exploración desde las opciones del juego.",
+    "cameraControl.instructions": "Instala o actualiza el paquete y abre Opciones en el juego. Elige Sí o No en Cámara desbloqueada.",
+    "cameraControl.yes": "Sí",
+    "cameraControl.yesDescription": "Gira la cámara alrededor de tu personaje al explorar, también en zonas con cámara fija.",
+    "cameraControl.no": "No",
+    "cameraControl.noDescription": "Conserva la cámara original de cada zona. El Área Silvestre sigue permitiendo girarla.",
+    "cameraControl.scenes": "Las escenas mantienen el control de la cámara. Tu elección guardada se recupera al volver a explorar.",
+    "cameraControl.sharedPackage": "Control de cámara y Ajustes de juego comparten un paquete. Actualizar conserva tus ajustes; eliminar el paquete elimina ambas funciones.",
+    "cameraControl.packageControls": "Ajusta Cámara desbloqueada, Repartir EXP, Tasa de EXP y Límite de nivel EXP en Opciones dentro del juego.",
     "gameOptions.title": "Opciones del juego",
     "gameOptions.subtitle": "Elige valores iniciales y oculta selecciones individuales en Espada y Escudo.",
     "gameOptions.help": "Activado elige el valor inicial y tiene prioridad sobre Predeterminado. Predeterminado sigue el juego cuando es posible. Desactivado excluye un valor inicial; solo Ocultar impide seleccionarlo.",

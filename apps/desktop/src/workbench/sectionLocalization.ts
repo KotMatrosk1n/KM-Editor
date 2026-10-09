@@ -77,6 +77,7 @@ export const workbenchSectionLocalization = {
   randomizer: { label: 'workbench.section.randomizer.label', description: 'workbench.section.randomizer.description' },
   gameDump: { label: 'workbench.section.game-dump.label', description: 'workbench.section.game-dump.description' },
   gameplaySettings: { label: 'workbench.section.gameplay-settings.label', description: 'workbench.section.gameplay-settings.description' },
+  cameraControl: { label: 'workbench.section.camera-control.label', description: 'workbench.section.camera-control.description' },
   modelViewer: { label: 'workbench.section.model-viewer.label', description: 'workbench.section.model-viewer.description' },
   soundStudio: { label: 'workbench.section.sound-studio.label', description: 'workbench.section.sound-studio.description' },
   changes: { label: 'workbench.section.changes.label', description: 'workbench.section.changes.description' },
