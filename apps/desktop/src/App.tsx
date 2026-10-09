@@ -543,6 +543,7 @@ import {
   GameplaySettingsSection,
   gameplaySettingsScopeKey
 } from './features/gameplay-settings/GameplaySettingsSection';
+import { CameraControlSection } from './features/camera-control/CameraControlSection';
 import { OutputSafetyPanel } from './features/output-safety/OutputSafetyPanel';
 import { ProjectRelocationPanel } from './features/output-safety/ProjectRelocationPanel';
 import {
@@ -4483,6 +4484,10 @@ export function App({
   );
   const handleResearchLabDirtyChange = useCallback(
     (isDirty: boolean) => registerEditorDraftDirty('workbench', isDirty),
+    [registerEditorDraftDirty]
+  );
+  const handleCameraControlDirtyChange = useCallback(
+    (isDirty: boolean) => registerEditorDraftDirty('cameraControl', isDirty),
     [registerEditorDraftDirty]
   );
   const handleFashionCatalogDirtyChange = useCallback(
@@ -21770,6 +21775,22 @@ export function App({
             />
           ) : null}
           <MergeWorkspace bridge={bridge} paths={gameDumpPaths} active={activeSection === 'modMerger'} armWriteGuard={armModMergerWriteGuard} onExportingChange={handleModMergerApplyingChange} />
+          {activeSection === 'cameraControl' ? (
+            <CameraControlSection
+              destinations={applicationWorkspaceSnapshot.document?.gameplaySettingsDestinations}
+              onRememberDestination={handleRememberGameplaySettingsDestination}
+              armCriticalWriteGuard={armGameplaySettingsCriticalWriteGuard}
+              bridge={bridge}
+              canApply={outputSafety.canApply}
+              onApplied={handleGameplaySettingsApplied}
+              onApplyBusyChange={handleGameplaySettingsApplyingChange}
+              onDirtyChange={handleCameraControlDirtyChange}
+              onError={handleGameplaySettingsError}
+              onOpenProjectSetup={() => void handleNavigateSection('health')}
+              onRecoveryRequired={handleGameplaySettingsRecoveryRequired}
+              scope={outputSafetyScope}
+            />
+          ) : null}
           {activeSection === 'gameplaySettings' ? (
             <GameplaySettingsSection
               destinations={applicationWorkspaceSnapshot.document?.gameplaySettingsDestinations}

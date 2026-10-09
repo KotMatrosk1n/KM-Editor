@@ -209,6 +209,7 @@ export const gameplaySettingsErrorCodes = {
 } as const satisfies Record<string, KmErrorCode>;
 
 export const inGameSettingsPackageErrorCodes = {
+  cameraCompositionConflict: "KM-SWSH-CAMERA-CONTROL-COMPOSITION-CONFLICT",
   reviewExpired: "KM-IN-GAME-SETTINGS-PACKAGE-REVIEW-EXPIRED",
   stateStale: "KM-IN-GAME-SETTINGS-PACKAGE-STATE-STALE",
   unavailable: "KM-IN-GAME-SETTINGS-PACKAGE-UNAVAILABLE",

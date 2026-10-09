@@ -26,7 +26,7 @@ public static class NativeGameplayMenuBundleFactory
     public const string RuntimeComponentName = "subsdk9";
     private const int MaximumNativeMenuComponentCount = 64;
 
-    private static readonly GameplayBundleVersion PackageVersion = new(2, 5, 1);
+    private static readonly GameplayBundleVersion PackageVersion = new(2, 5, 2);
     private static readonly GameplayBundleVersion FirstNativeMenuPackageVersion = new(2, 5, 0);
     private static readonly GameplaySettingPresence SettingsPresence =
         GameplaySettingPresence.ExperienceShare
@@ -47,7 +47,10 @@ public static class NativeGameplayMenuBundleFactory
             || CompareVersion(manifest.PackageVersion, FirstNativeMenuPackageVersion) < 0
             || CompareVersion(manifest.PackageVersion, PackageVersion) > 0
             || manifest.BundleAbi != GameplayBundleIdentity.BundleAbi
-            || manifest.SettingsSchema != GameplayBundleIdentity.SettingsSchema
+            || !GameplayBundleIdentity.SupportsSettingsSchema(manifest.SettingsSchema)
+            || manifest.SettingsSchema == GameplaySettingsJournal.CameraSchema
+                && (game is not ProjectGame.Sword and not ProjectGame.Shield
+                    || CompareVersion(manifest.PackageVersion, new(2, 5, 2)) < 0)
             || !HasBoundedArchiveInventory(manifest))
         {
             return false;
@@ -163,6 +166,9 @@ public static class NativeGameplayMenuBundleFactory
         var family = ToFamily(game);
         var update = GetUpdateVersion(game);
         var settingsFamily = GameplayBundleDeploymentPlanner.ToSettingsFamily(family);
+        var settingsPresence = SettingsPresence | (game is ProjectGame.Sword or ProjectGame.Shield
+            ? GameplaySettingPresence.UnlockedCamera : GameplaySettingPresence.None);
+        var settingsSchema = GameplaySettingsJournal.SchemaFor(settingsPresence);
         var sourceMain = retailMain.ToArray();
         var parsedSource = NsoFile.Parse(sourceMain);
         var buildId = Convert.ToHexString(parsedSource.BuildId);
@@ -267,7 +273,8 @@ public static class NativeGameplayMenuBundleFactory
             PackageVersion,
             sourceRevision,
             profileHash,
-            componentHashes);
+            componentHashes,
+            settingsSchema);
         var bundleId = GameplayBundleIdentity.CreateBundleId(identity);
         var manifest = new GameplayBundleManifest(
             metadata.TitleId,
@@ -275,7 +282,7 @@ public static class NativeGameplayMenuBundleFactory
             buildId,
             GameplayBundleIdentity.BundleAbi,
             bundleId,
-            GameplayBundleIdentity.SettingsSchema,
+            settingsSchema,
             PackageVersion,
             components
                 .OrderBy(component => component.Key, StringComparer.Ordinal)
@@ -291,7 +298,7 @@ public static class NativeGameplayMenuBundleFactory
                 checked((ushort)PackageVersion.Major),
                 checked((ushort)PackageVersion.Minor),
                 checked((ushort)PackageVersion.Patch)),
-            SettingsPresence,
+            settingsPresence,
             initialSettings.Values);
         var archive = GameplayBundleArchive.Build(
             manifest,

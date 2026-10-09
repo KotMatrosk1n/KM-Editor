@@ -1,5 +1,18 @@
 {
   "keys": {
+    "cameraControl.conflict": "Camera Control cannot be installed because another executable edit overlaps its camera or scene controls. Use compatible executable edits and review the package again.",
+    "cameraControl.title": "Camera Control",
+    "workbench.section.camera-control.label": "Camera Control",
+    "cameraControl.description": "Unlock the exploration camera with an in game Options setting.",
+    "workbench.section.camera-control.description": "Unlock the exploration camera with an in game Options setting.",
+    "cameraControl.instructions": "Install or upgrade the package, then open Options in the game and set Unlocked Camera to Yes or No.",
+    "cameraControl.yes": "Yes",
+    "cameraControl.yesDescription": "Rotate the camera around your character during exploration, including normally fixed camera areas.",
+    "cameraControl.no": "No",
+    "cameraControl.noDescription": "Keep the area’s original camera behavior. The Wild Area remains adjustable.",
+    "cameraControl.scenes": "Scripted scenes keep control of the camera. Your saved choice resumes when exploration returns.",
+    "cameraControl.sharedPackage": "Camera Control and Gameplay Settings share one package. Upgrading preserves your settings; removing the package removes both features.",
+    "cameraControl.packageControls": "Adjust Unlocked Camera, Experience Share, Experience Rate, and EXP Level Cap in the game’s Options menu.",
     "gameOptions.title": "Game Options",
     "gameOptions.subtitle": "Choose starting values and hide individual selections in Sword and Shield.",
     "gameOptions.help": "On selects the starting value and takes priority over Default. Default follows the game when possible. Off excludes a starting choice; only Hide prevents players from selecting it.",

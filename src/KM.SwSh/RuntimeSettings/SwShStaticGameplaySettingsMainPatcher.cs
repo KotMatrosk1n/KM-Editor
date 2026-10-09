@@ -490,6 +490,7 @@ public static class SwShStaticGameplaySettingsMainPatcher
         var currentText = currentNso.Text.DecompressedData;
         var text = currentText.ToArray();
         var optionsDelta = expectedGame == ProjectGame.Shield ? 0x30 : 0;
+        SwShCameraControlProfile.ValidateComposition(baseMainBytes, compositionMainBytes, expectedGame);
         var descriptorOffset = 0x020736A8 - baseNso.Ro.Header.MemoryOffset;
         var optionsProof = currentNso;
         if (!currentNso.Ro.DecompressedData.AsSpan(descriptorOffset, 0x380)

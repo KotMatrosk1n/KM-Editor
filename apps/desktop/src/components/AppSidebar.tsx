@@ -136,7 +136,7 @@ export function AppSidebar({
                 if (group.id === 'betaEditors' && (!canShowWorkflowNavigation || !showBetaEditors)) return null;
                 const visibleSectionIds = group.sectionIds.filter(
                   (sectionId) =>
-                    (sectionId === 'modMerger' ? true : sectionId === 'gameplaySettings'
+                    (sectionId === 'modMerger' ? true : sectionId === 'gameplaySettings' || sectionId === 'cameraControl'
                       ? canShowGameplaySettingsNavigation
                       : canShowWorkflowNavigation &&
                         canAccessWorkflowSectionForHealth(

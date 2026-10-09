@@ -63,6 +63,7 @@ export const workbenchSections = [
   'randomizer',
   'gameDump',
   'gameplaySettings',
+  'cameraControl',
   'modelViewer',
   'soundStudio',
   'changes',

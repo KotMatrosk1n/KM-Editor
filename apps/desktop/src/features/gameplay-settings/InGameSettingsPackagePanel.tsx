@@ -12,6 +12,7 @@ import type { OutputSafetyScope } from '../../bridge/outputSafetyContracts';
 import type { ProjectBridge } from '../../bridge/projectBridge';
 import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditorDiagnostics';
 import { desktopServices } from '../../desktopServices';
+import { inGameSettingsPackageErrorCodes } from '../../errorCodes';
 import { toProjectBridgeDiagnostics } from '../../uiErrorDiagnostics';
 import type { ApiDiagnostic } from '../../bridge/contracts';
 import { useLocalization } from '../../localization';
@@ -71,9 +72,12 @@ export function InGameSettingsPackagePanel({
     ? t(messageKey)
     : null;
   const [failureDiagnostics, setFailureDiagnostics] = useState<ApiDiagnostic[]>([]);
+  const cameraConflict = snapshot?.detail?.startsWith('Camera Control requires ') ?? false;
   useEffect(() => { if (messageKey === null) setFailureDiagnostics([]); }, [messageKey]);
   usePublishCommonEditorDiagnostics(failureDiagnostics.length ? failureDiagnostics : errorMessage
-    ? [{ domain: 'workflow.gameplaySettings', field: 'inGamePackage', message: errorMessage, severity: 'error' }] : []);
+    ? [{ domain: 'workflow.gameplaySettings', field: 'inGamePackage', message: errorMessage, severity: 'error' }]
+    : cameraConflict ? [{ code: inGameSettingsPackageErrorCodes.cameraCompositionConflict, domain: 'workflow.cameraControl',
+      field: 'inGamePackage', message: t('cameraControl.conflict'), severity: 'error' }] : []);
   const [installationTarget, setInstallationTarget] =
     useState<InGameSettingsInstallationTarget>('atmosphere');
   const requestGenerationRef = useRef(0);
@@ -562,7 +566,8 @@ export function InGameSettingsPackagePanel({
               </h3>
 
             </div>
-            <p>{t('gameplaySettings.destination.controls')}</p>
+            <p>{t(scope.paths.selectedGame === 'sword' || scope.paths.selectedGame === 'shield'
+              ? 'cameraControl.packageControls' : 'gameplaySettings.destination.controls')}</p>
           </div>
         </div>
         <button
@@ -637,7 +642,7 @@ export function InGameSettingsPackagePanel({
               {t(stateTitleKey!)}
             </strong>
             <p>{t(stateDescriptionKey!)}</p>
-            {snapshot.detail ? <p>{snapshot.detail}</p> : null}
+            {snapshot.detail ? <p>{cameraConflict ? t('cameraControl.conflict') : snapshot.detail}</p> : null}
           </div>
         </div>
       ) : null}

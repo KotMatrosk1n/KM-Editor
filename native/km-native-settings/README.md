@@ -8,13 +8,25 @@ The runtime supports only these exact game updates:
 
 | Game | Update | Game-owned menu location |
 | --- | --- | --- |
-| Pokemon Sword and Shield | 1.3.2 | Three rows at the bottom of X > Options |
+| Pokemon Sword and Shield | 1.3.2 | Four rows at the bottom of X > Options |
 | Pokemon Scarlet and Violet | 4.0.0 | Three rows in the existing Options screen |
 | Pokemon Legends Z-A | 2.0.2 | Three rows in the existing Game Settings page |
 
 Each menu exposes Experience Share On or Off, Experience Rate from 0 through 500 percent in
 10 percent steps, and Supported EXP Level Cap Off or 1 through 100. The controls retain the fixed
 editor's verified gameplay scopes and do not claim control over unlisted EXP sources.
+
+Sword and Shield also expose **Unlocked Camera: Yes / No**, available through
+**Beta Editors > Camera Control** in KM. No is the default. Yes selects the existing
+orbit camera during exploration, including areas that normally use a fixed camera.
+The runtime retains each area's native camera choice, yields to foreground tasks and
+event cameras, and restores the saved preference after those owners and return blends
+finish. Naturally adjustable areas retain their native behavior with either choice.
+Camera Control shares the Gameplay Settings package and its install, upgrade, and removal
+workflow. The journal uses schema two when camera control is present; other profiles keep
+schema one. Upgrades preserve existing settings and initialize the new choice to No.
+Camera Control remains a Beta feature. Area geometry and complete scene coverage still
+require verification during gameplay.
 
 The runtime is deliberately fail closed. Its registered `DT_INIT` function runs after the loader
 prepares module memory and relocations. During this initialization, it resolves

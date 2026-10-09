@@ -39,6 +39,8 @@ public static class GameplayBundleIdentity
 {
     public const uint BundleAbi = 1;
     public const ushort SettingsSchema = 1;
+    public static bool SupportsSettingsSchema(ushort schema) =>
+        schema is SettingsSchema or GameplaySettingsJournal.CameraSchema;
     public const int MaximumComponentCount = 4096;
     public const int MaximumNormalizedPathLength = 1024;
     public const int MaximumSerializationBytes = 4 * 1024 * 1024;
@@ -57,9 +59,11 @@ public static class GameplayBundleIdentity
         GameplayBundleVersion packageVersion,
         string sourceRevision,
         string profileSha256,
-        IReadOnlyList<GameplayBundleSemanticComponent> components)
+        IReadOnlyList<GameplayBundleSemanticComponent> components,
+        ushort settingsSchema = SettingsSchema)
     {
         ValidateTitleId(titleId);
+        if (!SupportsSettingsSchema(settingsSchema)) throw new ArgumentOutOfRangeException(nameof(settingsSchema));
         ValidateUpperHex(buildId, 64, nameof(buildId));
         ValidateUpperHex(sourceRevision, 40, nameof(sourceRevision));
         ValidateUpperHex(profileSha256, 64, nameof(profileSha256));
@@ -70,7 +74,7 @@ public static class GameplayBundleIdentity
         builder.Append("update=").Append(updateVersion).Append('\n');
         builder.Append("buildId=").Append(buildId).Append('\n');
         builder.Append("bundleAbi=").Append(BundleAbi).Append('\n');
-        builder.Append("settingsSchema=").Append(SettingsSchema).Append('\n');
+        builder.Append("settingsSchema=").Append(settingsSchema).Append('\n');
         builder.Append("kmVersion=").Append(packageVersion).Append('\n');
         builder.Append("sourceRevision=").Append(sourceRevision).Append('\n');
         builder.Append("profileSha256=").Append(profileSha256).Append('\n');
@@ -140,7 +144,7 @@ public static class GameplayBundleIdentity
         ArgumentNullException.ThrowIfNull(manifest);
         ValidateTitleId(manifest.TitleId);
         ValidateUpperHex(manifest.BuildId, 64, nameof(manifest.BuildId));
-        if (manifest.BundleAbi != BundleAbi || manifest.SettingsSchema != SettingsSchema)
+        if (manifest.BundleAbi != BundleAbi || !SupportsSettingsSchema(manifest.SettingsSchema))
         {
             throw new ArgumentException("The bundle manifest uses an unsupported ABI or settings schema.", nameof(manifest));
         }
@@ -157,7 +161,7 @@ public static class GameplayBundleIdentity
         builder.Append("buildId=").Append(manifest.BuildId).Append('\n');
         builder.Append("bundleAbi=").Append(BundleAbi).Append('\n');
         builder.Append("bundleId=").Append(manifest.BundleId).Append('\n');
-        builder.Append("settingsSchema=").Append(SettingsSchema).Append('\n');
+        builder.Append("settingsSchema=").Append(manifest.SettingsSchema).Append('\n');
         builder.Append("kmVersion=").Append(manifest.PackageVersion).Append('\n');
         builder.Append("componentCount=")
             .Append(components.Count.ToString(CultureInfo.InvariantCulture))
@@ -219,7 +223,7 @@ public static class GameplayBundleIdentity
         var packageVersion = ParseVersion(ReadHeader(lines[7], "kmVersion"));
         var componentCount = ParseCanonicalUInt(ReadHeader(lines[8], "componentCount"), "componentCount");
         if (bundleAbi != BundleAbi
-            || settingsSchema != SettingsSchema
+            || !SupportsSettingsSchema(settingsSchema)
             || componentCount > MaximumComponentCount
             || lines.Length != checked(10 + componentCount))
         {

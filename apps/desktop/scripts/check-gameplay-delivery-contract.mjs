@@ -258,7 +258,7 @@ for (const game of ['Scarlet', 'Violet', 'Sword', 'Shield', 'ZA']) {
 }
 assert.match(
   nativeBundleFactory,
-  /var initialSettings = ReadInitialSettings\([\s\S]*?sourceMain,[\s\S]*?composedSourceMain\)[\s\S]*?&& !initialSettings\.IsLegacyStaticOutput[\s\S]*?GameplaySettingsJournal\.CreateBootstrap\([\s\S]*?SettingsPresence,[\s\S]*?initialSettings\.Values\)/,
+  /var initialSettings = ReadInitialSettings\([\s\S]*?sourceMain,[\s\S]*?composedSourceMain\)[\s\S]*?&& !initialSettings\.IsLegacyStaticOutput[\s\S]*?GameplaySettingsJournal\.CreateBootstrap\([\s\S]*?settingsPresence,[\s\S]*?initialSettings\.Values\)/,
   'Native package creation must carry the recognized executable settings into the initial runtime journal.'
 );
 for (const recognizedKind of [

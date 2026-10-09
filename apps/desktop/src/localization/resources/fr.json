@@ -1,5 +1,18 @@
 {
   "keys": {
+    "cameraControl.conflict": "Le contrôle de la caméra ne peut pas être installé car une autre modification de l’exécutable touche les commandes de caméra ou de scènes. Utilisez des modifications compatibles et vérifiez à nouveau le paquet.",
+    "cameraControl.title": "Contrôle de la caméra",
+    "workbench.section.camera-control.label": "Contrôle de la caméra",
+    "cameraControl.description": "Déverrouillez la caméra d’exploration dans les options du jeu.",
+    "workbench.section.camera-control.description": "Déverrouillez la caméra d’exploration dans les options du jeu.",
+    "cameraControl.instructions": "Installez ou mettez à jour le paquet, puis ouvrez les options du jeu et choisissez Oui ou Non pour Caméra libre.",
+    "cameraControl.yes": "Oui",
+    "cameraControl.yesDescription": "Faites tourner la caméra autour du personnage pendant l’exploration, y compris dans les zones à caméra fixe.",
+    "cameraControl.no": "Non",
+    "cameraControl.noDescription": "Conservez la caméra d’origine de chaque zone. Celle des Terres Sauvages reste orientable.",
+    "cameraControl.scenes": "Les scènes gardent le contrôle de la caméra. Votre choix enregistré reprend au retour à l’exploration.",
+    "cameraControl.sharedPackage": "Contrôle de la caméra et Paramètres de jeu partagent un paquet. La mise à jour conserve vos réglages ; sa suppression retire les deux fonctions.",
+    "cameraControl.packageControls": "Réglez Caméra libre, Multi Exp., Taux d’EXP et Limite de niveau EXP dans les options du jeu.",
     "gameOptions.title": "Options du jeu",
     "gameOptions.subtitle": "Choisissez les valeurs initiales et masquez des choix dans Épée et Bouclier.",
     "gameOptions.help": "Activé choisit la valeur initiale et prime sur Par défaut. Par défaut suit le jeu si possible. Désactivé exclut un choix initial ; seul Masquer interdit sa sélection.",

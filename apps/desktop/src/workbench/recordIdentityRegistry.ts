@@ -134,6 +134,7 @@ const registrations = {
   randomizer: operationScoped('randomizer'),
   gameDump: operationScoped('gameDump'),
   gameplaySettings: operationScoped('gameplaySettings'),
+  cameraControl: operationScoped('cameraControl'),
   modelViewer: operationScoped('modelViewer'),
   soundStudio: operationScoped('soundStudio'),
   changes: notRecordScoped('changes'),

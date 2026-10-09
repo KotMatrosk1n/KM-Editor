@@ -1,5 +1,18 @@
 {
   "keys": {
+    "cameraControl.conflict": "Die Kamerasteuerung kann nicht installiert werden, da eine andere Änderung der Programmdatei die Kamera oder Szenensteuerung betrifft. Verwende kompatible Änderungen und prüfe das Paket erneut.",
+    "cameraControl.title": "Kamerasteuerung",
+    "workbench.section.camera-control.label": "Kamerasteuerung",
+    "cameraControl.description": "Schalte die Erkundungskamera in den Spieloptionen frei.",
+    "workbench.section.camera-control.description": "Schalte die Erkundungskamera in den Spieloptionen frei.",
+    "cameraControl.instructions": "Installiere oder aktualisiere das Paket. Öffne dann die Optionen im Spiel und wähle unter Freie Kamera Ja oder Nein.",
+    "cameraControl.yes": "Ja",
+    "cameraControl.yesDescription": "Drehe die Kamera beim Erkunden um deine Figur, auch in Gebieten mit fester Kamera.",
+    "cameraControl.no": "Nein",
+    "cameraControl.noDescription": "Behalte das ursprüngliche Kameraverhalten des Gebiets bei. In der Naturzone bleibt die Kamera drehbar.",
+    "cameraControl.scenes": "Während geskripteter Szenen steuert das Spiel die Kamera. Beim weiteren Erkunden gilt wieder deine gespeicherte Auswahl.",
+    "cameraControl.sharedPackage": "Kamerasteuerung und Spieleinstellungen teilen sich ein Paket. Ein Update erhält deine Einstellungen; das Entfernen des Pakets entfernt beide Funktionen.",
+    "cameraControl.packageControls": "Ändere Freie Kamera, EP Teiler, EP Rate und EP Levelgrenze in den Optionen des Spiels.",
     "gameOptions.title": "Spieloptionen",
     "gameOptions.subtitle": "Startwerte festlegen und einzelne Auswahlen in Schwert und Schild ausblenden.",
     "gameOptions.help": "Ein bestimmt den Startwert und hat Vorrang vor Standard. Standard folgt nach Möglichkeit dem Spiel. Aus schließt einen Startwert aus; nur Ausblenden verhindert die Auswahl im Spiel.",
