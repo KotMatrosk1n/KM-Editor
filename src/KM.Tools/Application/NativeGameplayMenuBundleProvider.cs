@@ -226,7 +226,10 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
                 ? GetAttemptedOutputSourcePath(exception)
                 : null;
             return Task.FromResult(Unavailable(
-                usesComposedMain || usesComposedMainNpdm
+                exception is InvalidDataException
+                    && exception.Message.StartsWith("Camera Control requires ", StringComparison.Ordinal)
+                    ? exception.Message
+                    : usesComposedMain || usesComposedMainNpdm
                     ? "The standalone ExeFS is not compatible with the native gameplay menu's verified executable regions. KM preserved it and changed no project file."
                     : "Native in-game controls require the exact supported Base ExeFS and Base RomFS files for this game version. No project file was changed.",
                 sourceDependencies,
