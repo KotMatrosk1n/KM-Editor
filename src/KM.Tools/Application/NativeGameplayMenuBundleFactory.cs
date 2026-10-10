@@ -15,6 +15,14 @@ using KM.ZA.RuntimeSettings;
 
 namespace KM.Tools.Application;
 
+internal sealed class NativeGameplayMenuSourceLayoutException : IOException
+{
+    public NativeGameplayMenuSourceLayoutException() : base(
+        "The standalone executable layout is incompatible with the selected Base. KM preserved it and changed no project file.")
+    {
+    }
+}
+
 /// <summary>
 /// Derives one exact-build, stock-menu gameplay package from the user's own
 /// retail ExeFS and RomFS inputs. No executable or game asset is editor-shipped;
@@ -178,18 +186,22 @@ public static class NativeGameplayMenuBundleFactory
 
         var composedSourceMain = executableSourceMain.ToArray();
         var composedSourceNpdm = executableSourceMainNpdm.ToArray();
+        var sourceLayoutCompatible = sourceMain.AsSpan().SequenceEqual(composedSourceMain)
+            || NsoRegisteredRegionCompositionVerifier.HasCompatibleLayoutEnvelope(
+                sourceMain,
+                composedSourceMain,
+                allowTextGrowth: game is ProjectGame.Sword or ProjectGame.Shield);
+        if (!sourceLayoutCompatible && game is ProjectGame.Sword or ProjectGame.Shield)
+        {
+            throw new NativeGameplayMenuSourceLayoutException();
+        }
         var initialSettings = ReadInitialSettings(
             game,
             sourceMain,
             composedSourceMain);
-        if (!sourceMain.AsSpan().SequenceEqual(composedSourceMain)
-            && !NsoRegisteredRegionCompositionVerifier.HasCompatibleLayoutEnvelope(
-                sourceMain,
-                composedSourceMain)
-            && !initialSettings.IsLegacyStaticOutput)
+        if (!sourceLayoutCompatible && !initialSettings.IsLegacyStaticOutput)
         {
-            throw new InvalidDataException(
-                "The executable composition source does not match the supported Base layout envelope.");
+            throw new NativeGameplayMenuSourceLayoutException();
         }
         EnsureExpectedNpdmTitle(game, composedSourceNpdm);
 

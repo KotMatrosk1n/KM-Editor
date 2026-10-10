@@ -1194,6 +1194,7 @@
     "gameplaySettings.inGamePackage.executableInput.reason.baseSourceSelected": "Выбран проверенный базовый исполняемый файл ExeFS.",
     "gameplaySettings.inGamePackage.executableInput.reason.noStandaloneOutput": "В корне вывода нет отдельного исполняемого файла, требующего сохранения.",
     "gameplaySettings.inGamePackage.executableInput.reason.standaloneMatchesBase": "Полный отпечаток отдельного исполняемого файла совпадает с базовым.",
+    "gameplaySettings.inGamePackage.executableInput.reason.sourceLayoutIncompatible": "Размеры сегментов, адреса памяти или структура существующего исполняемого файла несовместимы. KM сохранил его без изменений и не изменил файлы проекта.",
     "gameplaySettings.inGamePackage.executableInput.reason.sourceReviewUnavailable": "KM не смог выполнить ограниченную проверку входного исполняемого файла с отпечатком.",
     "gameplaySettings.inGamePackage.executableInput.reason.unsupportedBaseInput": "Выбранный базовый ExeFS не содержит точный поддерживаемый исполняемый файл для этого пакета меню.",
     "gameplaySettings.inGamePackage.executableInput.reason.runtimeSlotOccupied": "Слот встроенного исполняемого модуля уже занят. KM не заменит его и не наложит другой модуль.",

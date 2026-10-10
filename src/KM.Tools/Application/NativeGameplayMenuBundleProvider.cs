@@ -226,7 +226,9 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
                 ? GetAttemptedOutputSourcePath(exception)
                 : null;
             return Task.FromResult(Unavailable(
-                exception is InvalidDataException
+                exception is NativeGameplayMenuSourceLayoutException
+                    ? exception.Message
+                    : exception is InvalidDataException
                     && exception.Message.StartsWith("Camera Control requires ", StringComparison.Ordinal)
                     ? exception.Message
                     : usesComposedMain || usesComposedMainNpdm
@@ -237,7 +239,8 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
                 usesComposedMainNpdm,
                 requiresOwnedMainSource,
                 requiresOwnedMainNpdmSource,
-                attemptedSourcePath));
+                attemptedSourcePath,
+                sourceLayoutRejected: exception is NativeGameplayMenuSourceLayoutException));
         }
     }
 
@@ -764,7 +767,8 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
         bool usesComposedMainNpdm = false,
         bool requiresOwnedMainSource = false,
         bool requiresOwnedMainNpdmSource = false,
-        RelativeOutputPath? attemptedSourcePath = null) => new(
+        RelativeOutputPath? attemptedSourcePath = null,
+        bool sourceLayoutRejected = false) => new(
             InGameSettingsBundleCatalog.Empty,
             GameplaySettingsBundleAuthority.DenyAll,
             detail,
@@ -773,7 +777,8 @@ public sealed class NativeGameplayMenuBundleProvider : IInGameSettingsBundleProv
             usesComposedMainNpdm,
             requiresOwnedMainSource,
             requiresOwnedMainNpdmSource,
-            attemptedSourcePath);
+            attemptedSourcePath,
+            SourceLayoutRejected: sourceLayoutRejected);
 
     private static RelativeOutputPath? GetAttemptedOutputSourcePath(Exception exception)
     {
