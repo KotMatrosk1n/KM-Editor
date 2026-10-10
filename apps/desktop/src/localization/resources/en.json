@@ -1181,6 +1181,7 @@
     "gameplaySettings.inGamePackage.executableInput.reason.baseSourceSelected": "The verified Base ExeFS executable is the selected source.",
     "gameplaySettings.inGamePackage.executableInput.reason.noStandaloneOutput": "No standalone Output Root executable needs to be preserved.",
     "gameplaySettings.inGamePackage.executableInput.reason.standaloneMatchesBase": "The standalone executable has the same full-file fingerprint as Base.",
+    "gameplaySettings.inGamePackage.executableInput.reason.sourceLayoutIncompatible": "The existing executable has incompatible segment sizes, memory addresses, or file layout. KM preserved it and changed no project file.",
     "gameplaySettings.inGamePackage.executableInput.reason.sourceReviewUnavailable": "KM could not establish a bounded, fingerprinted review of the executable input.",
     "gameplaySettings.inGamePackage.executableInput.reason.unsupportedBaseInput": "The selected Base ExeFS does not provide an exact supported executable input for this native menu package.",
     "gameplaySettings.inGamePackage.executableInput.reason.runtimeSlotOccupied": "A native runtime executable slot is already occupied. KM will not replace or layer over it.",

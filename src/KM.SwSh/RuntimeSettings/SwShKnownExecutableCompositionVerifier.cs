@@ -170,7 +170,10 @@ public static class SwShKnownExecutableCompositionVerifier
         ref bool recognizedTransformation)
     {
         var analysis = SwShFpsMainPatcher.Analyze(normalized, expectedGame);
-        if (analysis.Kind == SwShFpsPatchMainKind.Installed)
+        // Partial includes older releases and selected component combinations.
+        // Every site must still match an exact vanilla, current, or legacy value;
+        // the reviewed inverse and final whole-image proof reject unknown edits.
+        if (analysis.Kind is SwShFpsPatchMainKind.Installed or SwShFpsPatchMainKind.Partial)
         {
             normalized = SwShFpsMainPatcher.RestoreFromBase(normalized, retail, expectedGame);
             recognizedTransformation = true;

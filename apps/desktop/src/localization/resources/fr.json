@@ -1194,6 +1194,7 @@
     "gameplaySettings.inGamePackage.executableInput.reason.baseSourceSelected": "L’exécutable ExeFS de base vérifié est la source sélectionnée.",
     "gameplaySettings.inGamePackage.executableInput.reason.noStandaloneOutput": "Aucun exécutable autonome à préserver dans la racine de sortie.",
     "gameplaySettings.inGamePackage.executableInput.reason.standaloneMatchesBase": "L’empreinte complète de l’exécutable autonome correspond à la base.",
+    "gameplaySettings.inGamePackage.executableInput.reason.sourceLayoutIncompatible": "Les tailles de segments, les adresses mémoire ou la structure du fichier exécutable existant sont incompatibles. KM a conservé ce fichier et n’a modifié aucun fichier du projet.",
     "gameplaySettings.inGamePackage.executableInput.reason.sourceReviewUnavailable": "KM n’a pas pu établir une vérification délimitée avec empreinte de l’exécutable d’entrée.",
     "gameplaySettings.inGamePackage.executableInput.reason.unsupportedBaseInput": "L’ExeFS de base sélectionné ne fournit pas l’exécutable exact pris en charge pour ce paquet de menu natif.",
     "gameplaySettings.inGamePackage.executableInput.reason.runtimeSlotOccupied": "Un emplacement d’exécutable natif est occupé. KM ne le remplacera pas et n’ajoutera rien par-dessus.",

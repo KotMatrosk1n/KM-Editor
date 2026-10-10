@@ -1194,6 +1194,7 @@
     "gameplaySettings.inGamePackage.executableInput.reason.baseSourceSelected": "El ejecutable ExeFS base verificado es el origen seleccionado.",
     "gameplaySettings.inGamePackage.executableInput.reason.noStandaloneOutput": "No hay ningún ejecutable independiente en la raíz de salida que deba preservarse.",
     "gameplaySettings.inGamePackage.executableInput.reason.standaloneMatchesBase": "El ejecutable independiente tiene la misma huella de archivo completo que la base.",
+    "gameplaySettings.inGamePackage.executableInput.reason.sourceLayoutIncompatible": "El ejecutable existente tiene tamaños de segmento, direcciones de memoria o una estructura de archivo incompatibles. KM lo conservó sin modificar ningún archivo del proyecto.",
     "gameplaySettings.inGamePackage.executableInput.reason.sourceReviewUnavailable": "KM no pudo obtener una revisión acotada con huella del ejecutable de entrada.",
     "gameplaySettings.inGamePackage.executableInput.reason.unsupportedBaseInput": "El ExeFS base seleccionado no contiene el ejecutable exacto compatible con este paquete de menú nativo.",
     "gameplaySettings.inGamePackage.executableInput.reason.runtimeSlotOccupied": "Un espacio de ejecutable nativo ya está ocupado. KM no lo sustituirá ni añadirá otra capa encima.",

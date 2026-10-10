@@ -1194,6 +1194,7 @@
     "gameplaySettings.inGamePackage.executableInput.reason.baseSourceSelected": "已选择验证过的基础 ExeFS 可执行文件作为源。",
     "gameplaySettings.inGamePackage.executableInput.reason.noStandaloneOutput": "输出根目录中没有需要保留的独立可执行文件。",
     "gameplaySettings.inGamePackage.executableInput.reason.standaloneMatchesBase": "独立可执行文件的完整文件指纹与基础文件一致。",
+    "gameplaySettings.inGamePackage.executableInput.reason.sourceLayoutIncompatible": "现有可执行文件的段大小、内存地址或文件布局不兼容。KM 已保留原文件，未更改任何项目文件。",
     "gameplaySettings.inGamePackage.executableInput.reason.sourceReviewUnavailable": "KM 无法对输入可执行文件建立带指纹的有界审核。",
     "gameplaySettings.inGamePackage.executableInput.reason.unsupportedBaseInput": "所选基础 ExeFS 未提供此原生菜单包支持的确切可执行输入。",
     "gameplaySettings.inGamePackage.executableInput.reason.runtimeSlotOccupied": "原生运行时可执行槽位已被占用。KM 不会替换或叠加到该槽位上。",

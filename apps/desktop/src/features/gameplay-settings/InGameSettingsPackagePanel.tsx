@@ -73,11 +73,14 @@ export function InGameSettingsPackagePanel({
     : null;
   const [failureDiagnostics, setFailureDiagnostics] = useState<ApiDiagnostic[]>([]);
   const cameraConflict = snapshot?.detail?.startsWith('Camera Control requires ') ?? false;
+  const sourceLayoutConflict = snapshot?.executableInput.reasonCode === 'source-layout-incompatible';
   useEffect(() => { if (messageKey === null) setFailureDiagnostics([]); }, [messageKey]);
   usePublishCommonEditorDiagnostics(failureDiagnostics.length ? failureDiagnostics : errorMessage
     ? [{ domain: 'workflow.gameplaySettings', field: 'inGamePackage', message: errorMessage, severity: 'error' }]
     : cameraConflict ? [{ code: inGameSettingsPackageErrorCodes.cameraCompositionConflict, domain: 'workflow.cameraControl',
-      field: 'inGamePackage', message: t('cameraControl.conflict'), severity: 'error' }] : []);
+      field: 'inGamePackage', message: t('cameraControl.conflict'), severity: 'error' }]
+    : sourceLayoutConflict ? [{ code: inGameSettingsPackageErrorCodes.unavailable, domain: 'workflow.gameplaySettings',
+      field: 'inGamePackage', message: t('gameplaySettings.inGamePackage.executableInput.reason.sourceLayoutIncompatible'), severity: 'error' }] : []);
   const [installationTarget, setInstallationTarget] =
     useState<InGameSettingsInstallationTarget>('atmosphere');
   const requestGenerationRef = useRef(0);
@@ -642,7 +645,12 @@ export function InGameSettingsPackagePanel({
               {t(stateTitleKey!)}
             </strong>
             <p>{t(stateDescriptionKey!)}</p>
-            {snapshot.detail ? <p>{cameraConflict ? t('cameraControl.conflict') : snapshot.detail}</p> : null}
+            {snapshot.detail ? (
+              <p>{cameraConflict ? t('cameraControl.conflict') :
+                sourceLayoutConflict
+                  ? t('gameplaySettings.inGamePackage.executableInput.reason.sourceLayoutIncompatible')
+                  : snapshot.detail}</p>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -1103,6 +1111,8 @@ const executableInputReasonMessageKeys: Readonly<Record<string, string>> = {
     'gameplaySettings.inGamePackage.executableInput.reason.standaloneMatchesBase',
   'source-review-unavailable':
     'gameplaySettings.inGamePackage.executableInput.reason.sourceReviewUnavailable',
+  'source-layout-incompatible':
+    'gameplaySettings.inGamePackage.executableInput.reason.sourceLayoutIncompatible',
   'unsupported-base-input':
     'gameplaySettings.inGamePackage.executableInput.reason.unsupportedBaseInput',
   'runtime-slot-occupied':

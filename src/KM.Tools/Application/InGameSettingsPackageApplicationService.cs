@@ -40,7 +40,8 @@ public sealed record InGameSettingsBundleResolution(
     bool RequiresOwnedMainNpdmSource = false,
     RelativeOutputPath? AttemptedSourcePath = null,
     bool SemanticallyVerifiedMainSource = false,
-    IReadOnlyList<InGameSettingsExternalSourceDependency>? ExternalSourceDependencies = null);
+    IReadOnlyList<InGameSettingsExternalSourceDependency>? ExternalSourceDependencies = null,
+    bool SourceLayoutRejected = false);
 
 public sealed record InGameSettingsExternalSourceDependency
 {
@@ -1662,7 +1663,9 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
                 null);
         }
 
-        var compatibility = runtimeSlot?.ExpectedState.Exists == true
+        var compatibility = resolution.SourceLayoutRejected
+            ? InGameSettingsExecutableCompatibilityDto.UnreadableOrAmbiguous
+            : runtimeSlot?.ExpectedState.Exists == true
             || !providerOfferedCompatiblePackage
                 && (resolution.RequiresOwnedMainSource
                     || resolution.RequiresOwnedMainNpdmSource)
@@ -1675,6 +1678,8 @@ public sealed class InGameSettingsPackageApplicationService : IDisposable
                     : InGameSettingsExecutableCompatibilityDto.RetailEquivalent;
         var reasonCode = runtimeSlot?.ExpectedState.Exists == true
             ? "runtime-slot-occupied"
+            : resolution.SourceLayoutRejected
+                ? "source-layout-incompatible"
             : sourceOwnershipFailure is not null
                 ? sourceOwnershipFailure.ReasonCode
                 : compatibility == InGameSettingsExecutableCompatibilityDto.IncompatibleOwnedRegion

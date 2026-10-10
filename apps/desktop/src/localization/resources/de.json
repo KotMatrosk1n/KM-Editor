@@ -1194,6 +1194,7 @@
     "gameplaySettings.inGamePackage.executableInput.reason.baseSourceSelected": "Die geprüfte Basis-ExeFS-Programmdatei ist als Quelle gewählt.",
     "gameplaySettings.inGamePackage.executableInput.reason.noStandaloneOutput": "Keine eigenständige Programmdatei im Ausgabestamm muss erhalten werden.",
     "gameplaySettings.inGamePackage.executableInput.reason.standaloneMatchesBase": "Der vollständige Fingerabdruck der eigenständigen Programmdatei entspricht der Basis.",
+    "gameplaySettings.inGamePackage.executableInput.reason.sourceLayoutIncompatible": "Die Segmentgrößen, Speicheradressen oder das Dateilayout der vorhandenen ausführbaren Datei sind inkompatibel. KM hat sie unverändert beibehalten und keine Projektdatei geändert.",
     "gameplaySettings.inGamePackage.executableInput.reason.sourceReviewUnavailable": "KM konnte keine begrenzte Prüfung mit Fingerabdruck für die Programmquelle erstellen.",
     "gameplaySettings.inGamePackage.executableInput.reason.unsupportedBaseInput": "Die gewählte Basis-ExeFS enthält nicht die genaue unterstützte Programmquelle für dieses native Menüpaket.",
     "gameplaySettings.inGamePackage.executableInput.reason.runtimeSlotOccupied": "Ein nativer Laufzeitplatz ist bereits belegt. KM ersetzt oder überlagert ihn nicht.",

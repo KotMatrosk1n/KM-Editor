@@ -1194,6 +1194,7 @@
     "gameplaySettings.inGamePackage.executableInput.reason.baseSourceSelected": "Вибрано перевірений базовий виконуваний файл ExeFS.",
     "gameplaySettings.inGamePackage.executableInput.reason.noStandaloneOutput": "У корені виводу немає окремого виконуваного файлу, що потребує збереження.",
     "gameplaySettings.inGamePackage.executableInput.reason.standaloneMatchesBase": "Повний відбиток окремого виконуваного файлу збігається з базовим.",
+    "gameplaySettings.inGamePackage.executableInput.reason.sourceLayoutIncompatible": "Розміри сегментів, адреси пам’яті або структура наявного виконуваного файлу несумісні. KM зберіг його без змін і не змінив файли проєкту.",
     "gameplaySettings.inGamePackage.executableInput.reason.sourceReviewUnavailable": "KM не зміг виконати обмежену перевірку вхідного виконуваного файлу з відбитком.",
     "gameplaySettings.inGamePackage.executableInput.reason.unsupportedBaseInput": "Вибраний базовий ExeFS не містить точного підтримуваного виконуваного файлу для цього пакета меню.",
     "gameplaySettings.inGamePackage.executableInput.reason.runtimeSlotOccupied": "Слот вбудованого виконуваного модуля вже зайнятий. KM не замінить його й не накладе інший модуль.",
