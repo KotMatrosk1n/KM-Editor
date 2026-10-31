@@ -25,7 +25,7 @@
     "customGifts.code": "Code",
     "customGifts.once": "Once per save",
     "customGifts.identity": "Gift identity: {id}. This identity keeps the claim history when you rename or edit a gift.",
-    "customGifts.codeHelp": "Use 5 through 16 uppercase letters or digits, excluding I, O, and Z, which the game keyboard disables. Every code must be unique. The name is an editor label; the game displays the Pokemon gift. All zero codes are unavailable.",
+    "customGifts.codeHelp": "Use 5 through 16 uppercase letters or digits. Every code must be unique. The name is an editor label; the game displays the Pokemon gift. All zero codes are unavailable.",
     "customGifts.egg": "Receive as an Egg",
     "customGifts.select": "Add or select a gift to edit its Pokemon.",
     "customGifts.saveHelp": "Use Stage, Review, and Apply to save. Removing the receiver keeps the definitions and the save retains its claim history.",

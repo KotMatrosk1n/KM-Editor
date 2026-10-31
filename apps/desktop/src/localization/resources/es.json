@@ -25,7 +25,7 @@
     "customGifts.code": "Código",
     "customGifts.once": "Una vez por partida",
     "customGifts.identity": "Identidad del regalo: {id}. Conserva el historial de recepción al renombrar o editar el regalo.",
-    "customGifts.codeHelp": "Usa entre 5 y 16 letras mayúsculas o dígitos, excepto I, O y Z, que el teclado del juego desactiva. Cada código debe ser único. El nombre es una etiqueta del editor; el juego muestra el regalo de Pokémon. Los códigos formados solo por ceros no están disponibles.",
+    "customGifts.codeHelp": "Usa entre 5 y 16 letras mayúsculas o dígitos. Cada código debe ser único. El nombre es una etiqueta del editor; el juego muestra el regalo de Pokémon. Los códigos formados solo por ceros no están disponibles.",
     "customGifts.egg": "Recibir como Huevo",
     "customGifts.select": "Añade o selecciona un regalo para editar su Pokémon.",
     "customGifts.saveHelp": "Usa Preparar, Revisar y Aplicar para guardar. Al retirar el receptor se conservan las definiciones y la partida mantiene su historial de recepción.",
