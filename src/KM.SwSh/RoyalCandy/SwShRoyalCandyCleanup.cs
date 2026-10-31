@@ -29,6 +29,14 @@ internal static class SwShRoyalCandyCleanup
         ICollection<ValidationDiagnostic> diagnostics,
         bool clearBagHookSlot)
     {
+        if (string.Equals(targetRelativePath, SwShRoyalCandyIcon.Path, StringComparison.OrdinalIgnoreCase))
+        {
+            var template = System.IO.Path.Combine(paths.BaseRomFsPath!, "bin/appli/icon_item/item_1128.bntx");
+            if (!File.Exists(template) || !SwShRoyalCandyIcon.IsOwned(File.ReadAllBytes(targetPath), File.ReadAllBytes(template)))
+                throw new InvalidDataException("Royal Candy icon cleanup requires the exact owned artwork.");
+            File.Delete(targetPath);
+            return true;
+        }
         if (string.Equals(
             targetRelativePath,
             SwShRoyalCandyWorkflowService.AcquisitionOwnershipManifestPath,
@@ -104,6 +112,7 @@ internal static class SwShRoyalCandyCleanup
     public static bool IsCleanupOutputPath(string relativePath)
     {
         return string.Equals(relativePath, SwShRoyalCandyWorkflowService.ExeFsMainPath, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(relativePath, SwShRoyalCandyIcon.Path, StringComparison.OrdinalIgnoreCase)
             || string.Equals(relativePath, SwShRoyalCandyWorkflowService.AcquisitionOwnershipManifestPath, StringComparison.OrdinalIgnoreCase)
             || string.Equals(relativePath, SwShRoyalCandyWorkflowService.ItemPath, StringComparison.OrdinalIgnoreCase)
             || string.Equals(relativePath, SwShRoyalCandyWorkflowService.ItemHashPath, StringComparison.OrdinalIgnoreCase)
@@ -118,6 +127,9 @@ internal static class SwShRoyalCandyCleanup
         {
             return false;
         }
+
+        if (string.Equals(entry.RelativePath, SwShRoyalCandyIcon.Path, StringComparison.OrdinalIgnoreCase))
+            return HasRoyalCandyIcon(project, entry);
 
         if (string.Equals(
             entry.RelativePath,
@@ -1029,6 +1041,23 @@ internal static class SwShRoyalCandyCleanup
         }
 
         return sources;
+    }
+
+    internal static bool HasRoyalCandyIcon(OpenedProject project, ProjectFileGraphEntry entry)
+    {
+        var sourcePath = ResolveSourcePath(project.Paths, entry);
+        var basePath = ResolveBaseSourcePath(project.Paths, entry.RelativePath);
+        if (sourcePath is null || basePath is null || !File.Exists(sourcePath) || !File.Exists(basePath))
+            return false;
+
+        try
+        {
+            return SwShRoyalCandyIcon.IsOwned(File.ReadAllBytes(sourcePath), File.ReadAllBytes(basePath));
+        }
+        catch (Exception exception) when (exception is InvalidDataException or IOException or NotSupportedException or ArgumentException)
+        {
+            return false;
+        }
     }
 
     internal static bool HasRoyalCandyItemData(OpenedProject project, ProjectFileGraphEntry entry)

@@ -858,6 +858,9 @@ public sealed partial class SwShItemTable
         var templateRowOffset = owner.RowsStart + (templateRecord.RawRowIndex * RowSize);
         var expected = owner.data.AsSpan(templateRowOffset, RowSize).ToArray();
         WriteRoyalCandyRowShape(expected, 0, templateRecord);
+        if (data.AsSpan(rowOffset, RowSize).SequenceEqual(expected)) return true;
+        // Recognize earlier installs that used the Rare Candy sprite as well as the custom icon.
+        WriteInt16(expected, ItemSpriteOffset, templateRecord.ItemSprite);
         return data.AsSpan(rowOffset, RowSize).SequenceEqual(expected);
     }
 
@@ -872,7 +875,7 @@ public sealed partial class SwShItemTable
         WriteBooleanByte(data, rowOffset + CanUseOnPokemonOffset, 1);
         WriteByte(data, rowOffset + ItemTypeOffset, 9);
         WriteByte(data, rowOffset + SortIndexOffset, templateRecord.SortIndex);
-        WriteInt16(data, rowOffset + ItemSpriteOffset, templateRecord.ItemSprite);
+        WriteInt16(data, rowOffset + ItemSpriteOffset, 1128);
         WriteByte(data, rowOffset + GroupTypeOffset, 0);
         WriteByte(data, rowOffset + GroupIndexOffset, 0);
         WritePackedBit(data, rowOffset + Boost0Offset, 2, 1);
