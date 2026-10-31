@@ -84,6 +84,8 @@ export const workbenchSectionLocalization = {
   raidDens: { label: 'workbench.section.raid-dens.label', description: 'workbench.section.raid-dens.description' },
   pokeJobs: { label: 'workbench.section.poke-jobs.label', description: 'workbench.section.poke-jobs.description' },
   yComm: { label: 'workbench.section.y-comm.label', description: 'workbench.section.y-comm.description' },
+  mysteryGift: { label: 'workbench.section.mystery-gift.label', description: 'workbench.section.mystery-gift.description' },
+  royalGift: { label: 'workbench.section.royal-gift.label', description: 'workbench.section.royal-gift.description' },
   fixAiFlags: { label: 'workbench.section.fix-ai-flags.label', description: 'workbench.section.fix-ai-flags.description' },
   trainerWhiteout: { label: 'workbench.section.trainer-whiteout.label', description: 'workbench.section.trainer-whiteout.description' },
   trainerDynamax: { label: 'workbench.section.trainer-dynamax.label', description: 'workbench.section.trainer-dynamax.description' },

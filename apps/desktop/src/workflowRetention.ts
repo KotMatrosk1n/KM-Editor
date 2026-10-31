@@ -54,6 +54,8 @@ export const workflowStoreKeyBySection = {
   raidDens: 'raidDensWorkflow',
   pokeJobs: 'pokeJobsWorkflow',
   yComm: 'yCommWorkflow',
+  mysteryGift: 'mysteryGiftWorkflow',
+  royalGift: 'royalGiftWorkflow',
   fixAiFlags: 'fixAiFlagsWorkflow',
   trainerWhiteout: 'trainerWhiteoutWorkflow',
   spreadsheetImport: 'spreadsheetImportWorkflow',
@@ -81,15 +83,17 @@ const refreshDependentsBySection: Partial<
 > = {
   encounters: ['pokemon', 'heldItemChance', 'shakingTrees'],
   shakingTrees: ['placement', 'encounters'],
-  restoreMissingPokemon: ['pokemon', 'trainers', 'encounters', 'giftPokemon', 'tradePokemon', 'rentalPokemon', 'staticEncounters', 'raidBattles', 'placement', 'shakingTrees', 'dynamaxAdventures'],
+  restoreMissingPokemon: ['pokemon', 'trainers', 'encounters', 'giftPokemon', 'mysteryGift', 'royalGift', 'tradePokemon', 'rentalPokemon', 'staticEncounters', 'raidBattles', 'placement', 'shakingTrees', 'dynamaxAdventures'],
   placement: ['shakingTrees'],
-  pokemon: ['shakingTrees'],
+  pokemon: ['shakingTrees', 'mysteryGift', 'royalGift'],
   heldItemChance: ['encounters'],
   royalCandy: ['placement'],
   staticEncounters: ['placement'],
   text: ['placement', 'trainers', 'trainerPools', 'behavior', 'fixAiFlags', 'shakingTrees'],
   trainers: ['trainerPools', 'fixAiFlags'],
-  fixAiFlags: ['trainers']
+  fixAiFlags: ['trainers'],
+  mysteryGift: ['royalGift'],
+  royalGift: ['mysteryGift']
 };
 
 export type LoadedWorkflowRetentionEntry = {
@@ -156,6 +160,7 @@ const pendingEditSectionByDomain: Readonly<Record<string, RetainedWorkflowSectio
   'workflow.raidDens': 'raidDens',
   'workflow.pokeJobs': 'pokeJobs',
   'workflow.yComm': 'yComm',
+  'workflow.customGifts': 'mysteryGift',
   'workflow.trainerWhiteout': 'trainerWhiteout',
   'workflow.spreadsheetImport': 'spreadsheetImport',
   'workflow.startingItems': 'startingItems',
@@ -283,6 +288,11 @@ export function getEditSessionOwnerSections(
   }
 
   for (const edit of editSession?.pendingEdits ?? []) {
+    if (edit.domain === 'workflow.customGifts') {
+      sections.add('mysteryGift');
+      sections.add('royalGift');
+      continue;
+    }
     const section = pendingEditSectionByDomain[edit.domain];
     if (section) {
       sections.add(section);

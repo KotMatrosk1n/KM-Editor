@@ -51,6 +51,7 @@ import { type ObedienceWorkflow } from './bridge/obedienceContracts';
 import { type RaidDensWorkflow } from './bridge/raidDensContracts';
 import { type PokeJobsWorkflow } from './bridge/pokeJobsContracts';
 import { type YCommWorkflow } from './bridge/yCommContracts';
+import type { CustomGiftWorkflow } from './bridge/customGiftContracts';
 import { type FixAiFlagsWorkflow } from './bridge/fixAiFlagsContracts';
 import { type TrainerWhiteoutWorkflow } from './bridge/trainerWhiteoutContracts';
 import { type HabitatCoordinatesWorkflow } from './bridge/habitatCoordinatesContracts';
@@ -130,6 +131,8 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
       'obedience',
       'pokeJobs',
       'yComm',
+      'mysteryGift',
+      'royalGift',
       'ivScreen',
       'hyperTraining',
       'shinyRate',
@@ -213,6 +216,8 @@ export const sharedStagedEditorSectionIds = new Set<WorkbenchSection>([
   'raidDens',
   'pokeJobs',
   'yComm',
+  'mysteryGift',
+  'royalGift',
   'fixAiFlags',
   'trainerWhiteout',
   'moves',
@@ -260,6 +265,7 @@ export const sharedStagedEditorDomains = new Set([
   'workflow.raidDens',
   'workflow.pokeJobs',
   'workflow.yComm',
+  'workflow.customGifts',
   'workflow.trainerWhiteout',
   'workflow.moves',
   'workflow.items',
@@ -366,6 +372,8 @@ export type LoadedWorkflowStateBySection = {
   raidDensWorkflow: RaidDensWorkflow | null;
   pokeJobsWorkflow: PokeJobsWorkflow | null;
   yCommWorkflow: YCommWorkflow | null;
+  mysteryGiftWorkflow: CustomGiftWorkflow | null;
+  royalGiftWorkflow: CustomGiftWorkflow | null;
   fixAiFlagsWorkflow: FixAiFlagsWorkflow | null;
   trainerWhiteoutWorkflow: TrainerWhiteoutWorkflow | null;
   spreadsheetImportWorkflow: SpreadsheetImportWorkflow | null;
@@ -525,6 +533,10 @@ export function getLoadedWorkflowStateForSection(
       return state.pokeJobsWorkflow !== null;
     case 'yComm':
       return state.yCommWorkflow !== null;
+    case 'mysteryGift':
+      return state.mysteryGiftWorkflow !== null;
+    case 'royalGift':
+      return state.royalGiftWorkflow !== null;
     case 'fixAiFlags':
       return state.fixAiFlagsWorkflow !== null;
     case 'trainerWhiteout':

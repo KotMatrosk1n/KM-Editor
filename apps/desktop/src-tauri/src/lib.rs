@@ -153,6 +153,8 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "changeSets.materialize",
     "changeSets.mutate",
     "changeSets.read",
+    "customGifts.load",
+    "customGifts.stage",
     "dynamaxAdventures.defaults.preview",
     "dynamaxAdventures.field.update",
     "dynamaxAdventures.fields.update",
@@ -2883,6 +2885,7 @@ fn is_project_bridge_workflow_load_command(command: &str) -> bool {
             | "raidDens.load"
             | "pokeJobs.load"
             | "yComm.load"
+            | "customGifts.load"
             | "trainerWhiteout.load"
             | "raidBattles.load"
             | "raidBonusRewards.load"
@@ -3054,6 +3057,7 @@ fn is_replay_safe_edit_session_command(command: &str) -> bool {
             | "raidDens.stage"
             | "pokeJobs.stage"
             | "yComm.stage"
+            | "customGifts.stage"
             | "fixAiFlags.load"
             | "fixAiFlags.stage"
             | "trainerWhiteout.stage"

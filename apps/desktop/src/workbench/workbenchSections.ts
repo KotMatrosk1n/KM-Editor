@@ -71,6 +71,8 @@ export const workbenchSections = [
   'raidDens',
   'pokeJobs',
   'yComm',
+  'mysteryGift',
+  'royalGift',
   'fixAiFlags',
   'trainerWhiteout',
   'trainerDynamax',

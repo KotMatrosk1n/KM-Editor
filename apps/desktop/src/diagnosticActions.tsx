@@ -119,6 +119,8 @@ export function resolveDiagnosticNavigationAction(
   if (!activeLocation) {
     return null;
   }
+  if (activeLocation.section === 'royalGift' && (diagnostic.domain === 'workflow.customGifts'
+    || diagnostic.code?.startsWith('KM-SWSH-CUSTOM-GIFTS-'))) return null;
   const destination = resolveDestination(diagnostic);
   if (!destination || destination === activeLocation.section) {
     return null;
@@ -159,6 +161,9 @@ function resolveDestination(diagnostic: ApiDiagnostic): WorkbenchSection | null 
   }
   if (diagnostic.code?.startsWith('KM-SWSH-Y-COMM-') || diagnostic.domain === 'workflow.yComm') {
     return 'yComm';
+  }
+  if (diagnostic.code?.startsWith('KM-SWSH-CUSTOM-GIFTS-') || diagnostic.domain === 'workflow.customGifts') {
+    return 'mysteryGift';
   }
   if (diagnostic.code === projectBridgeErrorCodes.trainerWhiteoutInvalid || diagnostic.domain === 'workflow.trainerWhiteout') {
     return 'trainerWhiteout';

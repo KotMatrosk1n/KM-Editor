@@ -57,6 +57,7 @@ import { type ObedienceWorkflow } from './bridge/obedienceContracts';
 import { type RaidDensWorkflow } from './bridge/raidDensContracts';
 import { type PokeJobsWorkflow } from './bridge/pokeJobsContracts';
 import { type YCommWorkflow } from './bridge/yCommContracts';
+import type { CustomGiftWorkflow } from './bridge/customGiftContracts';
 import { type FixAiFlagsWorkflow } from './bridge/fixAiFlagsContracts';
 import { type TrainerWhiteoutWorkflow } from './bridge/trainerWhiteoutContracts';
 import { type HabitatCoordinatesWorkflow } from './bridge/habitatCoordinatesContracts';
@@ -219,6 +220,8 @@ type WorkbenchState = {
   raidDensWorkflow: RaidDensWorkflow | null;
   pokeJobsWorkflow: PokeJobsWorkflow | null;
   yCommWorkflow: YCommWorkflow | null;
+  mysteryGiftWorkflow: CustomGiftWorkflow | null;
+  royalGiftWorkflow: CustomGiftWorkflow | null;
   fixAiFlagsWorkflow: FixAiFlagsWorkflow | null;
   trainerWhiteoutWorkflow: TrainerWhiteoutWorkflow | null;
   textSearchText: string;
@@ -354,6 +357,8 @@ type WorkbenchState = {
   setRaidDensWorkflow: (raidDensWorkflow: RaidDensWorkflow) => void;
   setPokeJobsWorkflow: (pokeJobsWorkflow: PokeJobsWorkflow) => void;
   setYCommWorkflow: (yCommWorkflow: YCommWorkflow) => void;
+  setMysteryGiftWorkflow: (workflow: CustomGiftWorkflow) => void;
+  setRoyalGiftWorkflow: (workflow: CustomGiftWorkflow) => void;
   setFixAiFlagsWorkflow: (fixAiFlagsWorkflow: FixAiFlagsWorkflow) => void;
   setTrainerWhiteoutWorkflow: (trainerWhiteoutWorkflow: TrainerWhiteoutWorkflow) => void;
   setHabitatCoordinatesWorkflow: (habitatCoordinatesWorkflow: HabitatCoordinatesWorkflow) => void;
@@ -562,6 +567,8 @@ function createLoadedWorkflowResetState(): Partial<WorkbenchState> {
     raidDensWorkflow: null,
     pokeJobsWorkflow: null,
     yCommWorkflow: null,
+    mysteryGiftWorkflow: null,
+    royalGiftWorkflow: null,
     fixAiFlagsWorkflow: null,
     trainerWhiteoutWorkflow: null,
     textSearchText: '',
@@ -696,6 +703,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   raidDensWorkflow: null,
   pokeJobsWorkflow: null,
   yCommWorkflow: null,
+  mysteryGiftWorkflow: null,
+  royalGiftWorkflow: null,
   fixAiFlagsWorkflow: null,
   trainerWhiteoutWorkflow: null,
   textSearchText: '',
@@ -1108,6 +1117,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   })),
   setYCommWorkflow: (yCommWorkflow) => set((state) => ({
     activeSection: resolveWorkflowLoadSection(state.activeSection, 'yComm'), yCommWorkflow
+  })),
+  setMysteryGiftWorkflow: (workflow) => set((state) => ({
+    activeSection: resolveWorkflowLoadSection(state.activeSection, 'mysteryGift'), mysteryGiftWorkflow: workflow
+  })),
+  setRoyalGiftWorkflow: (workflow) => set((state) => ({
+    activeSection: resolveWorkflowLoadSection(state.activeSection, 'royalGift'), royalGiftWorkflow: workflow
   })),
   setFixAiFlagsWorkflow: (fixAiFlagsWorkflow) => set((state) => ({
     activeSection: resolveWorkflowLoadSection(state.activeSection, 'fixAiFlags'), fixAiFlagsWorkflow
