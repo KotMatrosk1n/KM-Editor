@@ -12,6 +12,11 @@ public static class SvDataPaths
     public const string ShopWazaMachineDataArray = "world/data/ui/shop/shop_wazamachine/shop_wazamachine_data/shop_wazamachine_data_array.bin";
     public const string TrainerDataArray = "world/data/trainer/trdata/trdata_array.bin";
     public const string WildEncounterArray = "world/data/encount/pokedata/pokedata/pokedata_array.bin";
+    public const string WildEncounterKitakamiArray = "world/data/encount/pokedata/pokedata_su1/pokedata_su1_array.bin";
+    public const string WildEncounterBlueberryArray = "world/data/encount/pokedata/pokedata_su2/pokedata_su2_array.bin";
+
+    public static IReadOnlyList<string> WildEncounterArrays { get; } =
+        Array.AsReadOnly(new[] { WildEncounterArray, WildEncounterKitakamiArray, WildEncounterBlueberryArray });
     public const string FixedSymbolTableArray = "world/data/field/fixed_symbol/fixed_symbol_table/fixed_symbol_table_array.bin";
     public const string EventBattlePokemonArray = "world/data/battle/eventBattlePokemon/eventBattlePokemon_array.bin";
     public const string EventAddPokemonArray = "world/data/event/event_add_pokemon/eventAddPokemon/eventAddPokemon_array.bin";

@@ -35,6 +35,8 @@ export type SvEncounterLocationRow = {
   areaLabel: string;
   gameVersion: string;
   location: string;
+  sectionLabel: string;
+  sectionRank: number;
   table: EncounterTableRecord;
   tableIds: string[];
   zoneKey: string;
@@ -120,7 +122,7 @@ export function buildSvEncounterFacetControls(
         const current = choicesByValue.get(value);
         if (!current || score > current.score) {
           choicesByValue.set(value, {
-            label: formatSvEncounterFacetValue(value),
+            label: definition.key === 'area' ? candidate.table.area : formatSvEncounterFacetValue(value),
             score,
             tableId: candidate.table.tableId,
             value
@@ -129,7 +131,9 @@ export function buildSvEncounterFacetControls(
       }
 
       choicesByValue.set(selectedFacets[definition.key], {
-        label: formatSvEncounterFacetValue(selectedFacets[definition.key]),
+        label: definition.key === 'area'
+          ? selectedTable.area
+          : formatSvEncounterFacetValue(selectedFacets[definition.key]),
         score: Number.MAX_SAFE_INTEGER,
         tableId: selectedTable.tableId,
         value: selectedFacets[definition.key]
@@ -172,7 +176,7 @@ export function buildSvEncounterConditionRows(
     )
     .map((table) => {
       const facets = parseSvEncounterFacets(table);
-      const area = formatSvEncounterFacetValue(facets?.area ?? table.area);
+      const area = table.area;
       const gameVersion = formatSvEncounterFacetValue(facets?.version ?? table.gameVersion);
       const terrain = formatSvEncounterFacetValue(facets?.terrain ?? table.encounterType);
       const time = formatSvEncounterFacetValue(
@@ -224,12 +228,14 @@ export function buildSvEncounterLocationRows(
         areaLabel: formatSvEncounterLocationListDetails(groupTables),
         gameVersion: formatSvEncounterLocationGameVersions(groupTables),
         location: formatSvEncounterLocationLabel(table),
+        sectionLabel: getSvEncounterRegionLabel(table),
+        sectionRank: ['Paldea', 'Kitakami', 'Blueberry Academy'].indexOf(getSvEncounterRegionLabel(table)),
         table,
         tableIds: groupTables.map((groupTable) => groupTable.tableId),
         zoneKey
       };
     })
-    .sort((left, right) => left.location.localeCompare(right.location));
+    .sort((left, right) => left.sectionRank - right.sectionRank || left.location.localeCompare(right.location));
 }
 
 export function formatSvEncounterTableSummary(facets: SvEncounterFacets) {
@@ -250,7 +256,7 @@ export function formatSvEncounterTableListDetails(table: EncounterTableRecord) {
   }
 
   return [
-    formatSvEncounterFacetValue(facets.area),
+    table.area,
     formatSvEncounterFacetValue(facets.terrain),
     formatSvEncounterFacetValue(facets.time),
     formatSvEncounterFacetValue(facets.biome)
@@ -260,7 +266,17 @@ export function formatSvEncounterTableListDetails(table: EncounterTableRecord) {
 }
 
 export function getSvEncounterLocationKey(table: EncounterTableRecord) {
-  return `sv:${formatSvEncounterLocationLabel(table).toLocaleLowerCase()}`;
+  return `sv:${getSvEncounterRegionLabel(table)}:${formatSvEncounterLocationLabel(table).toLocaleLowerCase()}`;
+}
+
+export function getSvEncounterRegionLabel(table: EncounterTableRecord) {
+  if (table.region) return table.region;
+  const source = table.provenance.sourceFile;
+  return source.includes('/pokedata_su1/')
+    ? 'Kitakami'
+    : source.includes('/pokedata_su2/')
+      ? 'Blueberry Academy'
+      : 'Paldea';
 }
 
 function isSvEncounterFacetChoiceInScope(
@@ -297,8 +313,7 @@ function getPreferredSvEncounterTable(tables: EncounterTableRecord[]) {
 
 function formatSvEncounterLocationListDetails(tables: EncounterTableRecord[]) {
   const labels = tables.map((table) => {
-    const facets = parseSvEncounterFacets(table);
-    return formatSvEncounterFacetValue(facets?.area ?? table.area);
+    return table.area;
   });
 
   return summarizeUniqueLabels(labels, 'area');

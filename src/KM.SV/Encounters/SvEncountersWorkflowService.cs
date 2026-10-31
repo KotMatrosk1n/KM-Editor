@@ -52,22 +52,30 @@ internal sealed class SvEncountersWorkflowService
         ArgumentNullException.ThrowIfNull(project);
 
         var diagnostics = new List<ValidationDiagnostic>();
-        SvWorkflowFile? source = null;
-        var tables = Array.Empty<SvEncounterTableRecord>();
-        var labels = SvTextLabelLookup.None();
+        var tables = new List<SvEncounterTableRecord>();
+        var labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
+        var sourceFileCount = 0;
 
-        try
+        foreach (var region in SvEncounterRegion.All)
         {
-            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
-            source = fileSource.Read(project, SvDataPaths.WildEncounterArray);
-            tables = LoadTables(source, labels, project.Paths.SelectedGame).ToArray();
-        }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException
-            && !fileSource.IsBoundedSemanticLimit(exception))
-        {
-            diagnostics.Add(SvWorkflowSupport.Error(
-                $"Wild Encounters could not be loaded: {exception.Message}",
-                $"romfs/{SvDataPaths.WildEncounterArray}"));
+            try
+            {
+                // Older game dumps may not include either DLC table.
+                if (region.Key != "paldea" && !fileSource.Exists(project, region.VirtualPath))
+                    continue;
+
+                var source = fileSource.Read(project, region.VirtualPath);
+                var regionTables = LoadTables(source, labels, project.Paths.SelectedGame, region).ToArray();
+                tables.AddRange(regionTables);
+                sourceFileCount++;
+            }
+            catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException or IndexOutOfRangeException or OverflowException
+                && !fileSource.IsBoundedSemanticLimit(exception))
+            {
+                diagnostics.Add(SvWorkflowSupport.Error(
+                    $"{region.Label} Wild Encounters could not be loaded: {exception.Message}",
+                    $"romfs/{region.VirtualPath}"));
+            }
         }
 
         var summary = SvWorkflowSupport.CreateSummary(
@@ -82,16 +90,17 @@ internal sealed class SvEncountersWorkflowService
             tables,
             CreateEditableFields(labels),
             new SvEncountersWorkflowStats(
-                tables.Length,
+                tables.Count,
                 tables.Sum(table => table.Slots.Count),
-                source is null ? 0 : 1),
+                sourceFileCount),
             diagnostics);
     }
 
     private IEnumerable<SvEncounterTableRecord> LoadTables(
         SvWorkflowFile source,
         SvTextLabelLookup labels,
-        ProjectGame? selectedGame)
+        ProjectGame? selectedGame,
+        SvEncounterRegion region)
     {
         var table = global::EncountPokeDataArray.GetRootAsEncountPokeDataArray(new ByteBuffer(source.Bytes));
         fileSource.EnsureBoundedTableCount(table.ValuesLength, "The S/V encounter table");
@@ -113,14 +122,17 @@ internal sealed class SvEncountersWorkflowService
                 .ToArray();
 
             yield return new SvEncounterTableRecord(
-                group.Key,
-                SvEncounterGrouping.FormatLocation(first, labels),
-                SvEncounterGrouping.FormatDisplayArea(first, labels),
+                region.TableId(group.Key),
+                SvEncounterGrouping.FormatLocation(first, labels, region),
+                SvEncounterGrouping.FormatDisplayArea(first, labels, region),
                 SvEncounterGrouping.FormatEncounterType(first),
                 SvEncounterGrouping.FormatVersions(first.Versiontable),
                 source.RelativePath,
                 slots,
-                new SvEncounterProvenance(source.RelativePath, source.SourceLayer, source.FileState));
+                new SvEncounterProvenance(source.RelativePath, source.SourceLayer, source.FileState))
+            {
+                Region = region.Label,
+            };
         }
     }
 

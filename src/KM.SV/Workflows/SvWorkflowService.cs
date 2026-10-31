@@ -322,6 +322,8 @@ public sealed partial class SvWorkflowService
             SvDataPaths.MoveDataArray,
             SvDataPaths.TrainerDataArray,
             SvDataPaths.WildEncounterArray,
+            SvDataPaths.WildEncounterKitakamiArray,
+            SvDataPaths.WildEncounterBlueberryArray,
             SvWorkflowFileSource.DescriptorVirtualPath,
             SvDataPaths.ItemNames(language),
             SvDataPaths.MoveNames(language),

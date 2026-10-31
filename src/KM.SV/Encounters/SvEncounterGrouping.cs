@@ -35,27 +35,27 @@ internal static class SvEncounterGrouping
             Normalize(row.FlagName, "no-flag"));
     }
 
-    public static string FormatLocation(global::EncountPokeData row, SvTextLabelLookup labels)
+    public static string FormatLocation(global::EncountPokeData row, SvTextLabelLookup labels, SvEncounterRegion region)
     {
-        var explicitNames = FormatLocationTokens(row.LocationName, labels);
+        var explicitNames = FormatLocationTokens(row.LocationName, labels, region);
         if (explicitNames.Count > 0)
         {
             return SummarizeLocationNames(explicitNames);
         }
 
-        var areaNames = FormatAreaTokens(row.Area, labels);
+        var areaNames = FormatAreaTokens(row.Area, labels, region);
         return areaNames.Count == 0 ? "Biome-Based Habitat" : SummarizeLocationNames(areaNames);
     }
 
-    public static string FormatDisplayArea(global::EncountPokeData row, SvTextLabelLookup labels)
+    public static string FormatDisplayArea(global::EncountPokeData row, SvTextLabelLookup labels, SvEncounterRegion region)
     {
-        var areaNames = FormatAreaTokens(row.Area, labels);
+        var areaNames = FormatAreaTokens(row.Area, labels, region);
         if (areaNames.Count > 0)
         {
             return string.Join(", ", areaNames);
         }
 
-        var explicitNames = FormatLocationTokens(row.LocationName, labels);
+        var explicitNames = FormatLocationTokens(row.LocationName, labels, region);
         if (explicitNames.Count > 0)
         {
             return string.Join(", ", explicitNames);
@@ -258,40 +258,59 @@ internal static class SvEncounterGrouping
             : voice.Replace('_', ' ').Trim();
     }
 
-    private static IReadOnlyList<string> FormatAreaTokens(string? area, SvTextLabelLookup labels)
+    private static IReadOnlyList<string> FormatAreaTokens(string? area, SvTextLabelLookup labels, SvEncounterRegion region)
     {
         return SplitTokens(area)
-            .Select(token => FormatAreaToken(token, labels))
+            .Select(token => FormatAreaToken(token, labels, region))
             .Where(label => !string.IsNullOrWhiteSpace(label))
             .Select(label => label!)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
 
-    private static string? FormatAreaToken(string token, SvTextLabelLookup labels)
+    private static string? FormatAreaToken(string token, SvTextLabelLookup labels, SvEncounterRegion region)
     {
         if (int.TryParse(token, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var areaId)
             && areaId > 0)
         {
-            return labels.PlaceName($"PLACENAME_a_w{areaId.ToString("D2", System.Globalization.CultureInfo.InvariantCulture)}_01")
+            return labels.PlaceName($"{region.AreaPrefix}{areaId.ToString("D2", System.Globalization.CultureInfo.InvariantCulture)}_01")
                 ?? $"Area {areaId.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
         }
 
-        return FormatLocationToken(token, labels);
+        return FormatLocationToken(token, labels, region);
     }
 
-    private static IReadOnlyList<string> FormatLocationTokens(string? location, SvTextLabelLookup labels)
+    private static IReadOnlyList<string> FormatLocationTokens(string? location, SvTextLabelLookup labels, SvEncounterRegion region)
     {
         return SplitTokens(location)
-            .Select(token => FormatLocationToken(token, labels))
+            .Select(token => FormatLocationToken(token, labels, region))
             .Where(label => !string.IsNullOrWhiteSpace(label))
             .Select(label => label!)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
 
-    private static string? FormatLocationToken(string token, SvTextLabelLookup labels)
+    private static string? FormatLocationToken(string token, SvTextLabelLookup labels, SvEncounterRegion region)
     {
+        if (region.Key != "paldea")
+        {
+            // Kitakami encounter locations and place-name keys use different region prefixes.
+            if (region.Key == "kitakami" && token.StartsWith("a_su01", StringComparison.Ordinal)
+                && token.Length == 8 && int.TryParse(token[6..], out _))
+                token = $"a_su1{token[6..]}";
+
+            var name = labels.PlaceName($"{token}_01") ?? labels.PlaceName(token);
+            if (name is not null)
+                return name;
+
+            // Terarium subareas inherit their biome's display name when they have no own text.
+            if (region.Key == "blueberry" && token.StartsWith("subarea_su02", StringComparison.Ordinal)
+                && token.Length >= 14 && int.TryParse(token[12..14], out _))
+                return labels.PlaceName($"a_su02{token[12..14]}_01");
+
+            return null;
+        }
+
         if (LocationAliases.TryGetValue(token, out var alias))
         {
             return alias;

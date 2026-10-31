@@ -68,7 +68,8 @@ internal static class MergeFormats
             return KM.SV.Trainers.SvTrainersMergeDocument.Read(bytes);
         if (MergeInputs.Family(game) == "za" && path.Equals("romfs/" + KM.ZA.Data.ZaDataPaths.TrainerDataArray, StringComparison.OrdinalIgnoreCase))
             return KM.ZA.Trainers.ZaTrainersMergeDocument.Read(bytes);
-        if (MergeInputs.Family(game) == "sv" && path.Equals("romfs/" + KM.SV.Data.SvDataPaths.WildEncounterArray, StringComparison.OrdinalIgnoreCase))
+        if (MergeInputs.Family(game) == "sv" && KM.SV.Data.SvDataPaths.WildEncounterArrays.Any(
+                source => path.Equals("romfs/" + source, StringComparison.OrdinalIgnoreCase)))
             return KM.SV.Encounters.SvEncountersMergeDocument.Read(bytes);
         if (MergeInputs.Family(game) == "sv" && path.Equals("romfs/" + KM.SV.Data.SvDataPaths.FriendlyShopLineupDataArray, StringComparison.OrdinalIgnoreCase))
             return KM.SV.Shops.SvFriendlyShopMergeDocument.Read(bytes);

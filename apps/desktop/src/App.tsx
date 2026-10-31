@@ -44913,7 +44913,7 @@ function EncountersSection({
               </div>
               {tableRows.map((tableRow, rowIndex) => {
                 const showSection =
-                  editorFamily === 'za' &&
+                  (editorFamily === 'za' || editorFamily === 'sv') &&
                   (rowIndex === 0 ||
                     tableRows[rowIndex - 1]?.sectionLabel !== tableRow.sectionLabel);
 
@@ -62402,6 +62402,7 @@ function filterEncounterTables(
       table.tableId,
       table.location,
       table.locationDetails ?? '',
+      table.region ?? '',
       table.area,
       table.encounterType,
       table.gameVersion,

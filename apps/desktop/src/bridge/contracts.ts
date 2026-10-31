@@ -4671,6 +4671,7 @@ export const encounterTableRecordSchema = z.strictObject({
   playerPartner: encounterPlayerPartnerRecordSchema.nullable().optional(),
   provenance: encounterProvenanceSchema,
   rawSpawnerId: z.string().nullable().optional(),
+  region: z.string().nullable().optional(),
   scriptedMoveOwnership: scriptedEncounterMoveOwnershipSchema
     .nullable()
     .optional(),
