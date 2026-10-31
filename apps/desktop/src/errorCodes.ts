@@ -116,6 +116,7 @@ export const projectBridgeErrorCodes = {
   pokeJobsSourceInvalid: "KM-SWSH-POKE-JOBS-SOURCE-INVALID",
   yCommSourceInvalid: "KM-SWSH-Y-COMM-SOURCE-INVALID",
   customGiftsSourceInvalid: "KM-SWSH-CUSTOM-GIFTS-SOURCE-INVALID",
+  customGiftsPresentationInvalid: "KM-SWSH-CUSTOM-GIFTS-PRESENTATION-INVALID",
   customGiftsCatalogInvalid: "KM-SWSH-CUSTOM-GIFTS-CATALOG-INVALID",
   customGiftsCatalogRecovered: "KM-SWSH-CUSTOM-GIFTS-CATALOG-RECOVERED",
   customGiftsSessionInvalid: "KM-SWSH-CUSTOM-GIFTS-SESSION-INVALID",

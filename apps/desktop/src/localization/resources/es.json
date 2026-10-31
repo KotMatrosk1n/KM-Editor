@@ -38,6 +38,7 @@
     "customGifts.newGift": "Nuevo regalo",
     "customGifts.catalog": "Regalos personalizados",
     "customGifts.configuration": "Configuración de regalos",
+    "customGifts.diagnostic.presentation": "No se pudo preparar la presentación de Royal Gift. Restaura los textos del menú, los archivos del título y los metadatos de presentación y revisa de nuevo.",
     "customGifts.diagnostic.source": "Los regalos personalizados requieren fuentes originales legibles de la versión 1.3.2 y un módulo receptor y catálogo compatibles.",
     "customGifts.diagnostic.catalog": "Comprueba Pokémon, códigos e identidades. Cada grupo con Pokémon necesita como máximo 14 espacios, probabilidades válidas con hasta dos decimales y un total de exactamente 100%. Corrige la configuración y vuelve a prepararla.",
     "customGifts.diagnostic.session": "La configuración preparada no es válida. Vuelve a prepararla.",

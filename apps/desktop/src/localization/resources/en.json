@@ -38,6 +38,7 @@
     "customGifts.newGift": "New gift",
     "customGifts.catalog": "Custom Gifts",
     "customGifts.configuration": "Gift configuration",
+    "customGifts.diagnostic.presentation": "Royal Gift presentation could not be prepared. Restore its menu text, title archives, and presentation metadata, then review again.",
     "customGifts.diagnostic.source": "Custom gifts require readable original 1.3.2 sources and a compatible receiver module and catalog.",
     "customGifts.diagnostic.catalog": "Check Pokemon, codes, and identities. Each populated badge pool needs at most 14 slots, valid odds with up to two decimal places, and a total of exactly 100%. Correct the configuration and stage again.",
     "customGifts.diagnostic.session": "The staged gift configuration is invalid. Stage it again.",

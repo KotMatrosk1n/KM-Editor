@@ -38,6 +38,7 @@
     "customGifts.newGift": "新礼物",
     "customGifts.catalog": "自定义礼物",
     "customGifts.configuration": "礼物配置",
+    "customGifts.diagnostic.presentation": "无法准备 Royal Gift 的显示内容。请恢复菜单文本、标题资源包和显示元数据，然后重新审阅。",
     "customGifts.diagnostic.source": "自定义礼物需要可读取的 1.3.2 原始源文件，以及兼容的接收模块和目录。",
     "customGifts.diagnostic.catalog": "请检查宝可梦、代码和标识。每个非空徽章池最多有 14 个位置，各概率最多保留两位小数，总和必须恰好为 100%。请修正配置并重新暂存。",
     "customGifts.diagnostic.session": "已暂存的礼物配置无效。请重新暂存。",

@@ -5,6 +5,8 @@
     <EmbeddedResource Include="RoyalCandy/Assets/royal-candy.rgba" />
     <EmbeddedResource Include="Resources\km-custom-gifts.nso" />
     <EmbeddedResource Include="Resources\km-custom-gifts-v1.nso" />
+    <EmbeddedResource Include="Resources\royal-gift-icon-220.bc4" />
+    <EmbeddedResource Include="Resources\royal-gift-title.bc4" />
     <PackageReference Include="PKHeX.Core" Version="25.9.25" />
     <ProjectReference Include="..\KM.Core\KM.Core.csproj" />
     <ProjectReference Include="..\KM.Formats\KM.Formats.csproj" />

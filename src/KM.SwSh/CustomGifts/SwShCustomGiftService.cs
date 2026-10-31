@@ -47,6 +47,7 @@ public sealed class SwShCustomGiftService(ProjectWorkspaceService? workspace = n
                 var normalized = Normalize(catalog, state.Metadata, state.PokemonCatalog);
                 if (normalized.NextClaimId < state.Catalog.NextClaimId)
                     throw new InvalidDataException("Gift identities cannot be reused. Keep the current next identity when removing or reordering gifts.");
+                if (!PreparePresentation(state, normalized, diagnostics)) return new(Workflow(state, diagnostics), current, diagnostics);
                 var retained = current.PendingEdits.Where(edit => edit.Domain != Domain);
                 current = current with { PendingEdits = retained.Append(CreateEdit(normalized)).ToArray() };
             }
@@ -61,7 +62,8 @@ public sealed class SwShCustomGiftService(ProjectWorkspaceService? workspace = n
         var diagnostics = new List<ValidationDiagnostic>();
         var state = Read(paths, diagnostics);
         RequireEditable(state, diagnostics);
-        _ = Decode(session, state, diagnostics);
+        var catalog = Decode(session, state, diagnostics);
+        if (state is not null && catalog is not null) _ = PreparePresentation(state, catalog, diagnostics);
         return new(session, !HasErrors(diagnostics), diagnostics);
     }
 
@@ -72,11 +74,17 @@ public sealed class SwShCustomGiftService(ProjectWorkspaceService? workspace = n
         RequireEditable(state, diagnostics);
         var catalog = Decode(session, state, diagnostics);
         if (state is null || catalog is null || HasErrors(diagnostics)) return new(session.Id, [], diagnostics);
+        if (!PreparePresentation(state, catalog, diagnostics)) return new(session.Id, [], diagnostics);
         try
         {
-            var dependencies = Sources(state, paths).Concat(CreateEdit(catalog).Sources).ToArray();
-            var writes = Outputs(state, catalog, paths.SelectedGame!.Value).Where(output => !Same(output.Before, output.After))
-                .Select(output => new PlannedFileWrite(output.Path, dependencies, File.Exists(output.Target),
+            var outputs = Outputs(state, catalog, paths.SelectedGame!.Value).Where(output => !Same(output.Before, output.After)).ToArray();
+            var presentation = state.Catalog.Mode == "royal" || catalog.Mode == "royal"
+                || outputs.Any(output => SwShCustomGiftPresentation.Paths.Contains(output.Path));
+            var dependencies = Sources(state, paths, presentation).Concat(CreateEdit(catalog).Sources).ToArray();
+            var writes = outputs
+                // Bind the complete read set once in this atomic plan rather than repeating it for every language.
+                .Select((output, index) => new PlannedFileWrite(output.Path, index == 0 ? dependencies
+                    : dependencies.Where(source => source.RelativePath == output.Path || source.Layer == ProjectFileLayer.Pending).ToArray(), File.Exists(output.Target),
                     catalog.Mode == "none" ? "Remove the custom gift receiver and retain gift definitions."
                         : $"Install {(catalog.Mode == "royal" ? "Royal Gift" : "Mystery Gift")} as the sole custom gift receiver.")).ToArray();
             return SwShChangePlanSourceGuard.Capture(paths, new(session.Id, writes, diagnostics));
@@ -94,6 +102,7 @@ public sealed class SwShCustomGiftService(ProjectWorkspaceService? workspace = n
             if (!ChangePlanReview.Matches(reviewedPlan, plan)) diagnostics.Add(Error("The gift plan changed. Review it again.", StaleCode));
             diagnostics.AddRange(SwShChangePlanSourceGuard.Validate(paths, reviewedPlan));
             if (HasErrors(diagnostics)) return Result(plan, [], diagnostics);
+            if (plan.Writes.Count == 0) return Result(plan, [], diagnostics);
             if (!SwShChangePlanSourceGuard.TryAcquireApplyScope(paths, plan, out var scope, out var failures)) return Result(plan, [], failures);
             using var verified = scope!;
             if (!verified.TryPrepareSnapshotPlan(CreateChangePlan(verified.ApplyPaths, session), out var prepared))
@@ -169,13 +178,22 @@ public sealed class SwShCustomGiftService(ProjectWorkspaceService? workspace = n
                     || entry.RelativePath.StartsWith("romfs/bin/km-editor/restoration/", StringComparison.Ordinal))
                     .Select(entry => entry.RelativePath)).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
             diagnostics.AddRange(giftMetadata.Diagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error));
+            SwShCustomGiftPresentation presentation;
+            bool presentationRepair;
+            try
+            {
+                presentation = new(paths);
+                presentationRepair = presentation.Prepare(catalog.Mode).Any(output => !Same(output.Before, output.After));
+            }
+            catch (Exception exception) when (SourceError(exception))
+            { diagnostics.Add(Error("Royal Gift presentation could not be read. Restore its menu text, title archives, and presentation metadata, then review again.", SwShCustomGiftPresentation.InvalidCode)); return null; }
             var repair = damagedDefinitions || catalog.RoyalPools!.Any(pool => pool.Chances is null)
                 || installed is not null && !SwShCustomGiftModule.IsCurrent(module.Source!)
                 || (installed?.Mode ?? "none") != catalog.Mode
                 || installed is not null && SwShCustomGiftCatalogCodec.Serialize(installed) != SwShCustomGiftCatalogCodec.Serialize(catalog)
-                || installed is not null && metadata.Source is null;
+                || installed is not null && metadata.Source is null || presentationRepair;
             return new(main, module, metadata, catalog, installed?.Mode ?? "none", repair, giftMetadata, pokemonCatalog, dependencies,
-                project.Health.CanOpenEditableWorkflows && module.Target.Length > 0 && metadata.Target.Length > 0);
+                project.Health.CanOpenEditableWorkflows && module.Target.Length > 0 && metadata.Target.Length > 0, presentation);
         }
         catch (Exception exception) when (SourceError(exception))
         { diagnostics.Add(Error("Custom gifts require readable original 1.3.2 sources and a compatible gift module and catalog.")); return null; }
@@ -247,10 +265,11 @@ public sealed class SwShCustomGiftService(ProjectWorkspaceService? workspace = n
         if (required && vanilla is null) throw new InvalidDataException();
         return new(path, vanilla, output, output ?? vanilla, target);
     }
-    private static IEnumerable<ProjectFileReference> Sources(State state, ProjectPaths paths)
+    private static IEnumerable<ProjectFileReference> Sources(State state, ProjectPaths paths, bool presentation)
     {
         foreach (var path in new[] { state.Main.Path, "exefs/main.npdm", state.Module.Path, state.Definitions.Path, SwShPokemonWorkflowService.PersonalDataPath,
-            SwShGiftPokemonWorkflowService.GiftPokemonDataPath }.Concat(state.Dependencies).Distinct(StringComparer.Ordinal))
+            SwShGiftPokemonWorkflowService.GiftPokemonDataPath, SwShCustomGiftPresentation.MetadataPath }.Concat(state.Dependencies)
+            .Concat(presentation ? SwShCustomGiftPresentation.Paths : []).Distinct(StringComparer.Ordinal))
         {
             var original = SwShHyperTrainingWorkflowService.ResolveBaseSourcePath(paths, path);
             if (original is not null && File.Exists(original)) yield return new(ProjectFileLayer.Base, path);
@@ -263,6 +282,14 @@ public sealed class SwShCustomGiftService(ProjectWorkspaceService? workspace = n
             catalog.Mode == "none" && state.Module.Vanilla is null ? null : SwShCustomGiftModule.Write(catalog, game));
         yield return new(state.Definitions.Path, state.Definitions.Target, state.Definitions.Output,
             Encoding.UTF8.GetBytes(SwShCustomGiftCatalogCodec.Serialize(catalog)));
+        foreach (var output in state.Presentation.Prepare(catalog.Mode))
+            yield return new(output.Path, output.Target, output.Before, output.After);
+    }
+    private static bool PreparePresentation(State state, SwShCustomGiftCatalog catalog, List<ValidationDiagnostic> diagnostics)
+    {
+        try { _ = state.Presentation.Prepare(catalog.Mode); return true; }
+        catch (Exception exception) when (SourceError(exception))
+        { diagnostics.Add(Error("Royal Gift presentation could not be prepared. Restore its menu text, title archives, and presentation metadata, then review again.", SwShCustomGiftPresentation.InvalidCode)); return false; }
     }
     private static PendingEdit CreateEdit(SwShCustomGiftCatalog catalog)
     {
@@ -279,7 +306,8 @@ public sealed class SwShCustomGiftService(ProjectWorkspaceService? workspace = n
         or OverflowException or JsonException or KM.Core.Output.OutputCoordinatorException;
     private static bool HasErrors(IEnumerable<ValidationDiagnostic> diagnostics) => diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     private static ValidationDiagnostic Error(string message, string code = SourceCode) =>
-        new(DiagnosticSeverity.Error, message, File: SwShCustomGiftModule.RelativePath, Domain: Domain, Field: "catalog") { Code = code };
+        new(DiagnosticSeverity.Error, message, File: code == SwShCustomGiftPresentation.InvalidCode ? SwShCustomGiftPresentation.MetadataPath
+            : SwShCustomGiftModule.RelativePath, Domain: Domain, Field: "catalog") { Code = code };
     private static bool Same(byte[]? left, byte[]? right) => left is null ? right is null : right is not null && left.AsSpan().SequenceEqual(right);
     private static ApplyResult Result(ChangePlan plan, IReadOnlyList<ProjectFileReference> written, IReadOnlyList<ValidationDiagnostic> diagnostics)
     { var id = Guid.NewGuid().ToString("N"); var now = DateTimeOffset.UtcNow; return new(id, now, written, new WriteManifest(id, now, plan.Writes), diagnostics); }
@@ -287,5 +315,5 @@ public sealed class SwShCustomGiftService(ProjectWorkspaceService? workspace = n
     private sealed record Output(string Path, string Target, byte[]? Before, byte[]? After);
     private sealed record State(Resource Main, Resource Module, Resource Definitions, SwShCustomGiftCatalog Catalog,
         string InstalledMode, bool NeedsRepair, SwShGiftPokemonWorkflow Metadata, SwShEffectivePokemonCatalog PokemonCatalog,
-        IReadOnlyList<string> Dependencies, bool CanEdit);
+        IReadOnlyList<string> Dependencies, bool CanEdit, SwShCustomGiftPresentation Presentation);
 }
