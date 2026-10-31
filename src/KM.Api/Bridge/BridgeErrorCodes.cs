@@ -72,6 +72,7 @@ public static class BridgeErrorCodes
     public const string PokeJobsSourceInvalid = "KM-SWSH-POKE-JOBS-SOURCE-INVALID";
     public const string YCommSourceInvalid = "KM-SWSH-Y-COMM-SOURCE-INVALID";
     public const string CustomGiftsSourceInvalid = "KM-SWSH-CUSTOM-GIFTS-SOURCE-INVALID";
+    public const string CustomGiftsPresentationInvalid = "KM-SWSH-CUSTOM-GIFTS-PRESENTATION-INVALID";
     public const string CustomGiftsCatalogInvalid = "KM-SWSH-CUSTOM-GIFTS-CATALOG-INVALID";
     public const string CustomGiftsCatalogRecovered = "KM-SWSH-CUSTOM-GIFTS-CATALOG-RECOVERED";
     public const string CustomGiftsSessionInvalid = "KM-SWSH-CUSTOM-GIFTS-SESSION-INVALID";

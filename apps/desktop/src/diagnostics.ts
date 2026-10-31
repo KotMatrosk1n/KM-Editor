@@ -44,6 +44,7 @@ const diagnosticLocalizationKeys: Readonly<Record<string, string>> = {
   'KM-SWSH-POKE-JOBS-SOURCE-INVALID': 'pokeJobs.diagnostic.source',
   'KM-SWSH-Y-COMM-SOURCE-INVALID': 'yComm.diagnostic.source',
   'KM-SWSH-CUSTOM-GIFTS-SOURCE-INVALID': 'customGifts.diagnostic.source',
+  'KM-SWSH-CUSTOM-GIFTS-PRESENTATION-INVALID': 'customGifts.diagnostic.presentation',
   'KM-SWSH-CUSTOM-GIFTS-CATALOG-INVALID': 'customGifts.diagnostic.catalog',
   'KM-SWSH-CUSTOM-GIFTS-CATALOG-RECOVERED': 'customGifts.diagnostic.recovered',
   'KM-SWSH-CUSTOM-GIFTS-SESSION-INVALID': 'customGifts.diagnostic.session',

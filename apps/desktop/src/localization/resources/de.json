@@ -38,6 +38,7 @@
     "customGifts.newGift": "Neues Geschenk",
     "customGifts.catalog": "Eigene Geschenke",
     "customGifts.configuration": "Geschenkkonfiguration",
+    "customGifts.diagnostic.presentation": "Die Darstellung von Royal Gift konnte nicht vorbereitet werden. Stelle die Menütexte, Titelarchive und Darstellungsmetadaten wieder her und prüfe den Plan erneut.",
     "customGifts.diagnostic.source": "Eigene Geschenke benötigen lesbare Originalquellen von Version 1.3.2 sowie ein kompatibles Empfängermodul und einen Katalog.",
     "customGifts.diagnostic.catalog": "Prüfe Pokémon, Codes und Identitäten. Jeder belegte Ordenpool braucht höchstens 14 Plätze, gültige Wahrscheinlichkeiten mit bis zu zwei Nachkommastellen und eine Summe von genau 100%. Korrigiere die Konfiguration und stelle sie erneut bereit.",
     "customGifts.diagnostic.session": "Die bereitgestellte Geschenkkonfiguration ist ungültig. Stelle sie erneut bereit.",
