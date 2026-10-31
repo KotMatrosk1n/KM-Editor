@@ -2,6 +2,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <EmbeddedResource Include="RoyalCandy/Assets/royal-candy.rgba" />
     <EmbeddedResource Include="Resources\km-custom-gifts.nso" />
     <EmbeddedResource Include="Resources\km-custom-gifts-v1.nso" />
     <PackageReference Include="PKHeX.Core" Version="25.9.25" />

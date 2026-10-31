@@ -155,7 +155,18 @@ public sealed class SwShRoyalCandyEditSessionService
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
 
-        var writes = CreateConcreteWrites(paths, workflow, selectedWorkflow, edit, diagnostics);
+        var reviewSources = SwShRoyalCandyWorkflowService.GetReviewSources(project);
+        IReadOnlyList<PlannedFileWrite> writes = CreateConcreteWrites(paths, workflow, selectedWorkflow, edit, diagnostics)
+            .Select(write => write with
+            {
+                Sources = write.Sources
+                    .Concat(reviewSources)
+                    .Distinct()
+                    .OrderBy(source => source.Layer)
+                    .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+                    .ToArray(),
+            })
+            .ToArray();
         if (!string.Equals(selectedWorkflow.WorkflowId, UninstallWorkflowId, StringComparison.Ordinal))
         {
             var levelCaps = ParseLevelCapSelections(selectedWorkflow, edit.NewValue, diagnostics);
@@ -927,6 +938,7 @@ public sealed class SwShRoyalCandyEditSessionService
                 output.RelativePath,
                 SwShRoyalCandyWorkflowService.ItemPath,
                 StringComparison.OrdinalIgnoreCase)
+            || string.Equals(output.RelativePath, SwShRoyalCandyIcon.Path, StringComparison.OrdinalIgnoreCase)
             || string.Equals(
                 output.RelativePath,
                 SwShRoyalCandyWorkflowService.NestDataPath,
@@ -1028,6 +1040,14 @@ public sealed class SwShRoyalCandyEditSessionService
         string relativePath,
         byte[] output)
     {
+        if (string.Equals(relativePath, SwShRoyalCandyIcon.Path, StringComparison.OrdinalIgnoreCase))
+        {
+            var basePath = ResolveBaseSourcePath(project.Paths, relativePath)
+                ?? throw new InvalidDataException("Royal Candy base icon is missing.");
+            if (!SwShRoyalCandyIcon.IsOwned(output, File.ReadAllBytes(basePath)))
+                throw new InvalidDataException("Royal Candy icon did not round-trip the expected artwork.");
+            return;
+        }
         if (IsAcquisitionOwnershipManifest(relativePath))
         {
             var inputs = SwShRoyalCandyAcquisitionOwnershipService.ReadAuthoritativeInputs(project.Paths);
@@ -1044,7 +1064,8 @@ public sealed class SwShRoyalCandyEditSessionService
         if (string.Equals(relativePath, SwShRoyalCandyWorkflowService.ItemPath, StringComparison.OrdinalIgnoreCase))
         {
             var table = SwShItemTable.Parse(output);
-            if (table.Records.Count(record => record.ItemId == RoyalCandyItemId) != 1)
+            var records = table.Records.Where(record => record.ItemId == RoyalCandyItemId).ToArray();
+            if (records.Length != 1 || records[0].ItemSprite != 1128 || records[0].SharedItemIds.Count != 1)
             {
                 throw new InvalidDataException($"Royal Candy item output does not expose exactly one item {RoyalCandyItemId} mapping.");
             }
@@ -1141,6 +1162,21 @@ public sealed class SwShRoyalCandyEditSessionService
         string relativePath,
         ICollection<ValidationDiagnostic> diagnostics)
     {
+        if (string.Equals(relativePath, SwShRoyalCandyIcon.Path, StringComparison.OrdinalIgnoreCase))
+        {
+            var basePath = ResolveBaseSourcePath(project.Paths, relativePath)
+                ?? throw new InvalidDataException("Royal Candy base icon is missing.");
+            var template = File.ReadAllBytes(basePath);
+            var output = SwShRoyalCandyIcon.Create(template);
+            var current = ResolveWorkflowFile(project, relativePath);
+            if (current is not null)
+            {
+                var bytes = File.ReadAllBytes(current.AbsolutePath);
+                if (!bytes.AsSpan().SequenceEqual(template) && !bytes.AsSpan().SequenceEqual(output))
+                    throw new InvalidDataException("Royal Candy will not overwrite an unrecognized custom item 1128 texture.");
+            }
+            return output;
+        }
         if (IsAcquisitionOwnershipManifest(relativePath))
         {
             return SwShRoyalCandyAcquisitionOwnershipService.CreateManifestBytes(project.Paths);
@@ -1170,7 +1206,15 @@ public sealed class SwShRoyalCandyEditSessionService
                 return null;
             }
 
-            return SwShItemTable.Parse(File.ReadAllBytes(source.AbsolutePath))
+            var sourceTable = SwShItemTable.Parse(File.ReadAllBytes(source.AbsolutePath));
+            if (string.Equals(selectedWorkflow.Status, "installed", StringComparison.Ordinal))
+            {
+                var record = sourceTable.Records.Single(record => record.ItemId == RoyalCandyItemId);
+                if (record.SharedItemIds.Count != 1 || record.ItemSprite is not (50 or 1128))
+                    throw new InvalidDataException("Royal Candy icon update requires its independent item row and a recognized sprite reference.");
+                return sourceTable.WriteEdits([new SwShItemTableEdit(RoyalCandyItemId, SwShItemTableField.ItemSprite, 1128)]);
+            }
+            return sourceTable
                 .WriteRoyalCandyRow(
                     SwShItemTable.Parse(File.ReadAllBytes(basePath)),
                     templateItemId: 50,
@@ -1375,6 +1419,29 @@ public sealed class SwShRoyalCandyEditSessionService
 
         if (string.Equals(relativePath, SwShRoyalCandyWorkflowService.ExeFsMainPath, StringComparison.OrdinalIgnoreCase))
         {
+            // An artwork refresh does not need to restore and repack an already matching install.
+            var currentBytes = File.ReadAllBytes(source.AbsolutePath);
+            var currentSignature = SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(currentBytes, project.Paths.SelectedGame);
+            if (!UsesStoryLimits(selectedWorkflow) && currentSignature.Kind == SwShRoyalCandyExeFsSignatureKind.Unlimited)
+            {
+                return currentBytes;
+            }
+            if (UsesStoryLimits(selectedWorkflow) && currentSignature.Kind == SwShRoyalCandyExeFsSignatureKind.StoryLimits)
+            {
+                var requestedCaps = CreateStoryLevelCapPatches(selectedWorkflow, levelCaps, diagnostics);
+                var installedCaps = SwShExeFsRoyalCandyMainPatcher.ReadInstalledStoryLevelCaps(currentBytes, project.Paths.SelectedGame);
+                if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+                    && requestedCaps.Count == installedCaps.Count
+                    && requestedCaps.All(requested => installedCaps.Any(installed =>
+                        installed.LevelCap == requested.LevelCap
+                        && installed.ProgressHash == requested.ProgressHash
+                        && installed.ProgressKind == requested.ProgressKind
+                        && installed.WorkMinimum == requested.WorkMinimum)))
+                {
+                    return currentBytes;
+                }
+            }
+
             var sourceBytes = ReadExeFsMainSourceBytes(project, source, diagnostics);
             if (sourceBytes is null)
             {
@@ -1619,6 +1686,7 @@ public sealed class SwShRoyalCandyEditSessionService
     private static bool IsConcreteApplyOutput(string relativePath)
     {
         return IsAcquisitionOwnershipManifest(relativePath)
+            || string.Equals(relativePath, SwShRoyalCandyIcon.Path, StringComparison.OrdinalIgnoreCase)
             || string.Equals(relativePath, SwShRoyalCandyWorkflowService.ItemPath, StringComparison.OrdinalIgnoreCase)
             || string.Equals(relativePath, SwShRoyalCandyWorkflowService.ItemHashPath, StringComparison.OrdinalIgnoreCase)
             || IsShopDataOutput(relativePath)

@@ -57,6 +57,7 @@ public sealed class SwShRoyalCandyWorkflowService
     [
         new("item-data", "RomFS", "Item data", [ItemPath], "RomFS data", "Appends the Rare Candy template as a unique Royal Candy key-item row and points item 1128 at it."),
         new("item-hash", "RomFS", "Item hash table", [ItemHashPath], "RomFS data", "Preserves the existing item hash lookup while verifying item 1128 is present."),
+        new("item-icon", "RomFS", "Royal Candy icon", [SwShRoyalCandyIcon.Path], "RomFS texture", "Installs the crowned wolf artwork in Royal Candy's own item texture."),
         new("shop-data", "RomFS", "Shop data", [ShopDataPath, LegacyShopDataPath], "RomFS data", "Replaces every verified vanilla Exp. Candy XL shop listing with Rare Candy."),
         new("nest-data", "RomFS", "Raid reward data", [NestDataPath], "RomFS archive", "Replaces every verified vanilla Exp. Candy XL raid reward with Rare Candy."),
         new("placement-data", "RomFS", "Placement data", [PlacementPath], "RomFS archive", "Replaces every verified vanilla Exp. Candy XL overworld pickup with Rare Candy."),
@@ -244,6 +245,33 @@ public sealed class SwShRoyalCandyWorkflowService
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Count(),
             diagnostics);
+    }
+
+    internal static IReadOnlyList<ProjectFileReference> GetReviewSources(OpenedProject project)
+    {
+        var entries = RequiredInputs
+            .Select(input => FindFirstEntry(project, input.RelativePaths))
+            .Append(FindFirstEntry(project, [ExeFsNpdmPath]))
+            .Where(entry => entry is not null)
+            .Select(entry => entry!)
+            .ToList();
+        foreach (var textSet in SelectSupportedTextOutputSets(
+            project.Paths, DiscoverMessageTextSets(project.FileGraph.Entries).ToArray()))
+        {
+            entries.Add(textSet.ItemInfo);
+            entries.AddRange(textSet.ItemNames);
+        }
+
+        // Refreshes may only write the icon or executable. The verified snapshot
+        // must also retain unchanged inputs used to recognize the installation.
+        return entries.Select(entry => new ProjectFileReference(
+                entry.LayeredFile is not null ? ProjectFileLayer.Layered : ProjectFileLayer.Base,
+                entry.RelativePath))
+            .Append(new ProjectFileReference(ProjectFileLayer.Generated, AcquisitionOwnershipManifestPath))
+            .Distinct()
+            .OrderBy(source => source.Layer)
+            .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static SwShRoyalCandyWorkflow CreateWorkflow(
@@ -1093,6 +1121,10 @@ public sealed class SwShRoyalCandyWorkflowService
         };
 
         yield return CreateOutput(workflowId, ItemPath, FindSource(sourceMap, ItemPath), "RomFS data", outputStatus, "Royal Candy item row patch.");
+        yield return CreateOutput(workflowId, SwShRoyalCandyIcon.Path, FindSource(sourceMap, SwShRoyalCandyIcon.Path), "RomFS texture", outputStatus, "Royal Candy crowned wolf icon.");
+        yield return CreateOutput(workflowId, ExeFsMainPath, FindSource(sourceMap, ExeFsMainPath), "ExeFS NSO", outputStatus, "Royal Candy ExeFS UI and usage patch.");
+        // Updating an identified installation must not regenerate shared text, rewards, or scripts.
+        if (string.Equals(installStatus, "installed", StringComparison.Ordinal)) yield break;
         yield return CreateOutput(workflowId, ItemHashPath, FindSource(sourceMap, ItemHashPath), "RomFS data", outputStatus, "Royal Candy item hash lookup patch.");
         // Acquisition substitutions belong to installation. Refresh must not reinsert
         // removed rewards or claim ownership of later acquisition edits.
@@ -1104,7 +1136,6 @@ public sealed class SwShRoyalCandyWorkflowService
             yield return CreateOutput(workflowId, AcquisitionOwnershipManifestPath, sourceEntry: null, "Ownership manifest", outputStatus, "Record KM ownership of the verified acquisition substitutions for safe refresh and uninstall.");
         }
         yield return CreateOutput(workflowId, BagEventScriptPath, FindSource(sourceMap, BagEventScriptPath), "Bag Hook slot", outputStatus, "Royal Candy Bag Hook slot 1 grant.");
-        yield return CreateOutput(workflowId, ExeFsMainPath, FindSource(sourceMap, ExeFsMainPath), "ExeFS NSO", outputStatus, "Royal Candy ExeFS UI and usage patch.");
 
         foreach (var textSet in textSets)
         {
@@ -1597,6 +1628,11 @@ public sealed class SwShRoyalCandyWorkflowService
 
         foreach (var entry in project.FileGraph.Entries.Where(entry => entry.LayeredFile is not null))
         {
+            if (string.Equals(entry.RelativePath, SwShRoyalCandyIcon.Path, StringComparison.OrdinalIgnoreCase))
+            {
+                if (SwShRoyalCandyCleanup.HasRoyalCandyIcon(project, entry)) yield return entry;
+                continue;
+            }
             if (string.Equals(
                 entry.RelativePath,
                 AcquisitionOwnershipManifestPath,
