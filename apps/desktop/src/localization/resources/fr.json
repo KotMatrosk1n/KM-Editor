@@ -25,7 +25,7 @@
     "customGifts.code": "Code",
     "customGifts.once": "Une fois par sauvegarde",
     "customGifts.identity": "Identité du cadeau : {id}. Elle conserve l’historique de réception lorsque vous renommez ou modifiez le cadeau.",
-    "customGifts.codeHelp": "Utilisez 5 à 16 lettres majuscules ou chiffres, sauf I, O et Z, désactivées sur le clavier du jeu. Chaque code doit être unique. Le nom est une étiquette de l’éditeur ; le jeu affiche le cadeau Pokémon. Les codes composés uniquement de zéros ne sont pas disponibles.",
+    "customGifts.codeHelp": "Utilisez 5 à 16 lettres majuscules ou chiffres. Chaque code doit être unique. Le nom est une étiquette de l’éditeur ; le jeu affiche le cadeau Pokémon. Les codes composés uniquement de zéros ne sont pas disponibles.",
     "customGifts.egg": "Recevoir sous forme d’Œuf",
     "customGifts.select": "Ajoutez ou sélectionnez un cadeau pour modifier son Pokémon.",
     "customGifts.saveHelp": "Utilisez Préparer, Examiner et Appliquer pour enregistrer. Retirer le récepteur conserve les définitions et la sauvegarde garde son historique de réception.",

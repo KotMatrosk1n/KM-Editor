@@ -94,9 +94,9 @@ internal static class SwShCustomGiftCatalogCodec
             if (gift is null || gift.ClaimId is < 1800 or >= 2000 || gift.ClaimId >= catalog.NextClaimId
                 || !identities.Add(gift.ClaimId) || string.IsNullOrWhiteSpace(gift.Name) || gift.Name.Length > 80
                 || gift.Name.Any(char.IsControl) || gift.Code is null || gift.Code.Length is < 5 or > 16
-                || gift.Code.Any(value => value is not (>= 'A' and <= 'H' or >= 'J' and <= 'N' or >= 'P' and <= 'Y' or >= '0' and <= '9'))
+                || gift.Code.Any(value => value is not (>= 'A' and <= 'Z' or >= '0' and <= '9'))
                 || gift.Code.All(value => value == '0') || !codes.Add(gift.Code))
-                throw new InvalidDataException("Each code gift needs a unique identity, name, and uppercase code of 5 through 16 letters or digits, excluding I, O, Z, and all zero codes.");
+                throw new InvalidDataException("Each code gift needs a unique identity, name, and uppercase code of 5 through 16 letters or digits. All zero codes are unavailable.");
             SwShCustomGiftCard.Validate(gift.Pokemon);
         }
         var count = 0;

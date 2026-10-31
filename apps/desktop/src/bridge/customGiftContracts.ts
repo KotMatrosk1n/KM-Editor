@@ -13,7 +13,7 @@ export const customGiftPokemonSchema = z.strictObject({
 });
 export const codeGiftSchema = z.strictObject({
   claimId: z.int().min(1800).max(1999), name: z.string().min(1).max(80).refine(value => value.trim().length > 0 && !/\p{Cc}/u.test(value)),
-  code: z.string().regex(/^[A-HJ-NP-Y0-9]{5,16}$/).refine(value => /[^0]/.test(value)), oncePerSave: z.boolean(), pokemon: customGiftPokemonSchema
+  code: z.string().regex(/^[A-Z0-9]{5,16}$/).refine(value => /[^0]/.test(value)), oncePerSave: z.boolean(), pokemon: customGiftPokemonSchema
 });
 export const maximumRoyalGiftPoolSize = 14;
 export function royalGiftChanceWeight(chance: number): number | null {

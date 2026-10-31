@@ -25,7 +25,7 @@
     "customGifts.code": "Code",
     "customGifts.once": "Einmal pro Spielstand",
     "customGifts.identity": "Geschenkidentität: {id}. Sie erhält den Empfangsverlauf beim Umbenennen oder Bearbeiten.",
-    "customGifts.codeHelp": "Verwende 5 bis 16 Großbuchstaben oder Ziffern, außer I, O und Z, die auf der Spieltastatur deaktiviert sind. Jeder Code muss eindeutig sein. Der Name ist eine Editorbeschriftung; das Spiel zeigt das Pokémon-Geschenk. Codes nur aus Nullen sind nicht verfügbar.",
+    "customGifts.codeHelp": "Verwende 5 bis 16 Großbuchstaben oder Ziffern. Jeder Code muss eindeutig sein. Der Name ist eine Editorbeschriftung; das Spiel zeigt das Pokémon-Geschenk. Codes nur aus Nullen sind nicht verfügbar.",
     "customGifts.egg": "Als Ei erhalten",
     "customGifts.select": "Füge ein Geschenk hinzu oder wähle eines aus, um sein Pokémon zu bearbeiten.",
     "customGifts.saveHelp": "Speichere mit Bereitstellen, Prüfen und Anwenden. Das Entfernen des Empfängers behält die Definitionen und den Empfangsverlauf im Spielstand.",

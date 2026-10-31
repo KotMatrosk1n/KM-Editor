@@ -25,7 +25,7 @@
     "customGifts.code": "代码",
     "customGifts.once": "每个存档仅一次",
     "customGifts.identity": "礼物标识：{id}。重命名或编辑礼物时，此标识会保留领取记录。",
-    "customGifts.codeHelp": "使用 5 至 16 个大写英文字母或数字，但不能使用游戏键盘禁用的 I、O 和 Z。每个代码必须唯一。名称仅为编辑器标签；游戏中显示宝可梦礼物。 不能使用全为零的代码。",
+    "customGifts.codeHelp": "使用 5 至 16 个大写英文字母或数字。每个代码必须唯一。名称仅为编辑器标签；游戏中显示宝可梦礼物。 不能使用全为零的代码。",
     "customGifts.egg": "以蛋的形式领取",
     "customGifts.select": "添加或选择礼物以编辑其宝可梦。",
     "customGifts.saveHelp": "通过暂存、检查和应用保存。移除接收模式会保留配置，存档也会保留领取记录。",
