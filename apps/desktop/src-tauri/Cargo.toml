@@ -25,7 +25,8 @@ tauri = { version = "2.11.2", features = [] }
 tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-shell = "2.3.5"
 tauri-plugin-dialog = "2.7.1"
-tauri-plugin-updater = "2.10.1"
+# Update releases use signed installer files directly.
+tauri-plugin-updater = { version = "2.10.1", default-features = false, features = ["rustls-tls"] }
 tauri-plugin-process = "2.3.1"
 tokio = { version = "1", features = ["time", "sync"] }
 
