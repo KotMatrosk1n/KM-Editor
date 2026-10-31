@@ -2,6 +2,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <EmbeddedResource Include="Resources\km-custom-gifts.nso" />
+    <EmbeddedResource Include="Resources\km-custom-gifts-v1.nso" />
     <PackageReference Include="PKHeX.Core" Version="25.9.25" />
     <ProjectReference Include="..\KM.Core\KM.Core.csproj" />
     <ProjectReference Include="..\KM.Formats\KM.Formats.csproj" />

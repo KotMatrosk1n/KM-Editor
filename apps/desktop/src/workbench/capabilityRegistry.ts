@@ -36,6 +36,8 @@ import {
   Gauge,
   Gem,
   Gift,
+  Crown,
+  KeyRound,
   GitMerge,
   HandCoins,
   Hammer,
@@ -575,6 +577,16 @@ export const workbenchCapabilityRegistry = [
   workflow({
     description: 'Hide Y Comm and block its button while keeping Mystery Gift available.',
     games: swordShieldGames, icon: WifiOff, id: 'yComm', label: 'Disable Y Comm',
+    showInWorkflowDashboard: false, standalone: true
+  }),
+  workflow({
+    description: 'Create Pokemon gifts received with custom codes.',
+    games: swordShieldGames, icon: KeyRound, id: 'mysteryGift', label: 'Mystery Gift',
+    showInWorkflowDashboard: false, standalone: true
+  }),
+  workflow({
+    description: 'Create a random Pokemon reward for each badge count, claimed once per save.',
+    games: swordShieldGames, icon: Crown, id: 'royalGift', label: 'Royal Gift',
     showInWorkflowDashboard: false, standalone: true
   }),
   workflow({

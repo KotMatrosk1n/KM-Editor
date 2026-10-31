@@ -28,6 +28,8 @@ import { type LoadRaidDensRequest, type LoadRaidDensResponse, type StageRaidDens
   loadRaidDensRequestSchema, loadRaidDensResponseSchema, stageRaidDensRequestSchema, stageRaidDensResponseSchema } from './raidDensContracts';
 import { type LoadPokeJobsRequest, type LoadPokeJobsResponse, type StagePokeJobsRequest, type StagePokeJobsResponse,
   loadPokeJobsRequestSchema, loadPokeJobsResponseSchema, stagePokeJobsRequestSchema, stagePokeJobsResponseSchema } from './pokeJobsContracts';
+import { type LoadCustomGiftsRequest, type LoadCustomGiftsResponse, type StageCustomGiftsRequest, type StageCustomGiftsResponse,
+  loadCustomGiftsRequestSchema, loadCustomGiftsResponseSchema, stageCustomGiftsRequestSchema, stageCustomGiftsResponseSchema } from './customGiftContracts';
 import { type LoadYCommRequest, type LoadYCommResponse, type StageYCommRequest, type StageYCommResponse,
   loadYCommRequestSchema, loadYCommResponseSchema, stageYCommRequestSchema, stageYCommResponseSchema } from './yCommContracts';
 import { type LoadFixAiFlagsRequest, type LoadFixAiFlagsResponse, type StageFixAiFlagsRequest, type StageFixAiFlagsResponse,
@@ -877,6 +879,8 @@ export type ProjectBridge = {
   loadRaidDens: (request: LoadRaidDensRequest) => Promise<LoadRaidDensResponse>;
   loadPokeJobs: (request: LoadPokeJobsRequest) => Promise<LoadPokeJobsResponse>;
   loadYComm: (request: LoadYCommRequest) => Promise<LoadYCommResponse>;
+  loadCustomGifts: (request: LoadCustomGiftsRequest) => Promise<LoadCustomGiftsResponse>;
+  stageCustomGifts: (request: StageCustomGiftsRequest) => Promise<StageCustomGiftsResponse>;
   loadFixAiFlags: (request: LoadFixAiFlagsRequest) => Promise<LoadFixAiFlagsResponse>;
   stageFixAiFlags: (request: StageFixAiFlagsRequest) => Promise<StageFixAiFlagsResponse>;
   loadTrainerWhiteout: (request: LoadTrainerWhiteoutRequest) => Promise<LoadTrainerWhiteoutResponse>;
@@ -1742,6 +1746,10 @@ export function createProjectBridge(
       loadPokeJobsRequestSchema.parse(request), loadPokeJobsResponseSchema),
     loadYComm: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadYComm,
       loadYCommRequestSchema.parse(request), loadYCommResponseSchema),
+    loadCustomGifts: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadCustomGifts,
+      loadCustomGiftsRequestSchema.parse(request), loadCustomGiftsResponseSchema),
+    stageCustomGifts: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageCustomGifts,
+      stageCustomGiftsRequestSchema.parse(request), stageCustomGiftsResponseSchema),
     loadFixAiFlags: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadFixAiFlags,
       loadFixAiFlagsRequestSchema.parse(request), loadFixAiFlagsResponseSchema),
     stageFixAiFlags: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageFixAiFlags,

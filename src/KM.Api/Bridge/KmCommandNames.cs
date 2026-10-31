@@ -197,6 +197,8 @@ public static class KmCommandNames
     public const string LoadRaidDens = "raidDens.load";
     public const string LoadPokeJobs = "pokeJobs.load";
     public const string LoadYComm = "yComm.load";
+    public const string LoadCustomGifts = "customGifts.load";
+    public const string StageCustomGifts = "customGifts.stage";
     public const string LoadFixAiFlags = "fixAiFlags.load";
     public const string StageFixAiFlags = "fixAiFlags.stage";
     public const string LoadTrainerWhiteout = "trainerWhiteout.load";

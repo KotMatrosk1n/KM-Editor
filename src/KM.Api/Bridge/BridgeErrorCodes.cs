@@ -71,6 +71,12 @@ public static class BridgeErrorCodes
     public const string RaidDensInvalid = "KM-SWSH-RAID-DENS-INVALID";
     public const string PokeJobsSourceInvalid = "KM-SWSH-POKE-JOBS-SOURCE-INVALID";
     public const string YCommSourceInvalid = "KM-SWSH-Y-COMM-SOURCE-INVALID";
+    public const string CustomGiftsSourceInvalid = "KM-SWSH-CUSTOM-GIFTS-SOURCE-INVALID";
+    public const string CustomGiftsCatalogInvalid = "KM-SWSH-CUSTOM-GIFTS-CATALOG-INVALID";
+    public const string CustomGiftsCatalogRecovered = "KM-SWSH-CUSTOM-GIFTS-CATALOG-RECOVERED";
+    public const string CustomGiftsSessionInvalid = "KM-SWSH-CUSTOM-GIFTS-SESSION-INVALID";
+    public const string CustomGiftsPlanStale = "KM-SWSH-CUSTOM-GIFTS-PLAN-STALE";
+    public const string CustomGiftsApplyFailed = "KM-SWSH-CUSTOM-GIFTS-APPLY-FAILED";
     public const string PokeJobsSessionInvalid = "KM-SWSH-POKE-JOBS-SESSION-INVALID";
     public const string YCommSessionInvalid = "KM-SWSH-Y-COMM-SESSION-INVALID";
     public const string PokeJobsPlanStale = "KM-SWSH-POKE-JOBS-PLAN-STALE";

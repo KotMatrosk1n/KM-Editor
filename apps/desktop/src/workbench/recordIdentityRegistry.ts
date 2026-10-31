@@ -142,6 +142,8 @@ const registrations = {
   raidDens: fixedSchemaSlot('raidDens', 'den interaction dispatch'),
   pokeJobs: fixedSchemaSlot('pokeJobs', 'Poke Jobs terminal access'),
   yComm: fixedSchemaSlot('yComm', 'Y Comm access'),
+  mysteryGift: fixedSchemaSlot('mysteryGift', 'Code gift catalog'),
+  royalGift: fixedSchemaSlot('royalGift', 'Badge gift catalog'),
   fixAiFlags: intrinsic('fixAiFlags', 'stored trainer ID'),
   trainerWhiteout: intrinsic('trainerWhiteout', 'stored trainer ID'),
   randomizer: operationScoped('randomizer'),

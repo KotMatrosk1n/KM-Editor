@@ -479,6 +479,9 @@ import { ObedienceSection } from './features/obedience/ObedienceSection';
 import { RaidDensSection } from './features/raid-dens/RaidDensSection';
 import { PokeJobsSection } from './features/poke-jobs/PokeJobsSection';
 import { YCommSection } from './features/y-comm/YCommSection';
+import { CustomGiftSection, type CustomGiftFieldRenderProps } from './features/custom-gifts/CustomGiftSection';
+import { customGiftFieldValue } from './features/custom-gifts/customGiftFields';
+import { getCustomGiftPendingCatalog, customGiftCatalogMatches, type CustomGiftCatalog, type CustomGiftWorkflow } from './bridge/customGiftContracts';
 import { FixAiFlagsSection } from './features/fix-ai-flags/FixAiFlagsSection';
 import { TrainerWhiteoutSection } from './features/trainer-whiteout/TrainerWhiteoutSection';
 import { treeValues, treeFieldKey, type TreeUpdate, type ShakingTreesWorkflow } from './bridge/shakingTreesContracts';
@@ -3236,6 +3239,8 @@ export function App({
   const raidDensWorkflow = useWorkbenchStore(state => state.raidDensWorkflow);
   const pokeJobsWorkflow = useWorkbenchStore(state => state.pokeJobsWorkflow);
   const yCommWorkflow = useWorkbenchStore(state => state.yCommWorkflow);
+  const mysteryGiftWorkflow = useWorkbenchStore(state => state.mysteryGiftWorkflow);
+  const royalGiftWorkflow = useWorkbenchStore(state => state.royalGiftWorkflow);
   const fixAiFlagsWorkflow = useWorkbenchStore(state => state.fixAiFlagsWorkflow);
   const trainerWhiteoutWorkflow = useWorkbenchStore(state => state.trainerWhiteoutWorkflow);
   const setBbqRewardsWorkflow = useWorkbenchStore(state => state.setBbqRewardsWorkflow);
@@ -3252,6 +3257,8 @@ export function App({
   const setRaidDensWorkflow = useWorkbenchStore(state => state.setRaidDensWorkflow);
   const setPokeJobsWorkflow = useWorkbenchStore(state => state.setPokeJobsWorkflow);
   const setYCommWorkflow = useWorkbenchStore(state => state.setYCommWorkflow);
+  const setMysteryGiftWorkflow = useWorkbenchStore(state => state.setMysteryGiftWorkflow);
+  const setRoyalGiftWorkflow = useWorkbenchStore(state => state.setRoyalGiftWorkflow);
   const setFixAiFlagsWorkflow = useWorkbenchStore(state => state.setFixAiFlagsWorkflow);
   const setTrainerWhiteoutWorkflow = useWorkbenchStore(state => state.setTrainerWhiteoutWorkflow);
   const [isBbqRewardsLoading, setIsBbqRewardsLoading] = useState(false);
@@ -3268,6 +3275,8 @@ export function App({
   const [isRaidDensLoading, setIsRaidDensLoading] = useState(false);
   const [isPokeJobsLoading, setIsPokeJobsLoading] = useState(false);
   const [isYCommLoading, setIsYCommLoading] = useState(false);
+  const [isMysteryGiftLoading, setIsMysteryGiftLoading] = useState(false);
+  const [isRoyalGiftLoading, setIsRoyalGiftLoading] = useState(false);
   const [isFixAiFlagsLoading, setIsFixAiFlagsLoading] = useState(false);
   const [isTrainerWhiteoutLoading, setIsTrainerWhiteoutLoading] = useState(false);
   const [isBbqRewardsStaging, setIsBbqRewardsStaging] = useState(false);
@@ -3284,6 +3293,8 @@ export function App({
   const [isRaidDensStaging, setIsRaidDensStaging] = useState(false);
   const [isPokeJobsStaging, setIsPokeJobsStaging] = useState(false);
   const [isYCommStaging, setIsYCommStaging] = useState(false);
+  const [isMysteryGiftStaging, setIsMysteryGiftStaging] = useState(false);
+  const [isRoyalGiftStaging, setIsRoyalGiftStaging] = useState(false);
   const [isFixAiFlagsStaging, setIsFixAiFlagsStaging] = useState(false);
   const [isTrainerWhiteoutStaging, setIsTrainerWhiteoutStaging] = useState(false);
   const bbqRewardsGenerationRef = useRef(0);
@@ -3300,6 +3311,8 @@ export function App({
   const raidDensGenerationRef = useRef(0);
   const pokeJobsGenerationRef = useRef(0);
   const yCommGenerationRef = useRef(0);
+  const mysteryGiftGenerationRef = useRef(0);
+  const royalGiftGenerationRef = useRef(0);
   const fixAiFlagsGenerationRef = useRef(0);
   const trainerWhiteoutGenerationRef = useRef(0);
   const [isHabitatCoordinatesLoading, setIsHabitatCoordinatesLoading] = useState(false);
@@ -4160,6 +4173,8 @@ export function App({
           raidDensWorkflow,
           pokeJobsWorkflow,
           yCommWorkflow,
+          mysteryGiftWorkflow,
+          royalGiftWorkflow,
           fixAiFlagsWorkflow,
           trainerWhiteoutWorkflow,
           fashionUnlockWorkflow,
@@ -4220,6 +4235,8 @@ export function App({
       raidDensWorkflow,
       pokeJobsWorkflow,
       yCommWorkflow,
+      mysteryGiftWorkflow,
+      royalGiftWorkflow,
       fixAiFlagsWorkflow,
       trainerWhiteoutWorkflow,
       fashionUnlockWorkflow,
@@ -4347,6 +4364,8 @@ export function App({
     raidDensWorkflow,
     pokeJobsWorkflow,
     yCommWorkflow,
+    mysteryGiftWorkflow,
+    royalGiftWorkflow,
     fixAiFlagsWorkflow,
     trainerWhiteoutWorkflow,
     fashionUnlockWorkflow,
@@ -4495,6 +4514,10 @@ export function App({
     (dirty: boolean) => registerEditorDraftDirty('pokeJobs', dirty), [registerEditorDraftDirty]);
   const handleYCommDirtyChange = useCallback(
     (dirty: boolean) => registerEditorDraftDirty('yComm', dirty), [registerEditorDraftDirty]);
+  const handleMysteryGiftDirtyChange = useCallback(
+    (dirty: boolean) => registerEditorDraftDirty('mysteryGift', dirty), [registerEditorDraftDirty]);
+  const handleRoyalGiftDirtyChange = useCallback(
+    (dirty: boolean) => registerEditorDraftDirty('royalGift', dirty), [registerEditorDraftDirty]);
   const handleFixAiFlagsDirtyChange = useCallback(
     (dirty: boolean) => registerEditorDraftDirty('fixAiFlags', dirty), [registerEditorDraftDirty]);
   const handleTrainerWhiteoutDirtyChange = useCallback(
@@ -10636,6 +10659,90 @@ export function App({
     return accepted;
   };
 
+  const handleOpenMysteryGiftWorkflow = async () => {
+    if (!useWorkbenchStore.getState().pokemonWorkflow) await handleOpenPokemonWorkflow();
+    const generation = mysteryGiftGenerationRef.current;
+    await runRetainedWorkflowLoad('mysteryGift', setIsMysteryGiftLoading,
+      () => bridge.loadCustomGifts({ paths: createProjectPaths(draftPaths) }),
+      response => setMysteryGiftWorkflow(response.workflow),
+      () => generation === mysteryGiftGenerationRef.current);
+  };
+
+  const handleStageMysteryGift = async (catalog: CustomGiftCatalog) => {
+    const activeSession = getEditSessionForSection('mysteryGift');
+    if (!activeSession) return false;
+    let accepted = false;
+    mysteryGiftGenerationRef.current += 1;
+    royalGiftGenerationRef.current += 1;
+    setIsMysteryGiftStaging(true);
+    prepareScopedEditorPanelAction('mysteryGift');
+    try {
+      await runEditSessionMutation(async session => {
+        const response = await bridge.stageCustomGifts({ paths: createProjectPaths(draftPaths), session, catalog });
+        const acknowledged = getCustomGiftPendingCatalog(response.session);
+        const matches = response.workflow.canEdit && response.session.sessionId === activeSession.sessionId
+          && acknowledged !== null && customGiftCatalogMatches(acknowledged, catalog);
+        const diagnostics = [...response.diagnostics, ...response.workflow.diagnostics];
+        if (!matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error'))
+          diagnostics.push({ severity: 'error', domain: 'workflow.customGifts', code: 'KM-SWSH-CUSTOM-GIFTS-SESSION-INVALID', message: t('customGifts.failed') });
+        const didSucceed = matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error');
+        return { ...response, diagnostics, didSucceed, session: didSucceed ? response.session : session };
+      }, response => {
+        setScopedEditorPanelDiagnostics('mysteryGift', response.diagnostics);
+        if (response.didSucceed) {
+          accepted = true;
+          setMysteryGiftWorkflow(response.workflow);
+          setRoyalGiftWorkflow(response.workflow);
+          setEditSessionSection('mysteryGift');
+        }
+      }, activeSession);
+    } catch (error) { setScopedEditorPanelDiagnostics('mysteryGift', toBridgeDiagnostics(error)); }
+    finally { setIsMysteryGiftStaging(false); }
+    return accepted;
+  };
+
+  const handleOpenRoyalGiftWorkflow = async () => {
+    if (!useWorkbenchStore.getState().pokemonWorkflow) await handleOpenPokemonWorkflow();
+    const generation = royalGiftGenerationRef.current;
+    await runRetainedWorkflowLoad('royalGift', setIsRoyalGiftLoading,
+      () => bridge.loadCustomGifts({ paths: createProjectPaths(draftPaths) }),
+      response => setRoyalGiftWorkflow(response.workflow),
+      () => generation === royalGiftGenerationRef.current);
+  };
+
+  const handleStageRoyalGift = async (catalog: CustomGiftCatalog) => {
+    const activeSession = getEditSessionForSection('royalGift');
+    if (!activeSession) return false;
+    let accepted = false;
+    royalGiftGenerationRef.current += 1;
+    mysteryGiftGenerationRef.current += 1;
+    setIsRoyalGiftStaging(true);
+    prepareScopedEditorPanelAction('royalGift');
+    try {
+      await runEditSessionMutation(async session => {
+        const response = await bridge.stageCustomGifts({ paths: createProjectPaths(draftPaths), session, catalog });
+        const acknowledged = getCustomGiftPendingCatalog(response.session);
+        const matches = response.workflow.canEdit && response.session.sessionId === activeSession.sessionId
+          && acknowledged !== null && customGiftCatalogMatches(acknowledged, catalog);
+        const diagnostics = [...response.diagnostics, ...response.workflow.diagnostics];
+        if (!matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error'))
+          diagnostics.push({ severity: 'error', domain: 'workflow.customGifts', code: 'KM-SWSH-CUSTOM-GIFTS-SESSION-INVALID', message: t('customGifts.failed') });
+        const didSucceed = matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error');
+        return { ...response, diagnostics, didSucceed, session: didSucceed ? response.session : session };
+      }, response => {
+        setScopedEditorPanelDiagnostics('royalGift', response.diagnostics);
+        if (response.didSucceed) {
+          accepted = true;
+          setRoyalGiftWorkflow(response.workflow);
+          setMysteryGiftWorkflow(response.workflow);
+          setEditSessionSection('royalGift');
+        }
+      }, activeSession);
+    } catch (error) { setScopedEditorPanelDiagnostics('royalGift', toBridgeDiagnostics(error)); }
+    finally { setIsRoyalGiftStaging(false); }
+    return accepted;
+  };
+
   const handleOpenFixAiFlagsWorkflow = async () => {
     const generation = fixAiFlagsGenerationRef.current;
     await runRetainedWorkflowLoad('fixAiFlags', setIsFixAiFlagsLoading,
@@ -12761,6 +12868,12 @@ export function App({
         case 'yComm':
           if (!currentState.yCommWorkflow) await handleOpenYCommWorkflow();
           break;
+        case 'mysteryGift':
+          if (!currentState.mysteryGiftWorkflow) await handleOpenMysteryGiftWorkflow();
+          break;
+        case 'royalGift':
+          if (!currentState.royalGiftWorkflow) await handleOpenRoyalGiftWorkflow();
+          break;
         case 'fixAiFlags':
           if (!currentState.fixAiFlagsWorkflow) await handleOpenFixAiFlagsWorkflow();
           break;
@@ -13182,6 +13295,12 @@ export function App({
       case 'yComm':
         if (!yCommWorkflow && !isYCommLoading) { markLazyLoadStarted(); void handleOpenYCommWorkflow(); }
         break;
+      case 'mysteryGift':
+        if (!mysteryGiftWorkflow && !isMysteryGiftLoading) { markLazyLoadStarted(); void handleOpenMysteryGiftWorkflow(); }
+        break;
+      case 'royalGift':
+        if (!royalGiftWorkflow && !isRoyalGiftLoading) { markLazyLoadStarted(); void handleOpenRoyalGiftWorkflow(); }
+        break;
       case 'fixAiFlags':
         if (!fixAiFlagsWorkflow && !isFixAiFlagsLoading) { markLazyLoadStarted(); void handleOpenFixAiFlagsWorkflow(); }
         break;
@@ -13475,6 +13594,8 @@ export function App({
     raidDensWorkflow,
     pokeJobsWorkflow,
     yCommWorkflow,
+    mysteryGiftWorkflow,
+    royalGiftWorkflow,
     fixAiFlagsWorkflow,
     trainerWhiteoutWorkflow,
     fashionUnlockWorkflow,
@@ -13518,6 +13639,8 @@ export function App({
     isRaidDensLoading,
     isPokeJobsLoading,
     isYCommLoading,
+    isMysteryGiftLoading,
+    isRoyalGiftLoading,
     isFixAiFlagsLoading,
     isTrainerWhiteoutLoading,
     isFashionUnlockLoading,
@@ -18826,6 +18949,8 @@ export function App({
       'raidDens',
       'pokeJobs',
       'yComm',
+      'mysteryGift',
+      'royalGift',
       'fixAiFlags',
       'trainerWhiteout',
       'giftPokemon',
@@ -18891,6 +19016,8 @@ export function App({
       raidDens: setIsRaidDensLoading,
       pokeJobs: setIsPokeJobsLoading,
       yComm: setIsYCommLoading,
+      mysteryGift: setIsMysteryGiftLoading,
+      royalGift: setIsRoyalGiftLoading,
       fixAiFlags: setIsFixAiFlagsLoading,
       trainerWhiteout: setIsTrainerWhiteoutLoading,
       fashionUnlock: setIsFashionUnlockLoading,
@@ -19147,6 +19274,12 @@ export function App({
       reloadTasks.push(async () => {
         const response = await bridge.loadYComm({ paths });
         if (canCommitRefresh()) setYCommWorkflow(response.workflow);
+      });
+    }
+    if ((mysteryGiftWorkflow || royalGiftWorkflow) && (refreshSections.has('mysteryGift') || refreshSections.has('royalGift'))) {
+      reloadTasks.push(async () => {
+        const response = await bridge.loadCustomGifts({ paths });
+        if (canCommitRefresh()) { setMysteryGiftWorkflow(response.workflow); setRoyalGiftWorkflow(response.workflow); }
       });
     }
     if (fixAiFlagsWorkflow && refreshSections.has('fixAiFlags')) {
@@ -21728,6 +21861,28 @@ export function App({
                 onDirtyStateChange={handleYCommDirtyChange} onRefresh={handleOpenYCommWorkflow}
                 isLoading={isYCommLoading} panelOutput={getOutputSafeScopedEditorPanelOutput('yComm')} />
           ) : null}
+          {activeSection === 'mysteryGift' ? (
+            isMysteryGiftLoading && !mysteryGiftWorkflow ? <WorkflowLoadingPanel label={t('customGifts.mysteryTitle')} /> :
+              <CustomGiftSection mode="mystery" workflow={mysteryGiftWorkflow} session={getEditSessionForSection('mysteryGift')}
+                key={getEditSessionForSection('mysteryGift')?.sessionId ?? 'viewing'}
+                isStaging={isMysteryGiftStaging} isEditing={getEditSessionForSection('mysteryGift') !== null}
+                isEditStarting={isEditStarting} onStartEditSession={handleStartEditSession}
+                onCancelEditSession={requestCancelEditSession} onStage={handleStageMysteryGift}
+                onDirtyStateChange={handleMysteryGiftDirtyChange} onRefresh={handleOpenMysteryGiftWorkflow}
+                isLoading={isMysteryGiftLoading} panelOutput={getOutputSafeScopedEditorPanelOutput('mysteryGift')}
+                renderPokemonFields={props => <CustomGiftPokemonFields {...props} pokemonWorkflow={pokemonWorkflow} />} />
+          ) : null}
+          {activeSection === 'royalGift' ? (
+            isRoyalGiftLoading && !royalGiftWorkflow ? <WorkflowLoadingPanel label={t('customGifts.royalTitle')} /> :
+              <CustomGiftSection mode="royal" workflow={royalGiftWorkflow} session={getEditSessionForSection('royalGift')}
+                key={getEditSessionForSection('royalGift')?.sessionId ?? 'viewing'}
+                isStaging={isRoyalGiftStaging} isEditing={getEditSessionForSection('royalGift') !== null}
+                isEditStarting={isEditStarting} onStartEditSession={handleStartEditSession}
+                onCancelEditSession={requestCancelEditSession} onStage={handleStageRoyalGift}
+                onDirtyStateChange={handleRoyalGiftDirtyChange} onRefresh={handleOpenRoyalGiftWorkflow}
+                isLoading={isRoyalGiftLoading} panelOutput={getOutputSafeScopedEditorPanelOutput('royalGift')}
+                renderPokemonFields={props => <CustomGiftPokemonFields {...props} pokemonWorkflow={pokemonWorkflow} />} />
+          ) : null}
           {activeSection === 'fixAiFlags' ? (
             isFixAiFlagsLoading && !fixAiFlagsWorkflow ? <WorkflowLoadingPanel label={t('fixAiFlags.title')} /> :
               <FixAiFlagsSection workflow={fixAiFlagsWorkflow} session={getEditSessionForSection('fixAiFlags')}
@@ -21931,6 +22086,8 @@ export function App({
                 raidDensWorkflow,
                 pokeJobsWorkflow,
                 yCommWorkflow,
+                mysteryGiftWorkflow,
+                royalGiftWorkflow,
                 fixAiFlagsWorkflow,
                 trainerWhiteoutWorkflow,
                 angeFightWorkflow,
@@ -35422,6 +35579,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.raidDens': 'Raid Dens',
     'workflow.pokeJobs': 'Disable Poke Jobs',
     'workflow.yComm': 'Disable Y Comm',
+    'workflow.customGifts': 'Custom Gifts',
     'workflow.trainerWhiteout': 'Trainer Whiteout',
     'workflow.bbqRewards': 'BBQ Rewards',
     'workflow.supportBoard': 'Support Board',
@@ -35499,6 +35657,7 @@ function getPendingEditSection(edit: PendingEdit): WorkbenchSection | null {
     'workflow.raidDens': 'raidDens',
     'workflow.pokeJobs': 'pokeJobs',
     'workflow.yComm': 'yComm',
+    'workflow.customGifts': 'mysteryGift',
     'workflow.trainerWhiteout': 'trainerWhiteout',
     'workflow.bbqRewards': 'bbqRewards',
     'workflow.supportBoard': 'supportBoard',
@@ -35979,6 +36138,11 @@ function getPendingEditDisplayDetails(
       return createPendingEditDisplayDetails(edit, {
         editorLabel, recordLocalizationKey: 'yComm.title', fieldLocalizationKey: 'yComm.interaction',
         newValueLocalizationKey: edit.newValue === 'true' ? 'yComm.disabled' : 'yComm.enabled'
+      });
+    case 'workflow.customGifts':
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel, recordLocalizationKey: 'customGifts.catalog', fieldLocalizationKey: 'customGifts.configuration',
+        newValueLocalizationKey: 'customGifts.staged'
       });
     case 'workflow.trainerWhiteout':
       return createPendingEditDisplayDetails(edit, {
@@ -38113,6 +38277,35 @@ const searchableBooleanOptions: EditableFieldOption[] = [
   { label: 'Yes', value: 1 },
   { label: 'No', value: 0 }
 ];
+
+function CustomGiftPokemonFields({ pokemon, fields, drafts: localDrafts, disabled, idPrefix, onChange, pokemonWorkflow }:
+  CustomGiftFieldRenderProps & { pokemonWorkflow: PokemonWorkflow | null }) {
+  const { translateLiteral } = useLocalization();
+  const reference = pokemonWorkflow?.pokemon.find(row => row.speciesId === pokemon.speciesId && row.form === pokemon.form);
+  const speciesField = fields.find(field => field.field === 'species');
+  const context = createDraftSpeciesFormOptionContext(speciesField, localDrafts.species,
+    speciesField?.options.find(option => option.value === pokemon.speciesId)?.label ?? String(pokemon.speciesId),
+    pokemon.speciesId, reference ? createTrainerPokemonAbilityOptions(reference) : undefined, 'swsh',
+    reference ? createGiftPokemonGenderOptions(reference) : undefined);
+  const editableFields = fields.map(field => withPokemonInstanceIvPresetOptions({ ...field,
+    options: getContextualFieldOptions(field, context) }));
+  const hasCustomIvs = pokemon.flawlessIvCount === 0 && Object.values(pokemon.ivs).some(value => value >= 0);
+  const drafts = { ...Object.fromEntries(fields.map(field => [field.field,
+    field.field === 'flawlessIvCount' && hasCustomIvs ? '-9999' : String(customGiftFieldValue(pokemon, field.field))])), ...localDrafts };
+  return <div className="editable-field-groups">{groupNumericEditableFields(editableFields, getPokemonInstanceFieldGroup).map(group =>
+    <fieldset className="editable-field-group" key={group.group}><legend>{translateLiteral(group.group)}</legend>
+      <div className="editable-field-grid">{group.fields.map(field => {
+        const currentValue = customGiftFieldValue(pokemon, field.field);
+        const draftValue = drafts[field.field];
+        return <GiftPokemonDraftField key={field.field} field={field} currentValue={currentValue} draftValue={draftValue}
+          disabled={disabled} disabledReason={getPokemonInstanceIvStatDisabledReason(field.field, editableFields, drafts) ?? undefined}
+          draftState={getTrainerFieldDraftState(draftValue, currentValue, field, { drafts, fields: editableFields,
+            getValue: name => customGiftFieldValue(pokemon, name) })}
+          formOptionContext={context} helpDomain="gifts" helpGame="swsh" idPrefix={idPrefix}
+          onChange={value => onChange(field.field, value)} />;
+      })}</div>
+    </fieldset>)}</div>;
+}
 
 function GiftPokemonDraftField({
   ariaDescribedBy,
@@ -57547,6 +57740,8 @@ export type PendingEditContext = {
   raidDensWorkflow?: RaidDensWorkflow | null;
   pokeJobsWorkflow?: PokeJobsWorkflow | null;
   yCommWorkflow?: YCommWorkflow | null;
+  mysteryGiftWorkflow?: CustomGiftWorkflow | null;
+  royalGiftWorkflow?: CustomGiftWorkflow | null;
   fixAiFlagsWorkflow?: FixAiFlagsWorkflow | null;
   trainerWhiteoutWorkflow?: TrainerWhiteoutWorkflow | null;
   bbqRewardsWorkflow?: BlueberryWorkflow | null;
