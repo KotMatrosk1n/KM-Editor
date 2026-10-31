@@ -181,6 +181,18 @@ internal sealed partial class SvEncountersEditSessionService
             ValidatePendingEdit(workflow, edit, diagnostics);
         }
 
+        var effectiveWorkflow = OverlayPendingEdits(workflow, session.PendingEdits);
+        foreach (var table in effectiveWorkflow.Tables)
+        foreach (var slot in table.Slots.Where(slot => slot.LevelMin > slot.LevelMax))
+        {
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{table.Region} {table.Location} slot {slot.Slot}: minimum level exceeds maximum level.",
+                SvEditSessionSupport.EncountersDomain,
+                field: "levelMin",
+                expected: "Minimum level at or below maximum level"));
+        }
+
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
             diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
@@ -204,17 +216,47 @@ internal sealed partial class SvEncountersEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var validation = Validate(paths, session);
+        var diagnostics = validation.Diagnostics.ToList();
+        if (session.PendingEdits.Count == 0)
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Create a pending Wild Encounters edit before reviewing a change plan.",
+                SvEditSessionSupport.EncountersDomain));
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+
+        var writes = new List<PlannedFileWrite>();
+        try
+        {
+            foreach (var region in GetTouchedRegions(session))
+            {
+                var edits = session.PendingEdits.Where(edit => GetRegion(edit) == region);
+                var write = SvWorkflowFileSource.CreatePlannedWrite(
+                    paths, region.VirtualPath, edits.SelectMany(edit => edit.Sources).Distinct().ToArray(), outputMode);
+                writes.Add(new PlannedFileWrite(write.TargetRelativePath, write.Sources, write.ReplacesExistingOutput,
+                    $"Apply pending {region.Label} Wild Encounters edits."));
+            }
+
+            if (outputMode == SvOutputMode.Standalone)
+            {
+                var descriptor = SvWorkflowFileSource.CreateDescriptorPlannedWrite(paths);
+                writes.Add(new PlannedFileWrite(descriptor.TargetRelativePath, descriptor.Sources, descriptor.ReplacesExistingOutput,
+                    "Patch Scarlet/Violet Trinity descriptor for standalone LayeredFS overrides."));
+            }
+        }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+        {
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(DiagnosticSeverity.Error,
+                $"Wild Encounters change plan could not resolve the output target: {exception.Message}",
+                SvEditSessionSupport.EncountersDomain));
+            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
+
         return SvChangePlanSourceGuard.Capture(
             paths,
             session,
-            SvEditSessionSupport.CreateSingleFileChangePlan(
-                paths,
-                session,
-                SvEditSessionSupport.EncountersDomain,
-                SvDataPaths.WildEncounterArray,
-                "Wild Encounters",
-                validation.Diagnostics,
-                outputMode),
+            new ChangePlan(session.Id, writes, diagnostics),
             outputMode);
     }
 
@@ -251,11 +293,18 @@ internal sealed partial class SvEncountersEditSessionService
         try
         {
             var project = projectWorkspaceService.Open(paths);
-            var source = fileSource.Read(project, SvDataPaths.WildEncounterArray);
-            var rows = ReadRows(source.Bytes);
-            foreach (var edit in session.PendingEdits)
+            var outputs = new List<(SvEncounterRegion Region, byte[] Bytes)>();
+            foreach (var region in GetTouchedRegions(session))
             {
-                ApplyEdit(rows, edit, diagnostics);
+                var source = fileSource.Read(project, region.VirtualPath);
+                var root = global::EncountPokeDataArray.GetRootAsEncountPokeDataArray(new ByteBuffer(source.Bytes));
+                KM.Formats.FlatBufferMergeGuard.Validate(root);
+                var rows = ReadRows(source.Bytes, region);
+                // Verify preservation before changing any editable fields.
+                KM.Formats.FlatBufferMergeGuard.ValidateRoundTrip(root, WriteRows(rows));
+                foreach (var edit in session.PendingEdits.Where(edit => GetRegion(edit) == region))
+                    ApplyEdit(rows, edit, diagnostics);
+                outputs.Add((region, WriteRows(rows)));
             }
 
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -263,8 +312,11 @@ internal sealed partial class SvEncountersEditSessionService
                 return SvEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
-            SvWorkflowFileSource.Write(paths, SvDataPaths.WildEncounterArray, WriteRows(rows), outputMode);
-            writtenFiles.Add(SvEditSessionSupport.GeneratedReference(SvDataPaths.WildEncounterArray, outputMode));
+            foreach (var (region, bytes) in outputs)
+            {
+                SvWorkflowFileSource.Write(paths, region.VirtualPath, bytes, outputMode);
+                writtenFiles.Add(SvEditSessionSupport.GeneratedReference(region.VirtualPath, outputMode));
+            }
             if (outputMode == SvOutputMode.Standalone)
             {
                 writtenFiles.Add(SvEditSessionSupport.GeneratedDescriptorReference());
@@ -281,12 +333,17 @@ internal sealed partial class SvEncountersEditSessionService
                 DiagnosticSeverity.Error,
                 $"Wild Encounters output could not be written: {exception.Message}",
                 SvEditSessionSupport.EncountersDomain,
-                file: $"romfs/{SvDataPaths.WildEncounterArray}",
                 expected: "Readable source and writable output root"));
         }
 
         return SvEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
     }
+
+    private static SvEncounterRegion? GetRegion(PendingEdit edit) =>
+        TryParseSlotRecordId(edit.RecordId, out var tableId, out _) ? SvEncounterRegion.FromTableId(tableId) : null;
+
+    private static IEnumerable<SvEncounterRegion> GetTouchedRegions(EditSession session) =>
+        SvEncounterRegion.All.Where(region => session.PendingEdits.Any(edit => GetRegion(edit) == region));
 
     private static PendingEdit? CreatePendingEdit(
         SvEncountersWorkflow workflow,
@@ -368,6 +425,14 @@ internal sealed partial class SvEncountersEditSessionService
             edit.Field,
             SvEditSessionSupport.EncountersDomain,
             diagnostics);
+
+        var region = GetRegion(edit);
+        if (region is null || edit.Sources.Count == 0 || edit.Sources.Any(source => !region.OwnsSource(source.RelativePath)))
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending encounter edit source does not match its region.",
+                SvEditSessionSupport.EncountersDomain,
+                expected: "Encounter source file for the selected region"));
     }
 
     private static SvEncountersWorkflow OverlayPendingEdits(SvEncountersWorkflow workflow, IEnumerable<PendingEdit> edits)
@@ -508,7 +573,7 @@ internal sealed partial class SvEncountersEditSessionService
         }
     }
 
-    private static IReadOnlyList<EncounterRow> ReadRows(byte[] bytes)
+    private static IReadOnlyList<EncounterRow> ReadRows(byte[] bytes, SvEncounterRegion? region = null)
     {
         var table = global::EncountPokeDataArray.GetRootAsEncountPokeDataArray(new ByteBuffer(bytes));
         var rows = new List<EncounterRow>();
@@ -517,7 +582,7 @@ internal sealed partial class SvEncountersEditSessionService
             var row = table.Values(index);
             if (row is not null)
             {
-                rows.Add(EncounterRow.From(row.Value));
+                rows.Add(EncounterRow.From(row.Value, region));
             }
         }
 
@@ -567,18 +632,21 @@ internal sealed partial class SvEncountersEditSessionService
 
     private static string CreateSummary(SvEncounterTableRecord table, SvEncounterSlotRecord slot, string field, int value)
     {
+        var context = table.Region == "Paldea"
+            ? $"{table.GameVersion} {table.Area} {table.Location}"
+            : $"{table.GameVersion} {table.Region} {table.Area} {table.Location}";
         return field switch
         {
             SvEncountersWorkflowService.SpeciesIdField =>
-                $"Set {table.GameVersion} {table.Area} {table.Location} {table.EncounterType} slot {slot.Slot} species ID to {value}.",
+                $"Set {context} {table.EncounterType} slot {slot.Slot} species ID to {value}.",
             SvEncountersWorkflowService.FormField =>
-                $"Set {table.GameVersion} {table.Area} {table.Location} {table.EncounterType} slot {slot.Slot} form to {value}.",
+                $"Set {context} {table.EncounterType} slot {slot.Slot} form to {value}.",
             SvEncountersWorkflowService.ProbabilityField =>
-                $"Set {table.GameVersion} {table.Area} {table.Location} {table.EncounterType} slot {slot.Slot} lot weight to {value}.",
+                $"Set {context} {table.EncounterType} slot {slot.Slot} lot weight to {value}.",
             SvEncountersWorkflowService.LevelMinField =>
-                $"Set {table.GameVersion} {table.Area} {table.Location} slot {slot.Slot} minimum level to {value}.",
+                $"Set {context} slot {slot.Slot} minimum level to {value}.",
             SvEncountersWorkflowService.LevelMaxField =>
-                $"Set {table.GameVersion} {table.Area} {table.Location} slot {slot.Slot} maximum level to {value}.",
+                $"Set {context} slot {slot.Slot} maximum level to {value}.",
             _ => $"Set {table.Location} encounter {field} to {value}.",
         };
     }
@@ -617,7 +685,7 @@ internal sealed partial class SvEncountersEditSessionService
         public BringItemRow? BringItem { get; init; }
         public string GroupKey { get; init; } = string.Empty;
 
-        public static EncounterRow From(global::EncountPokeData row)
+        public static EncounterRow From(global::EncountPokeData row, SvEncounterRegion? region = null)
         {
             return new EncounterRow
             {
@@ -651,7 +719,7 @@ internal sealed partial class SvEncountersEditSessionService
                 PokeVoiceClassification = row.PokeVoiceClassification,
                 Versiontable = row.Versiontable is { } version ? VersionTableRow.From(version) : null,
                 BringItem = row.BringItem is { } bringItem ? BringItemRow.From(bringItem) : null,
-                GroupKey = SvEncounterGrouping.CreateGroupKey(row),
+                GroupKey = region?.TableId(SvEncounterGrouping.CreateGroupKey(row)) ?? SvEncounterGrouping.CreateGroupKey(row),
             };
         }
 

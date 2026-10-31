@@ -90,10 +90,17 @@ public sealed partial class SvEditableDumpProvider : IEditableDumpProvider
             case "encounters":
             {
                 var data = workflow.LoadEncounters(activePaths); diagnostics = data.Diagnostics;
+                sourceFileCount = data.Stats.SourceFileCount;
                 var fields = Definitions(data.EditableFields);
                 foreach (var table in data.Tables)
                 {
                     var record = new DumpRecord(table.TableId, table.Location, category, table.TableId);
+                    if (table.Region != "Paldea")
+                    {
+                        record.Fields.Add(new("region", "region", table.Region, "text", Editable: false));
+                        record.Fields.Add(new("area", "area", table.Area, "text", Editable: false));
+                        record.Fields.Add(new("source_file", "sourceFile", table.Provenance.SourceFile, "text", Editable: false));
+                    }
                     record.Children["slots"] = table.Slots.Select(slot =>
                     {
                         var child = new DumpRecord(Value(slot.Slot), slot.Species, category, table.TableId, slot.Slot);

@@ -1505,7 +1505,10 @@ public static class SvBridgeMapper
             table.GameVersion,
             table.ArchiveMember,
             table.Slots.Select(ToDto).ToArray(),
-            ToDto(table.Provenance));
+            ToDto(table.Provenance))
+        {
+            Region = table.Region,
+        };
     }
 
     private static EncounterSlotRecordDto ToDto(SvEncounterSlotRecord slot)

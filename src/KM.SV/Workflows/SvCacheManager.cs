@@ -174,6 +174,8 @@ public sealed partial class SvCacheManager
             SvDataPaths.VisibleItemSceneBlueberryViolet,
             SvDataPaths.TrainerDataArray,
             SvDataPaths.WildEncounterArray,
+            SvDataPaths.WildEncounterKitakamiArray,
+            SvDataPaths.WildEncounterBlueberryArray,
             SvDataPaths.FixedSymbolTableArray,
             SvDataPaths.EventBattlePokemonArray,
             SvDataPaths.EventAddPokemonArray,

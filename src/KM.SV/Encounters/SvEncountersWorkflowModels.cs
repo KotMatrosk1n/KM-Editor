@@ -30,7 +30,10 @@ public sealed record SvEncounterTableRecord(
     string GameVersion,
     string ArchiveMember,
     IReadOnlyList<SvEncounterSlotRecord> Slots,
-    SvEncounterProvenance Provenance);
+    SvEncounterProvenance Provenance)
+{
+    public string Region { get; init; } = "Paldea";
+}
 
 public sealed record SvEncounterEditableField(
     string Field,
