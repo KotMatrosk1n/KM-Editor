@@ -1414,13 +1414,6 @@ type UpdateCheckStatus =
   | { kind: 'restarting'; message: string }
   | { kind: 'upToDate'; message: string };
 
-const healthLabels = {
-  blocked: 'Blocked',
-  editableReady: 'Editable',
-  needsPaths: 'Needs paths',
-  readOnlyReady: 'View Only'
-} as const satisfies Record<ProjectHealth['state'], string>;
-
 const pathStatusLabels = {
   missing: 'Missing',
   notSet: 'Not set',
@@ -22691,39 +22684,6 @@ function HealthSection({
             status={svCacheStatus}
           />
         ) : null}
-      </section>
-
-      <section aria-labelledby="health-heading" className="panel">
-        <div className="panel-heading">
-          <ShieldCheck aria-hidden="true" size={18} />
-          <h2 className="context-help-heading" id="health-heading">
-            <span>Health Summary</span>
-            <ContextHelp label="Health Summary">{t('health.summaryHelp')}</ContextHelp>
-          </h2>
-        </div>
-
-        <div className="health-grid">
-          <Metric
-            help={t('health.stateHelp')}
-            label="State"
-            value={health ? healthLabels[health.state] : 'No project'}
-          />
-          <Metric
-            help={t('health.readOnlyHelp')}
-            label="Read-only workflows"
-            value={health?.canOpenReadOnlyWorkflows ? 'Enabled' : 'Disabled'}
-          />
-          <Metric
-            help={t('health.writeHelp')}
-            label="Write workflows"
-            value={health?.canOpenEditableWorkflows ? 'Enabled' : 'Disabled'}
-          />
-          <Metric
-            help={t('health.pendingHelp')}
-            label="Pending changes"
-            value={pendingEditCount.toString()}
-          />
-        </div>
       </section>
 
       <DiagnosticsSection diagnostics={[...bridgeDiagnostics, ...(health?.diagnostics ?? [])]} />
