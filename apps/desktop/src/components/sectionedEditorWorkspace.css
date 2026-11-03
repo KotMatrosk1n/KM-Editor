@@ -1,0 +1,143 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+.sectioned-editor-workspace {
+  display: flex; flex-direction: column; gap: 12px;
+  width: 100%; min-width: 0; min-height: 0; height: 660px;
+  --editor-hover-duration: 120ms;
+  container: editorWorkspace / inline-size;
+}
+.sectioned-editor-workspace .editor-workspace-chrome {
+  display: flex; flex: 0 1 auto; flex-direction: column; gap: 8px;
+  min-height: 0; max-height: calc(100% - 72px); overflow: auto;
+  scrollbar-gutter: stable; overscroll-behavior: contain;
+}
+.sectioned-editor-workspace .editor-session-bar { position: static; flex-shrink: 0; margin: 0; }
+.sectioned-editor-workspace .items-toolbar { margin: 0; flex-shrink: 0; }
+.sectioned-editor-workspace .editor-workspace-chrome .pokemon-toolbar { grid-template-columns: minmax(200px, 1fr) minmax(0, 1.2fr); gap: 8px; }
+.sectioned-editor-workspace .editor-workspace-chrome .pokemon-toolbar-side { gap: 6px; }
+.sectioned-editor-workspace :is(.pokemon-toolbar-metrics, .pokemon-toolbar-actions) { gap: 6px; }
+.sectioned-editor-workspace .editor-workspace-chrome .pokemon-toolbar-metrics .metric { min-height: 0; min-width: 0; flex: 1 1 0; padding: 6px 8px; }
+.sectioned-editor-workspace .editor-workspace-chrome .pokemon-toolbar-metrics .metric-label { font-size: .75rem; }
+.sectioned-editor-workspace .editor-workspace-chrome .pokemon-toolbar-metrics .metric-value { font-size: .875rem; }
+.sectioned-editor-workspace .editor-workspace-browser { flex: 0 0 auto; min-height: 40px; overflow: hidden; }
+.sectioned-editor-workspace .editor-workspace-browser > :is(.items-table, .moves-table, .trainers-table) {
+  display: block; height: 100%; min-height: 0; max-height: none; overflow: auto; overscroll-behavior: contain;
+}
+.sectioned-editor-workspace .trainers-toolbar { grid-template-columns: minmax(200px, 1fr) repeat(3, minmax(90px, auto)); gap: 8px; }
+.sectioned-editor-workspace .trainers-toolbar .metric { min-height: 0; padding: 6px 8px; }
+.sectioned-editor-workspace .trainers-toolbar .metric-label { font-size: .75rem; }
+.sectioned-editor-workspace .trainers-toolbar .metric-value { font-size: .875rem; }
+.sectioned-editor-workspace .trainer-selection-details { display: block; flex-shrink: 0; padding: 8px 12px; }
+.sectioned-editor-workspace .trainer-selection-details > .panel-heading { margin-bottom: 6px; }
+.sectioned-editor-workspace .trainer-selection-details > .item-provenance-list {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr)); gap: 6px 12px; margin: 0;
+}
+.sectioned-editor-workspace .trainer-selection-details .item-provenance-list :is(dt, dd) { font-size: .75rem; }
+.sectioned-editor-workspace .trainer-selection-details .item-provenance-list dd { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sectioned-editor-workspace .trainer-edit-form { margin: 0; padding: 0; border: 0; }
+.sectioned-editor-workspace .trainer-party-header { padding-top: 0; border-top: 0; flex-wrap: wrap; }
+.sectioned-editor-workspace .editor-workspace-resizer {
+  height: 8px; flex: 0 0 8px; margin: -6px 0; cursor: ns-resize; touch-action: none;
+  display: grid; place-items: center; border-radius: 4px;
+}
+.editor-workspace-resizer::after { content: ''; width: 48px; height: 3px; background: var(--color-border); border-radius: 3px; }
+.editor-workspace-resizer:hover::after, .editor-workspace-resizer:focus-visible::after { background: var(--color-accent); }
+.sectioned-editor-workspace .editor-section-selectors {
+  display: flex; flex: 0 0 auto; gap: 8px; overflow-x: auto; padding: 3px;
+  position: sticky; bottom: 0; z-index: 2; background: var(--color-surface);
+  scrollbar-width: thin; scroll-padding: 3px;
+}
+.sectioned-editor-workspace .editor-section-selector {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex: 1 0 138px; height: 50px; min-width: 0; max-width: 240px; padding: 10px 12px;
+  border: 1px solid var(--color-border); border-radius: 8px;
+  background: var(--color-control, #101b2c); color: var(--color-text-muted); font: inherit; font-size: .8125rem;
+  cursor: pointer; transition: background-color var(--editor-hover-duration), border-color var(--editor-hover-duration), color var(--editor-hover-duration);
+}
+.editor-section-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor-section-status { display: flex; flex: 0 0 22px; gap: 4px; align-items: center; justify-content: flex-end; }
+.editor-section-modified { color: var(--color-accent, #d8b55d); font-size: 10px; }
+.editor-section-invalid { color: var(--color-danger, #ff8e91); font-weight: 800; }
+.sectioned-editor-workspace .editor-section-selector:hover { color: var(--color-text); border-color: var(--color-accent); background: var(--color-control-hover); }
+.sectioned-editor-workspace .editor-section-selector[data-active='true'] {
+  color: var(--color-text); border-color: var(--color-accent, #d8b55d);
+  background: linear-gradient(135deg, rgb(var(--color-accent-bright-rgb, 216 181 93) / 15%), var(--color-control, #101b2c));
+  box-shadow: inset 0 -2px 0 rgb(var(--color-accent-bright-rgb, 216 181 93) / 50%);
+}
+.sectioned-editor-workspace .editor-section-selector[data-invalid='true'] { border-inline-end: 3px solid var(--color-danger, #ff8e91); }
+.sectioned-editor-workspace :is(.editor-section-selector, .editor-workspace-resizer):focus-visible { outline: 2px solid var(--color-accent, #d8b55d); outline-offset: 1px; }
+.editor-workspace-slot { flex: 1 1 0; min-height: 48px; min-width: 0; position: relative; }
+.sectioned-editor-workspace .editor-workspace-surface { position: relative; min-width: 0; max-height: 100%; overflow: hidden; transition: none; }
+.sectioned-editor-workspace .editor-workspace-section {
+  position: absolute; inset: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable;
+}
+.editor-workspace-section[data-outgoing='true'] { pointer-events: none; }
+.editor-workspace-section-content { display: grid; align-content: start; gap: 12px; min-width: 0; padding: 2px 3px 12px; }
+.editor-workspace-section[hidden] { display: none; }
+.sectioned-editor-workspace .editable-field-groups {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); align-items: start; gap: 12px;
+}
+.sectioned-editor-workspace .editable-field-group { min-width: 0; align-self: start; }
+.sectioned-editor-workspace .editable-field-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); align-items: start; }
+.sectioned-editor-workspace .editable-field-grid > * { min-width: 0; }
+.sectioned-editor-workspace :is(.editable-field-group legend, .editable-field-label-row, .editable-field-control > small) { max-width: 100%; overflow-wrap: anywhere; }
+.sectioned-editor-workspace .trainer-party-card :is(strong, span):not(.trainer-party-held-item-accessibility) { overflow: visible; overflow-wrap: anywhere; white-space: normal; }
+.sectioned-editor-workspace :is(input, select, .searchable-option-input) { min-width: 0; max-width: 100%; }
+.sectioned-editor-workspace .pokemon-details-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.sectioned-editor-workspace .pokemon-details-grid > .pokemon-summary-card { grid-column: 1 / -1; }
+.sectioned-editor-workspace .inspector-block { min-width: 0; width: 100%; grid-column: auto; }
+.sectioned-editor-workspace .learnset-editor { min-width: 0; container-type: inline-size; }
+.sectioned-editor-workspace .learnset-list { min-width: 0; }
+.sectioned-editor-workspace .pokemon-details-grid .inspector-block { grid-row: auto; }
+.sectioned-editor-workspace .pokemon-source-path { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.sectioned-editor-workspace .item-provenance-list > div { min-width: 0; }
+.sectioned-editor-workspace .item-provenance-list dd { min-width: 0; }
+.sectioned-pokemon-layout { display: block !important; }
+@media (max-height: 800px), (max-width: 1000px) {
+  .sectioned-editor-workspace { gap: 8px; }
+  .sectioned-editor-workspace .editor-workspace-chrome { gap: 6px; }
+  .sectioned-editor-workspace .editor-session-bar { padding: 8px; gap: 8px; }
+  .sectioned-editor-workspace .editor-workspace-chrome .pokemon-toolbar { grid-template-columns: minmax(180px, .8fr) minmax(0, 1.2fr); }
+  .sectioned-editor-workspace .editor-workspace-chrome .pokemon-toolbar-metrics .metric { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; padding: 3px 6px; }
+}
+@media (max-width: 560px) {
+  .sectioned-editor-workspace .editable-field-groups { grid-template-columns: 1fr; }
+  .sectioned-editor-workspace .editor-workspace-chrome .pokemon-toolbar { grid-template-columns: 1fr; }
+  .sectioned-editor-workspace .editor-section-selector { flex-basis: 124px; }
+}
+@container editorWorkspace (max-width: 640px) {
+  .sectioned-editor-workspace .pokemon-details-grid { grid-template-columns: 1fr; }
+  .sectioned-editor-workspace .editor-workspace-chrome .pokemon-toolbar { grid-template-columns: 1fr; }
+  .sectioned-editor-workspace .trainers-toolbar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .sectioned-editor-workspace .trainers-toolbar .items-search { grid-column: 1 / -1; }
+}
+@container (max-width: 480px) {
+  .sectioned-editor-workspace .learnset-row:not(.learnset-inline-row):not(.evolution-row) {
+    grid-template-columns: 24px repeat(2, minmax(0, 1fr));
+  }
+  .sectioned-editor-workspace .learnset-row:not(.learnset-inline-row) > :is(span, strong) {
+    overflow: visible; overflow-wrap: anywhere; white-space: normal;
+  }
+  .sectioned-editor-workspace .learnset-row:not(.learnset-inline-row) > .learnset-mastery-cell { grid-column: 1 / -1; grid-row: 3; }
+  .sectioned-editor-workspace .learnset-row:not(.learnset-inline-row) > .learnset-mastery-cell:empty { display: none; }
+  .sectioned-editor-workspace .learnset-row:not(.learnset-inline-row) > .learnset-move-name { grid-column: 1 / 3; grid-row: 2; }
+  .sectioned-editor-workspace .learnset-row:not(.learnset-inline-row):not(.evolution-row) > :last-child { grid-column: 3; grid-row: 2; }
+  .sectioned-editor-workspace .evolution-row { grid-template-columns: 34px repeat(2, minmax(0, 1fr)); }
+  .sectioned-editor-workspace .evolution-row > :nth-child(3) { grid-column: 1 / -1; grid-row: 3; }
+  .sectioned-editor-workspace .evolution-row > :nth-child(4) { grid-column: 1 / 3; grid-row: 2; }
+  .sectioned-editor-workspace .evolution-row > :nth-child(5) { grid-column: 3; grid-row: 2; }
+  .sectioned-editor-workspace .evolution-row > :nth-child(6) { grid-column: 3; grid-row: 1; }
+  .sectioned-editor-workspace .evolution-row > :nth-child(7) { grid-column: 1 / -1; grid-row: 4; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sectioned-editor-workspace { --editor-hover-duration: 0ms; }
+}
+:root[data-km-motion='reduce'] .sectioned-editor-workspace { --editor-hover-duration: 0ms; }
+.sectioned-editor-workspace[data-reduced-motion='true'] :is(.editor-section-selector, .editor-workspace-surface, .editor-workspace-section) { transition: none !important; transition-duration: 0s !important; }
+
+/* Preview editors retain their own layout and share the section selection cues. */
+.editor-section-choice { border-radius: 8px; transition: background-color 120ms, border-color 120ms, color 120ms; }
+.editor-section-choice:hover { border-color: var(--color-accent); background: var(--color-control-hover); }
+.editor-section-choice:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.editor-section-choice[aria-pressed='true'] { box-shadow: inset 0 -2px 0 rgb(var(--color-accent-bright-rgb) / 50%); }
+:root[data-km-motion='reduce'] .editor-section-choice { transition: none !important; transition-duration: 0s !important; }
+@media (prefers-reduced-motion: reduce) { .editor-section-choice { transition: none !important; transition-duration: 0s !important; } }

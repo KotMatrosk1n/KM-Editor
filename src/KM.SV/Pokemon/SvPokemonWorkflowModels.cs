@@ -141,7 +141,13 @@ public sealed record SvPokemonRecord(
     IReadOnlyList<SvPokemonLearnsetMove> Learnset,
     IReadOnlyList<SvPokemonCompatibilityGroup> Compatibility,
     SvPokemonProvenance Provenance,
-    string? SpriteName = null);
+    string? SpriteName = null)
+{
+    public SvPokemonMaterialDrop? MaterialDrop { get; init; }
+}
+
+public sealed record SvPokemonMaterialDrop(
+    int ItemId, string Item, int Rate, int Count, SvPokemonProvenance Provenance);
 
 public sealed record SvPokemonWorkflowStats(
     int TotalPokemonCount,

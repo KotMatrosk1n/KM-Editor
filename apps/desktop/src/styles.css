@@ -2270,6 +2270,48 @@ h2 {
   padding-right: 34px;
 }
 
+.searchable-option-wrap-value {
+  display: grid;
+}
+
+.searchable-option-wrap-value > input,
+.searchable-option-selected-value {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+
+.searchable-option-wrap-value > input {
+  height: 100%;
+}
+
+.searchable-option-selected-value {
+  align-self: center;
+  padding: 12px 34px 12px 12px;
+  color: var(--color-text);
+  font: inherit;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  visibility: hidden;
+  z-index: 1;
+}
+
+.searchable-option-wrap-value[data-show-value='true'] > input {
+  color: transparent;
+}
+
+.searchable-option-wrap-value[data-show-value='true'] > .searchable-option-selected-value {
+  visibility: visible;
+}
+
+.searchable-option-disabled > .searchable-option-selected-value {
+  opacity: 0.62;
+}
+
+.searchable-option-wrap-value > .searchable-option-toggle {
+  z-index: 2;
+}
+
 .searchable-option-toggle {
   position: absolute;
   top: 50%;

@@ -1,5 +1,18 @@
 {
   "keys": {
+    "pokemon.materialDrops.title": "Выпадающие материалы",
+    "pokemon.materialDrops.item": "Материал",
+    "pokemon.materialDrops.rate": "Шанс выпадения (%)",
+    "pokemon.materialDrops.count": "Количество материала",
+    "pokemon.materialDrops.help": "Измените материал, шанс и количество, получаемые при победе над диким покемоном или его поимке. Эти значения общие для всех форм вида.",
+    "pokemon.materialDrops.unavailable": "Для этого вида нет записи о выпадающих материалах.",
+    "editorSections.details": "Сведения",
+    "editorSections.speciesData": "Данные вида",
+    "editorSections.moveCompatibility": "TR/TM/HM/Яйцевые приёмы",
+    "editorSections.sections": "Разделы редактора",
+    "editorSections.modified": "Изменено",
+    "editorSections.invalid": "Нужны допустимые значения",
+    "editorSections.resizeBrowser": "Изменить размер списка записей",
     "customGifts.chance": "Шанс выпадения (%)",
     "customGifts.slotChance": "Шанс {chance}%",
     "customGifts.poolSummary": "Занято мест: {count}/14. Общий шанс: {total}% / 100%.",

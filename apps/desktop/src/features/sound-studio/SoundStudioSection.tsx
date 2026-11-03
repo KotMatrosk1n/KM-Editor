@@ -75,7 +75,7 @@ export default function SoundStudioSection({ paths, catalogRevision = '' }: { pa
     {loading ? <div className="sound-studio__loading"><LoadingProgress operationKey={revision} label={t('soundStudio.loading')} completed={progress[0]} total={progress[1] || undefined} onCancel={stopCatalog} cancelLabel={t('soundStudio.cancel')} /></div> : null}
     <div className="sound-studio__workspace">
       <aside className="sound-studio__categories" aria-label={t('soundStudio.categories')}>
-        {categories.map(value => <button type="button" key={value} aria-pressed={value === category && !everywhere} onClick={() => { setCategory(value); setEverywhere(false); }}><span>{t(`soundStudio.category.${value}`)}</span><span>{counts[value] ?? 0}</span></button>)}
+        {categories.map(value => <button className="editor-section-choice" type="button" key={value} aria-pressed={value === category && !everywhere} onClick={() => { setCategory(value); setEverywhere(false); }}><span>{t(`soundStudio.category.${value}`)}</span><span>{counts[value] ?? 0}</span></button>)}
       </aside>
       <div className="sound-studio__browser">
         <label htmlFor="sound-search">{t('soundStudio.search')}</label><input id="sound-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder={t('soundStudio.searchHint')} />

@@ -1,5 +1,18 @@
 {
   "keys": {
+    "pokemon.materialDrops.title": "Materiales soltados",
+    "pokemon.materialDrops.item": "Material",
+    "pokemon.materialDrops.rate": "Probabilidad de caída (%)",
+    "pokemon.materialDrops.count": "Cantidad de material",
+    "pokemon.materialDrops.help": "Edita el material, la probabilidad y la cantidad que dejan los Pokémon salvajes al derrotarlos o capturarlos. Todas las formas de esta especie comparten estos valores.",
+    "pokemon.materialDrops.unavailable": "Esta especie no tiene una entrada de materiales.",
+    "editorSections.details": "Detalles",
+    "editorSections.speciesData": "Datos de especie",
+    "editorSections.moveCompatibility": "TR/TM/HM/Movimientos Huevo",
+    "editorSections.sections": "Secciones del editor",
+    "editorSections.modified": "Modificado",
+    "editorSections.invalid": "Requiere valores válidos",
+    "editorSections.resizeBrowser": "Cambiar tamaño de la lista de registros",
     "customGifts.chance": "Probabilidad de sorteo (%)",
     "customGifts.slotChance": "{chance}% de probabilidad",
     "customGifts.poolSummary": "{count}/14 espacios usados. Probabilidad total: {total}% / 100%.",

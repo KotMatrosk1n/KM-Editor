@@ -1168,7 +1168,11 @@ public static class SvBridgeMapper
                 pokemon.Provenance.SourceFile,
                 ProjectBridgeMapper.ToDto(pokemon.Provenance.SourceLayer),
                 ProjectBridgeMapper.ToDto(pokemon.Provenance.FileState)),
-            pokemon.SpriteName);
+            pokemon.SpriteName,
+            MaterialDrop: pokemon.MaterialDrop is { } drop ? new PokemonMaterialDropDto(
+                drop.ItemId, drop.Item, drop.Rate, drop.Count, new PokemonProvenanceDto(
+                    drop.Provenance.SourceFile, ProjectBridgeMapper.ToDto(drop.Provenance.SourceLayer),
+                    ProjectBridgeMapper.ToDto(drop.Provenance.FileState))) : null);
     }
 
     private static PokemonEditableFieldDto ToDto(SvPokemonEditableField field)
