@@ -165,7 +165,7 @@ internal static class SwShRestorationFormCandidates
                 definition?.Id, game is { } edition && definition is not null ? definition.Support.GetValueOrDefault(edition) : SwShRestorationSupport.NotSupported,
                 selection?.Enabled == true ? complete ? SwShRestorationInstallation.Enabled : SwShRestorationInstallation.NeedsRepair
                     : entry?.Personal.IsPresentInGame == true ? SwShRestorationInstallation.External : SwShRestorationInstallation.Disabled, [f.Species])
-                { Form = f.Form, FormLabel = f.Label, Donor = f.Donor,
+                { Form = f.Form, FormLabel = f.Label, Donor = f.Donor, AvailableForAssignment = complete,
                     PlannedPersonalId = SwShRestorationFormSlots.PlannedPersonalRow(f.Species, f.Form) };
             });
         return SwShRestorationFamilyOrder.Sort(speciesEntries.Concat(forms));

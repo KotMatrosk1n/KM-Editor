@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 import { useEffect, useRef, useState } from 'react';
-import { Bird, RefreshCw, Save, Trash2, X } from 'lucide-react';
+import { Bird, CheckCircle2, RefreshCw, Save, Trash2, TriangleAlert, X } from 'lucide-react';
 import type { EditSession, ProjectPaths } from '../../bridge/contracts';
 import type { RestorationProjectBridgeApi } from '../../bridge/restorationProjectBridge';
 import type { RestorationPreparation, RestorationSelection, RestorationWorkflow } from '../../bridge/restorationContracts';
@@ -183,26 +183,35 @@ export function RestoreMissingPokemonSection({ workflow, paths, bridge, session,
         ?? entries.find(entry => entry.speciesId === preparation.species && entry.form === 0)?.name ?? t('restoration.title')}
       onCancel={() => void cancelPreparation()} /> : null}
     <label className="restoration-search">{t('restoration.search')}<input type="search" value={search} onChange={e => setSearch(e.target.value)} /></label>
-    <div className="restoration-list"><table><thead><tr><th scope="col">{t('restoration.enabled')}</th><th scope="col">{t('restoration.pokemon')}</th>
+    <div className="restoration-list" tabIndex={0} role="region" aria-label={t('restoration.pokemon')}><table><thead><tr><th scope="col">{t('restoration.enabled')}</th><th scope="col">{t('restoration.pokemon')}</th>
       <th scope="col">{t('restoration.availability')}</th><th scope="col">{t('restoration.actions')}</th></tr></thead><tbody>
       {entries.filter(e => `${e.speciesId} ${entryName(e)}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())).map(entry => {
         const id = entry.definitionId;
         const label = entryName(entry);
         const enabled = id && id in drafts ? drafts[id].enabled : entry.selected;
-        return <tr key={`${entry.speciesId}:${entry.form}`}><td><input type="checkbox" aria-label={`${t('restoration.enabled')}: ${label}`} checked={enabled}
+        const external = entry.installation === 'External';
+        return <tr key={`${entry.speciesId}:${entry.form}`}><td>{external ? <span
+          className={`restoration-installed-indicator ${entry.availableForAssignment ? 'is-complete' : 'needs-repair'}`}>
+          {entry.availableForAssignment ? <CheckCircle2 size={20} aria-hidden="true" /> : <TriangleAlert size={20} aria-hidden="true" />}
+          <strong>{t(entry.availableForAssignment ? 'restoration.alreadyInstalled' : 'restoration.installation.NeedsRepair')}</strong>
+        </span> : <input type="checkbox" aria-label={`${t('restoration.enabled')}: ${label}`} checked={enabled}
           disabled={!canEdit || removing === id || !id || !hashes.has(id) || entry.support === 'NotSupported' || entry.installation === 'External'}
           title={id && !hashes.has(id) ? t('restoration.prepare') : undefined}
           onChange={event => { if (!id) return; selectionVersions.current[id] = (selectionVersions.current[id] ?? 0) + 1; const checked = event.target.checked; setDrafts(current => {
             const next = { ...current, [id]: { enabled: checked } }; if (checked === entry.selected && !isStaging) delete next[id]; return next;
-          }); }} /></td><td data-localization-ignore="true"><strong>{label}</strong><small>#{entry.speciesId}</small>
+          }); }} />}</td><td data-localization-ignore="true"><strong>{label}</strong><small>#{entry.speciesId}</small>
             {entry.plannedPersonalId != null ? <small>{t('restoration.plannedRow', { form: entry.form, row: entry.plannedPersonalId })}</small> : null}</td>
-          <td>{t(`restoration.support.${entry.support}`)}{entry.donor ? <small>{t(`restoration.source.${entry.donor}`)}</small>
+          <td>{external ? t('restoration.installation.External') : t(`restoration.support.${entry.support}`)}
+            {external ? <small>{t(`restoration.support.${entry.support}`)}</small> : null}
+            {entry.donor ? <small>{t(`restoration.source.${entry.donor}`)}</small>
             : entry.form > 0 ? <small>{t('restoration.sourceUnavailable')}</small> : null}
             {id && hashes.has(id) ? <small>{t('restoration.status.prepared')}</small> : null}
             {entry.removalStaged ? <small role="status">{t('restoration.removalStaged')}</small> : null}
             {id && drafts[id]?.updateAssets ? <small role="status">{t('restoration.updatePrepared')}</small> : null}
-            <small>{t(`restoration.installation.${entry.installation}`)}{entry.staged ? ` · ${t('restoration.staged')}` : ''}</small></td>
-          <td>{id && entry.installation !== 'External' ? <div className="restoration-asset-actions">
+            {!external ? <small>{t(`restoration.installation.${entry.installation}`)}{entry.staged ? ` · ${t('restoration.staged')}` : ''}</small> : null}</td>
+          <td>{external ? <p className="restoration-external-help">
+            {t(entry.availableForAssignment ? 'restoration.externalInstalledHelp' : 'restoration.externalRepairHelp')}
+          </p> : id ? <div className="restoration-asset-actions">
             {hashes.has(id) || entry.removalStaged ? <button className="danger-button" type="button"
               disabled={!canEdit || entry.removalStaged || removing !== null || isStaging || isPreparing || preparation?.status === 'preparing'}
               aria-busy={removing === id} onClick={() => void removeAssets(id)}>

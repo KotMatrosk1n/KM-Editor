@@ -10,6 +10,7 @@ export const restorationWorkflowSchema = z.strictObject({ canEdit: z.boolean(), 
       'Alolan', 'Hisuian', 'Paldean', 'PaldeanCombat', 'PaldeanBlaze', 'PaldeanAqua', 'Origin', 'Primal', 'Attack', 'Defense', 'Speed']).nullable().default(null),
     support: z.enum(['NotSupported', 'Testing', 'Ready']), installation: z.enum(['Disabled', 'Enabled', 'NeedsRepair', 'External']),
     assetsRemoved: z.string().nullable().default(null), removalStaged: z.boolean().default(false), updateAvailable: z.boolean().default(false),
+    availableForAssignment: z.boolean().default(false),
     donor: z.enum(['ScarletViolet', 'LegendsZA', 'LegendsArceus']).nullable(), family: z.array(z.number().int()), preparedHash: z.string().nullable(), selected: z.boolean(), staged: z.boolean() })).max(1020),
   diagnostics: z.array(apiDiagnosticSchema) });
 export const restorationPreparationSchema = z.strictObject({ id: z.string(), definitionId: z.string(),
