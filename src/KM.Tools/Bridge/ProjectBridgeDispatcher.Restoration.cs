@@ -147,6 +147,7 @@ public sealed partial class ProjectBridgeDispatcher
                     intent?.Enabled ?? selected?.Enabled == true, intent is not null)
                     { Form = e.Form, FormLabel = e.FormLabel, PlannedPersonalId = e.PlannedPersonalId, Donor = e.Donor?.ToString(),
                         AssetsRemoved = selected?.RemovalId, RemovalStaged = intent?.RemovalId is not null,
+                        AvailableForAssignment = e.AvailableForAssignment,
                         UpdateAvailable = intent?.RemovalId is null && e.DefinitionId is { } definitionId
                             && SwShRestorationDefinitions.Get(definitionId).HasAssetUpdate(selected) };
             }).ToArray(), catalog.UnavailableReason is null ? cleanupDiagnostics : [.. cleanupDiagnostics, ProjectBridgeMapper.ToDto(new ValidationDiagnostic(DiagnosticSeverity.Error, catalog.UnavailableReason,

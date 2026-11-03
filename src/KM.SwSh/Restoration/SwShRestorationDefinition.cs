@@ -160,6 +160,7 @@ public sealed record SwShRestorationCatalogEntry(int SpeciesId, string Name, str
     public string? FormLabel { get; init; }
     public int? PlannedPersonalId { get; init; }
     public SwShRestorationDonor? Donor { get; init; }
+    public bool AvailableForAssignment { get; init; }
 }
 public sealed record SwShRestorationCatalog(string Revision, IReadOnlyList<SwShRestorationCatalogEntry> Entries, string? UnavailableReason)
 {
@@ -189,7 +190,8 @@ public sealed record SwShRestorationCatalog(string Revision, IReadOnlyList<SwShR
                     definition?.Id, paths.SelectedGame is { } game && definition is not null ? definition.Support.GetValueOrDefault(game) : SwShRestorationSupport.NotSupported,
                     selection?.Enabled == true ? complete ? SwShRestorationInstallation.Enabled : SwShRestorationInstallation.NeedsRepair
                         : group.Any(e => e.Personal.IsPresentInGame) ? SwShRestorationInstallation.External : SwShRestorationInstallation.Disabled,
-                    definition?.Identities.Select(i => i.Species).Distinct().ToArray() ?? [group.Key]) { Donor = definition?.Donor };
+                    definition?.Identities.Select(i => i.Species).Distinct().ToArray() ?? [group.Key])
+                    { Donor = definition?.Donor, AvailableForAssignment = complete };
             });
         return new(catalog.Revision + ":forms-1", SwShRestorationFormCandidates.Include(entries, catalog, names, paths.SelectedGame, state.State), null);
     }
