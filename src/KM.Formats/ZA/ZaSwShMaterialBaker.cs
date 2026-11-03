@@ -46,9 +46,13 @@ public static class ZaSwShMaterialBaker
     }
     public static SwShBakedMaterial Bake(PreviewPrimitive primitive, byte[] sourceMaterials, int materialIndex, bool shiny, byte[] textureTemplate, string templateName,
         Func<string, byte[]> readTexture, CancellationToken cancellationToken = default, bool layeredEyes = false,
-        bool authoredAlpha = false, ModelTextureMipCache? encodingCache = null)
+        bool authoredAlpha = false, ModelTextureMipCache? encodingCache = null, Vector2? normalUvScale = null,
+        Vector2? colorUvScale = null, bool unlit = false, ZaSwShNormalAtlas? normalAtlas = null,
+        int maximumTextureDimension = 2048)
     {
-        if (materialIndex is < 0 or > 15) throw new InvalidDataException("Material texture identity is outside the supported range.");
+        if (maximumTextureDimension is < 64 or > 2048 || (maximumTextureDimension & (maximumTextureDimension - 1)) != 0)
+            throw new ArgumentOutOfRangeException(nameof(maximumTextureDimension));
+        if (materialIndex is < 0 or > 127) throw new InvalidDataException("Material texture identity is outside the supported range.");
         _ = SwShModelWriter.Bounds(primitive, 1);
         var source = new ModelBuffer(sourceMaterials);
         var tables = source.Tables(source.Root, 1, 128).Where(t => source.Text(t, 0) == primitive.Material.Name).ToArray();
@@ -56,7 +60,8 @@ public static class ZaSwShMaterialBaker
         var table = tables[0];
         var textures = source.Tables(table, 2, 64).ToDictionary(t => source.Text(t, 0)!, t => source.Text(t, 1)!, StringComparer.Ordinal);
         var eye = primitive.Material.Name.Contains("eye", StringComparison.Ordinal);
-        var template = textureTemplate; var container = new ModelTextureDocument(template);
+        var template = ZaSwShTextureTemplate.Convert(primitive, textureTemplate, templateName);
+        _ = new ModelTextureDocument(template);
         var parameters = source.Tables(table, 7, 128).ToDictionary(t => source.Text(t, 0)!, t =>
         { var at = source.Field(t, 1); return new Vector4(source.Float(at), source.Float(at + 4), source.Float(at + 8), source.Float(at + 12)); }, StringComparer.Ordinal);
         var scalarParameters = source.Tables(table, 4, 128).ToDictionary(t => source.Text(t, 0)!, t => source.Field(t, 1) is var at && at != 0 ? source.Float(at) : 0, StringComparer.Ordinal);
@@ -72,13 +77,50 @@ public static class ZaSwShMaterialBaker
             _ => throw new InvalidDataException("Z-A layer mask UV set needs another material adapter."),
         };
         var normalUv = parameters.GetValueOrDefault("UVScaleOffsetNormal", new(1, 1, 0, 0));
-        if (normalUv != new Vector4(1, 1, 0, 0) && (!layeredEyes || !eye || normalUv.X != 1 || normalUv.Y != 1
+        var normalScale = normalUvScale ?? Vector2.One;
+        if (normalScale.X is not (1 or 2) || normalScale.Y is not (1 or 2)
+            || normalScale != Vector2.One && normalUv != new Vector4(1, 1, 0, 0))
+            throw new InvalidDataException("Z-A generated normal tile requires an untransformed supported allocation.");
+        var normalTile = normalScale == Vector2.One ? null : SwShStaticUvAtlas.For(primitive, normalScale);
+        if (normalAtlas is not null && (normalScale != Vector2.One || layeredEyes || authoredAlpha || unlit))
+            throw new InvalidDataException("Shared Z-A normal atlases require their qualified independent full allocation.");
+        var normalGeometry = normalAtlas?.Geometry(primitive, sourceMaterials) ?? primitive;
+        var colorScale = colorUvScale ?? Vector2.One;
+        if (colorScale != Vector2.One && (authoredAlpha || layeredEyes))
+            throw new InvalidDataException("Static Z-A color tiles require an opaque independent material.");
+        var colorTile = colorScale == Vector2.One ? null : SwShStaticUvAtlas.CenteredRepeat(primitive, colorScale);
+        // These authored eye normals use separate 2-by-4 atlases. Resample the
+        // qualified atlas into UV0 before converting its tangent field.
+        var atlasOffset = primitive.Name.Length >= 13 ? primitive.Name[..13] switch
+        {
+            "pm0070_00_00_" or "pm0707_00_00_" => new Vector2(.25f, .125f),
+            "pm0708_11_00_" => new Vector2(.5f, .25f),
+            "pm0511_00_00_" or "pm0513_00_00_" or "pm0515_00_00_" or "pm0516_00_00_"
+                or "pm0706_00_00_" or "pm0774_11_00_" or "pm0860_00_00_" => Vector2.Zero,
+            _ => (Vector2?)null
+        } : null;
+        var eyeAtlas = atlasOffset is { } eyeOffset && normalUv == new Vector4(2, 4, eyeOffset.X, eyeOffset.Y);
+        if (normalUv != new Vector4(1, 1, 0, 0) && (!layeredEyes || !eye || !eyeAtlas && (normalUv.X != 1 || normalUv.Y != 1)
             || !float.IsFinite(normalUv.Z + normalUv.W) || MathF.Abs(normalUv.Z) > 4 || MathF.Abs(normalUv.W) > 4))
             throw new InvalidDataException("Z-A normal UV transform needs another material adapter.");
-        var normalSource = Read(readTexture(textures["NormalMap"]));
+        if (unlit)
+        {
+            _ = ZaSwShUnlitMaterial.ClefablePalette(sourceMaterials, primitive);
+            if (normalScale != Vector2.One || colorScale != Vector2.One || layeredEyes || authoredAlpha)
+                throw new InvalidDataException("Z-A unlit baking requires its qualified opaque wing allocation.");
+        }
+        // This source shader has no normal input. Its lighting-independent native
+        // program ignores the neutral object normal; other missing maps still fail.
+        var normalSource = unlit
+            ? new Image(4, 4, false, Enumerable.Range(0, 16).SelectMany(_ => new byte[] { 128, 128, 255, 255 }).ToArray())
+            : Read(readTexture(textures["NormalMap"]));
+        if (!unlit && (normalSource.Width < 4 || normalSource.Height < 4))
+            normalSource = Read(SwShMaterialBaker.PromoteConstantImage(readTexture(textures["NormalMap"])));
         // Object normal images are unique to each primitive. Bound those
         // repeated allocations independently of the layered color detail.
         var width = Math.Min(512, normalSource.Width); var height = Math.Min(512, normalSource.Height);
+        if (normalTile is not null && (width / normalScale.X < 4 || height / normalScale.Y < 4))
+            throw new InvalidDataException("Z-A generated normal tile is smaller than a compressed block.");
         var tangentNormals = Resize(normalSource.Pixels, normalSource.Width, normalSource.Height, width, height);
         if (normalUv != new Vector4(1, 1, 0, 0))
         {
@@ -91,53 +133,16 @@ public static class ZaSwShMaterialBaker
                     tangentNormals[offset] = Channel(sample.X); tangentNormals[offset + 1] = Channel(sample.Y);
                 }
         }
-        var normals = new Vector3[width * height]; var covered = new bool[normals.Length]; var conflicts = 0;
-        var vertices = primitive.Vertices;
-        Vector3 Position(int i) => new(vertices[i * 16], vertices[i * 16 + 1], vertices[i * 16 + 2]);
-        Vector3 Normal(int i) => new(vertices[i * 16 + 3], vertices[i * 16 + 4], vertices[i * 16 + 5]);
-        Vector2 Uv(int i) => new(vertices[i * 16 + 6], vertices[i * 16 + 7]);
-        for (var triangle = 0; triangle < primitive.Indices.Length; triangle += 3)
-        {
-            if ((triangle & 255) == 0) cancellationToken.ThrowIfCancellationRequested();
-            var a = checked((int)primitive.Indices[triangle]); var b = checked((int)primitive.Indices[triangle + 1]); var c = checked((int)primitive.Indices[triangle + 2]);
-            var uvA = Uv(a); var uvB = Uv(b); var uvC = Uv(c);
-            var wrap = MathF.Floor(MathF.Min(uvA.Y, MathF.Min(uvB.Y, uvC.Y))); uvA.Y -= wrap; uvB.Y -= wrap; uvC.Y -= wrap;
-            var u = uvB - uvA; var v = uvC - uvA; var determinant = Cross(u, v);
-            if (MathF.Abs(determinant) < 1e-12f) continue;
-            var e1 = Position(b) - Position(a); var e2 = Position(c) - Position(a);
-            var tangent = (e1 * v.Y - e2 * u.Y) / determinant; var bitangent = (e2 * u.X - e1 * v.X) / determinant;
-            Vector2 ImagePoint(Vector2 uv) => new(uv.X * width, (1 - uv.Y) * height);
-            var p = ImagePoint(uvA); var q = ImagePoint(uvB); var r = ImagePoint(uvC); var ab = q - p; var ac = r - p;
-            var area = Cross(ab, ac);
-            var left = Math.Max(0, (int)MathF.Floor(MathF.Min(p.X, MathF.Min(q.X, r.X))));
-            var right = Math.Min(width - 1, (int)MathF.Ceiling(MathF.Max(p.X, MathF.Max(q.X, r.X))));
-            var top = Math.Max(0, (int)MathF.Floor(MathF.Min(p.Y, MathF.Min(q.Y, r.Y))));
-            var bottom = Math.Min(height - 1, (int)MathF.Ceiling(MathF.Max(p.Y, MathF.Max(q.Y, r.Y))));
-            for (var y = top; y <= bottom; y++) for (var x = left; x <= right; x++)
-            {
-                var point = new Vector2(x + .5f, y + .5f) - p; var beta = Cross(point, ac) / area; var gamma = Cross(ab, point) / area; var alpha = 1 - beta - gamma;
-                if (MathF.Min(alpha, MathF.Min(beta, gamma)) < -.00001f) continue;
-                var normal = Unit(Normal(a) * alpha + Normal(b) * beta + Normal(c) * gamma);
-                var t = Unit(tangent - normal * Vector3.Dot(normal, tangent)); var bt = Unit(Vector3.Cross(normal, t));
-                if (Vector3.Dot(bt, bitangent) < 0) bt = -bt;
-                var index = y * width + x; var nx = tangentNormals[index * 4] / 127.5f - 1; var ny = tangentNormals[index * 4 + 1] / 127.5f - 1;
-                var value = Unit(t * nx + bt * ny + normal * MathF.Sqrt(MathF.Max(0, 1 - nx * nx - ny * ny)));
-                if (covered[index] && Vector3.Dot(normals[index], value) < .8f) conflicts++;
-                normals[index] = value; covered[index] = true;
-            }
-        }
-        var coverage = covered.Count(v => v);
-        if (coverage == 0) throw new InvalidDataException("Material has no rasterizable UV coverage.");
-        var nearest = Nearest(covered, width, height, cancellationToken);
-        var normalPixels = new byte[width * height * 4];
+        var (normalPixels, coverage, conflicts) = ObjectNormalPixels(normalGeometry, tangentNormals, width, height, cancellationToken);
+        if (normalAtlas is not null && conflicts != 0)
+            throw new InvalidDataException("Shared Z-A object-normal atlas contains incompatible overlapping sections.");
         var ambientWidth = 4; var ambientHeight = 4;
         byte[]? occlusion = null;
         if (textures.TryGetValue("OcclusionMap", out var aoPath))
-        { var ao = Read(readTexture(aoPath)); ambientWidth = ao.Width; ambientHeight = ao.Height; occlusion = ao.Pixels; }
-        for (var i = 0; i < nearest.Length; i++)
         {
-            var n = normals[nearest[i]];
-            normalPixels[i * 4] = Channel((n.X + 1) / 2); normalPixels[i * 4 + 1] = Channel((n.Y + 1) / 2); normalPixels[i * 4 + 2] = Channel((n.Z + 1) / 2); normalPixels[i * 4 + 3] = 255;
+            var ao = Read(readTexture(aoPath));
+            ambientWidth = Math.Min(maximumTextureDimension, ao.Width); ambientHeight = Math.Min(maximumTextureDimension, ao.Height);
+            occlusion = Resize(ao.Pixels, ao.Width, ao.Height, ambientWidth, ambientHeight);
         }
         var ambientPixels = new byte[ambientWidth * ambientHeight * 4];
         for (var i = 0; i < ambientWidth * ambientHeight; i++)
@@ -145,14 +150,19 @@ public static class ZaSwShMaterialBaker
             ambientPixels[i * 4] = occlusion is null ? (byte)0 : (byte)(255 - occlusion[i * 4]);
             ambientPixels[i * 4 + 2] = eye ? (byte)166 : (byte)128; ambientPixels[i * 4 + 3] = 255;
         }
-        var colorName = $"z{materialIndex:x}{(shiny ? 's' : 'n')}" + templateName[3..];
-        var normalName = $"n{materialIndex:x}n" + templateName[3..];
-        var ambientName = $"a{materialIndex:x}n" + templateName[3..];
+        var colorName = ModelTextureIdentity.MaterialName(templateName, materialIndex, 'z', shiny ? 's' : 'n', lowerCase: true);
+        var normalName = ModelTextureIdentity.MaterialName(templateName, materialIndex, 'n', 'n', lowerCase: true);
+        var ambientName = ModelTextureIdentity.MaterialName(templateName, materialIndex, 'a', 'n', lowerCase: true);
         var baseImage = Read(readTexture(textures["BaseColorMap"]));
         var maskImage = textures.TryGetValue("LayerMaskMap", out var layerMaskPath) ? Read(readTexture(layerMaskPath)) : null;
         var highlightImage = textures.TryGetValue("HighlightMaskMap", out var highlightPath) ? Read(readTexture(highlightPath)) : null;
         var colorWidth = Math.Max(baseImage.Width, Math.Max(maskImage?.Width ?? 4, highlightImage?.Width ?? 4));
         var colorHeight = Math.Max(baseImage.Height, Math.Max(maskImage?.Height ?? 4, highlightImage?.Height ?? 4));
+        if (!authoredAlpha)
+        {
+            colorWidth = Math.Min(maximumTextureDimension, colorWidth);
+            colorHeight = Math.Min(maximumTextureDimension, colorHeight);
+        }
         var colorContainer = new ModelTextureDocument(ModelTextureIdentity.Rename(SwShTextureAllocation.Create(template, colorWidth, colorHeight, true), templateName, colorName));
         var normalContainer = new ModelTextureDocument(ModelTextureIdentity.Rename(SwShTextureAllocation.Create(template, width, height, false), templateName, normalName));
         var ambientContainer = new ModelTextureDocument(ModelTextureIdentity.Rename(SwShTextureAllocation.Create(template, ambientWidth, ambientHeight, false), templateName, ambientName));
@@ -217,10 +227,80 @@ public static class ZaSwShMaterialBaker
             }).ToArray();
             colorUvTransform = new(1, 2, 0, -.25f);
         }
+        if (colorTile is not null)
+        {
+            // Bake and filter the complete authored field before retaining only
+            // the mesh's static island. The crop keeps the original texel density.
+            var tile = colorTile.Images(colorMips, colorWidth, colorHeight);
+            colorContainer = new(ModelTextureIdentity.Rename(SwShTextureAllocation.Create(template, tile.Width, tile.Height, true), templateName, colorName));
+            colorMips = tile.Images;
+            colorUvTransform = new(colorTile.DivisionsX, colorTile.DivisionsY,
+                -colorTile.TileX - colorTile.RepeatX * colorTile.DivisionsX,
+                -(colorTile.DivisionsY - 1 - colorTile.TileY - colorTile.RepeatY * colorTile.DivisionsY));
+        }
         var color = colorContainer.EncodeMipImages(colorMips, cancellationToken, encodingCache);
-        return new(colorName, color, normalName, normalContainer.EncodeMipImages(SwShTextureFiltering.Mips(normalPixels, width, height, normalContainer.MipCount, normals: true), cancellationToken, encodingCache),
-            ambientName, ambientContainer.EncodeMipImages(SwShTextureFiltering.Mips(ambientPixels, ambientWidth, ambientHeight, ambientContainer.MipCount), cancellationToken, encodingCache), coverage / (double)covered.Length, conflicts)
-            { ColorUvTransform = colorUvTransform };
+        // Filter the complete generated object-normal field first. Each tile
+        // retains that field's original mip footprint and texel density before
+        // its first BC7 encoding; no authored compressed blocks are re-encoded.
+        var normalMips = SwShTextureFiltering.Mips(normalPixels, width, height, normalContainer.MipCount, normals: true);
+        if (normalTile is not null)
+        {
+            var tile = normalTile.Images(normalMips, width, height);
+            normalContainer = new(ModelTextureIdentity.Rename(SwShTextureAllocation.Create(template, tile.Width, tile.Height, false), templateName, normalName));
+            normalMips = tile.Images;
+        }
+        return new(colorName, color, normalName, normalContainer.EncodeMipImages(normalMips, cancellationToken, encodingCache),
+            ambientName, ambientContainer.EncodeMipImages(SwShTextureFiltering.Mips(ambientPixels, ambientWidth, ambientHeight, ambientContainer.MipCount), cancellationToken, encodingCache), coverage, conflicts)
+            { ColorUvTransform = colorUvTransform, NormalUvScale = normalScale };
+    }
+
+    private static (byte[] Pixels, double Coverage, int Conflicts) ObjectNormalPixels(PreviewPrimitive primitive, byte[] tangentNormals, int width, int height, CancellationToken cancellationToken)
+    {
+        var normals = new Vector3[width * height]; var covered = new bool[normals.Length]; var conflicts = 0;
+        var vertices = primitive.Vertices;
+        Vector3 Position(int i) => new(vertices[i * 16], vertices[i * 16 + 1], vertices[i * 16 + 2]);
+        Vector3 Normal(int i) => new(vertices[i * 16 + 3], vertices[i * 16 + 4], vertices[i * 16 + 5]);
+        Vector2 Uv(int i) => new(vertices[i * 16 + 6], vertices[i * 16 + 7]);
+        for (var triangle = 0; triangle < primitive.Indices.Length; triangle += 3)
+        {
+            if ((triangle & 255) == 0) cancellationToken.ThrowIfCancellationRequested();
+            var a = checked((int)primitive.Indices[triangle]); var b = checked((int)primitive.Indices[triangle + 1]); var c = checked((int)primitive.Indices[triangle + 2]);
+            var uvA = Uv(a); var uvB = Uv(b); var uvC = Uv(c);
+            var wrap = MathF.Floor(MathF.Min(uvA.Y, MathF.Min(uvB.Y, uvC.Y))); uvA.Y -= wrap; uvB.Y -= wrap; uvC.Y -= wrap;
+            var u = uvB - uvA; var v = uvC - uvA; var determinant = Cross(u, v);
+            if (MathF.Abs(determinant) < 1e-12f) continue;
+            var e1 = Position(b) - Position(a); var e2 = Position(c) - Position(a);
+            var tangent = (e1 * v.Y - e2 * u.Y) / determinant; var bitangent = (e2 * u.X - e1 * v.X) / determinant;
+            Vector2 ImagePoint(Vector2 uv) => new(uv.X * width, (1 - uv.Y) * height);
+            var p = ImagePoint(uvA); var q = ImagePoint(uvB); var r = ImagePoint(uvC); var ab = q - p; var ac = r - p;
+            var area = Cross(ab, ac);
+            var left = Math.Max(0, (int)MathF.Floor(MathF.Min(p.X, MathF.Min(q.X, r.X))));
+            var right = Math.Min(width - 1, (int)MathF.Ceiling(MathF.Max(p.X, MathF.Max(q.X, r.X))));
+            var top = Math.Max(0, (int)MathF.Floor(MathF.Min(p.Y, MathF.Min(q.Y, r.Y))));
+            var bottom = Math.Min(height - 1, (int)MathF.Ceiling(MathF.Max(p.Y, MathF.Max(q.Y, r.Y))));
+            for (var y = top; y <= bottom; y++) for (var x = left; x <= right; x++)
+            {
+                var point = new Vector2(x + .5f, y + .5f) - p; var beta = Cross(point, ac) / area; var gamma = Cross(ab, point) / area; var alpha = 1 - beta - gamma;
+                if (MathF.Min(alpha, MathF.Min(beta, gamma)) < -.00001f) continue;
+                var normal = Unit(Normal(a) * alpha + Normal(b) * beta + Normal(c) * gamma);
+                var t = Unit(tangent - normal * Vector3.Dot(normal, tangent)); var bt = Unit(Vector3.Cross(normal, t));
+                if (Vector3.Dot(bt, bitangent) < 0) bt = -bt;
+                var index = y * width + x; var nx = tangentNormals[index * 4] / 127.5f - 1; var ny = tangentNormals[index * 4 + 1] / 127.5f - 1;
+                var value = Unit(t * nx + bt * ny + normal * MathF.Sqrt(MathF.Max(0, 1 - nx * nx - ny * ny)));
+                if (covered[index] && Vector3.Dot(normals[index], value) < .8f) conflicts++;
+                normals[index] = value; covered[index] = true;
+            }
+        }
+        var coverage = covered.Count(v => v);
+        if (coverage == 0) throw new InvalidDataException("Material has no rasterizable UV coverage.");
+        var nearest = Nearest(covered, width, height, cancellationToken);
+        var normalPixels = new byte[width * height * 4];
+        for (var i = 0; i < nearest.Length; i++)
+        {
+            var n = normals[nearest[i]];
+            normalPixels[i * 4] = Channel((n.X + 1) / 2); normalPixels[i * 4 + 1] = Channel((n.Y + 1) / 2); normalPixels[i * 4 + 2] = Channel((n.Z + 1) / 2); normalPixels[i * 4 + 3] = 255;
+        }
+        return (normalPixels, coverage / (double)covered.Length, conflicts);
     }
 
     internal static Image Read(byte[] bytes)
@@ -252,7 +332,11 @@ public static class ZaSwShMaterialBaker
         var ix = (int)MathF.Floor(x); var iy = (int)MathF.Floor(y);
         Vector4 Pixel(int px, int py)
         {
-            px = Math.Clamp(px, 0, image.Width - 1); py = Math.Clamp(py, 0, image.Height - 1);
+            // Repeating bilinear samples also wrap the neighboring texel across
+            // the seam. Folding only the UV would clamp half of that footprint.
+            static int Index(int value, int size, float mode) => mode == 0
+                ? (value % size + size) % size : Math.Clamp(value, 0, size - 1);
+            px = Index(px, image.Width, wrap.X); py = Index(py, image.Height, wrap.Y);
             var at = (py * image.Width + px) * 4;
             float C(int c)
             {

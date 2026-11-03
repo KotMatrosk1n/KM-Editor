@@ -11,7 +11,7 @@ public static class SwShTextureAllocation
     {
         if (width is < 4 or > 2048 || height is < 4 or > 2048 || !PowerOfTwo(width) || !PowerOfTwo(height)
             || (long)width * height > 2 * 1024 * 1024)
-            throw new InvalidDataException("Converted texture dimensions exceed the supported allocation.");
+            throw new InvalidDataException($"Converted texture dimensions exceed the supported allocation: {width}x{height}.");
         var data = new ModelBuffer(template);
         int Pointer(int at) => checked((int)BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(at, 8)));
         if (!data.Slice(0, 4).SequenceEqual("BNTX"u8) || data.U32(36) != 1)
@@ -26,8 +26,10 @@ public static class SwShTextureAllocation
         var metadataEnd = checked((int)(data.U32(firstSection + 8) + data.U32(firstSection + 12)));
         var entries = imageSection + 24;
         var entryCount = checked((int)(data.U32(imageSection + 16) + data.U32(imageSection + 20)));
+        var oldPointersEnd = checked(oldPointers + oldCount * 8);
         if (data.U32(imageSection + 8) != block || metadataEnd > block || entryCount is < 1 or > 256
-            || info + 120 > metadataEnd || oldPointers + oldCount * 8 > metadataEnd)
+            || info + 120 > metadataEnd || oldPointers < info + 120 || (oldPointers & 7) != 0
+            || oldPointersEnd > metadataEnd)
             throw new InvalidDataException("Converted texture relocation ranges are unsupported.");
         var count = 1 + (int)Math.Log2(Math.Max(width, height));
         var pointers = Align(metadataEnd, 8);
@@ -43,7 +45,7 @@ public static class SwShTextureAllocation
             offsets[mip] = end;
             end = checked(end + Align(stride, 64) / 64 * 512 * group * ((rows + 8 * group - 1) / (8 * group)));
         }
-        var references = new[] { new List<int>(), new List<int>() }; var replaced = 0;
+        var references = new[] { new List<int>(), new List<int>() }; var replaced = new HashSet<int>();
         for (var section = 0; section < 2; section++)
         {
             var header = firstSection + section * 24;
@@ -57,21 +59,32 @@ public static class SwShTextureAllocation
                 {
                     var at = checked(position + (n * (pointerCount + padding) + p) * 8);
                     data.Slice(at, 8);
-                    if (at >= oldPointers && at < oldPointers + oldCount * 8)
+                    if (at < oldPointersEnd && at + 8 > oldPointers)
                     {
-                        if (section != 1) throw new InvalidDataException("Texture mip relocation has the wrong target section.");
-                        replaced++; continue;
+                        if (section != 1 || at < oldPointers || at + 8 > oldPointersEnd
+                            || (at - oldPointers) % 8 != 0 || !replaced.Add(at))
+                            throw new InvalidDataException("Texture mip relocations overlap or have the wrong target section.");
+                        continue;
                     }
+                    var target = Pointer(at);
+                    if (at != info + 112 && target >= oldPointers && target < oldPointersEnd)
+                        throw new InvalidDataException("Texture metadata retains a reference to its original mip table.");
                     references[section].Add(at);
                 }
             }
         }
-        if (replaced != oldCount) throw new InvalidDataException("Texture mip relocations are incomplete.");
+        if (replaced.Count != oldCount || references[0].Count(at => at == info + 112) != 1
+            || references[1].Contains(info + 112))
+            throw new InvalidDataException("Texture mip relocations are incomplete.");
         references[1].AddRange(Enumerable.Range(0, count).Select(i => pointers + i * 8));
         var newRelocation = Align(end, 4096);
         var relocationSize = checked(64 + references.Sum(r => r.Count) * 8);
         var output = new byte[checked(newRelocation + relocationSize)];
         template.AsSpan(0, block + 16).CopyTo(output);
+        // Every reference to the original mip table is replaced below. Its
+        // retired bytes must not carry template-dependent image offsets into
+        // otherwise identical converted containers.
+        output.AsSpan(oldPointers, oldCount * 8).Clear();
         void U32(int at, uint value) => BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(at), value);
         void U64(int at, ulong value) => BinaryPrimitives.WriteUInt64LittleEndian(output.AsSpan(at), value);
         void U16(int at, ushort value) => BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(at), value);

@@ -17,6 +17,7 @@
     <EmbeddedResource Include="Resources/PartySprites/*.png"
                       LogicalName="KM.Tools.PartySprites.%(Filename)%(Extension)" />
     <None Update="Resources/PartySprites/NOTICE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Update="Resources/PartySprites/POKEMON-WORKSHOP-LICENSE.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

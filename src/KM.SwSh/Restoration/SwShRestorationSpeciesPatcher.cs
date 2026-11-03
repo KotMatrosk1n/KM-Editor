@@ -11,12 +11,12 @@ namespace KM.SwSh.Restoration;
 public static class SwShRestorationSpeciesPatcher
 {
     internal const string Owner = "Restoration Species";
-    private sealed record Region(int Offset, int Length, string SwordHash, string ShieldHash, byte[] Replacement);
+    private sealed record Region(int Offset, int Length, string SwordHash, string ShieldHash, byte[] Replacement, byte[]? LegacyReplacement = null);
     private static Region[] Regions(ProjectGame game) =>
     [
-        new(0x77F540, 0xC0, "EC331E954CFB77895CA68038AFE9D7DCDD20F6498E92E0D98C7E798195FA4069", "60910881CA92DF088E6C3AEB0B61FC78EC0C82F25E266C6C5AB76764CAA56353", game == ProjectGame.Sword ? SWPersonalRecord() : SHPersonalRecord()),
-        new(0x77F600, 0x78, "94A6BB06AF7A6A2E34749771B92A6A9F2B01A63291E58E10E7CF87AC982AEC7F", "94A6BB06AF7A6A2E34749771B92A6A9F2B01A63291E58E10E7CF87AC982AEC7F", SWPersonalIndex()),
-        new(0x7803B0, 0x80, "393853EA5655EDB57FE17C548A7EFF179C11CE2BE930265B2D6209CD7C3D8832", "393853EA5655EDB57FE17C548A7EFF179C11CE2BE930265B2D6209CD7C3D8832", SWEggMoves()),
+        new(0x77F540, 0xC0, "EC331E954CFB77895CA68038AFE9D7DCDD20F6498E92E0D98C7E798195FA4069", "60910881CA92DF088E6C3AEB0B61FC78EC0C82F25E266C6C5AB76764CAA56353", ExtendedPersonalRecord(game), game == ProjectGame.Sword ? SWPersonalRecord() : SHPersonalRecord()),
+        new(0x77F600, 0x78, "94A6BB06AF7A6A2E34749771B92A6A9F2B01A63291E58E10E7CF87AC982AEC7F", "94A6BB06AF7A6A2E34749771B92A6A9F2B01A63291E58E10E7CF87AC982AEC7F", ExtendedPersonalIndex(), SWPersonalIndex()),
+        new(0x7803B0, 0x80, "393853EA5655EDB57FE17C548A7EFF179C11CE2BE930265B2D6209CD7C3D8832", "393853EA5655EDB57FE17C548A7EFF179C11CE2BE930265B2D6209CD7C3D8832", ExtendedEggMoves(), SWEggMoves()),
         new(0x764828, 0x4, "6273941B21F6F9047BF44AADD796C0A70DDE78AAFA722EF8E3BF0F4D4EC26311", "6273941B21F6F9047BF44AADD796C0A70DDE78AAFA722EF8E3BF0F4D4EC26311", SWNameRangeOne()),
         new(0x7648AC, 0x4, "6273941B21F6F9047BF44AADD796C0A70DDE78AAFA722EF8E3BF0F4D4EC26311", "6273941B21F6F9047BF44AADD796C0A70DDE78AAFA722EF8E3BF0F4D4EC26311", SWNameRangeTwo()),
         new(0x76492C, 0x4, "089DD51486867EB480937270F84538D17006F703EFB08C098D14CDBD3C296749", "089DD51486867EB480937270F84538D17006F703EFB08C098D14CDBD3C296749", SWNameRangeThree()),
@@ -25,42 +25,43 @@ public static class SwShRestorationSpeciesPatcher
         new(0x76494C, 0x4, "C7C582903BE9FD63963FCBDDC0188C41CDE5B26C612CD3CA09A47B1FD75F9D88", "C7C582903BE9FD63963FCBDDC0188C41CDE5B26C612CD3CA09A47B1FD75F9D88", SWNameIndexThree()),
     ];
 
-    internal static (NsoFile Main, bool Installed, bool IndependentForms) Read(byte[] bytes, ProjectGame game)
+    internal static (NsoFile Main, bool Installed, bool IndependentForms, bool Extended) Read(byte[] bytes, ProjectGame game)
     {
         var main = NsoFile.Parse(bytes);
         if (game is not (ProjectGame.Sword or ProjectGame.Shield)
             || SwShExecutableMergeSupport.GameForBuild(Convert.ToHexString(main.BuildId)) != game
-            || main.Text.Header.MemoryOffset != 0 || main.Text.DecompressedData.Length < 0x7805C0)
+            || main.Text.Header.MemoryOffset != 0 || main.Text.DecompressedData.Length < 0x785D50)
             throw new InvalidDataException("New species support requires the selected game's supported 1.3.2 executable.");
         foreach (var (segment, flag) in new[] { (main.Text, NsoFlags.CheckHashText), (main.Ro, NsoFlags.CheckHashRo), (main.Data, NsoFlags.CheckHashData) })
             if (main.Flags.HasFlag(flag) && !NsoFile.ComputeHash(segment.DecompressedData).SequenceEqual(segment.Hash))
                 throw new InvalidDataException("The executable segment checksum is invalid.");
-        bool? installed = null; var independentForms = false;
+        // Intersect complete known versions. Mixed legacy/current regions are
+        // rejected even when every individual region happens to be recognized.
+        var versions = 7; var independentForms = false;
         foreach (var region in Regions(game))
         {
             var current = main.Text.DecompressedData.AsSpan(region.Offset, region.Length);
-            var patched = current.SequenceEqual(region.Replacement);
-            if (!patched && region.Offset == 0x77F600)
+            var normalized = current.ToArray();
+            if (region.Offset == 0x77F600
+                && BinaryPrimitives.ReadUInt32LittleEndian(normalized.AsSpan(0x3c)) == 0xD503201F)
             {
-                var normalized = current.ToArray();
-                if (BinaryPrimitives.ReadUInt32LittleEndian(normalized.AsSpan(0x3c)) == 0xD503201F)
-                {
-                    BinaryPrimitives.WriteUInt32LittleEndian(normalized.AsSpan(0x3c), 0x363001AA);
-                    patched = normalized.AsSpan().SequenceEqual(region.Replacement);
-                    independentForms = patched;
-                }
+                BinaryPrimitives.WriteUInt32LittleEndian(normalized.AsSpan(0x3c), 0x363001AA);
+                independentForms = true;
             }
-            if (!patched && Convert.ToHexString(SHA256.HashData(current)) != (game == ProjectGame.Sword ? region.SwordHash : region.ShieldHash)
-                || installed is { } previous && previous != patched)
+            var recognized = Convert.ToHexString(SHA256.HashData(current)) == (game == ProjectGame.Sword ? region.SwordHash : region.ShieldHash) ? 1 : 0;
+            if (normalized.AsSpan().SequenceEqual(region.LegacyReplacement ?? region.Replacement)) recognized |= 2;
+            if (normalized.AsSpan().SequenceEqual(region.Replacement)) recognized |= 4;
+            versions &= recognized;
+            if (versions == 0)
                 throw new InvalidDataException("The species lookup routines contain incompatible changes.");
-            installed = patched;
         }
+        var installed = (versions & 6) != 0;
         var helpers = main.Text.DecompressedData.AsSpan(0x77FF80, 0x420).ToArray()
             .Concat(main.Text.DecompressedData.AsSpan(0x780430, 0x190).ToArray()).ToArray();
         if (Convert.ToHexString(SHA256.HashData(helpers)) != (game == ProjectGame.Sword ? "5A29BA8B609AA67B36310F0F2FFD35AB55EDB5E3D0F3961EFC3072B288BCED8B" : "7447D3A3DB4603B37CBF511CF749C737411827CA1C020D9121DDF0983469AD77"))
             throw new InvalidDataException("The native species data helpers contain incompatible changes.");
         var names = main.Text.DecompressedData.AsSpan(0x764810, 0x180).ToArray();
-        if (installed == true)
+        if (installed)
         {
             Convert.FromHexString("3F100E71").CopyTo(names, 0x18);
             Convert.FromHexString("3F100E71").CopyTo(names, 0x9C);
@@ -71,7 +72,12 @@ public static class SwShRestorationSpeciesPatcher
         }
         if (Convert.ToHexString(SHA256.HashData(names)) != (game == ProjectGame.Sword ? "0EFF3E3746336D8A587A21EA18A1FC9F8781352EAD752E554C002D81F0D2B53A" : "0EFF3E3746336D8A587A21EA18A1FC9F8781352EAD752E554C002D81F0D2B53A"))
             throw new InvalidDataException("The native species name helpers contain incompatible changes.");
-        return (main, installed == true, independentForms);
+        var allocationAndTextBounds = main.Text.DecompressedData.AsSpan(0x77F160, 0x2F4).ToArray()
+            .Concat(main.Text.DecompressedData.AsSpan(0x785A40, 0x310).ToArray())
+            .Concat(main.Text.DecompressedData.AsSpan(0x67E740, 0x28).ToArray()).ToArray();
+        if (Convert.ToHexString(SHA256.HashData(allocationAndTextBounds)) != (game == ProjectGame.Sword ? SwordLoaderHash : ShieldLoaderHash))
+            throw new InvalidDataException("The native Pokemon table allocation or text bounds contain incompatible changes.");
+        return (main, installed, independentForms, (versions & 4) != 0);
     }
 
     public static byte[] Apply(byte[] baseline, byte[] source, ProjectGame game) => Rewrite(baseline, source, game, true);
@@ -89,7 +95,7 @@ public static class SwShRestorationSpeciesPatcher
             .Any(other => SwShExeFsReservedRegionLedger.Overlaps(other, region.Offset, region.Length))))
             throw new InvalidDataException("Species support overlaps another executable feature.");
         independentForms |= current.IndependentForms;
-        if (current.Installed == enabled && (!enabled || current.IndependentForms == independentForms)) return source;
+        if (current.Installed == enabled && (!enabled || current.IndependentForms == independentForms && current.Extended)) return source;
         var text = current.Main.Text.DecompressedData.ToArray();
         foreach (var region in regions)
             (enabled ? region.Replacement.AsSpan() : original.Main.Text.DecompressedData.AsSpan(region.Offset, region.Length)).CopyTo(text.AsSpan(region.Offset));
@@ -111,6 +117,16 @@ public static class SwShRestorationSpeciesPatcher
         {
             var game = SwShExecutableMergeSupport.GameForBuild(Convert.ToHexString(NsoFile.Parse(bytes).BuildId));
             return game is not null && Read(bytes, game.Value).Installed;
+        }
+        catch (Exception exception) when (exception is InvalidDataException or ArgumentException or OverflowException) { return false; }
+    }
+
+    public static bool HasExtendedSpeciesPatch(byte[] bytes)
+    {
+        try
+        {
+            var game = SwShExecutableMergeSupport.GameForBuild(Convert.ToHexString(NsoFile.Parse(bytes).BuildId));
+            return game is not null && Read(bytes, game.Value).Extended;
         }
         catch (Exception exception) when (exception is InvalidDataException or ArgumentException or OverflowException) { return false; }
     }
@@ -323,6 +339,96 @@ public static class SwShRestorationSpeciesPatcher
             0x710E129FU, // cmp w20, #0x384
             0xD65F03C0U, // ret
         ]);
+    // Appended records start beyond every native personal, evolution and egg
+    // record. The legacy 979 reservation remains stable. The dispatcher checks
+    // the loaded personal byte length before returning an appended row.
+    private static byte[] ExtendedPersonalRecord(ProjectGame game)
+    {
+        var bytes = game == ProjectGame.Sword ? SWPersonalRecord() : SHPersonalRecord();
+        ExtendedDispatch().CopyTo(bytes, 0x5c);
+        ExtendedNameHelpers().CopyTo(bytes, 0x90);
+        return bytes;
+    }
+
+    private static byte[] ExtendedPersonalIndex()
+    {
+        var bytes = SWPersonalIndex();
+        ExtendedIndexPrefix().CopyTo(bytes, 0);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(0x18), 0x540002A8); // b.hi invalid
+        return bytes;
+    }
+    private const string SwordLoaderHash = "6475B7FEF5708E54459E2AB96925C5596765E08D3CE2C6B24D230A1B30773365";
+    private const string ShieldLoaderHash = "D9EFA94BA946879B68902E328786C22480623403367035AB15F156BC04F9E4CB";
+    private static byte[] ExtendedDispatch() => Words(52, [
+        0x710F4C1FU, // cmp w0, #0x3d3
+        0x52808729U, // mov w9, #0x439
+        0x1105800AU, // add w10, w0, #0x160
+        0x1A8A0120U, // csel w0, w9, w10, eq
+        0x9000F4C8U, // adrp x8, #0x2617000
+        0xF941F108U, // ldr x8, [x8, #0x3e0]
+        0xF9400908U, // ldr x8, [x8, #0x10]
+        0x52801609U, // mov w9, #0xb0
+        0x1AC90908U, // udiv w8, w8, w9
+        0x6B08001FU, // cmp w0, w8
+        0x1A9F3000U, // csel w0, w0, wzr, lo
+        0x14000015U, // b #0x77f61c
+        0xD503201FU, // nop
+    ]);
+    private static byte[] ExtendedNameHelpers() => Words(48, [
+        0x7110043FU, // cmp w1, #0x401
+        0xD65F03C0U, // ret
+        0xD503201FU, // nop
+        0xD503201FU, // nop
+        0x710E0C1FU, // cmp w0, #0x383
+        0x540000E3U, // b.lo #0x77f600
+        0xD65F03C0U, // ret
+        0xD503201FU, // nop
+        0x7110069FU, // cmp w20, #0x401
+        0xD65F03C0U, // ret
+        0xD503201FU, // nop
+        0xD503201FU, // nop
+    ]);
+    private static byte[] ExtendedIndexPrefix() => Words(16, [
+        0x510E0C08U, // sub w8, w0, #0x383
+        0x7101F91FU, // cmp w8, #0x7e
+        0x54FFFCA9U, // b.ls #0x77f59c
+        0x14000001U, // b #0x77f610
+    ]);
+    private static byte[] ExtendedEggMoves() => Words(128, [
+        0xD101C3FFU, // sub sp, sp, #0x70
+        0xA9054FF4U, // stp x20, x19, [sp, #0x50]
+        0xA9067BFDU, // stp x29, x30, [sp, #0x60]
+        0x910183FDU, // add x29, sp, #0x60
+        0x2A0103E8U, // mov w8, w1
+        0xAA0003F3U, // mov x19, x0
+        0x710E091FU, // cmp w8, #0x382
+        0x540000C9U, // b.ls #0x7803e4
+        0x2A0803E0U, // mov w0, w8
+        0x2A0203E1U, // mov w1, w2
+        0x97FFFC8AU, // bl #0x77f600
+        0x2A0003E1U, // mov w1, w0
+        0x1400000CU, // b #0x780410
+        0x2A0203F4U, // mov w20, w2
+        0x72003C5FU, // tst w2, #0xffff
+        0x54000100U, // b.eq #0x78040c
+        0x910023E0U, // add x0, sp, #8
+        0x2A0803E1U, // mov w1, w8
+        0x9400000EU, // bl #0x780430
+        0x794013E8U, // ldrh w8, [sp, #8]
+        0x0B342108U, // add w8, w8, w20, uxth
+        0x51000501U, // sub w1, w8, #1
+        0x14000002U, // b #0x780410
+        0x2A0803E1U, // mov w1, w8
+        0x91002A60U, // add x0, x19, #0xa
+        0x94000007U, // bl #0x780430
+        0x52800028U, // mov w8, #1
+        0x39002268U, // strb w8, [x19, #8]
+        0xA9467BFDU, // ldp x29, x30, [sp, #0x60]
+        0xA9454FF4U, // ldp x20, x19, [sp, #0x50]
+        0x9101C3FFU, // add sp, sp, #0x70
+        0xD65F03C0U, // ret
+    ]);
+
     private static byte[] Words(int length, uint[] instructions)
     {
         var bytes = new byte[length];

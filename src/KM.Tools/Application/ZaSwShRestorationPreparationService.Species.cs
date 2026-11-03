@@ -5,6 +5,7 @@ public sealed partial class ZaSwShRestorationPreparationService
 {
     private static bool TryProfile(KM.SwSh.Pokemon.SwShPokemonIdentity identity, out SpeciesProfile profile)
     {
+        if (MegaProfiles.TryGetValue(identity, out profile!)) return true;
         if (identity.Species == 6 && identity.Form is 1 or 2)
         {
             var resource = 50 + identity.Form;
@@ -21,12 +22,27 @@ public sealed partial class ZaSwShRestorationPreparationService
     private static SpeciesProfile Profile(KM.SwSh.Pokemon.SwShPokemonIdentity identity) =>
         TryProfile(identity, out var profile) ? profile : throw new InvalidDataException("Restoration profile is unavailable.");
 
+    private static string SourceStem(int species, int gender, SpeciesProfile profile)
+    {
+        var stem = profile.ResourceStem ?? $"pm{species:0000}_00_00";
+        return profile.SeparateFemale ? stem[..7] + gender.ToString("00", System.Globalization.CultureInfo.InvariantCulture) + stem[9..] : stem;
+    }
+
     private sealed record SpeciesProfile(int NativeTemplate, int HatchedSpecies, int Experience,
         float BattleHeight, float FieldHeight, string TextureSuffix, bool SourceFraming = false, bool MeshVisibility = false, int FemalePercent = 50, byte GenderThreshold = 127, bool SeparateFemale = false, bool IdleFraming = false, bool MatchNativeGiantHeight = false,
         System.Numerics.Vector3? MouthPosition = null, float? MealVerticalOffset = null, bool NativeFlames = false, string? EmissionMaterial = null, string? ResourceStem = null, bool PairedFlames = false, bool LayeredEyes = false,
         IReadOnlyDictionary<string, System.Numerics.Vector2>? EyeAtlasOffsets = null,
         string[]? FlameMaterials = null, string? OutputStem = null, bool AirborneBattle = false, bool PlaAssets = false,
-        int GenderKind = 0, int AnimationOffset = 0, IReadOnlyDictionary<string, string>? MotionOverrides = null, bool LayerEmission = false);
+        int GenderKind = 0, int AnimationOffset = 0, IReadOnlyDictionary<string, string>? MotionOverrides = null, bool LayerEmission = false,
+        int? ConventionalCatchRate = null, bool EmptyEyes = false, int HatchedForm = 0, int? SourceSpecies = null, int? SourceVoiceForm = null,
+        IReadOnlyList<NormalUvTile>? NormalTiles = null, bool BakeNormalTiles = false, int RemoveDetailLevels = 0,
+        IReadOnlyList<ColorUvTile>? ColorTiles = null, bool IndependentEyeHighlights = false, bool LayeredEyeTint = false, bool LayeredEyeEmission = false,
+        bool CompactTextureReferences = false,
+        IReadOnlyDictionary<string, (int Frames, bool Loop)>? StandaloneMotionTimelines = null,
+        int? EvolutionFamilySpecies = null);
+
+    private sealed record NormalUvTile(string Material, System.Numerics.Vector2 Scale, string? Mesh = null);
+    private sealed record ColorUvTile(string Material, System.Numerics.Vector2 Scale, string Mesh);
 
     private static readonly IReadOnlyDictionary<int, SpeciesProfile> Profiles = new Dictionary<int, SpeciesProfile>
     {

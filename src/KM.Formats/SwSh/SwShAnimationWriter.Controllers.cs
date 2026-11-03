@@ -54,6 +54,8 @@ public static partial class SwShAnimationWriter
                         var parameterSlots = writer.Vector(replacement, 1, parameters.Length);
                         for (var index = 0; index < parameters.Length; index++)
                         {
+                            if (source.U16(parameters[index] - source.I32(parameters[index])) > 6)
+                                throw new InvalidDataException("Native material parameter name needs another adapter.");
                             var parameter = writer.Table(1); writer.Pointer(parameterSlots[index], parameter);
                             writer.Text(parameter, 0, source.Text(parameters[index], 0) ?? throw new InvalidDataException("Native parameter mask is unnamed."));
                         }
@@ -144,12 +146,23 @@ public static partial class SwShAnimationWriter
     }
 
     public static byte[] GlobalMaterialLoop(byte[] nativeAnimation, IReadOnlyList<string> materialNames,
-        IReadOnlyDictionary<string, System.Numerics.Vector2>? normalUvScales = null)
+        IReadOnlyDictionary<string, System.Numerics.Vector2>? normalUvScales = null,
+        IReadOnlyDictionary<string, System.Numerics.Vector4>? colorUvTransforms = null,
+        IReadOnlyDictionary<string, SwShNormalTileQualification>? normalTileQualifications = null)
     {
         if (materialNames.Count is < 1 or > 128) throw new InvalidDataException("Global material animation target count is invalid.");
         if (normalUvScales?.Any(pair => !materialNames.Contains(pair.Key, StringComparer.Ordinal)
-            || pair.Value.X is not (1 or 2) || pair.Value.Y is not (1 or 2)) == true)
+            || pair.Value.X is not (1 or 2) || pair.Value.Y is not (1 or 2 or 4)
+            || pair.Value.Y == 4 && normalTileQualifications?.GetValueOrDefault(pair.Key)?.Matches(pair.Key, pair.Value) != true) == true
+            || normalTileQualifications?.Any(pair => normalUvScales?.TryGetValue(pair.Key, out var scale) != true
+                || !pair.Value.Matches(pair.Key, scale)) == true)
             throw new InvalidDataException("Global normal UV scale or material is unsupported.");
+        if (colorUvTransforms?.Any(pair => !materialNames.Contains(pair.Key, StringComparer.Ordinal)
+            || !float.IsFinite(pair.Value.X) || !float.IsFinite(pair.Value.Y)
+            || !float.IsFinite(pair.Value.Z) || !float.IsFinite(pair.Value.W)
+            || pair.Value.X <= 0 || pair.Value.Y <= 0
+            || !float.IsFinite(-pair.Value.Z / pair.Value.X) || !float.IsFinite(-pair.Value.W / pair.Value.Y)) == true)
+            throw new InvalidDataException("Global color UV transform or material is unsupported.");
         var source = new ModelBuffer(nativeAnimation); var writer = new ModelTableBuilder(nativeAnimation);
         var skeleton = source.Table(source.Root, 1); if (skeleton != 0) writer.Vector(skeleton, 0, 0);
         var material = source.Table(source.Root, 2);
@@ -162,6 +175,7 @@ public static partial class SwShAnimationWriter
             if (matches.Length != 1) throw new InvalidDataException("Native global material animation target is ambiguous.");
             var original = matches[0]; var copy = writer.Append(nativeAnimation); var target = copy + original;
             writer.Pointer(slots[i], target); writer.Text(target, 0, name);
+            var colorParameters = new HashSet<string>(StringComparer.Ordinal);
             foreach (var scalar in source.Tables(original, 2, 256))
             {
                 var parameter = source.Text(scalar, 0);
@@ -173,24 +187,40 @@ public static partial class SwShAnimationWriter
                 };
                 if (normalUvScales?.TryGetValue(name, out var normalScale) == true)
                 {
-                    if (normalScale.X is not (1 or 2) || normalScale.Y is not (1 or 2))
+                    if (normalScale.X is not (1 or 2) || normalScale.Y is not (1 or 2 or 4)
+                        || normalScale.Y == 4 && normalTileQualifications?.GetValueOrDefault(name)?.Matches(name, normalScale) != true)
                         throw new InvalidDataException("Global normal UV scale is unsupported.");
                     if (parameter == "NormalMapUVScaleU") value = normalScale.X;
                     if (parameter == "NormalMapUVScaleV") value = normalScale.Y;
+                }
+                if (colorUvTransforms?.TryGetValue(name, out var colorTransform) == true)
+                {
+                    value = parameter switch
+                    {
+                        "ColorUVScaleU" => colorTransform.X,
+                        "ColorUVScaleV" => colorTransform.Y,
+                        "ColorUVTranslateU" => -colorTransform.Z / colorTransform.X,
+                        "ColorUVTranslateV" => -colorTransform.W / colorTransform.Y,
+                        _ => value,
+                    };
+                    if (parameter is "ColorUVScaleU" or "ColorUVScaleV" or "ColorUVTranslateU" or "ColorUVTranslateV")
+                        if (!colorParameters.Add(parameter)) throw new InvalidDataException("Global color UV parameter is duplicated.");
                 }
                 if (value is null) continue;
                 var kindAt = source.Field(scalar, 1);
                 if (kindAt == 0 || source.U8(kindAt) != 1) throw new InvalidDataException("Native global UV parameter is not constant.");
                 var curve = source.Table(scalar, 2); var field = source.Field(curve, 0);
                 // Native scalar tracks can share one constant curve. A cropped
-                // normal map needs its own value without changing those aliases.
-                if (field == 0 || normalUvScales?.ContainsKey(name) == true)
+                // atlas needs its own value without changing those aliases.
+                if (field == 0 || normalUvScales?.ContainsKey(name) == true || colorUvTransforms?.ContainsKey(name) == true)
                 {
                     var replacement = writer.Table(1, new Dictionary<int, byte[]> { [0] = ModelTableBuilder.Floats(value.Value) });
                     writer.Reference(copy + scalar, 2, replacement);
                 }
                 else writer.Single(copy + field, value.Value);
             }
+            if (colorUvTransforms?.ContainsKey(name) == true && colorParameters.Count != 4)
+                throw new InvalidDataException("Global color UV parameters are incomplete.");
         }
         return writer.Finish(source.Root);
     }

@@ -8,6 +8,21 @@ namespace KM.Formats.Models;
 /// <summary>Updates a single texture's native dictionary identity without relocating its image data.</summary>
 public static class ModelTextureIdentity
 {
+    public static string MaterialName(string original, int materialIndex, char role, char? palette = null, bool lowerCase = false)
+    {
+        if (materialIndex is < 0 or > 127 || role is < 'a' or > 'z' || palette is not (null or 'n' or 's'))
+            throw new InvalidDataException("Material texture identity is outside the supported range.");
+        // Keep existing one-digit identities. A non-hex marker separates larger
+        // indices from that namespace while retaining the BNTX string allocation.
+        var identity = materialIndex < 16
+            ? materialIndex.ToString(lowerCase ? "x1" : "X1", System.Globalization.CultureInfo.InvariantCulture)
+            : "g" + materialIndex.ToString(lowerCase ? "x2" : "X2", System.Globalization.CultureInfo.InvariantCulture);
+        var prefix = role + identity + (palette?.ToString() ?? "");
+        if (original.Length <= prefix.Length || original.Any(c => c is < '!' or > '~' || c is '/' or '\\'))
+            throw new InvalidDataException("Material texture name cannot retain its native allocation.");
+        return prefix + original[prefix.Length..];
+    }
+
     public static byte[] Rename(byte[] source, string oldName, string newName, bool linear = false)
     {
         var data = new ModelBuffer(source);
@@ -41,6 +56,8 @@ public static class ModelTextureIdentity
         // but retain the same native identity layout as color textures.
         if (data.U32(info + 28) is 0x1d01 or 0x1e01)
             _ = PreviewTexture.ReadBaseLevel(result);
+        else if (data.U32(info + 28) == 0x1505)
+            _ = ModelCubeTexture.Read(result);
         else _ = new ModelTextureDocument(result);
         return result;
     }

@@ -1,0 +1,67 @@
+// SPDX-License-Identifier: GPL-3.0-only
+using KM.SwSh.Pokemon;
+
+namespace KM.Tools.Application;
+
+public sealed partial class ZaSwShRestorationPreparationService
+{
+    private static readonly IReadOnlyDictionary<SwShPokemonIdentity, SpeciesProfile> MegaProfiles =
+        new Dictionary<SwShPokemonIdentity, SpeciesProfile>
+        {
+            [new(26, 2)] = new(26, 172, 218, 120, 120, "_body_alb",
+                SourceFraming: true, IdleFraming: true, MeshVisibility: true, LayerEmission: true, FemalePercent: 50, GenderThreshold: 127,
+                ResourceStem: "pm0026_51_00", OutputStem: "pm0026_02", GenderKind: 0,
+                AnimationOffset: 0, HatchedForm: 0, SourceSpecies: 26, SourceVoiceForm: 1,
+                MotionOverrides: new Dictionary<string, string> { ["mouth01"] = "00001", ["ba10_waitB01"] = "00001" }),
+            [new(26, 3)] = new(26, 172, 218, 100, 100, "_body_alb",
+                SourceFraming: true, IdleFraming: true, MeshVisibility: true, LayerEmission: true, FemalePercent: 50, GenderThreshold: 127,
+                ResourceStem: "pm0026_52_00", OutputStem: "pm0026_03", GenderKind: 0,
+                AnimationOffset: 0, HatchedForm: 0, SourceSpecies: 26, SourceVoiceForm: 2, CompactTextureReferences: true,
+                MotionOverrides: new Dictionary<string, string> { ["mouth01"] = "00001", ["ba10_waitB01"] = "00001" }),
+            [new(359, 2)] = new(359, 359, 163, 120, 120, "_body_alb",
+                SourceFraming: true, IdleFraming: true, MeshVisibility: true, LayerEmission: true, FemalePercent: 50, GenderThreshold: 127,
+                ResourceStem: "pm0359_52_00", OutputStem: "pm0359_02", GenderKind: 0,
+                BakeNormalTiles: true, NormalTiles: [
+                    new("body_a_01", new(1, 2), "pm0359_52_00_face_mesh_shape"),
+                    new("body_b_01", new(1, 2), "pm0359_52_00_body_mesh_shape"),
+                    new("body_a_00", new(1, 2), "pm0359_52_00_body_mesh_shape"),
+                    new("body_b_01", new(1, 2), "pm0359_52_00_teeth_mesh_shape"),
+                    new("body_b_01", new(1, 2), "pm0359_52_00_tail_mesh_shape"),
+                    new("body_a_00", new(2, 1), "pm0359_52_00_wing_a_mesh_shape")],
+                AnimationOffset: 0, HatchedForm: 0, SourceSpecies: 359,
+                MotionOverrides: new Dictionary<string, string> { ["mouth01"] = "00001", ["ba10_waitB01"] = "00001" }),
+            [new(36, 1)] = new(36, 173, 242, 170, 170, "_body_alb",
+                SourceFraming: true, IdleFraming: true, MeshVisibility: true, LayerEmission: true, FemalePercent: 75, GenderThreshold: 191,
+                ResourceStem: "pm0036_51_00", OutputStem: "pm0036_01", GenderKind: 0,
+                AnimationOffset: 20000, HatchedForm: 0, SourceSpecies: 36,
+                MotionOverrides: new Dictionary<string, string> { ["mouth01"] = "20001", ["ba10_waitB01"] = "20001" }),
+            [new(3, 1)] = new(3, 1, 263, 240, 240, "_body_alb",
+                SourceFraming: true, IdleFraming: true, MeshVisibility: true, FemalePercent: 12, GenderThreshold: 31,
+                ResourceStem: "pm0003_51_00", OutputStem: "pm0003_01", GenderKind: 0,
+                AnimationOffset: 0, HatchedForm: 0, SourceSpecies: 3,
+                MotionOverrides: new Dictionary<string, string> { ["mouth01"] = "00001", ["ba10_waitB01"] = "00001" }),
+            [new(9, 1)] = new(9, 7, 265, 160, 160, "_body_alb",
+                SourceFraming: true, IdleFraming: true, MeshVisibility: true, FemalePercent: 12, GenderThreshold: 31,
+                ResourceStem: "pm0009_51_00", OutputStem: "pm0009_01", GenderKind: 0,
+                AnimationOffset: 0, HatchedForm: 0, SourceSpecies: 9),
+            [new(15, 1)] = new(12, 13, 178, 140, 140, "_body_alb",
+                SourceFraming: true, IdleFraming: true, MeshVisibility: true, FemalePercent: 50, GenderThreshold: 127,
+                ResourceStem: "pm0015_51_00", OutputStem: "pm0015_01", GenderKind: 0,
+                AnimationOffset: 0, HatchedForm: 0, SourceSpecies: 15),
+            [new(18, 1)] = new(823, 16, 216, 220, 220, "_body_alb",
+                SourceFraming: true, IdleFraming: true, MeshVisibility: true, FemalePercent: 50, GenderThreshold: 127,
+                ResourceStem: "pm0018_51_00", OutputStem: "pm0018_01", GenderKind: 0,
+                AnimationOffset: 0, HatchedForm: 0, SourceSpecies: 18,
+                MotionOverrides: new Dictionary<string, string> { ["mouth01"] = "00001", ["ba10_waitB01"] = "00001" }),
+            [new(65, 1)] = new(65, 63, 250, 120, 120, "_body_alb",
+                SourceFraming: true, IdleFraming: true, MeshVisibility: true, FemalePercent: 25, GenderThreshold: 63,
+                ResourceStem: "pm0065_51_00", OutputStem: "pm0065_01", GenderKind: 0,
+                AnimationOffset: 20000, HatchedForm: 0, SourceSpecies: 65,
+                MotionOverrides: new Dictionary<string, string> { ["mouth01"] = "20001", ["ba10_waitB01"] = "20012" }),
+            [new(359, 1)] = new(359, 359, 163, 120, 120, "_body_alb",
+                SourceFraming: true, IdleFraming: true, MeshVisibility: true, FemalePercent: 50, GenderThreshold: 127,
+                ResourceStem: "pm0359_51_00", OutputStem: "pm0359_01", GenderKind: 0,
+                AnimationOffset: 0, HatchedForm: 0, SourceSpecies: 359,
+                MotionOverrides: new Dictionary<string, string> { ["ba10_waitB01"] = "00012" }),
+        };
+}

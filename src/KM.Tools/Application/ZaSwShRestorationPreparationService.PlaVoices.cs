@@ -53,7 +53,7 @@ public sealed partial class ZaSwShRestorationPreparationService
                     }
                     media.Add(state, pcm);
                 }
-                var contribution = SwShVoiceWriter.CreateVorbis(native, identity.Species, 7, media);
+                var contribution = SwShVoiceWriter.CreateVorbis(native, identity.Species, 7, media, identity.Form);
                 result.AddRange(contribution.Objects.Select(o => new SwShRestorationContribution(SwShRestorationComposer.VoicesPath,
                     SwShRestorationWriter.Voices, $"{o.Type}:{o.Id}", null, o.Payload)));
                 result.AddRange(contribution.Media.Select(m => new SwShRestorationContribution(SwShRestorationComposer.VoicesPath,

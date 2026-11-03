@@ -315,8 +315,27 @@ public sealed class ModelTextureDocument
                             encoder.OutputOptions.Quality = CompressionQuality.BestQuality;
                             Consider(encoder.EncodeBlock(block.AsSpan()));
                         }
-                        if (double.IsPositiveInfinity(bestError)) throw new InvalidDataException(
-                            $"Texture encoding could not preserve transparency at {level.Width} x {level.Height}, block {bx}, {by}.");
+                        if (double.IsPositiveInfinity(bestError))
+                        {
+                            var visible = (ushort)Enumerable.Range(0, 16).Where(VisibleTexel).Aggregate(0, (mask, i) => mask | (1 << i));
+                            var fitted = ModelTextureAlphaBlock.FitMode6(block, visible);
+                            if (fitted is not null && ColorError(fitted) <= 3) Consider(fitted);
+                            if (double.IsPositiveInfinity(bestError))
+                            {
+                                fitted = ModelTextureAlphaBlock.FitMode4(block, visible);
+                                if (fitted is not null && ColorError(fitted) <= 3) Consider(fitted);
+                            }
+                            if (double.IsPositiveInfinity(bestError))
+                            {
+                                fitted = ModelTextureAlphaBlock.FitMode4WideColor(block, visible);
+                                if (fitted is not null && ColorError(fitted) <= 3) Consider(fitted);
+                            }
+                        }
+                        if (double.IsPositiveInfinity(bestError))
+                        {
+                            throw new InvalidDataException(
+                                $"Texture encoding could not preserve transparency at {level.Width} x {level.Height}, block {bx}, {by}.");
+                        }
                     }
                 }
                 if (encoded.Length != blockBytes) throw new InvalidDataException("Texture block length changed.");

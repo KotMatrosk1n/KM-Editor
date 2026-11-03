@@ -10,6 +10,23 @@ public static class PreviewTextureResolution
     public static PreviewTexture Select(PreviewTexture texture, int divisor)
     {
         if (divisor is not (1 or 2 or 4)) throw new InvalidDataException("Model preview resolution is invalid.");
+        if (texture.Format == PreviewBc6Cube.Format)
+        {
+            PreviewBc6Cube.Validate(texture);
+            // The authored cube and complete mip chain are independent of preview resolution.
+            return texture;
+        }
+        if (texture.Format == 0x1505)
+        {
+            if (texture.Width is < 1 or > 512 || texture.Width != texture.Height || texture.Mips.Length != 0
+                || texture.Blocks.Length != checked(texture.Width * texture.Height * 8 * 6))
+                throw new InvalidDataException("Preview probe requires six complete authored RGBA16F faces.");
+            for (var at = 0; at < texture.Blocks.Length; at += 2)
+                if (!System.Half.IsFinite(BitConverter.UInt16BitsToHalf(System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(texture.Blocks.AsSpan(at, 2)))))
+                    throw new InvalidDataException("Preview probe contains a nonfinite channel.");
+            // Preserve all faces, HDR values and the authored single level at every preview resolution.
+            return texture;
+        }
         var levels = new List<byte[]> { texture.Blocks };
         levels.AddRange(texture.Mips);
         var width = Math.Max(1, texture.Width >> (levels.Count - 1));

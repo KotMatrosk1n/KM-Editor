@@ -19,9 +19,19 @@ public sealed partial class ZaSwShRestorationPreparationService
             var personalId = SwShRestorationForms.PersonalRow(identity);
             var source = new ModelBuffer(Donor("avalon/data/personal_array.bin"));
             var candidates = source.Tables(source.Root, 0, 4096).Where(t => source.Field(t, 0) is var at && at != 0
-                && source.U16(at) == species && source.U16(at + 2) == identity.Form).ToArray();
+                && source.U16(at + 4) == species && source.U16(at + 2) == identity.Form).ToArray();
             if (candidates.Length != 1) throw new InvalidDataException("Source Pokemon gameplay identity is missing or ambiguous.");
             var table = candidates[0]; var detail = source.Field(table, 0);
+            int NationalSpecies(int developmentSpecies, int form)
+            {
+                var matches = source.Tables(source.Root, 0, 4096).Where(t => source.Field(t, 0) is var at && at != 0
+                    && source.U16(at) == developmentSpecies && source.U16(at + 2) == form)
+                    .Select(t => (int)source.U16(source.Field(t, 0) + 4)).Distinct().ToArray();
+                return matches.Length == 1 && SwShRestorationSpecies.IsSpecies(matches[0]) ? matches[0]
+                    : throw new InvalidDataException("The Z-A development species has no unambiguous National identity.");
+            }
+            if (profile.SourceSpecies is { } sourceId && source.U16(detail) != sourceId)
+                throw new InvalidDataException("The Z-A development species identity changed.");
             int Scalar(int field, bool wide = false) => source.Field(table, field) is var at && at != 0 ? wide ? source.U16(at) : source.U8(at) : 0;
             int[] Moves(int field)
             {
@@ -30,17 +40,24 @@ public sealed partial class ZaSwShRestorationPreparationService
             }
             var nativePersonal = Native(SwShRestorationComposer.PersonalPath[6..]);
             var personalTable = SwShPersonalTable.Parse(nativePersonal, 4096);
+            if (species > SwShEffectivePokemonCatalog.MaximumSpecies) SwShRestorationSpecies.ValidateReservation(nativePersonal, nativePersonal);
+            if (identity.Form != 0) SwShRestorationFormSlots.Validate(nativePersonal, nativePersonal);
             if (personalId >= personalTable.Records.Count || personalTable.Records[personalId].IsPresentInGame)
                 throw new InvalidDataException("Restoration target is already native or has no personal slot.");
-            var before = nativePersonal.AsSpan(personalId * SwShPersonalTable.RecordSize, SwShPersonalTable.RecordSize).ToArray(); var row = before.ToArray();
+            var before = nativePersonal.AsSpan(personalId * SwShPersonalTable.RecordSize, SwShPersonalTable.RecordSize).ToArray();
+            var row = before.ToArray();
             var stats = source.Field(table, 20); var yields = source.Field(table, 19); int[] order = [0, 1, 2, 5, 3, 4];
             for (var i = 0; i < order.Length; i++) row[i] = source.U8(stats + order[i]);
             row[6] = checked((byte)Scalar(3)); row[7] = checked((byte)Scalar(4)); row[8] = checked((byte)Scalar(9)); row[9] = checked((byte)Scalar(17));
             var ev = 0;
             for (var i = 0; i < order.Length; i++) { var value = source.U8(yields + order[i]); if (value > 3) throw new InvalidDataException("Source EV yield is unsupported."); ev |= value << (i * 2); }
             Put16(row, 10, ev); row.AsSpan(12, 6).Clear(); var gender = source.Field(table, 10);
-            if (gender == 0 || source.U8(gender) != profile.GenderKind || source.U8(gender + 1) != profile.FemalePercent)
-                throw new InvalidDataException("Z-A gender ratio needs another target adapter.");
+            var hatch = source.Field(table, 13);
+            if (gender == 0 || source.U8(gender) != profile.GenderKind || source.U8(gender + 1) != profile.FemalePercent
+                || hatch == 0 || (source.U16(hatch) == 0 && source.U16(hatch + 2) == 0 ? 0
+                    : NationalSpecies(source.U16(hatch), source.U16(hatch + 2))) != profile.HatchedSpecies
+                || source.U16(hatch + 2) != profile.HatchedForm)
+                throw new InvalidDataException("Z-A gender or hatch identity needs another target adapter.");
             row[18] = profile.GenderThreshold; row[19] = checked((byte)Scalar(14)); row[20] = checked((byte)Scalar(15));
             row[21] = checked((byte)Scalar(8)); row[22] = checked((byte)Scalar(11)); row[23] = checked((byte)Scalar(12));
             var abilities = Enumerable.Range(0, 3).Select(i => Scalar(5 + i, true)).ToArray();
@@ -70,7 +87,15 @@ public sealed partial class ZaSwShRestorationPreparationService
             Compatibility(56, 4, SwShPokemonWorkflowService.GetDefaultCompatibilityMoveIds(SwShPokemonWorkflowService.TypeTutorCompatibilityGroupId));
             Compatibility(60, 16, SwShPokemonWorkflowService.GetDefaultCompatibilityMoveIds(SwShPokemonWorkflowService.TechnicalRecordCompatibilityGroupId));
             Compatibility(168, 4, SwShPokemonWorkflowService.GetDefaultCompatibilityMoveIds(SwShPokemonWorkflowService.ArmorTutorCompatibilityGroupId));
-            BinaryPrimitives.WriteUInt32LittleEndian(row.AsSpan(76), checked((uint)species)); Put16(row, 86, profile.HatchedSpecies); row.AsSpan(88, 8).Clear(); row.AsSpan(172, 4).Clear();
+            BinaryPrimitives.WriteUInt32LittleEndian(row.AsSpan(76), checked((uint)SwShRestorationSpecies.IconSpecies(species))); Put16(row, 86, profile.HatchedSpecies); row.AsSpan(88, 8).Clear(); row.AsSpan(172, 4).Clear();
+            // Alternate Mega identities are battle forms, not regional forms. The
+            // regional bit also controls the editor's base-learnset eligibility.
+            // Keep the authored hatch identity (including Original Color) separate.
+            if (identity.Form != 0 || profile.HatchedForm != 0)
+            {
+                row[90] = SwShRestorationForms.IsMega(identity) ? (byte)0 : (byte)1;
+                row[94] = checked((byte)profile.HatchedForm);
+            }
             _ = SwShPersonalTable.Parse(row);
             var result = new List<SwShRestorationContribution>
             { new(SwShRestorationComposer.PersonalPath, SwShRestorationWriter.Personal, personalId.ToString(CultureInfo.InvariantCulture), before, row) };
@@ -90,8 +115,9 @@ public sealed partial class ZaSwShRestorationPreparationService
             var (evolutionStart, evolutionCount) = source.Vector(table, 21, 16, 9); var evolution = new byte[72];
             for (var i = 0; i < evolutionCount; i++)
             {
-                var at = evolutionStart + i * 16; var destination = source.U16(at + 12); var form = source.U16(at + 14);
-                if (species == 57 && destination == 1010 && form == 0 && source.U16(at + 2) == 56 && source.U16(at + 4) == 20)
+                var at = evolutionStart + i * 16; var form = source.U16(at + 14);
+                var destination = NationalSpecies(source.U16(at + 12), form);
+                if (species == 57 && destination == 979 && form == 0 && source.U16(at + 2) == 56 && source.U16(at + 4) == 20)
                 {
                     // Primeape uses the native Dusk Stone evolution condition.
                     Put16(evolution, i * 8, 8); Put16(evolution, i * 8 + 2, 108);
@@ -112,12 +138,14 @@ public sealed partial class ZaSwShRestorationPreparationService
                 evolution[i * 8 + 6] = checked((byte)form); evolution[i * 8 + 7] = checked((byte)source.U16(at));
             }
             result.Add(File($"bin/pml/evolution/evo_{personalId:000}.bin", evolution));
-            var eggMoves = Moves(23).Where(MoveAvailable).ToArray(); var eggs = new byte[4 + eggMoves.Length * 2]; Put16(eggs, 0, personalId); Put16(eggs, 2, eggMoves.Length);
+            var eggMoves = Moves(23).Where(MoveAvailable).ToArray(); var eggs = new byte[4 + eggMoves.Length * 2]; Put16(eggs, 0, identity.Form == 0 && species <= 898
+                ? BinaryPrimitives.ReadUInt16LittleEndian(Native(SwShRestorationForms.EggPath(species)[6..]))
+                : SwShRestorationForms.EggRow(identity)); Put16(eggs, 2, eggMoves.Length);
             for (var i = 0; i < eggMoves.Length; i++) Put16(eggs, 4 + i * 2, eggMoves[i]);
-            result.Add(File($"bin/pml/tamagowaza/tamagowaza_{personalId:0000}.bin", eggs));
+            result.Add(File($"bin/pml/tamagowaza/tamagowaza_{SwShRestorationForms.EggRow(identity):0000}.bin", eggs));
             foreach (var iconGender in SwShRestorationComposer.IconGenders(species))
             {
-                var icon = new byte[8]; Put16(icon, 0, species); Put16(icon, 2, identity.Form); Put16(icon, 4, iconGender);
+                var icon = new byte[8]; Put16(icon, 0, SwShRestorationSpecies.IconSpecies(species)); Put16(icon, 2, identity.Form); Put16(icon, 4, iconGender);
                 result.Add(new(SwShRestorationComposer.IconsPath, SwShRestorationWriter.Icons,
                     SwShRestorationComposer.IconKey(species, identity.Form, iconGender), null, icon));
             }
@@ -125,7 +153,7 @@ public sealed partial class ZaSwShRestorationPreparationService
             foreach (var group in new[] { "common", "motion", "face", "ball", "turning" })
             {
                 // Native species already own their shared camp metadata.
-                if (group == "common" && personalTable.Records[species].IsPresentInGame) continue;
+                if (group == "common" && species <= SwShEffectivePokemonCatalog.MaximumSpecies && personalTable.Records[species].IsPresentInGame) continue;
                 string Name(int id, int form = 0) => group == "common" ? $"poke_{id:0000}_XX_X.bin" : $"poke_{group}_{id:0000}_{form:00}_0.bin";
                 var folder = $"bin/pokemon_data/pokecamp/{group}/";
                 var data = camp.ReadFileByHash(SwShGfPackFile.HashMemberPath(folder + Name(profile.NativeTemplate)), 1024 * 1024);

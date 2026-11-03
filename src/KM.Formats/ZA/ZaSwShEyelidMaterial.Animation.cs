@@ -13,6 +13,10 @@ public static partial class ZaSwShEyelidMaterial
             return new(sample(name, 0) ?? fallback.X, sample(name, 1) ?? fallback.Y, sample(name, 2) ?? fallback.Z, sample(name, 3) ?? fallback.W);
         }
         var basis = Vector("UVScaleOffset"); var center = Vector("UVCenter0"); var normal = Vector("UVScaleOffsetNormal");
+        if (contract.NormalAtlasHalf is not null && normal != contract.Vectors["UVScaleOffsetNormal"])
+            throw new InvalidDataException("Cropped eye normal animation needs another coverage adapter.");
+        if (contract.StaticNormalCoverage && normal != new Vector4(1, 1, 0, 0))
+            throw new InvalidDataException("Mirror-once eye normal animation needs another coverage adapter.");
         var scalars = new Dictionary<string, float>(StringComparer.Ordinal)
         {
             ["ColorUVScaleU"] = basis.X, ["ColorUVScaleV"] = basis.Y,
@@ -23,7 +27,54 @@ public static partial class ZaSwShEyelidMaterial
             ["Layer1UVTranslateU"] = (contract.Origin.X - normal.Z) * normal.X,
             ["Layer1UVTranslateV"] = 1 - (contract.Origin.Y - normal.W) * normal.Y
         };
+        if (contract.NormalAtlasHalf is { } half)
+        {
+            if (half is not (0 or 1)) throw new InvalidDataException("Eye normal atlas half is invalid.");
+            scalars["Layer1UVScaleU"] *= 2;
+            scalars["Layer1UVTranslateU"] = scalars["Layer1UVTranslateU"] * 2 - half;
+        }
         var vectors = new Dictionary<string, Vector3>(StringComparer.Ordinal);
+        // Each authored addressing mode is supplied by its native sampler.
+        if (contract.LayerEmission)
+            scalars.Add("ScaleUV", 0);
+        if (contract.LayerTint)
+            for (var layer = 0; layer < 4; layer++)
+            {
+                var color = Vector("BaseColorLayer" + (layer + 1));
+                if (color.X < 0 || color.Y < 0 || color.Z < 0)
+                    throw new InvalidDataException("Eye tint animation must remain nonnegative.");
+                var intensity = sample("EmissionIntensityLayer" + (layer + 1), 0)
+                    ?? contract.Scalars["EmissionIntensityLayer" + (layer + 1)];
+                var glow = contract.Vectors["EmissionColorLayer" + (layer + 1)];
+                if (intensity < 0 || intensity != 0 && new Vector3(glow.X, glow.Y, glow.Z) != TintEmissionColors[layer])
+                    throw new InvalidDataException("Eye tint emission requires the qualified color palette.");
+                scalars.Add(EmissionScalarNames[layer], intensity);
+                vectors.Add(EmissionVectorNames[layer], new(color.X, color.Y, color.Z));
+            }
+        if (contract.LayerEmission)
+            for (var layer = 0; layer < 4; layer++)
+            {
+                var intensity = sample("EmissionIntensityLayer" + (layer + 1), 0)
+                    ?? contract.Scalars["EmissionIntensityLayer" + (layer + 1)];
+                var color = Vector("EmissionColorLayer" + (layer + 1));
+                if (intensity < 0 || color.X < 0 || color.Y < 0 || color.Z < 0)
+                    throw new InvalidDataException("Eye emission animation must remain nonnegative.");
+                scalars.Add(EmissionScalarNames[layer], intensity);
+                vectors.Add(EmissionVectorNames[layer], new(color.X, color.Y, color.Z));
+            }
+        if (contract.IndependentHighlights)
+        {
+            // UV1 is an affine field independent of the iris UV0 animation.
+            // Conjugate its V transform with the source texture-origin flip.
+            var highlight = Vector("UVScaleOffset1");
+            scalars.Add(HighlightScalarNames[0], highlight.X);
+            scalars.Add(HighlightScalarNames[1], highlight.Y);
+            scalars.Add(HighlightScalarNames[2], contract.Origin.X * highlight.X + highlight.Z);
+            scalars.Add(HighlightScalarNames[3], contract.Origin.Y * highlight.Y + 1 - highlight.Y - highlight.W);
+            scalars.Add("ScaleUV", 0);
+            var color = contract.Vectors["EmissionColorLayer5"] * contract.Scalars["EmissionIntensityLayer5"];
+            vectors.Add("EffectColor01", new(color.X, color.Y, color.Z));
+        }
         foreach (var (channel, first) in new[] { (3, 0), (4, 2), (2, 4) })
         {
             var role = channel == 3 ? "UpperEyelidColorMap" : channel == 4 ? "LowerEyelidColorMap" : "EyelidShadowMaskMap";
@@ -31,7 +82,7 @@ public static partial class ZaSwShEyelidMaterial
             for (var component = 0; component < 2; component++)
                 scalars.Add(ScalarNames[10 + first + component], wrap[component] switch
                 {
-                    0 or 1 or 6 => 0, 7 => 1,
+                    1 or 6 or 7 => 0,
                     _ => throw new InvalidDataException("Eye addressing needs another adapter.")
                 });
             var transform = Vector("UVScaleOffset" + channel);
@@ -68,7 +119,9 @@ public static partial class ZaSwShEyelidMaterial
         foreach (var vector in source.Tables(material, 2, 256))
         {
             var parameter = source.Text(vector, 0)!;
-            if (parameter is not ("UVScaleOffset" or "UVScaleOffset1" or "UVScaleOffset2" or "UVScaleOffset3" or "UVScaleOffset4" or "UVScaleOffsetNormal"))
+            if (parameter is not ("UVScaleOffset" or "UVScaleOffset1" or "UVScaleOffset2" or "UVScaleOffset3" or "UVScaleOffset4" or "UVScaleOffsetNormal"
+                or "EmissionColorLayer1" or "EmissionColorLayer2" or "EmissionColorLayer3" or "EmissionColorLayer4"
+                or "BaseColorLayer1" or "BaseColorLayer2" or "BaseColorLayer3" or "BaseColorLayer4"))
                 throw new InvalidDataException($"Eye vector animation needs another adapter: {parameter}.");
             var channels = source.Table(vector, 1);
             result.Add(new(name, parameter, Enumerable.Range(0, 4).Select(component => Keys(source.Table(channels, component))).ToArray()));
@@ -76,7 +129,8 @@ public static partial class ZaSwShEyelidMaterial
         foreach (var scalar in source.Tables(material, 1, 256))
         {
             var parameter = source.Text(scalar, 0)!;
-            if (parameter is not ("UVRotation2" or "UVRotation3" or "UVRotation4" or "LayerMaskScale5"))
+            if (parameter is not ("UVRotation2" or "UVRotation3" or "UVRotation4" or "LayerMaskScale5"
+                or "EmissionIntensityLayer1" or "EmissionIntensityLayer2" or "EmissionIntensityLayer3" or "EmissionIntensityLayer4"))
                 throw new InvalidDataException($"Eye scalar animation needs another adapter: {parameter}.");
             result.Add(new(name, parameter, [Keys(source.Table(scalar, 1))]));
         }
@@ -92,6 +146,11 @@ public static partial class ZaSwShEyelidMaterial
         if (frames is < 1 or > 18000 || source.GroupBy(track => track.Parameter).Any(group => group.Count() != 1))
             throw new InvalidDataException("Eye animation timing or identity is invalid.");
         var raw = source.ToDictionary(track => track.Parameter, StringComparer.Ordinal);
+        if (!contract.LayerEmission && source.Any(track => track.Parameter.StartsWith("Emission", StringComparison.Ordinal)
+                && !(contract.LayerTint && track.Parameter.StartsWith("EmissionIntensityLayer", StringComparison.Ordinal))))
+            throw new InvalidDataException("Eye emission animation requires a qualified material contract.");
+        if (!contract.LayerTint && source.Any(track => track.Parameter.StartsWith("BaseColor", StringComparison.Ordinal)))
+            throw new InvalidDataException("Eye tint animation requires a qualified material contract.");
         float? Sample(string parameter, int component, int frame)
         {
             if (!raw.TryGetValue(parameter, out var track) || component >= track.Channels.Length || track.Channels[component].Length == 0) return null;
@@ -109,15 +168,18 @@ public static partial class ZaSwShEyelidMaterial
             var keys = Enumerable.Range(0, frames).Select(frame => new PreviewKey(frame, [value(frame)])).ToArray();
             return keys.All(key => key.Value[0] == keys[0].Value[0]) ? [keys[0]] : keys;
         }
-        return ScalarNames.Take(10).Concat(ScalarNames.Skip(16)).Select(name => new PreviewMaterialTrack(contract.Name, "EyeScalar:" + name, [Curve(frame => states[frame].Scalars[name])]))
-            .Concat(VectorNames.Select(name => new PreviewMaterialTrack(contract.Name, "EyeVector:" + name,
+        return ScalarNames.Take(10).Concat(ScalarNames.Skip(16)).Concat(contract.IndependentHighlights ? HighlightScalarNames : [])
+            .Concat(contract.LayerEmission || contract.LayerTint ? EmissionScalarNames : [])
+            .Select(name => new PreviewMaterialTrack(contract.Name, "EyeScalar:" + name, [Curve(frame => states[frame].Scalars[name])]))
+            .Concat(VectorNames.Concat(contract.LayerEmission || contract.LayerTint ? EmissionVectorNames : []).Select(name => new PreviewMaterialTrack(contract.Name, "EyeVector:" + name,
                 Enumerable.Range(0, 3).Select(component => Curve(frame => states[frame].Vectors[name][component])).ToArray())))
             .Concat(source.Where(track => track.Parameter == "LayerMaskScale5")).ToArray();
     }
 
-    public static byte[] KeepAnimationLocal(byte[] animation, IReadOnlySet<string> materials)
+    public static byte[] KeepAnimationLocal(byte[] animation, IReadOnlySet<string> materials, bool independentHighlights = false, bool layerEmission = false, bool layerTint = false)
     {
         var source = new ModelBuffer(animation); var writer = new ModelTableBuilder(animation);
+        var references = new List<(int Slot, int Target)>();
         foreach (var material in source.Tables(source.Table(source.Root, 2), 0, 128))
         {
             if (!materials.Contains(source.Text(material, 0)!)) continue;
@@ -127,11 +189,21 @@ public static partial class ZaSwShEyelidMaterial
                 var retained = tracks.Where(track => field == 2
                     ? !ScalarNames.Contains(source.Text(track, 0), StringComparer.Ordinal)
                         && source.Text(track, 0) is not ("NormalMapUVScaleU" or "NormalMapUVScaleV" or "Layer1BaseU" or "Layer1BaseV")
-                    : !VectorNames.Contains(source.Text(track, 0), StringComparer.Ordinal)).ToArray();
+                        && (!independentHighlights || !HighlightScalarNames.Contains(source.Text(track, 0), StringComparer.Ordinal)
+                            && source.Text(track, 0) != "ScaleUV")
+                        && (!(layerEmission || layerTint) || !EmissionScalarNames.Contains(source.Text(track, 0), StringComparer.Ordinal))
+                    : !VectorNames.Contains(source.Text(track, 0), StringComparer.Ordinal)
+                        && (!independentHighlights || source.Text(track, 0) != "EffectColor01")
+                        && (!(layerEmission || layerTint) || !EmissionVectorNames.Contains(source.Text(track, 0), StringComparer.Ordinal))).ToArray();
                 if (retained.Length == tracks.Length) continue;
-                var slots = writer.Vector(material, field, retained.Length); var copy = writer.Append(animation);
-                for (var index = 0; index < retained.Length; index++) writer.Pointer(slots[index], copy + retained[index]);
+                var slots = writer.Vector(material, field, retained.Length);
+                for (var index = 0; index < retained.Length; index++) references.Add((slots[index], retained[index]));
             }
+        }
+        if (references.Count > 0)
+        {
+            var copy = writer.Append(animation);
+            foreach (var (slot, target) in references) writer.Pointer(slot, copy + target);
         }
         return writer.Finish(source.Root);
     }

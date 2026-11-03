@@ -3,7 +3,8 @@ the project's contributors:
 https://github.com/msikma/pokesprite
 https://github.com/msikma/pokesprite/blob/master/contributors.md
 
-The PNG files other than Annihilape are unchanged regular sprites from pokemon-gen8 at revision
+The PNG files other than Annihilape and the four Mega sprites described below
+are unchanged regular sprites from pokemon-gen8 at revision
 c5aaa610ff2acdf7fd8e2dccd181bca8be9fcb3e. The original sprite extraction is credited
 upstream to Zhorken and Kaphotics. Full contributor credits are linked above.
 
@@ -16,10 +17,21 @@ transparent top rows. All artwork pixels, colors, and horizontal padding are
 unchanged.
 
 Artwork copyright: Nintendo/Creatures Inc./GAME FREAK Inc.
+Mega Raichu X, Mega Raichu Y, Mega Absol Z, and Mega Clefable use Legends Z-A
+icon sprites credited by Pokemon Workshop to Batin, ezerart, and Luis779:
+https://github.com/PokemonWorkshop/GameDataPacks/tree/d430fb553df98ccde5f9f90ece78e36b07d8083c/Gen%209/Legends%20Z-A/graphics/pokedex/pokeicon
+Their source sheets use two 32 by 32 frames. KM Editor uses the first frame,
+preserving its pixels and adding transparent padding at (18,12) on the
+68 by 56 canvas. These canvas adaptations are licensed under CC BY-NC-SA 4.0:
+https://creativecommons.org/licenses/by-nc-sa/4.0/
+The upstream Pokemon Studio Public License, including its warranty disclaimer,
+is retained in POKEMON-WORKSHOP-LICENSE.md and is available at:
+https://github.com/PokemonWorkshop/PokemonStudio/blob/67ec5f962e7bf3f2d1234a296ecc892ff452e741/LICENSE.md
+
 These images are not covered by KM Editor's GPL license or by the MIT license
 that PokeSprite applies to its programming code. No PokeSprite code is included.
 
 KM Editor converts the 68 by 56 artwork to the native 136 by 112 party icon
 canvas by repeating each source pixel twice on both axes. The source images
-retain their original padding except for the Annihilape canvas adjustment
+retain their original padding except for the Annihilape and four Mega canvas adjustments
 described above and are not animated.

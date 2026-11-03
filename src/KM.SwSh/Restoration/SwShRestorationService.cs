@@ -27,7 +27,7 @@ public sealed record SwShRestorationPreview(IReadOnlyDictionary<string, byte[]?>
     public IReadOnlyList<SwShPokemonIdentity> RemovedIdentities { get; init; } = RemovedSpecies.Select(s => new SwShPokemonIdentity(s, 0)).ToArray();
 }
 
-public sealed class SwShRestorationService
+public sealed partial class SwShRestorationService
 {
     public const string Domain = SwShRestorationDefinitions.Domain;
     public const string SourceCode = "KM-SWSH-RESTORATION-SOURCE-UNAVAILABLE";
@@ -153,13 +153,15 @@ public sealed class SwShRestorationService
         var assetsOnly = edits.All(e => Parse(e).UpdateAssets);
         var hasForms = !assetsOnly && (SwShRestorationForms.EnabledForms(snapshot.State).Any()
             || edits.Any(e => SwShRestorationDefinitions.Get(Parse(e).DefinitionId).Identities.Any(i => i.Form != 0)));
-        if (hasForms)
+        byte[]? NativeFormFile(string path)
         {
-            sources.Add(new(ProjectFileLayer.Base, SwShRestorationComposer.PersonalPath));
-            var nativePersonal = BoundedRead(Path.Combine(paths.BaseRomFsPath, SwShRestorationComposer.PersonalPath[6..]));
-            outputs[SwShRestorationComposer.PersonalPath] = SwShRestorationForms.NormalizeHeaders(nativePersonal,
-                Current(SwShRestorationComposer.PersonalPath) ?? throw new InvalidDataException("Personal data is missing."), snapshot.State);
+            var physical = Path.Combine(paths.BaseRomFsPath, path[6..]);
+            if (!File.Exists(physical)) return null;
+            sources.Add(new(ProjectFileLayer.Base, path));
+            return BoundedRead(physical);
         }
+        if (hasForms)
+            foreach (var file in SwShRestorationForms.Storage(NativeFormFile, Current, snapshot.State, normalize: true)) outputs[file.Key] = file.Value;
         foreach (var edit in edits.OrderBy(e => e.RecordId, StringComparer.Ordinal))
         {
             var intent = Parse(edit);
@@ -258,20 +260,45 @@ public sealed class SwShRestorationService
         var state = new SwShRestorationState(1, selections.Values.OrderBy(s => s.DefinitionId, StringComparer.Ordinal).ToArray());
         if (!assetsOnly)
             foreach (var file in SwShRestorationDependencies.Reconcile(paths, snapshot.State, state, Current)) outputs[file.Key] = file.Value;
-        if (hasForms) outputs[SwShRestorationComposer.PersonalPath] = SwShRestorationForms.ApplyHeaders(
-            Current(SwShRestorationComposer.PersonalPath)!, SwShRestorationForms.EnabledForms(state));
+        if (hasForms)
+            foreach (var file in SwShRestorationForms.Storage(NativeFormFile, Current, state, normalize: false)) outputs[file.Key] = file.Value;
         if (needsSoundMemory) AddSoundMemory(paths, outputs, sources);
         if (!assetsOnly)
         {
             AddMegaItemProtection(paths, state, outputs, sources);
             AddSpeciesSupport(paths, state, outputs, sources);
+            AddCryRouting(paths, state, outputs, sources);
         }
+        AddSamplerSupport(paths, state, outputs, sources);
         var storedState = SwShRestorationStateStore.Store(paths, state); using (storedState.Lease) { }
         if (!outputs.ContainsKey(SwShRestorationComposer.PersonalPath)) outputs.Add(SwShRestorationComposer.PersonalPath, Current(SwShRestorationComposer.PersonalPath)
             ?? throw new InvalidDataException("Restoration state requires a personal data anchor."));
         return new(outputs, storedState.Hash, snapshot.Hash, state, sources.OrderBy(s => s.RelativePath, StringComparer.Ordinal).ThenBy(s => s.Layer).ToArray(),
             removed.Select(i => i.Species).Distinct().Order().ToArray())
             { RemovedIdentities = removed.OrderBy(i => i.Species).ThenBy(i => i.Form).ToArray() };
+    }
+
+    private static void AddCryRouting(ProjectPaths paths, SwShRestorationState state,
+        IDictionary<string, byte[]?> outputs, ISet<ProjectFileReference> sources)
+    {
+        var enabled = SwShRestorationDependencies.Enabled(state).ToArray();
+        var wanted = enabled.Any(identity => KM.Formats.SwSh.SwShVoiceRouting.EventForm(identity.Species, identity.Form) != identity.Form);
+        const string relative = "exefs/main";
+        var output = Output(paths, relative, includeExecutable: true);
+        byte[]? current = outputs.TryGetValue(relative, out var pending) ? pending : null;
+        if (current is null && System.IO.File.Exists(output))
+        {
+            current = BoundedRead(output);
+            sources.Add(new(ProjectFileLayer.Layered, relative));
+        }
+        if (!wanted && (current is null || !SwShRestorationCryPatcher.HasInstalledPatch(current))) return;
+        if (string.IsNullOrWhiteSpace(paths.BaseExeFsPath))
+            throw new InvalidDataException("Select the game's Base ExeFS folder to support independent restored form cries.");
+        var baseline = BoundedRead(Path.Combine(paths.BaseExeFsPath, "main"));
+        sources.Add(new(ProjectFileLayer.Base, relative));
+        current ??= baseline;
+        var patched = SwShRestorationCryPatcher.Apply(baseline, current, paths.SelectedGame!.Value, enabled);
+        if (!patched.AsSpan().SequenceEqual(current)) outputs[relative] = patched;
     }
 
     private static void AddSpeciesSupport(ProjectPaths paths, SwShRestorationState state,

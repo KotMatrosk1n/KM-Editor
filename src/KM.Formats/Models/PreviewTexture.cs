@@ -14,34 +14,56 @@ public sealed record PreviewTexture(int Width, int Height, uint Format, byte[] B
     public static PreviewTexture ReadBaseLevel(byte[] bytes) => ReadLevel(bytes, 0);
     public static PreviewTexture Read(byte[] bytes) => ModelDerivedCache<PreviewTexture>.Get(bytes, "",
         () => PreviewTextureResolution.Select(ReadUncached(bytes), 1), texture => texture.ByteLength);
-    private static PreviewTexture ReadUncached(byte[] bytes)
+    /// <summary>Retains authored compressed channels and legal mip levels for source shader consumers.</summary>
+    public static PreviewTexture Read(byte[] bytes, bool preserveCompressedChannels) => !preserveCompressedChannels ? Read(bytes)
+        : ModelDerivedCache<PreviewTexture>.Get(bytes, "compressed-channels",
+            () => ReadUncached(bytes, true), texture => texture.ByteLength);
+    private static PreviewTexture ReadUncached(byte[] bytes, bool preserveCompressedChannels = false)
     {
-        var texture = ReadLevel(bytes, 0);
+        var texture = ReadLevel(bytes, 0, preserveCompressedChannels);
+        if (texture.Format == 0x1505) return texture;
+        if (texture.Format == PreviewBc6Cube.Format) return PreviewBc6Cube.Read(bytes);
         var data = new ModelBuffer(bytes);
         var info = checked((int)BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(checked((int)BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(40, 8))), 8)));
         var count = data.U16(info + 22);
         if (count is < 1 or > 32)
             throw new InvalidDataException("Texture mip count is invalid.");
         var maximum = 1 + (int)Math.Log2(Math.Max(texture.Width, texture.Height));
+        if (preserveCompressedChannels && count > maximum)
+            throw new InvalidDataException("Source texture has more than its legal authored mip levels.");
         var mips = new List<byte[]>();
         for (var level = 1; level < count; level++)
         {
-            var mip = ReadLevel(bytes, level);
+            var mip = ReadLevel(bytes, level, preserveCompressedChannels);
             // Validate stored 1x1 tails, but send only a legal GPU mip chain.
             // The editing document retains and updates every stored level.
             if (level < maximum) mips.Add(mip.Blocks);
         }
         return texture with { Mips = mips.ToArray() };
     }
-    internal static PreviewTexture ReadLevel(byte[] bytes, int level)
+    internal static PreviewTexture ReadLevel(byte[] bytes, int level) => ReadLevel(bytes, level, false);
+    private static PreviewTexture ReadLevel(byte[] bytes, int level, bool preserveCompressedChannels)
     {
         var data = new ModelBuffer(bytes);
         if (!data.Slice(0, 4).SequenceEqual("BNTX"u8) || data.U16(12) != 0xfeff || data.U32(36) != 1)
             throw new InvalidDataException("Texture container layout is unsupported.");
-        int Pointer(int at) => checked((int)BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(at, 8)));
+        int Pointer(int at)
+        {
+            var pointer = BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(at, 8));
+            if (pointer > int.MaxValue) throw new InvalidDataException("Texture pointer is unsupported.");
+            return (int)pointer;
+        }
         var info = Pointer(Pointer(40));
         if (!data.Slice(info, 4).SequenceEqual("BRTI"u8)) throw new InvalidDataException("Texture information is missing.");
         var format = data.U32(info + 28);
+        if (format == PreviewBc6Cube.Format) return PreviewBc6Cube.Read(bytes, level);
+        if (format == 0x1505)
+        {
+            if (level != 0) throw new InvalidDataException("Source probe has one authored level.");
+            var cube = ModelCubeTexture.Read(bytes);
+            for (var face = 0; face < 6; face++) _ = cube.FacePixels(face);
+            return new(cube.Width, cube.Width, cube.Format, cube.Faces.SelectMany(f => f).ToArray());
+        }
         var blockBytes = format switch
         {
             0x0b01 or 0x0b06 or 0x0c01 or 0x0c06 => 4,
@@ -107,6 +129,7 @@ public sealed record PreviewTexture(int Width, int Height, uint Format, byte[] B
             if ((long)width * height > 4 * 1024 * 1024
                 || Enumerable.Range(0, 4).Any(c => (channels >> (c * 8) & 255) > 5))
                 throw new InvalidDataException("Texture channel mapping is unsupported.");
+            if (preserveCompressedChannels) return new PreviewTexture(width, height, format, result);
             // Compressed storage channels and sampled color channels can differ.
             // Resolve the declared mapping before baking or uploading the preview.
             var compression = format switch

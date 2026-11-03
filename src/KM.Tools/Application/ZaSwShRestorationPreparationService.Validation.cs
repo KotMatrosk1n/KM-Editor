@@ -35,7 +35,8 @@ public sealed partial class ZaSwShRestorationPreparationService
                 var profile = Profile(identity); var personalId = SwShRestorationForms.PersonalRow(identity);
                 foreach (var gender in profile.SeparateFemale ? new[] { 0, 1 } : new[] { 0 })
                 {
-                var stem = profile.OutputStem ?? $"pm{species:0000}_{gender:00}";
+                var stem = SwShRestorationModelResources.Variants(SwShRestorationDefinitions.Get(prepared.DefinitionId))
+                    .Single(v => v.Identity == identity && v.Gender == gender).ResourceStem;
                 if (!personal.Records[personalId].IsPresentInGame || personal.Records[personalId].HatchedSpecies != profile.HatchedSpecies || personal.Records[personalId].CanNotDynamax)
                     throw new InvalidDataException("Converted personal data does not support the declared contexts.");
                 foreach (var shiny in new[] { false, true })
@@ -74,12 +75,8 @@ public sealed partial class ZaSwShRestorationPreparationService
             }
             var originalBank = new SoundBankDocument(Native(SwShRestorationComposer.VoicesPath[6..]));
             var newBank = new SoundBankDocument(files[SwShRestorationComposer.VoicesPath]!);
-            if (newBank.Objects.Count != originalBank.Objects.Count + 72 * speciesCount || newBank.Media.Count != originalBank.Media.Count + 13 * speciesCount)
-                throw new InvalidDataException("Converted voices are incomplete.");
-            for (var i = 0; i < originalBank.Objects.Count; i++)
-                if (originalBank.Objects[i].Id != newBank.Objects[i].Id || originalBank.Objects[i].Type != newBank.Objects[i].Type
-                    || !originalBank.Objects[i].Payload.AsSpan().SequenceEqual(newBank.Objects[i].Payload))
-                    throw new InvalidDataException("Voice composition changed an unrelated native object.");
+            VerifyVoiceCompositionWithSilences(originalBank, newBank, prepared.Contributions,
+                SwShRestorationDefinitions.Get(prepared.DefinitionId).Identities, silentVoiceStates);
             foreach (var pair in native)
             {
                 token.ThrowIfCancellationRequested();
@@ -87,6 +84,43 @@ public sealed partial class ZaSwShRestorationPreparationService
                 if (!SHA256.HashData(current).AsSpan().SequenceEqual(SHA256.HashData(pair.Value)))
                     throw new InvalidDataException("Target sources changed during restoration preparation.");
             }
+        }
+
+        private static void VerifyVoiceComposition(SoundBankDocument original, SoundBankDocument converted,
+            IReadOnlyList<SwShRestorationContribution> contributions, IReadOnlyList<KM.SwSh.Pokemon.SwShPokemonIdentity> identities)
+            => VerifyVoiceCompositionWithSilences(original, converted, contributions, identities, new Dictionary<KM.SwSh.Pokemon.SwShPokemonIdentity, IReadOnlySet<string>>());
+
+        private static void VerifyVoiceCompositionWithSilences(SoundBankDocument original, SoundBankDocument converted,
+            IReadOnlyList<SwShRestorationContribution> contributions, IReadOnlyList<KM.SwSh.Pokemon.SwShPokemonIdentity> identities,
+            IReadOnlyDictionary<KM.SwSh.Pokemon.SwShPokemonIdentity, IReadOnlySet<string>> silences)
+        {
+            IReadOnlySet<string>? Silent(KM.SwSh.Pokemon.SwShPokemonIdentity i) => silences.TryGetValue(i, out var states) ? states : null;
+            var voices = contributions.Where(c => c.Writer == SwShRestorationWriter.Voices).ToArray();
+            var objects = voices.Where(c => !c.Key.StartsWith("media:", StringComparison.Ordinal)).ToDictionary(c => c.Key, StringComparer.Ordinal);
+            var media = voices.Where(c => c.Key.StartsWith("media:", StringComparison.Ordinal)).ToDictionary(c => uint.Parse(c.Key[6..], System.Globalization.CultureInfo.InvariantCulture));
+            var requiredObjects = identities.SelectMany(i => SwShVoiceWriter.ObjectIds(i.Species, i.Form, silentStates: Silent(i))).ToHashSet();
+            var allowedObjects = identities.SelectMany(i => SwShVoiceWriter.ObjectIds(i.Species, i.Form, 2, Silent(i))).ToHashSet();
+            var actualObjects = objects.Keys.Select(k => uint.Parse(k.Split(':')[1], System.Globalization.CultureInfo.InvariantCulture)).ToHashSet();
+            var requiredMedia = identities.SelectMany(i => SwShVoiceWriter.States.Where(s => Silent(i)?.Contains(s) != true).Select(s => SwShVoiceWriter.MediaId(i.Species, s, i.Form))).ToHashSet();
+            var allowedMedia = identities.SelectMany(i => SwShVoiceWriter.States.Where(s => Silent(i)?.Contains(s) != true).SelectMany(s => new[] { SwShVoiceWriter.MediaId(i.Species, s, i.Form), SwShVoiceWriter.MediaId(i.Species, s, i.Form, 1) })).ToHashSet();
+            if (!requiredObjects.IsSubsetOf(actualObjects) || !actualObjects.IsSubsetOf(allowedObjects)
+                || !requiredMedia.IsSubsetOf(media.Keys) || !media.Keys.All(allowedMedia.Contains)
+                || converted.Objects.Count != original.Objects.Count + objects.Count || converted.Media.Count != original.Media.Count + media.Count)
+                throw new InvalidDataException("Converted voices are incomplete or contain unowned layers.");
+            var convertedObjects = converted.Objects.ToDictionary(o => $"{o.Type}:{o.Id}", StringComparer.Ordinal);
+            var convertedMedia = converted.Media.ToDictionary(m => m.Id);
+            foreach (var item in objects)
+                if (!convertedObjects.TryGetValue(item.Key, out var node) || !node.Payload.AsSpan().SequenceEqual(item.Value.After))
+                    throw new InvalidDataException("Voice composition changed a converted object.");
+            foreach (var item in media)
+                if (!convertedMedia.TryGetValue(item.Key, out var clip) || !clip.Bytes.AsSpan().SequenceEqual(item.Value.After))
+                    throw new InvalidDataException("Voice composition changed converted media.");
+            foreach (var node in original.Objects)
+                if (!convertedObjects.TryGetValue($"{node.Type}:{node.Id}", out var current) || !current.Payload.AsSpan().SequenceEqual(node.Payload))
+                    throw new InvalidDataException("Voice composition changed an unrelated native object.");
+            foreach (var clip in original.Media)
+                if (!convertedMedia.TryGetValue(clip.Id, out var current) || !current.Bytes.AsSpan().SequenceEqual(clip.Bytes))
+                    throw new InvalidDataException("Voice composition changed unrelated native media.");
         }
     }
 }

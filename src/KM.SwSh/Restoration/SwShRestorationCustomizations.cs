@@ -134,7 +134,7 @@ internal static class SwShRestorationCustomizations
         return prepared with { Contributions = items.Values.ToArray() };
     }
     internal static IEnumerable<string> ModelStems(SwShRestorationDefinition definition) => definition.Identities
-        .Select(identity => $"pm{identity.Species:0000}_{identity.Form:00}")
+        .Select(SwShRestorationModelResources.PrimaryStem)
         .Concat(definition.AdditionalModelVariants.Select(variant => variant.ResourceStem)).Distinct(StringComparer.Ordinal);
     private static bool IsLooseModel(string path, SwShRestorationDefinition definition) => ModelStems(definition).Any(stem =>
         path.StartsWith($"romfs/bin/pokemon/{stem}/", StringComparison.Ordinal));

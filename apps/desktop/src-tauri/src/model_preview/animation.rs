@@ -61,6 +61,8 @@ pub struct MeshInfo {
     #[serde(default)]
     pub secondary_uv: Option<Vec<f32>>,
     #[serde(default)]
+    pub tangent0: Option<Vec<f32>>,
+    #[serde(default)]
     pub mask_uv: Option<[f32; 4]>,
     #[serde(default)]
     pub highlight: Option<usize>,
@@ -102,6 +104,8 @@ pub struct SurfaceInfo {
     pub effect_link: u32,
     #[serde(default, rename = "restorationEffect")]
     pub restoration_effect: u32,
+    #[serde(default, rename = "gemProbeTexture")]
+    pub gem_probe_texture: Option<usize>,
     #[serde(default, rename = "restorationValues")]
     pub restoration_values: Vec<[f32; 4]>,
 }
@@ -178,12 +182,23 @@ impl Rig {
                     "UVScaleOffset1" if values.len() >= 44 => 40,
                     "UnderlayUV" if values.len() >= 60 => 48,
                     "MaskUV" if values.len() >= 36 => 32,
+                    "SurfaceAlpha" if values.len() >= 204 => 200,
                     "LayerEmission" if values.len() >= 120 && self.meshes[index].surface.as_ref().is_some_and(|s| s.layer_emission) => 116,
+                    "EmissionIntensityLayer1" if values.len() >= 120 => 116,
+                    "EmissionIntensityLayer2" if values.len() >= 120 => 117,
+                    "EmissionIntensityLayer3" if values.len() >= 120 => 118,
+                    "EmissionIntensityLayer4" if values.len() >= 120 => 119,
+                    "EmissionColorLayer1" if values.len() >= 124 => 120,
+                    "EmissionColorLayer2" if values.len() >= 128 => 124,
+                    "EmissionColorLayer3" if values.len() >= 132 => 128,
+                    "EmissionColorLayer4" if values.len() >= 136 => 132,
                     parameter if self.meshes[index].surface.as_ref().is_some_and(|s| s.restoration_effect > 0)
                         && parameter.starts_with("RestorationValue") => {
                         let Ok(slot) = parameter[16..].parse::<usize>() else { continue };
-                        if slot >= 10 || values.len() < 324 + (slot + 1) * 4 { continue; }
-                        324 + slot * 4
+                        let kind = self.meshes[index].surface.as_ref().unwrap().restoration_effect;
+                        let (start, count) = (324, if matches!(kind, 5 | 6 | 10) { 15 } else { 10 });
+                        if slot >= count || values.len() < start + (slot + 1) * 4 { continue; }
+                        start + slot * 4
                     }
                     "EmissionGain" if values.len() >= 74 => 70,
                     "EmissionScale" if values.len() >= 91 => 87,
@@ -288,6 +303,19 @@ impl Rig {
             }
             if clip.visibility.len() > 512 || clip.materials.len() > 4096 {
                 return Err("KM-MODEL-UNSUPPORTED".into());
+            }
+            for track in &clip.materials {
+                if self.meshes.iter().any(|mesh| mesh.material == track.material
+                    && mesh.surface.as_ref().is_some_and(|surface| surface.restoration_effect == 10))
+                    && track.parameter.starts_with("RestorationValue")
+                {
+                    let slot = track.parameter[16..].parse::<usize>().map_err(|_| "KM-MODEL-UNSUPPORTED")?;
+                    // Source scalar curves occupy only the22 owned scalar slots.
+                    // UV selectors, palette vectors and unused ABI rows are static.
+                    if slot >= 6 || slot == 5 && track.channels[2..].iter().any(|c| !c.is_empty()) {
+                        return Err("KM-MODEL-UNSUPPORTED".into());
+                    }
+                }
             }
             for curve in clip.visibility.iter().map(|track| &track.keys).chain(
                 clip.materials

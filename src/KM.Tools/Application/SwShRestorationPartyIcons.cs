@@ -9,6 +9,12 @@ internal static class SwShRestorationPartyIcons
     private static readonly IReadOnlyDictionary<int, (string Sprite, string Frame)> Profiles = new Dictionary<int, (string, string)>
     {
         // Frames use native resource IDs, which are not always National Dex IDs.
+        [3] = ("venusaur", "0007_00s"),
+        [9] = ("blastoise", "0007_00s"),
+        [26] = ("raichu", "0007_00s"),
+        [36] = ("clefable", "0007_00s"),
+        [65] = ("alakazam", "0007_00s"),
+        [359] = ("absol", "0007_00s"),
         [179] = ("mareep", "0007_00s"),
         [180] = ("flaaffy", "0007_00s"),
         [181] = ("ampharos", "0007_00s"),
@@ -88,6 +94,9 @@ internal static class SwShRestorationPartyIcons
             var suffix = (species, form) switch
             {
                 (6, 1) => "-mega-x", (6, 2) => "-mega-y",
+                (3 or 9 or 15 or 18 or 36 or 65 or 359, 1) => "-mega",
+                (26, 2) => "-mega-x", (26, 3) => "-mega-y",
+                (359, 2) => "-mega-z",
                 (386, 1) => "-attack", (386, 2) => "-defense", (386, 3) => "-speed",
                 (74 or 75 or 76 or 88 or 89, 1) => "-alola",
                 (58 or 59 or 100 or 101 or 157 or 503 or 571, 1) => "-hisui",
