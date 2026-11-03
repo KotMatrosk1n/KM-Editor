@@ -20,9 +20,10 @@ public static partial class SwShAnimationWriter
         var sourceSkeleton = source.Table(source.Root, 1);
         var entries = source.Tables(sourceSkeleton, 0, 4096);
         var byName = sourceBones.ToDictionary(b => b.Name, StringComparer.Ordinal);
-        var retained = entries.Where(e => byName.ContainsKey(source.Text(e, 0) ?? "")).ToArray();
-        if (retained.Select(e => source.Text(e, 0)).Distinct(StringComparer.Ordinal).Count() != retained.Length)
-            throw new InvalidDataException("Animation contains duplicate bone tracks.");
+        // The reader has validated every repeated track's encoding and exact keys.
+        // Retain the first source payload so conversion emits one track per bone.
+        var retained = entries.Where(e => byName.ContainsKey(source.Text(e, 0) ?? ""))
+            .DistinctBy(e => source.Text(e, 0), StringComparer.Ordinal).ToArray();
         var frames = expression == SwShExpressionCurve.None ? validated.Frames : 81;
         var rate = expression == SwShExpressionCurve.None ? validated.Rate : 30;
         var writer = new ModelTableBuilder(); var root = writer.Table(5, absent: new HashSet<int> { 3, 4 });
@@ -107,8 +108,16 @@ public static partial class SwShAnimationWriter
         var selected = new List<PreviewMaterialTrack>();
         foreach (var group in tracks.GroupBy(t => t.Material, StringComparer.Ordinal))
         {
-            var primary = group.SingleOrDefault(t => t.Parameter == "UVScaleOffset");
-            var secondary = group.SingleOrDefault(t => t.Parameter == "UVScaleOffset1");
+            PreviewMaterialTrack? Unique(string parameter)
+            {
+                var matches = group.Where(t => t.Parameter == parameter).ToArray();
+                if (matches.Length == 0) return null;
+                if (matches.Skip(1).Any(track => !Equivalent(matches[0], track)))
+                    throw new InvalidDataException("Material animation has conflicting tracks for the same target and parameter.");
+                return matches[0];
+            }
+            var primary = Unique("UVScaleOffset");
+            var secondary = Unique("UVScaleOffset1");
             if (primary is not null && secondary is not null && !Equivalent(primary, secondary))
                 throw new InvalidDataException("Independent secondary UV animation needs a material adapter.");
             if ((primary ?? secondary) is { } chosen) selected.Add(chosen);

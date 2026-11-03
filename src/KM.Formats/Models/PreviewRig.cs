@@ -73,7 +73,7 @@ public static class PreviewRigReader
         var frames = checked((int)data.Value(info, 1)); var rate = checked((int)data.Value(info, 2));
         if (frames is < 1 or > 18000 || rate is < 1 or > 240) throw new InvalidDataException("Animation timing is unsupported.");
         var tracks = new List<PreviewBoneTrack>();
-        var seen = new HashSet<int>();
+        var seen = new Dictionary<int, (int Entry, PreviewBoneTrack Track)>();
         var skeletal = data.Table(data.Root, 1);
         // Shared clips can include companion and prop tracks beyond this model's
         // skeleton. Bound the source independently, then retain matching bones.
@@ -87,8 +87,28 @@ public static class PreviewRigReader
             var name = data.Text(entry, 0);
             if (name is null || !indices.TryGetValue(name, out var index)) continue;
             if (index < 0) throw new InvalidDataException("Animation target matches multiple skeleton nodes.");
-            if (!seen.Add(index)) throw new InvalidDataException("Animation tracks are ambiguous.");
-            tracks.Add(new(index, Keys(1, false), Keys(3, true), Keys(5, false)));
+            var track = new PreviewBoneTrack(index, Keys(1, false), Keys(3, true), Keys(5, false));
+            if (seen.TryGetValue(index, out var previous))
+            {
+                // Shared clips can repeat an identical track. Validate every copy,
+                // including its encoding and exact decoded keys, before retaining one.
+                if (!Same(1, previous.Track.Scale, track.Scale)
+                    || !Same(3, previous.Track.Rotation, track.Rotation)
+                    || !Same(5, previous.Track.Translation, track.Translation))
+                    throw new InvalidDataException("Animation tracks are ambiguous.");
+                continue;
+            }
+            seen.Add(index, (entry, track));
+            tracks.Add(track);
+            bool Same(int field, PreviewKey[] left, PreviewKey[] right)
+            {
+                byte Kind(int table) => data.Field(table, field) is var at && at != 0 ? data.U8(at) : (byte)0;
+                return Kind(previous.Entry) == Kind(entry) && left.Length == right.Length
+                    && left.Zip(right).All(keys => BitConverter.SingleToInt32Bits(keys.First.Frame) == BitConverter.SingleToInt32Bits(keys.Second.Frame)
+                        && keys.First.Value.Length == keys.Second.Value.Length
+                        && keys.First.Value.Zip(keys.Second.Value).All(values =>
+                            BitConverter.SingleToInt32Bits(values.First) == BitConverter.SingleToInt32Bits(values.Second)));
+            }
             PreviewKey[] Keys(int field, bool rotation)
             {
                 var at = data.Field(entry, field); var kind = at == 0 ? 0 : data.U8(at);

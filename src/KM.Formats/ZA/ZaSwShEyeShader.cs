@@ -5,8 +5,12 @@ namespace KM.Formats.ZA;
 
 public static class ZaSwShEyeShader
 {
-    public static byte[] Convert(byte[] template, bool objectNormals = false, bool lava = false)
+    public static byte[] Convert(byte[] template, bool objectNormals = false, bool lava = false, bool independentHighlights = false, bool layerEmission = false, bool layerTint = false, bool mirrorEmissionColor = false)
     {
+        if (mirrorEmissionColor && !layerEmission)
+            throw new InvalidDataException("Mirrored emission eye color requires its layer consumer.");
+        if ((lava ? 1 : 0) + (independentHighlights ? 1 : 0) + (layerEmission ? 1 : 0) + (layerTint ? 1 : 0) > 1)
+            throw new InvalidDataException("Eye effects require separate samplers.");
         int Integer(int offset) => BinaryPrimitives.ReadInt32LittleEndian(template.AsSpan(offset, 4));
         int Pointer(int offset) => checked((int)BinaryPrimitives.ReadUInt64LittleEndian(template.AsSpan(offset, 8)));
         if (template.Length < 512 || !template.AsSpan(0, 4).SequenceEqual("BNSH"u8) || Integer(0x7c) != 1)
@@ -38,14 +42,26 @@ public static class ZaSwShEyeShader
         var capacity = Integer(sections[0] + 12);
         if (length > capacity || data + capacity > template.Length || template.AsSpan(data + length, capacity - length).ContainsAnyExcept((byte)0))
             throw new InvalidDataException("Eye shader extension storage is unavailable.");
-        var code = new List<(ulong Instruction, ulong Control)>();
+        var code = new List<(ulong Instruction, ulong Control)>(); int originalBoundary = 0;
         var textures = new HashSet<int>();
         var capturedUv = false;
         var normalPatched = false;
         var colorPatched = false;
         var preservedLayerControls = 0;
+        var emissionReads = identity == "1EAC62E9112F11530759B7F8FD91C53ED73EF5C4B2195591282EC4E354C07D37"
+            ? new HashSet<ulong>
+        {
+            0x49A2169802472D28UL, 0x49A213180257260FUL, 0x49A2179802672F28UL,
+            0x49A2169802072D2EUL, 0x49A2179802272F31UL, 0x49A2131802172630UL,
+            0x49A2031803C70603UL, 0x49A2049803D70902UL, 0x49A2001803E70005UL
+        } : new HashSet<ulong>
+        {
+            0x49A218180247302EUL, 0x49A2181802073031UL, 0x49A219180257320FUL,
+            0x49A2191802173231UL, 0x49A2191802673231UL, 0x49A2191802273233UL,
+            0x49A2029803C70504UL, 0x49A2001803D70006UL, 0x49A2011803E70207UL
+        };
         void Emit(ulong instruction, bool asynchronous = false) =>
-            code.Add((instruction, 15UL | 7UL << 5 | (asynchronous ? 5UL : 7UL) << 8 | 63UL << 11));
+            code.Add((instruction, KM.Formats.SwSh.SwShShaderScheduling.Serial(instruction)));
         void Move(int destination, int source) => Emit(0x5c98078000070000UL | (ulong)source << 20 | (uint)destination);
         void Constant(int destination, float value) => Emit(0x010000000007f000UL | (ulong)BitConverter.SingleToUInt32Bits(value) << 20 | (uint)destination);
         void Multiply(int destination, int left, int right) => Emit(0x5c68100000070000UL | (ulong)right << 20 | (uint)left << 8 | (uint)destination);
@@ -75,19 +91,6 @@ public static class ZaSwShEyeShader
                 Fma(58 + component, 56, 68, 70);
                 Fma(58 + component, 57, 69, 58 + component);
             }
-            for (var component = 0; component < 2; component++)
-            {
-                if (component == 0) Emit(0x5c5810000007ff00UL | 1UL << 49 | 58UL << 20 | 68);
-                else
-                {
-                    Constant(69, 1); Add(68, 69, 59, true);
-                    Emit(0x5c5810000007ff00UL | 1UL << 49 | 68UL << 20 | 68);
-                    Add(68, 69, 68, true);
-                }
-                Uniform(69, 5, 18 + row - 4 + component);
-                Add(68, 68, 58 + component, true);
-                Fma(58 + component, 68, 69, 58 + component);
-            }
         }
         void Normal(int first, int second)
         {
@@ -116,19 +119,72 @@ public static class ZaSwShEyeShader
         void Color(int first, int second)
         {
             int[] colors = [first, first + 1, second];
-            if (lava) Constant(94, 1);
+            if (layerTint)
+            {
+                Sample(22, 92, 93, 88);
+                for (var c = 0; c < 3; c++) Constant(80 + c, 1);
+                int[] colorWords = [32, 36, 60, 72];
+                for (var layer = 0; layer < 4; layer++)
+                    for (var c = 0; c < 3; c++)
+                    {
+                        Uniform(68, 6, colorWords[layer] + c);
+                        Add(68, 68, 80 + c, true); Fma(80 + c, 68, 88 + layer, 80 + c);
+                    }
+                for (var c = 0; c < 3; c++) Multiply(colors[c], colors[c], 80 + c);
+            }
+            if (layerEmission || layerTint)
+            {
+                if (!layerTint)
+                {
+                    Move(58, 92); Move(59, 93);
+                    Sample(22, 58, 59, 88);
+                }
+                Constant(84, 1);
+                for (var c = 0; c < 3; c++) Constant(80 + c, 0);
+                // Source layers overwrite in order: a later mask attenuates
+                // every earlier layer, including its independent emission.
+                int[] intensityWords = [43, 44, 48, 51];
+                int[] colorWords = [32, 36, 60, 72];
+                for (var layer = 3; layer >= 0; layer--)
+                {
+                    Uniform(87, 5, intensityWords[layer]);
+                    Multiply(86, 88 + layer, 84); Multiply(86, 86, 87);
+                    for (var c = 0; c < 3; c++)
+                    {
+                        if (layerTint) Constant(68, ZaSwShEyelidMaterial.TintEmissionColors[layer][c]);
+                        else Uniform(68, 6, colorWords[layer] + c);
+                        Fma(80 + c, 68, 86, 80 + c);
+                    }
+                    Constant(85, 1); Add(85, 85, 88 + layer, true); Multiply(84, 84, 85);
+                }
+            }
+            if (independentHighlights)
+            {
+                Uniform(68, 5, 49); Uniform(69, 5, 46); Fma(58, 56, 68, 69);
+                Uniform(68, 5, 50); Uniform(69, 5, 47); Fma(59, 57, 68, 69);
+                Constant(68, 1); Add(59, 68, 59, true); Sample(22, 58, 59, 60);
+                for (var component = 0; component < 3; component++)
+                {
+                    Uniform(68, 6, 72 + component); Fma(colors[component], 68, 60, colors[component]);
+                }
+            }
+            if (lava || layerEmission || layerTint) Constant(94, 1);
             Transform(8); Sample(0x0e, 58, 59, 60);
             for (var component = 0; component < 3; component++) Multiply(colors[component], colors[component], 60 + component);
+            if (layerEmission || layerTint)
+                for (var component = 0; component < 3; component++) Multiply(80 + component, 80 + component, 60 + component);
             foreach (var (row, slot) in new[] { (4, 0x0a), (6, 0x0c) })
             {
                 Transform(row); Sample(slot, 58, 59, 60);
-                if (lava) { Constant(84, 1); Add(84, 84, 63, true); Multiply(94, 94, 84); }
+                if (lava || layerEmission || layerTint) { Constant(84, 1); Add(84, 84, 63, true); Multiply(94, 94, 84); }
                 for (var component = 0; component < 3; component++)
                 {
                     Add(68, 60 + component, colors[component], true);
                     Fma(colors[component], 68, 63, colors[component]);
                 }
             }
+            if (layerEmission || layerTint)
+                for (var c = 0; c < 3; c++) Multiply(80 + c, 80 + c, 94);
             if (lava)
             {
                 // The native eye surface retains the eyelid occlusion while its
@@ -158,6 +214,18 @@ public static class ZaSwShEyeShader
                 var texture = (instruction & 0xff00000000000000UL) == 0xd800000000000000UL;
                 var slot = texture ? (int)(instruction >> 36 & 0x1fff) : -1;
                 var first = (int)(instruction & 255); var second = (int)(instruction >> 28 & 255);
+                if ((layerEmission || layerTint) && (instruction >> 34 & 31) == 6
+                    && (instruction >> 20 & 16383) is 32 or 33 or 34 or 36 or 37 or 38 or 60 or 61 or 62)
+                {
+                    // These exact FFMA.C instructions compute x*1-x in the
+                    // native template. Free their neutral color slots while
+                    // substituting the independently evaluated glow at output.
+                    if (!colorPatched || !emissionReads.Remove(instruction))
+                        throw new InvalidDataException("Eye emission color reads need another adapter.");
+                    var word = (int)(instruction >> 20 & 16383);
+                    if (word >= 60) Move(first, 80 + word - 60); else Constant(first, 0);
+                    continue;
+                }
                 if ((instruction >> 34 & 31) == 5 && (instruction >> 20 & 16383) is 13 or 24)
                 {
                     var word = (int)(instruction >> 20 & 16383);
@@ -184,7 +252,7 @@ public static class ZaSwShEyeShader
                     if ((instruction >> 8 & 255) != 1 || (instruction >> 20 & 255) != 0)
                         throw new InvalidDataException("Eye shader normal coordinates are unsupported.");
                 }
-                if (slot is 0x0e or 0x0a or 0x0c || lava && slot is 20 or 22)
+                if (slot is 0x0e or 0x0a or 0x0c || lava && slot is 20 or 22 || (independentHighlights || layerEmission || layerTint) && slot == 22)
                 {
                     if (slot == 0x0e) { Constant(first, 0); Constant(first + 1, 0); Constant(second, 166 / 255f); }
                     else
@@ -197,20 +265,16 @@ public static class ZaSwShEyeShader
                 if (lava && (instruction >> 34 & 31) == 6 && (instruction >> 20 & 16383) is >= 60 and <= 62
                     && instruction >> 48 is >= 0x49a0 and <= 0x49a3)
                     Add((int)(instruction >> 8 & 255), (int)(instruction >> 8 & 255), 80 + (int)(instruction >> 20 & 16383) - 60);
-                if (lava && slot == 8)
+                if ((lava || mirrorEmissionColor) && slot == 8)
                 {
-                    // Mirror-once addressing is independent of the eyelid maps.
-                    // The encoded palette uses a clamped native sampler.
-                    var u = (int)(instruction >> 8 & 255); var v = (int)(instruction >> 20 & 255);
-                    Uniform(69, 5, 45); Constant(70, 1);
-                    Emit(0x5c5810000007ff00UL | 1UL << 49 | (ulong)u << 20 | 68);
-                    Add(68, 68, u, true); Fma(u, 68, 69, u);
-                    Add(68, 70, v, true);
-                    Emit(0x5c5810000007ff00UL | 1UL << 49 | 68UL << 20 | 68);
-                    Add(68, 70, 68, true); Add(68, 68, v, true); Fma(v, 68, 69, v);
-                    Move(92, u); Move(93, v);
+                    // Preserve unmodified coordinates for the independently addressed emission map.
+                    Move(92, (int)(instruction >> 8 & 255)); Move(93, (int)(instruction >> 20 & 255));
                 }
-                code.Add((instruction, schedulingInstruction));
+                if ((layerEmission || layerTint) && slot == 8)
+                {
+                    Move(92, (int)(instruction >> 8 & 255)); Move(93, (int)(instruction >> 20 & 255));
+                }
+                KM.Formats.SwSh.SwShShaderScheduling.Original(code, ref originalBoundary, instruction, schedulingInstruction);
                 if ((instruction & 0xffffffffff00ff00UL) == 0xe043ff910100ff00UL && first == 1)
                 {
                     if (capturedUv) throw new InvalidDataException("Eye shader UV input is ambiguous.");
@@ -220,7 +284,8 @@ public static class ZaSwShEyeShader
                 if (slot == 8) { Color(first, second); colorPatched = true; }
             }
         }
-        if (!normalPatched || !colorPatched || preservedLayerControls != 3 || !textures.SetEquals(new[] { 8, 10, 12, 14, 16, 18, 20, 22 }))
+        if (!normalPatched || !colorPatched || preservedLayerControls != 3 || (layerEmission || layerTint) && emissionReads.Count != 0
+            || !textures.SetEquals(new[] { 8, 10, 12, 14, 16, 18, 20, 22 }))
             throw new InvalidDataException("Eye shader contract is incomplete.");
         while (code.Count % 3 != 0) code.Add((0x50b0000000070f00UL, 0x7ff));
         var newEnd = checked(0x80 + code.Count / 3 * 32);
@@ -234,7 +299,7 @@ public static class ZaSwShEyeShader
         template.AsSpan(data + constants, constantLength).CopyTo(output.AsSpan(data + newConstants));
         void Write(int offset, int value) => BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(offset, 4), value);
         Write(stage + 24, newLength); Write(control + 0x6f8, newEnd - 0x30);
-        Write(control + 0x700, newConstants); Write(control + 0x704, newLength); Write(control + 0x70c, lava ? 96 : 80);
+        Write(control + 0x700, newConstants); Write(control + 0x704, newLength); Write(control + 0x70c, lava || layerEmission || layerTint ? 96 : 80);
         for (var index = 0; index < code.Count; index += 3)
         {
             var offset = data + 0x80 + index / 3 * 32;
@@ -265,7 +330,7 @@ public static class ZaSwShEyeShader
         if (end % 32 != 0 || end > constants || constants + constantLength > length || length > capacity
             || template.AsSpan(data + length, capacity - length).ContainsAnyExcept((byte)0))
             throw new InvalidDataException("Eye vertex extension storage is unavailable.");
-        var code = new List<(ulong Instruction, ulong Control)>(); var patched = false;
+        var code = new List<(ulong Instruction, ulong Control)>(); int originalBoundary = 0; var patched = false;
         for (var block = 0x80; block < end; block += 32)
         {
             var scheduling = BinaryPrimitives.ReadUInt64LittleEndian(template.AsSpan(data + block, 8));
@@ -277,12 +342,14 @@ public static class ZaSwShEyeShader
                     if (patched) throw new InvalidDataException("Eye vertex exit is ambiguous.");
                     foreach (var (input, output) in new[] { (0x90, 0x9c), (0x94, 0xac), (0x98, 0xbc), (0xa0, 0xf8), (0xa4, 0x10c), (0xa8, 0x118), (0xac, 0x11c) })
                     {
-                        code.Add((0xefd87f800007ff00UL | (ulong)input << 20, 15UL | 7UL << 5 | 5UL << 8 | 63UL << 11));
-                        code.Add((0xeff07f800007ff00UL | (ulong)output << 20, 15UL | 7UL << 5 | 7UL << 8 | 63UL << 11));
+                        var load = 0xefd87f800007ff00UL | (ulong)input << 20;
+                        code.Add((load, KM.Formats.SwSh.SwShShaderScheduling.Serial(load)));
+                        var store = 0xeff07f800007ff00UL | (ulong)output << 20;
+                        code.Add((store, KM.Formats.SwSh.SwShShaderScheduling.Serial(store)));
                     }
                     patched = true;
                 }
-                code.Add((instruction, scheduling >> (lane * 21) & 0x1ffff));
+                KM.Formats.SwSh.SwShShaderScheduling.Original(code, ref originalBoundary, instruction, scheduling >> (lane * 21) & 0x1ffff);
             }
         }
         if (!patched) throw new InvalidDataException("Eye vertex exit is missing.");

@@ -8,7 +8,10 @@ namespace KM.SwSh.Restoration;
 public enum SwShRestorationSupport { NotSupported, Testing, Ready }
 public enum SwShRestorationInstallation { Disabled, Enabled, NeedsRepair, External }
 public enum SwShRestorationDonor { ScarletViolet, LegendsZA, LegendsArceus }
-public sealed record SwShRestorationModelVariant(SwShPokemonIdentity Identity, int Gender, string ResourceStem);
+public sealed record SwShRestorationModelVariant(SwShPokemonIdentity Identity, int Gender, string ResourceStem)
+{
+    public string? SourceResourceStem { get; init; }
+}
 public sealed record SwShRestorationDefinition(string Id, int Version, int ConverterVersion,
     IReadOnlyList<SwShPokemonIdentity> Identities, IReadOnlyDictionary<ProjectGame, SwShRestorationSupport> Support,
     IReadOnlyList<string> RequiredContexts)
@@ -37,6 +40,16 @@ public static class SwShRestorationDefinitions
     });
     public static IReadOnlyList<SwShRestorationDefinition> All { get; } = Array.AsReadOnly(PiplupSpecies.Concat(new[]
     {
+        Species("venusaur-mega", 3, 1) with { Donor = SwShRestorationDonor.LegendsZA, AssetRevision = 4 },
+        Species("blastoise-mega", 9, 1) with { Donor = SwShRestorationDonor.LegendsZA, AssetRevision = 4 },
+        Species("absol-mega", 359, 1) with { Donor = SwShRestorationDonor.LegendsZA, AssetRevision = 4 },
+        Species("absol-mega-z", 359, 2) with { Donor = SwShRestorationDonor.LegendsZA, AssetRevision = 6 },
+        Species("beedrill-mega", 15, 1) with { Donor = SwShRestorationDonor.LegendsZA, AssetRevision = 3 },
+        Species("pidgeot-mega", 18, 1) with { Donor = SwShRestorationDonor.LegendsZA, AssetRevision = 5 },
+        Species("raichu-mega-x", 26, 2) with { Donor = SwShRestorationDonor.LegendsZA, AssetRevision = 6 },
+        Species("raichu-mega-y", 26, 3) with { Donor = SwShRestorationDonor.LegendsZA, AssetRevision = 8 },
+        Species("clefable-mega", 36, 1) with { Donor = SwShRestorationDonor.LegendsZA, AssetRevision = 9 },
+        Species("alakazam-mega", 65, 1) with { Donor = SwShRestorationDonor.LegendsZA, AssetRevision = 5 },
         Species("paras", 46) with { Donor = SwShRestorationDonor.LegendsArceus },
         Species("parasect", 47) with { Donor = SwShRestorationDonor.LegendsArceus },
         Species("venonat", 48), Species("venomoth", 49),

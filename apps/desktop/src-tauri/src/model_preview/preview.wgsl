@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 struct Camera { view_projection: mat4x4<f32>, eye: vec4<f32>, light: vec4<f32>, environment: vec4<f32> };
-struct Material { color: vec4<f32>, layers: array<vec4<f32>, 4>, uv: vec4<f32>, wrap: vec4<f32>, texture_scale: vec4<f32>, mask_uv: vec4<f32>, highlight_color: vec4<f32>, highlight_uv: vec4<f32>, highlight_scale: vec4<f32>, underlay_uv: vec4<f32>, underlay_wrap: vec4<f32>, underlay_scale: vec4<f32>, mask_channels: vec4<f32>, surface: array<vec4<f32>, 41>, map_wrap: array<vec4<f32>, 12>, map_scale: array<vec4<f32>, 12>, restoration: array<vec4<f32>, 10>, flags: vec4<f32> };
+struct Material { color: vec4<f32>, layers: array<vec4<f32>, 4>, uv: vec4<f32>, wrap: vec4<f32>, texture_scale: vec4<f32>, mask_uv: vec4<f32>, highlight_color: vec4<f32>, highlight_uv: vec4<f32>, highlight_scale: vec4<f32>, underlay_uv: vec4<f32>, underlay_wrap: vec4<f32>, underlay_scale: vec4<f32>, mask_channels: vec4<f32>, surface: array<vec4<f32>, 41>, map_wrap: array<vec4<f32>, 12>, map_scale: array<vec4<f32>, 12>, restoration: array<vec4<f32>, 15>, flags: vec4<f32> };
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(0) @binding(1) var<storage, read> joints: array<mat4x4<f32>>;
 @group(1) @binding(0) var base_color: texture_2d<f32>;
@@ -21,6 +21,7 @@ struct Material { color: vec4<f32>, layers: array<vec4<f32>, 4>, uv: vec4<f32>, 
 @group(1) @binding(15) var subsurface_mask: texture_2d<f32>;
 @group(1) @binding(16) var eyelid_mask: texture_2d<f32>;
 @group(1) @binding(17) var discard_mask: texture_2d<f32>;
+@group(1) @binding(18) var repeat_sampler: sampler;
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) normal: vec3<f32>,
@@ -31,22 +32,50 @@ struct VertexOutput {
     @location(5) skin_z: vec3<f32>,
     @location(6) @interpolate(flat) selected: u32,
     @location(7) secondary_uv: vec2<f32>,
+    @location(8) tangent: vec4<f32>,
 };
-fn vertex_data(position: vec3<f32>, normal: vec3<f32>, uv: vec2<f32>, indices: vec4<f32>, weights: vec4<f32>, secondary_uv: vec2<f32>) -> VertexOutput {
+// XYZ squared length and normalization order of the paired source frame stage.
+fn source_unit(v: vec3<f32>) -> vec3<f32> {
+    return v * inverseSqrt(fma(v.z, v.z, fma(v.y, v.y, v.x * v.x)));
+}
+fn source_frame(v: vec3<f32>, x: vec3<f32>, y: vec3<f32>, z: vec3<f32>, inverse_lengths: vec3<f32>) -> vec3<f32> {
+    let corrected = fma(z * inverse_lengths.z, vec3<f32>(v.z), fma(x * inverse_lengths.x, vec3<f32>(v.x), (y * inverse_lengths.y) * v.y));
+    let packed = vec3<f32>(vec3<i32>(source_unit(corrected) * 511.0)) * (1.0 / 511.0);
+    // The preview world matrix is identity. Preserve the native X,Y,Z multiply/FMA boundary.
+    let world = fma(vec3<f32>(0.0, 0.0, 1.0), vec3<f32>(packed.z), fma(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(packed.y), vec3<f32>(1.0, 0.0, 0.0) * packed.x));
+    return source_unit(world);
+}
+fn vertex_data(position: vec3<f32>, normal: vec3<f32>, uv: vec2<f32>, indices: vec4<f32>, weights: vec4<f32>, secondary_uv: vec2<f32>, tangent0: vec4<f32>) -> VertexOutput {
     var output: VertexOutput;
     output.selected = 0u;
+    output.tangent = tangent0;
     var point = vec4<f32>(position, 1.0);
     var n = normal;
     output.skin_x = vec3<f32>(1.0, 0.0, 0.0);
     output.skin_y = vec3<f32>(0.0, 1.0, 0.0);
     output.skin_z = vec3<f32>(0.0, 0.0, 1.0);
     if dot(weights, vec4<f32>(1.0)) > 0.0 {
-        let skin = joints[u32(indices.x)] * weights.x + joints[u32(indices.y)] * weights.y + joints[u32(indices.z)] * weights.z + joints[u32(indices.w)] * weights.w;
+        var skin = joints[u32(indices.x)] * weights.x + joints[u32(indices.y)] * weights.y + joints[u32(indices.z)] * weights.z + joints[u32(indices.w)] * weights.w;
+        if material.flags.w == 15.0 {
+            // Preserve the source skinning pass's four-influence accumulation order.
+            for (var c = 0u; c < 4u; c++) {
+                skin[c] = fma(joints[u32(indices.w)][c], vec4<f32>(weights.w), fma(joints[u32(indices.z)][c], vec4<f32>(weights.z), fma(joints[u32(indices.x)][c], vec4<f32>(weights.x), joints[u32(indices.y)][c] * weights.y)));
+            }
+        }
         point = skin * point;
+        if material.flags.w == 15.0 {
+            point = fma(skin[2], vec4<f32>(position.z), fma(skin[0], vec4<f32>(position.x), skin[1] * position.y)) + skin[3];
+        }
         n = (skin * vec4<f32>(normal, 0.0)).xyz;
         output.skin_x = skin[0].xyz;
         output.skin_y = skin[1].xyz;
         output.skin_z = skin[2].xyz;
+    }
+    if material.flags.w == 15.0 {
+        let x = output.skin_x; let y = output.skin_y; let z = output.skin_z;
+        let inverse_lengths = vec3<f32>(1.0 / fma(x.z, x.z, fma(x.y, x.y, x.x * x.x)), 1.0 / fma(y.z, y.z, fma(y.y, y.y, y.x * y.x)), 1.0 / fma(z.z, z.z, fma(z.y, z.y, z.x * z.x)));
+        n = source_frame(normal, x, y, z, inverse_lengths);
+        output.tangent = vec4<f32>(source_frame(tangent0.xyz, x, y, z, inverse_lengths), tangent0.w);
     }
     output.position = camera.view_projection * point;
     output.normal = n;
@@ -55,11 +84,11 @@ fn vertex_data(position: vec3<f32>, normal: vec3<f32>, uv: vec2<f32>, indices: v
     output.world = point.xyz;
     return output;
 }
-@vertex fn vs_main(@location(0) position: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) uv: vec2<f32>, @location(3) indices: vec4<f32>, @location(4) weights: vec4<f32>, @location(5) secondary_uv: vec2<f32>) -> VertexOutput {
-    return vertex_data(position, normal, uv, indices, weights, secondary_uv);
+@vertex fn vs_main(@location(0) position: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) uv: vec2<f32>, @location(3) indices: vec4<f32>, @location(4) weights: vec4<f32>, @location(5) secondary_uv: vec2<f32>, @location(6) tangent0: vec4<f32>) -> VertexOutput {
+    return vertex_data(position, normal, uv, indices, weights, secondary_uv, tangent0);
 }
-@vertex fn vs_wire(@location(0) position: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) uv: vec2<f32>, @location(3) indices: vec4<f32>, @location(4) weights: vec4<f32>, @location(5) secondary_uv: vec2<f32>, @builtin(instance_index) selected: u32) -> VertexOutput {
-    var output = vertex_data(position, normal, uv, indices, weights, secondary_uv);
+@vertex fn vs_wire(@location(0) position: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) uv: vec2<f32>, @location(3) indices: vec4<f32>, @location(4) weights: vec4<f32>, @location(5) secondary_uv: vec2<f32>, @location(6) tangent0: vec4<f32>, @builtin(instance_index) selected: u32) -> VertexOutput {
+    var output = vertex_data(position, normal, uv, indices, weights, secondary_uv, tangent0);
     output.selected = selected;
     output.position.z -= output.position.w * .00005;
     return output;
@@ -165,7 +194,7 @@ fn game_highlight(value: vec3<f32>) -> vec3<f32> {
     }
     // Source tiles share a material texture; animated offsets apply within that tile.
     var uv = rotate_uv(transform_uv(input.uv, material.uv), material.surface[10].x, material.surface[36].xy);
-    if material.flags.w == 7.0 || material.flags.w == 8.0 {
+    if material.flags.w == 7.0 || material.flags.w == 8.0 || material.flags.w == 10.0 || material.flags.w == 11.0 {
         let origin = vec2<f32>(material.restoration[2].w, material.restoration[3].w);
         uv = input.uv * material.uv.xy + material.uv.zw - origin * material.uv.xy;
     }
@@ -188,6 +217,9 @@ fn game_highlight(value: vec3<f32>) -> vec3<f32> {
         refracted += first_normal * vec2<f32>(-.35, .35);
         let second_normal = textureSample(roughness_map, base_sampler, map_uv(refracted, 1u, textureDimensions(roughness_map))).rg * 2.0 - 1.0;
         refracted += second_normal * vec2<f32>(-.35, .35);
+        if material.restoration[0].z > 0.0 {
+            refracted = vec2<f32>(abs(refracted.x), 1.0 - abs(1.0 - refracted.y));
+        }
         let secondary = textureSample(layer_mask, base_sampler, coordinates(refracted, material.wrap.zw, material.texture_scale.zw, textureDimensions(layer_mask))).rgb * material.surface[15].rgb;
         let view = normalize(camera.eye.xyz - input.world + vec3<f32>(.00001));
         let incidence = max(dot(view, normalize(input.normal + vec3<f32>(.00001))), 0.0);
@@ -200,7 +232,7 @@ fn game_highlight(value: vec3<f32>) -> vec3<f32> {
         restoration_glow = base.rgb * material.restoration[0].z + lava_detail * material.restoration[0].x * material.restoration[2].rgb;
         base = vec4<f32>(base.rgb * (1.0 - material.restoration[0].z), base.a);
     }
-    if material.flags.w == 7.0 || material.flags.w == 8.0 {
+    if material.flags.w == 7.0 || material.flags.w == 8.0 || material.flags.w == 10.0 || material.flags.w == 11.0 {
         let upper_uv = restoration_eye_uv(input.uv, 4u);
         let lower_uv = restoration_eye_uv(input.uv, 6u);
         let shadow_uv = restoration_eye_uv(input.uv, 8u);
@@ -208,7 +240,37 @@ fn game_highlight(value: vec3<f32>) -> vec3<f32> {
         let lower = textureSample(specular_map, base_sampler, map_uv(lower_uv, 4u, textureDimensions(specular_map)));
         let shadow = textureSample(eyelid_mask, base_sampler, map_uv(shadow_uv, 10u, textureDimensions(eyelid_mask))).rgb;
         let coverage = (1.0 - upper.a) * (1.0 - lower.a);
-        let eye_color = mix(mix(base.rgb * shadow, upper.rgb, upper.a), lower.rgb, lower.a);
+        if material.flags.w == 10.0 {
+            var emission_uv = uv;
+            if material.restoration[0].z > 0.0 {
+                emission_uv = vec2<f32>(abs(uv.x), 1.0 - abs(1.0 - uv.y));
+            }
+            let mask = textureSample(roughness_map, base_sampler, map_uv(emission_uv, 1u, textureDimensions(roughness_map)));
+            // Match the native eye program's ordered layer compositing.
+            for (var layer = 0u; layer < 4u; layer++) {
+                restoration_glow = mix(restoration_glow, material.restoration[10u + layer].rgb * material.restoration[14u][layer], mask[layer]);
+            }
+            restoration_glow *= shadow * coverage;
+        }
+        var iris = base.rgb;
+        if material.flags.w == 11.0 {
+            let tint_mask = textureSample(roughness_map, base_sampler, map_uv(uv, 1u, textureDimensions(roughness_map)));
+            var tint = vec3<f32>(1.0);
+            for (var layer = 0u; layer < 4u; layer++) {
+                tint = mix(tint, material.restoration[10u + layer].rgb, tint_mask[layer]);
+                let glow_color = select(vec3<f32>(0.0, 0.401975, 1.0000241), vec3<f32>(1.0000241), (layer & 1u) != 0u);
+                restoration_glow = mix(restoration_glow, glow_color * material.restoration[14u][layer], tint_mask[layer]);
+            }
+            iris *= tint;
+            restoration_glow *= shadow * coverage;
+        }
+        if material.flags.w == 8.0 && material.restoration[0].y > 0.0 {
+            var highlight_uv = input.uv * material.restoration[1].xy + material.restoration[1].zw;
+            if material.restoration[0].z > 0.0 { highlight_uv = abs(highlight_uv); }
+            let mask = textureSample(roughness_map, base_sampler, map_uv(highlight_uv, 1u, textureDimensions(roughness_map))).r;
+            iris += mask * material.restoration[2].rgb;
+        }
+        let eye_color = mix(mix(iris * shadow, upper.rgb, upper.a), lower.rgb, lower.a);
         base = vec4<f32>(eye_color * mix(vec3<f32>(1.0), material.restoration[3].rgb, lava_detail), base.a);
         if material.flags.w == 7.0 {
             restoration_glow = (textureSample(emission_map, base_sampler, map_uv(uv, 3u, textureDimensions(emission_map))).rgb * 4.0 + lava_detail * material.restoration[0].x * material.restoration[2].rgb) * coverage;
@@ -220,6 +282,7 @@ fn game_highlight(value: vec3<f32>) -> vec3<f32> {
         underlay = vec4<f32>(underlay.rgb * material.surface[32].rgb + material.surface[33].rgb, underlay.a * material.surface[34].y);
         base.a *= material.surface[34].x;
     }
+    if material.flags.w == 12.0 { underlay = vec4<f32>(0.0); }
     let alpha = base.a + underlay.a * (1.0 - base.a);
     base = vec4<f32>((base.rgb * base.a + underlay.rgb * underlay.a * (1.0 - base.a)) / max(alpha, 0.00001), alpha);
     var mask_uv = transform_uv(input.uv, material.mask_uv);
@@ -227,7 +290,7 @@ fn game_highlight(value: vec3<f32>) -> vec3<f32> {
     if material.flags.w == 4.0 {
         mask_uv = fract(transform_uv(input.secondary_uv, material.mask_uv));
     }
-    let mask = textureSample(layer_mask, base_sampler, coordinates(mask_uv, material.wrap.zw, material.texture_scale.zw, textureDimensions(layer_mask))) * material.mask_channels;
+    var mask = textureSample(layer_mask, base_sampler, coordinates(mask_uv, material.wrap.zw, material.texture_scale.zw, textureDimensions(layer_mask))) * material.mask_channels;
     let highlight_uv = transform_uv(input.uv, material.highlight_uv);
     let highlight = textureSample(highlight_mask, base_sampler, coordinates(highlight_uv, material.underlay_scale.zw, material.highlight_scale.xy, textureDimensions(highlight_mask)));
     var rgb = base.rgb;
@@ -235,6 +298,20 @@ fn game_highlight(value: vec3<f32>) -> vec3<f32> {
     rgb = mix(rgb, base.rgb * material.layers[1].rgb, mask.g);
     rgb = mix(rgb, base.rgb * material.layers[2].rgb, mask.b);
     rgb = mix(rgb, base.rgb * material.layers[3].rgb, mask.a);
+    if material.flags.w == 12.0 {
+        let uncovered = clamp(1.0 - dot(mask, vec4<f32>(1.0)), 0.0, 1.0);
+        var coverage = uncovered;
+        rgb = base.rgb * uncovered * max(1.0 - material.restoration[0].x, 0.0);
+        restoration_glow = material.restoration[1].rgb * material.restoration[0].x * uncovered;
+        for (var i = 0u; i < 4u; i++) {
+            rgb = mix(rgb, base.rgb * material.layers[i].rgb * max(1.0 - material.surface[13][i], 0.0), mask[i]);
+            restoration_glow = mix(restoration_glow, material.surface[14u + i].rgb * material.surface[13][i], mask[i]);
+            coverage = mix(coverage, 1.0, mask[i]);
+        }
+        rgb /= max(coverage, 0.00001);
+        restoration_glow /= max(coverage, 0.00001);
+    }
+    if material.flags.w == 13.0 { restoration_glow = material.surface[14].rgb * material.surface[13].x; }
     var n = normalize(input.normal + vec3<f32>(0.00001));
     let dp_x = dpdx(input.world); let dp_y = dpdy(input.world);
     let normal_uv = transform_uv(input.uv, material.surface[9]);
@@ -247,13 +324,13 @@ fn game_highlight(value: vec3<f32>) -> vec3<f32> {
     let rough_texel = select(textureSample(roughness_map, base_sampler, map_uv(uv, 1u, textureDimensions(roughness_map))), vec4<f32>(1.0), material.flags.w >= 5.0);
     let occlusion_texel = textureSample(occlusion_map, base_sampler, map_uv(uv, 2u, textureDimensions(occlusion_map)));
     let emission = textureSample(emission_map, base_sampler, map_uv(uv, 3u, textureDimensions(emission_map))).rgb;
-    let specular_mask = select(textureSample(specular_map, base_sampler, map_uv(uv, 4u, textureDimensions(specular_map))).r, 1.0, material.flags.w == 7.0 || material.flags.w == 8.0);
+    let specular_mask = select(textureSample(specular_map, base_sampler, map_uv(uv, 4u, textureDimensions(specular_map))).r, 1.0, material.flags.w == 7.0 || material.flags.w == 8.0 || material.flags.w == 10.0 || material.flags.w == 11.0);
     let rim_mask = textureSample(rim_map, base_sampler, map_uv(uv, 5u, textureDimensions(rim_map))).r;
     let shadow_tint = textureSample(shadow_map, base_sampler, map_uv(uv, 6u, textureDimensions(shadow_map))).rgb;
     let shadow_weight = textureSample(shadow_color_mask, base_sampler, map_uv(uv, 8u, textureDimensions(shadow_color_mask))).r;
     let subsurface_weight = textureSample(subsurface_mask, base_sampler, map_uv(uv, 9u, textureDimensions(subsurface_mask))).r;
     let eyelid_uv = rotate_uv(transform_uv(input.uv, material.surface[38]), material.surface[10].y, material.surface[37].xy);
-    let eyelid = select(textureSample(eyelid_mask, base_sampler, map_uv(eyelid_uv, 10u, textureDimensions(eyelid_mask))).r, 0.0, material.flags.w == 7.0 || material.flags.w == 8.0);
+    let eyelid = select(textureSample(eyelid_mask, base_sampler, map_uv(eyelid_uv, 10u, textureDimensions(eyelid_mask))).r, 0.0, material.flags.w == 7.0 || material.flags.w == 8.0 || material.flags.w == 10.0 || material.flags.w == 11.0);
     let cutout = textureSample(discard_mask, base_sampler, map_uv(uv, 11u, textureDimensions(discard_mask)));
     let to_light = camera.light.xyz - input.world;
     let light_distance_squared = max(dot(to_light, to_light), 0.000001);

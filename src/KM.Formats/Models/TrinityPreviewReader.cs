@@ -6,7 +6,8 @@ using System.Numerics;
 namespace KM.Formats.Models;
 
 /// <summary>Reads bounded model geometry, skinning and layered color materials.</summary>
-public sealed class TrinityPreviewReader(Func<string, byte[]> read, bool topOriginMaterialUv = false, bool tintSubsurfaceByBaseColor = false)
+public sealed class TrinityPreviewReader(Func<string, byte[]> read, bool topOriginMaterialUv = false, bool tintSubsurfaceByBaseColor = false,
+    bool preserveSourceSkinWeights = false)
 {
     private readonly List<PreviewTexture> textures = [];
     private readonly Dictionary<string, int> textureIndices = new(StringComparer.Ordinal);
@@ -154,9 +155,10 @@ public sealed class TrinityPreviewReader(Func<string, byte[]> read, bool topOrig
                 if (role is not ("BaseColorMap" or "LayerMaskMap" or "HighlightMaskMap") && surfaceSlot < 0) continue;
                 var slot = checked((int)data.Value(entry, 2));
                 if (samplers.Length > 0 && slot >= samplers.Length) { warnings.Add("textureUnavailable"); continue; }
-                var wrapU = samplers.Length == 0 ? 0 : data.Value(samplers[slot], 9);
-                var wrapV = samplers.Length == 0 ? 0 : data.Value(samplers[slot], 10);
-                if (wrapU is not (0 or 1 or 6 or 7) || wrapV is not (0 or 1 or 6 or 7)) { warnings.Add("textureUnavailable"); continue; }
+                if (samplers.Length == 0
+                    || !TrinityTextureAddressing.TryPreview(data.Value(samplers[slot], 9), out var wrapU)
+                    || !TrinityTextureAddressing.TryPreview(data.Value(samplers[slot], 10), out var wrapV))
+                { warnings.Add("textureUnavailable"); continue; }
                 if (role == "BaseColorMap") { wrap.X = wrapU; wrap.Y = wrapV; }
                 else if (role == "LayerMaskMap") { wrap.Z = wrapU; wrap.W = wrapV; }
                 else if (role == "HighlightMaskMap") highlightWrap = new(wrapU, wrapV, 0, 0);
@@ -223,6 +225,9 @@ public sealed class TrinityPreviewReader(Func<string, byte[]> read, bool topOrig
         var normal = attributes.SingleOrDefault(t => metadata.Value(t, 1) == 2);
         var uv = attributes.FirstOrDefault(t => metadata.Value(t, 1) == 6 && metadata.Value(t, 2) == 0);
         var secondaryUv = attributes.SingleOrDefault(t => metadata.Value(t, 1) == 6 && metadata.Value(t, 2) == 1);
+        var color0 = attributes.SingleOrDefault(t => metadata.Value(t, 1) == 5 && metadata.Value(t, 2) == 0 && metadata.Value(t, 3) == 20);
+        var tangent0 = attributes.SingleOrDefault(t => metadata.Value(t, 1) == 3 && metadata.Value(t, 2) == 0 && metadata.Value(t, 3) == 43);
+        var tangent1 = attributes.SingleOrDefault(t => metadata.Value(t, 1) == 3 && metadata.Value(t, 2) == 1 && metadata.Value(t, 3) == 43);
         if (position == 0 || metadata.Value(position, 3) != 51) throw new InvalidDataException("Position format is unsupported.");
         float Component(int attribute, int vertex, int component)
         {
@@ -243,12 +248,18 @@ public sealed class TrinityPreviewReader(Func<string, byte[]> read, bool topOrig
         if (bones.Length == 0 && weightAttribute != 0) warnings.Add("sharedSkeletonUnavailable");
         var output = new float[checked(count * 16)];
         var secondary = secondaryUv == 0 ? null : new float[checked(count * 2)];
+        var colors = color0 == 0 ? null : new float[checked(count * 4)];
+        var tangents0 = tangent0 == 0 ? null : new float[checked(count * 4)];
+        var tangents1 = tangent1 == 0 ? null : new float[checked(count * 4)];
         for (var v = 0; v < count; v++)
         {
             for (var c = 0; c < 3; c++) output[v * 16 + c] = Component(position, v, c);
             for (var c = 0; c < 3; c++) output[v * 16 + c + 3] = normal == 0 ? (c == 1 ? 1 : 0) : Component(normal, v, c);
             for (var c = 0; c < 2; c++) output[v * 16 + c + 6] = uv == 0 ? 0 : Component(uv, v, c);
             if (secondary is not null) for (var c = 0; c < 2; c++) secondary[v * 2 + c] = Component(secondaryUv, v, c);
+            if (colors is not null) for (var c = 0; c < 4; c++) colors[v * 4 + c] = Component(color0, v, c);
+            if (tangents0 is not null) for (var c = 0; c < 4; c++) tangents0[v * 4 + c] = Component(tangent0, v, c);
+            if (tangents1 is not null) for (var c = 0; c < 4; c++) tangents1[v * 4 + c] = Component(tangent1, v, c);
             var total = 0f;
             for (var c = 0; c < 4; c++)
             {
@@ -259,7 +270,9 @@ public sealed class TrinityPreviewReader(Func<string, byte[]> read, bool topOrig
                 output[v * 16 + 8 + c] = weight > 0 ? joint : 0;
                 output[v * 16 + 12 + c] = weight; total += weight;
             }
-            if (total > 0) for (var c = 0; c < 4; c++) output[v * 16 + 12 + c] /= total;
+            // Dedicated source-frame consumers may require the original attribute
+            // operands. The ordinary preview retains its normalized skin weights.
+            if (total > 0 && !preserveSourceSkinWeights) for (var c = 0; c < 4; c++) output[v * 16 + 12 + c] /= total;
         }
         var indexSize = metadata.Value(shape, 2) switch { 1 => 2, 2 => 4, _ => throw new InvalidDataException("Mesh index format is unsupported.") };
         foreach (var part in metadata.Tables(shape, 4, 128))
@@ -276,7 +289,8 @@ public sealed class TrinityPreviewReader(Func<string, byte[]> read, bool topOrig
                 if (indices[n] >= count) throw new InvalidDataException("Triangle refers to a missing vertex.");
             }
             if (!materials.TryGetValue(Required(metadata.Text(part, 3)), out var material)) throw new InvalidDataException("Mesh material is missing.");
-            yield return new PreviewPrimitive(output, indices, material, metadata.Text(shape, 0) ?? "") { SecondaryUv = secondary };
+            yield return new PreviewPrimitive(output, indices, material, metadata.Text(shape, 0) ?? "")
+                { SecondaryUv = secondary, Color0 = colors, Tangent0 = tangents0, Tangent1 = tangents1 };
         }
     }
 }

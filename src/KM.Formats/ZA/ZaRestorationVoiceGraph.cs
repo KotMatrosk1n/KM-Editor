@@ -5,16 +5,24 @@ using KM.Formats.SwSh;
 
 namespace KM.Formats.ZA;
 
-public sealed record ZaRestorationVoice(uint MediaId, float GainDecibels);
+public sealed record ZaRestorationVoice(uint MediaId, float GainDecibels, bool Embedded = false, float VolumeDecibels = 0);
 
 /// <summary>Resolves the form and cry switches in supported Legends Z-A voice banks.</summary>
-public static class ZaRestorationVoiceGraph
+public static partial class ZaRestorationVoiceGraph
 {
     public static IReadOnlyDictionary<string, uint> Resolve(SoundBankDocument bank, int species, int form = 0)
         => ResolvePlayback(bank, species, form).ToDictionary(p => p.Key, p => p.Value.MediaId, StringComparer.Ordinal);
 
     public static IReadOnlyDictionary<string, ZaRestorationVoice> ResolvePlayback(SoundBankDocument bank, int species, int form = 0,
-        IReadOnlySet<uint>? inactiveStateGroups = null)
+        IReadOnlySet<uint>? inactiveStateGroups = null, bool requireSharedForm = false, ZaRestorationVoiceContext? normalContext = null)
+    {
+        var layers = ResolveLayers(bank, species, form, inactiveStateGroups, requireSharedForm, normalContext);
+        if (layers.Values.Any(v => v.Count != 1)) throw new InvalidDataException("Z-A cry requires layered playback.");
+        return layers.ToDictionary(p => p.Key, p => p.Value[0], StringComparer.Ordinal);
+    }
+
+    public static IReadOnlyDictionary<string, IReadOnlyList<ZaRestorationVoice>> ResolveLayers(SoundBankDocument bank, int species, int form = 0,
+        IReadOnlySet<uint>? inactiveStateGroups = null, bool requireSharedForm = false, ZaRestorationVoiceContext? normalContext = null)
     {
         if (bank.Version != 145 || species is < 1 or > 1025 || form is < 0 or > 99)
             throw new InvalidDataException("Z-A voice bank version or identity is unsupported.");
@@ -28,32 +36,58 @@ public static class ZaRestorationVoiceGraph
         var action = Object(3, U32(evt.Payload, 1));
         if (action.Payload.Length < 6 || action.Payload[0] != 3 || action.Payload[1] != 4)
             throw new InvalidDataException("Z-A voice event does not contain a play action.");
-        var choice = Switch(Object(6, U32(action.Payload, 2)).Payload, bank, inactiveStateGroups);
+        var selector = U32(action.Payload, 2);
+        var choice = Switch(Object(6, selector).Payload, bank, inactiveStateGroups, normalContext);
         var gain = choice.Gain;
         if (choice.Group == SwShVoiceWriter.Hash("FORM"))
         {
+            if (requireSharedForm) throw new InvalidDataException("Z-A voice bank declares independent form cries.");
             if (!choice.States.TryGetValue(SwShVoiceWriter.Hash($"FORM{form:00}"), out var children) || children.Length != 1)
                 throw new InvalidDataException("Z-A voice form requires another conversion adapter.");
-            choice = Switch(Object(6, children[0]).Payload, bank, inactiveStateGroups);
+            selector = children[0];
+            choice = Switch(Object(6, selector).Payload, bank, inactiveStateGroups, normalContext);
             gain += choice.Gain;
         }
         else if (form != 0) throw new InvalidDataException("Z-A voice event has no requested form.");
         if (choice.Group != SwShVoiceWriter.Hash("PV")) throw new InvalidDataException("Z-A cry state switch is missing.");
-        var result = new Dictionary<string, ZaRestorationVoice>(StringComparer.Ordinal);
+        var result = new Dictionary<string, IReadOnlyList<ZaRestorationVoice>>(StringComparer.Ordinal);
         foreach (var state in SwShVoiceWriter.States)
         {
-            if (!choice.States.TryGetValue(SwShVoiceWriter.Hash(state), out var children) || children.Length != 1)
+            if (!choice.States.TryGetValue(SwShVoiceWriter.Hash(state), out var children) || children.Length > 2)
                 throw new InvalidDataException($"Z-A cry state requires another conversion adapter: {state}");
+            if (children.Length == 0)
+            {
+                if (species != 398 || form != 1 || state is not ("EX1" or "EX2" or "EX3")
+                    || !QualifiedStaraptorMegaSwitch(Object(6, selector).Payload, bank))
+                    throw new InvalidDataException($"Z-A empty cry state is not qualified: {state}");
+                result.Add(state, []);
+                continue;
+            }
+            if (children.Length == 2)
+            {
+                if (state != "INDEX" || normalContext is null)
+                    throw new InvalidDataException("Z-A layered cry requires a verified normal INDEX context.");
+                var layers = children.Select(id => Layer(Object(2, id).Payload, selector, gain)).ToArray();
+                if (layers.Count(v => v.Embedded) != 1)
+                    throw new InvalidDataException("Z-A layered cry requires one embedded effect and one species cry.");
+                // The main cry retains the legacy media identity for sound tools.
+                result.Add(state, layers.OrderBy(v => v.Embedded).ToArray());
+                continue;
+            }
             var sound = Object(2, children[0]).Payload;
             if (sound.Length < 9 || U32(sound, 0) != 0x00020001 || sound[4] != 2)
                 throw new InvalidDataException("Z-A cry codec or streaming layout is unsupported.");
-            result.Add(state, new(U32(sound, 5), gain));
+            // Eternal Flower's INDEX sound has its own makeup gain in addition
+            // to the inherited switch properties. Validate that record before
+            // carrying its gain into the target sound.
+            result.Add(state, new[] { sound.Length == 51 ? Layer(sound, selector, gain)
+                : new ZaRestorationVoice(U32(sound, 5), gain) });
         }
         return result;
     }
 
     private static (uint Group, Dictionary<uint, uint[]> States, float Gain) Switch(byte[] bytes,
-        SoundBankDocument bank, IReadOnlySet<uint>? inactiveStateGroups)
+        SoundBankDocument bank, IReadOnlySet<uint>? inactiveStateGroups, ZaRestorationVoiceContext? normalContext)
     {
         // Version 145 adds metadata and attachment flags before the parent data.
         // Parse the property bundle instead of assuming a fixed child offset.
@@ -127,15 +161,28 @@ public static class ZaRestorationVoiceGraph
         {
             // This nearly neutral source volume correction is sampled at its
             // default endpoint. Native distance and context mixing remain active.
-            if (Word() != 617048655 || Byte() != 0 || Byte() != 2 || Byte() != 0)
+            if (Word() != ZaRestorationVoiceContext.NormalAlphaFrenzy || Byte() != 0 || Byte() != 2)
+                throw new InvalidDataException("Z-A cry modulation needs another adapter.");
+            var property = Byte();
+            // Alpha/frenzy pitch is inactive for restored normal Pokemon. Only
+            // accept it with the Init bank's verified NORMAL=0 selector/default.
+            if (property != 0 && (property != 2 || normalContext is null))
                 throw new InvalidDataException("Z-A cry modulation needs another adapter.");
             _ = Word();
-            if (Byte() != 2 || Byte() != 3 || Byte() != 0) throw new InvalidDataException("Z-A cry volume curve is unsupported.");
+            if (Byte() != (property == 0 ? 2 : 0) || Byte() != 3 || Byte() != 0)
+                throw new InvalidDataException("Z-A cry context curve is unsupported.");
             for (var i = 0; i < 3; i++)
             {
                 var x = BitConverter.UInt32BitsToSingle(Word()); var y = BitConverter.UInt32BitsToSingle(Word());
-                if (x != i || !float.IsFinite(y) || (i == 1 ? y is < -.05f or > 0 : y != 0) || Word() != 4)
-                    throw new InvalidDataException("Z-A cry volume curve is unsupported.");
+                // Froslass, Heracross and Raichu use distinct alpha volume corrections.
+                // Their NORMAL endpoint is still exactly zero; qualify these
+                // exact curves only with the Init bank's NORMAL=0 selector.
+                var validValue = i != 1 ? y == 0 : property == 0
+                    ? y is >= -.05f and <= 0 || normalContext is not null && y is -.10874906f or .2501058f or -.2501058f
+                    // Gallade uses 600 cents for its inactive alpha context.
+                    : y is 200 or 500 or 600;
+                if (x != i || !float.IsFinite(y) || !validValue || Word() != 4)
+                    throw new InvalidDataException("Z-A cry context curve is unsupported.");
             }
         }
         if (Byte() != 0) throw new InvalidDataException("Z-A voice selector is not a switch.");
@@ -151,13 +198,14 @@ public static class ZaRestorationVoiceGraph
         }
         if (!states.ContainsKey(defaultState)) throw new InvalidDataException("Z-A voice default state is missing.");
         var parameterCount = Count(); var configured = new HashSet<uint>();
+        var orphaned = QualifiedStaraptorMegaSwitch(bytes, bank) ? StaraptorOrphanedVoiceConfigurations : [];
         for (var i = 0; i < parameterCount; i++)
         {
             var id = Word();
-            if (!children.Contains(id) || !configured.Add(id) || Byte() != 0 || Byte() != 1 || Word() != 0 || Word() != 0)
+            if ((!children.Contains(id) && !orphaned.Contains(id)) || !configured.Add(id) || Byte() != 0 || Byte() != 1 || Word() != 0 || Word() != 0)
                 throw new InvalidDataException("Z-A voice switch has unsupported child transitions.");
         }
-        if (at != bytes.Length || configured.Count != children.Count) throw new InvalidDataException("Z-A voice switch contains unconverted data.");
+        if (at != bytes.Length || !configured.SetEquals(children.Concat(orphaned))) throw new InvalidDataException("Z-A voice switch contains unconverted data.");
         return (group, states, gain);
     }
 

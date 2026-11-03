@@ -65,6 +65,8 @@ internal static class SwShExeFsReservedRegionLedger
         .. KM.SwSh.Restoration.SwShRestorationSoundMemoryPatcher.Reservations(),
         .. KM.SwSh.Restoration.SwShRestorationMegaItemProtection.Reservations(),
         .. KM.SwSh.Restoration.SwShRestorationSpeciesPatcher.Reservations(),
+        .. KM.SwSh.Restoration.SwShRestorationCryPatcher.Reservations(),
+        .. KM.SwSh.Restoration.SwShRestorationSamplerPatcher.Reservations(),
         .. KM.SwSh.ShakingTrees.SwShTreeQuantityPatcher.Reservations(),
         .. KM.SwSh.HyperTraining.SwShHyperTrainingItemsPatcher.Reservations(),
         .. KM.SwSh.HyperTraining.SwShHyperTrainingPickerPatcher.Reservations(),

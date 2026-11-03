@@ -14,9 +14,10 @@ public static class SwShVoiceWriter
         { "INDEX", "GLAD1", "GLAD2", "GLAD3", "ANGER", "SAD", "ATK", "SPATK", "EX1", "EX2", "EX3", "EX4", "ENV" });
     private static readonly string[] NativeStates = ["INDEX", "GLAD1", "ANGER", "SAD", "ATK"];
 
-    public static IReadOnlySet<uint> ObjectIds(int species, int form = 0)
+    public static IReadOnlySet<uint> ObjectIds(int species, int form = 0, int layers = 1, IReadOnlySet<string>? silentStates = null)
     {
-        if (form is < 0 or > 255 || species is < 1 or > ushort.MaxValue) throw new ArgumentOutOfRangeException(nameof(species));
+        if (form is < 0 or > 255 || species is < 1 or > ushort.MaxValue || layers is < 1 or > 2) throw new ArgumentOutOfRangeException(nameof(species));
+        ValidateSilentStates(silentStates);
         var result = new HashSet<uint>();
         uint Owned(string suffix) => Hash(OwnedName(species, form, suffix));
         foreach (var family in new[] { "", "EV_", "Btl_" })
@@ -26,21 +27,27 @@ public static class SwShVoiceWriter
             foreach (var state in family.Length == 0 ? States : NativeStates)
             {
                 var prefix = family.Length == 0 ? state : label + "_" + state;
-                result.Add(Owned(prefix + "_sound")); result.Add(Owned(prefix + "_action"));
+                for (var layer = 0; layer < (silentStates?.Contains(state) == true ? 0 : layers); layer++)
+                {
+                    var suffix = LayerSuffix(layer);
+                    result.Add(Owned(prefix + suffix + "_sound")); result.Add(Owned(prefix + suffix + "_action"));
+                }
                 var variant = Array.IndexOf(NativeStates, state);
-                result.Add(Hash(variant >= 0 ? string.Create(CultureInfo.InvariantCulture, $"Play_PV_{family}{species:000}_{form:00}_{variant:00}")
+                result.Add(Hash(variant >= 0 ? string.Create(CultureInfo.InvariantCulture, $"Play_PV_{family}{species:000}_{SwShVoiceRouting.EventForm(species, form):00}_{variant:00}")
                     : ExtraEvent(species, form, state)));
             }
         }
         return result;
     }
 
-    public static uint MediaId(int species, string state, int form = 0)
+    public static uint MediaId(int species, string state, int form = 0, int layer = 0)
     {
-        if (form is < 0 or > 255 || species is < 1 or > ushort.MaxValue || !States.Contains(state))
+        if (form is < 0 or > 255 || species is < 1 or > ushort.MaxValue || layer is < 0 or > 1 || !States.Contains(state))
             throw new ArgumentOutOfRangeException(nameof(species), "Choose a supported species and cry state.");
-        return Hash(OwnedName(species, form, state + "_media")) & 0x3fffffff;
+        return Hash(OwnedName(species, form, state + LayerSuffix(layer) + "_media")) & 0x3fffffff;
     }
+
+    private static string LayerSuffix(int layer) => layer == 0 ? "" : "_layer1";
 
     private static string OwnedName(int species, int form, string suffix) => form == 0
         ? string.Create(CultureInfo.InvariantCulture, $"KM_Restoration_v1_{species}_{suffix}")
@@ -56,15 +63,31 @@ public static class SwShVoiceWriter
         return hash;
     }
     public static SwShVoiceContribution Create(SoundBankDocument native, int species, int donor, IReadOnlyDictionary<string, byte[]> pcmMedia, int form = 0)
-        => CreateCore(native, species, donor, pcmMedia, form, false);
+        => CreateCore(native, species, donor, SingleLayers(pcmMedia), form, false);
 
     public static SwShVoiceContribution CreateVorbis(SoundBankDocument native, int species, int donor, IReadOnlyDictionary<string, byte[]> media, int form = 0)
-        => CreateCore(native, species, donor, media, form, true);
+        => CreateCore(native, species, donor, SingleLayers(media), form, true);
 
-    private static SwShVoiceContribution CreateCore(SoundBankDocument native, int species, int donor, IReadOnlyDictionary<string, byte[]> pcmMedia, int form, bool vorbis)
+    public static SwShVoiceContribution CreateLayered(SoundBankDocument native, int species, int donor,
+        IReadOnlyDictionary<string, IReadOnlyList<byte[]>> pcmMedia, int form = 0, IReadOnlySet<string>? silentStates = null)
+        => CreateCore(native, species, donor, pcmMedia, form, false, silentStates);
+
+    private static void ValidateSilentStates(IReadOnlySet<string>? states)
+    {
+        if (states is not null && (states.Count == States.Count || states.Any(s => !States.Contains(s))))
+            throw new InvalidDataException("Explicit silent cry states are invalid.");
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<byte[]>> SingleLayers(IReadOnlyDictionary<string, byte[]> media)
+        => media.ToDictionary(p => p.Key, p => (IReadOnlyList<byte[]>)new[] { p.Value }, StringComparer.Ordinal);
+
+    private static SwShVoiceContribution CreateCore(SoundBankDocument native, int species, int donor, IReadOnlyDictionary<string, IReadOnlyList<byte[]>> pcmMedia, int form, bool vorbis, IReadOnlySet<string>? silentStates = null)
     {
         if (form is < 0 or > 255 || species is < 1 or > ushort.MaxValue || donor is < 1 or > 898 || pcmMedia.Count != States.Count || States.Any(s => !pcmMedia.ContainsKey(s)))
             throw new InvalidDataException("Voice restoration requires all declared cry states.");
+        ValidateSilentStates(silentStates);
+        if (pcmMedia.Any(p => p.Value.Count > 2 || (p.Value.Count == 0) != (silentStates?.Contains(p.Key) == true)))
+            throw new InvalidDataException("Cry layer count differs from its declared playback.");
         var objects = new List<SoundBankObject>(); var media = new List<SoundBankMedia>();
         var used = native.Objects.Select(o => o.Id).Concat(native.Media.Select(m => m.Id)).ToHashSet();
         uint Identity(string name, bool mediaId = false)
@@ -88,13 +111,19 @@ public static class SwShVoiceWriter
             if (sound.Payload.Length < 25) throw new InvalidDataException("Native voice sound is truncated.");
             return (sound, action);
         }
+        var clips = new Dictionary<string, SoundBankMedia[]>(StringComparer.Ordinal);
         foreach (var state in States)
         {
-            var bytes = pcmMedia[state];
-            if (vorbis) SwShVorbisVoice.Validate(bytes);
-            else if (bytes.Length < 68 || !bytes.AsSpan(0, 4).SequenceEqual("RIFF"u8) || BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(20)) != 0xfffe)
-                throw new InvalidDataException("Restored cry must use native extensible PCM.");
-            media.Add(new(Identity(OwnedName(species, form, state + "_media"), true), bytes));
+            var stateClips = new List<SoundBankMedia>();
+            for (var layer = 0; layer < pcmMedia[state].Count; layer++)
+            {
+                var bytes = pcmMedia[state][layer];
+                if (vorbis) SwShVorbisVoice.Validate(bytes);
+                else if (bytes.Length < 68 || !bytes.AsSpan(0, 4).SequenceEqual("RIFF"u8) || BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(20)) != 0xfffe)
+                    throw new InvalidDataException("Restored cry must use native extensible PCM.");
+                stateClips.Add(new(Identity(OwnedName(species, form, state + LayerSuffix(layer) + "_media"), true), bytes));
+            }
+            clips.Add(state, stateClips.ToArray()); media.AddRange(stateClips);
         }
         foreach (var family in new[] { "", "EV_", "Btl_" })
         {
@@ -111,15 +140,21 @@ public static class SwShVoiceWriter
                     throw new InvalidDataException("Native voice mixer could not be resolved uniquely.");
                 originalParent = candidates[0];
                 var prefix = family.Length == 0 ? state : familyLabel + "_" + state;
-                var sound = New(prefix + "_sound"); children.Add(sound);
-                var payload = donorGraph.Sound.Payload.ToArray(); var clip = media[States.ToList().IndexOf(state)];
-                Write(payload, 0, vorbis ? 0x00040001U : 0x00010001U); payload[4] = 0; Write(payload, 5, clip.Id); Write(payload, 9, checked((uint)clip.Bytes.Length)); Write(payload, 21, parent);
-                objects.Add(new(2, sound, payload));
-                var action = New(prefix + "_action"); var actionBytes = donorGraph.Action.Payload.ToArray(); Write(actionBytes, 2, sound);
-                objects.Add(new(3, action, actionBytes));
-                var eventName = variant >= 0 ? string.Create(CultureInfo.InvariantCulture, $"Play_PV_{family}{species:000}_{form:00}_{variant:00}")
+                var actions = new List<uint>();
+                for (var layer = 0; layer < clips[state].Length; layer++)
+                {
+                    var suffix = LayerSuffix(layer);
+                    var sound = New(prefix + suffix + "_sound"); children.Add(sound);
+                    var payload = donorGraph.Sound.Payload.ToArray(); var clip = clips[state][layer];
+                    Write(payload, 0, vorbis ? 0x00040001U : 0x00010001U); payload[4] = 0; Write(payload, 5, clip.Id); Write(payload, 9, checked((uint)clip.Bytes.Length)); Write(payload, 21, parent);
+                    objects.Add(new(2, sound, payload));
+                    var action = New(prefix + suffix + "_action"); var actionBytes = donorGraph.Action.Payload.ToArray(); Write(actionBytes, 2, sound);
+                    objects.Add(new(3, action, actionBytes)); actions.Add(action);
+                }
+                var eventName = variant >= 0 ? string.Create(CultureInfo.InvariantCulture, $"Play_PV_{family}{species:000}_{SwShVoiceRouting.EventForm(species, form):00}_{variant:00}")
                     : ExtraEvent(species, form, state);
-                var eventBytes = new byte[5]; eventBytes[0] = 1; Write(eventBytes, 1, action);
+                var eventBytes = new byte[1 + actions.Count * 4]; eventBytes[0] = checked((byte)actions.Count);
+                for (var layer = 0; layer < actions.Count; layer++) Write(eventBytes, 1 + layer * 4, actions[layer]);
                 objects.Add(new(4, Identity(eventName), eventBytes));
             }
             var mixer = originalParent!.Payload;

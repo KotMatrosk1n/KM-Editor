@@ -10,10 +10,15 @@ public sealed record SwShMaterialBinding(string Name, int NativeMaterial, IReadO
     public Vector2 NormalUvScale { get; init; } = Vector2.One;
     public Vector4 ColorUvTransform { get; init; } = new(1, 1, 0, 0);
     public bool UseSecondaryUv { get; init; }
+    /// <summary>Preserves authored half precision normal components.</summary>
+    public bool UseSourceNormalComponents { get; init; }
+    /// <summary>Requires the authored half precision tangent frame for UV0.</summary>
+    public int? SourceTangentSet { get; init; }
 }
 public sealed record SwShEffectLocator(string Name, string Parent, Vector3 Translation)
 {
     public Quaternion Rotation { get; init; } = Quaternion.Identity;
+    public Vector3 Scale { get; init; } = Vector3.One;
 }
 public sealed record SwShConvertedGeometry(byte[] Model, PreviewBone[] Bones, Vector3 Minimum, Vector3 Maximum);
 
@@ -44,9 +49,11 @@ public static class SwShModelWriter
             if (parent < 0 || bones.Any(b => b.Name == locator.Name)) throw new InvalidDataException("Effect locator parent or identity is invalid.");
             var rotation = locator.Rotation;
             if (!float.IsFinite(rotation.LengthSquared()) || MathF.Abs(rotation.LengthSquared() - 1) > .001f
-                || !float.IsFinite(locator.Translation.X + locator.Translation.Y + locator.Translation.Z))
+                || !float.IsFinite(locator.Translation.X + locator.Translation.Y + locator.Translation.Z)
+                || !float.IsFinite(locator.Scale.X + locator.Scale.Y + locator.Scale.Z)
+                || locator.Scale.X <= 0 || locator.Scale.Y <= 0 || locator.Scale.Z <= 0)
                 throw new InvalidDataException("Effect locator transform is invalid.");
-            bones.Add(new(locator.Name, parent, -1, false, [1, 1, 1], [rotation.X, rotation.Y, rotation.Z, rotation.W],
+            bones.Add(new(locator.Name, parent, -1, false, [locator.Scale.X, locator.Scale.Y, locator.Scale.Z], [rotation.X, rotation.Y, rotation.Z, rotation.W],
                 [locator.Translation.X, locator.Translation.Y, locator.Translation.Z], []));
         }
         var meshBones = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -84,7 +91,24 @@ public static class SwShModelWriter
             var binding = bindings[i];
             if ((uint)binding.NativeMaterial >= materials.Length || binding.Name != scene.Primitives[i].Material.Name)
                 throw new InvalidDataException($"Native material binding {binding.Name} ({binding.NativeMaterial}/{materials.Length}) does not match mesh material {scene.Primitives[i].Material.Name}.");
-            writer.Pointer(slots[i], Material(writer, native, materials[binding.NativeMaterial], binding, names));
+            var preserveSourceSamplers = false;
+            if (binding.SourceTangentSet is not null)
+            {
+                string? Program(int field, int indexField)
+                {
+                    var (programs, count) = native.Vector(native.Root, field, 4, 256);
+                    var program = native.Value(materials[binding.NativeMaterial], indexField);
+                    return program < count ? native.StringAt(programs + checked((int)program * 4)) : null;
+                }
+                var vertex = Program(3, 8); var fragment = Program(5, 10);
+                var gem = vertex is not null && fragment is not null && binding.UseSourceNormalComponents
+                    && ZA.ZaSwShFresnelMaterial.MatchesGeometryPrograms(vertex, fragment, binding.UseSecondaryUv)
+                    && ZA.ZaSwShFresnelMaterial.RequiresClampRuntime(nativeModel);
+                if (binding.SourceTangentSet != 0 || !gem)
+                    throw new InvalidDataException("Authored tangent geometry requires its qualified UV0 vertex and fragment consumers.");
+                preserveSourceSamplers = true;
+            }
+            writer.Pointer(slots[i], Material(writer, native, materials[binding.NativeMaterial], binding, names, preserveSourceSamplers));
         }
         slots = writer.Vector(root, 7, scene.Primitives.Count);
         for (var i = 0; i < slots.Length; i++)
@@ -116,7 +140,7 @@ public static class SwShModelWriter
                     [0] = ModelTableBuilder.Integer(attributes[j].Kind), [1] = ModelTableBuilder.Integer(attributes[j].Format),
                     [2] = ModelTableBuilder.Integer(attributes[j].Count),
                 }));
-            writer.Blob(mesh, 2, Vertices(primitive, joints, scale, secondaryUv, cancellationToken));
+            writer.Blob(mesh, 2, Vertices(primitive, joints, scale, secondaryUv, bindings[i].UseSourceNormalComponents, bindings[i].SourceTangentSet, cancellationToken));
         }
         slots = writer.Vector(root, 9, bones.Count);
         for (var i = 0; i < bones.Count; i++)
@@ -158,7 +182,7 @@ public static class SwShModelWriter
         return writer.Finish(root);
     }
 
-    private static int Material(ModelTableBuilder writer, ModelBuffer source, int original, SwShMaterialBinding binding, string[] names)
+    private static int Material(ModelTableBuilder writer, ModelBuffer source, int original, SwShMaterialBinding binding, string[] names, bool preserveSamplers)
     {
         var colorUv = binding.ColorUvTransform;
         if (!float.IsFinite(colorUv.X + colorUv.Y + colorUv.Z + colorUv.W) || colorUv.X is <= 0 or > 8 || colorUv.Y is <= 0 or > 8
@@ -219,6 +243,13 @@ public static class SwShModelWriter
             var texture = writer.Table(3, new Dictionary<int, byte[]> { [1] = ModelTableBuilder.Integer(Array.IndexOf(names, name)) });
             writer.Pointer(textureSlots[i], texture); writer.Text(texture, 0, role);
             var sampler = source.Table(textures[i], 2);
+            if (preserveSamplers)
+            {
+                if (binding.NormalUvScale != Vector2.One)
+                    throw new InvalidDataException("ZA gem source samplers cannot receive a baked normal UV transform.");
+                writer.Reference(texture, 2, ZA.ZaSwShFresnelMaterial.CloneSampler(writer, source, sampler));
+                continue;
+            }
             var absent = Enumerable.Range(0, 9).Where(f => source.Field(sampler, f) == 0).ToHashSet();
             var samplerValues = Enumerable.Range(0, 9).Where(f => !absent.Contains(f))
                 .ToDictionary(f => f, f => source.Slice(source.Field(sampler, f), 4).ToArray());
@@ -253,9 +284,16 @@ public static class SwShModelWriter
         return MathF.Abs(MathF.Cos(y)) > 0.000001f ? [MathF.Atan2(m.M23, m.M33), y, MathF.Atan2(m.M12, m.M11)]
             : [MathF.Atan2(-m.M32, m.M22), y, 0];
     }
-    private static byte[] Vertices(PreviewPrimitive primitive, IReadOnlyDictionary<int, int> joints, float scale, bool secondaryUv, CancellationToken token)
+    private static byte[] Vertices(PreviewPrimitive primitive, IReadOnlyDictionary<int, int> joints, float scale, bool secondaryUv,
+        bool sourceNormalComponents, int? sourceTangentSet, CancellationToken token)
     {
         var v = primitive.Vertices; var count = v.Length / 16;
+        if (sourceTangentSet is not null && (sourceTangentSet is not (0 or 1) || !sourceNormalComponents))
+            throw new InvalidDataException("Authored tangents require their source normals and a dedicated native consumer.");
+        var sourceTangents = sourceTangentSet == 0 ? primitive.Tangent0 : sourceTangentSet == 1 ? primitive.Tangent1 : null;
+        if (sourceTangentSet is not null && (sourceTangents is null || sourceTangents.Length != count * 4
+            || sourceTangents.Any(value => !float.IsFinite(value) || value != (float)(Half)value)))
+            throw new InvalidDataException("Converted material requires complete authored half precision tangents.");
         if (secondaryUv && (primitive.SecondaryUv is not { } uv1 || uv1.Length != count * 2 || uv1.Any(value => !float.IsFinite(value))))
             throw new InvalidDataException("Converted material requires complete secondary texture coordinates.");
         var tangents = new Vector3[count]; var bitangents = new Vector3[count];
@@ -278,13 +316,27 @@ public static class SwShModelWriter
             if ((i & 1023) == 0) token.ThrowIfCancellationRequested();
             var at = i * 16; var normal = new Vector3(v[at + 3], v[at + 4], v[at + 5]);
             if (normal.LengthSquared() < 1e-12) throw new InvalidDataException("Converted geometry contains an empty normal.");
+            if (sourceNormalComponents && (normal.X != (float)(Half)normal.X || normal.Y != (float)(Half)normal.Y || normal.Z != (float)(Half)normal.Z))
+                throw new InvalidDataException("Converted material requires exactly representable authored half precision normals.");
+            var storedNormal = normal;
             normal = Vector3.Normalize(normal);
+            if (!sourceNormalComponents) storedNormal = normal;
             var tangent = tangents[i] - normal * Vector3.Dot(normal, tangents[i]);
             if (tangent.LengthSquared() < 1e-12) tangent = Vector3.Cross(normal, MathF.Abs(normal.Y) < .9f ? Vector3.UnitY : Vector3.UnitX);
             tangent = Vector3.Normalize(tangent);
             var position = Position(i) * scale; output.Write(position.X); output.Write(position.Y); output.Write(position.Z);
-            Half(normal.X); Half(normal.Y); Half(normal.Z); Half(1);
-            Half(tangent.X); Half(tangent.Y); Half(tangent.Z); Half(Vector3.Dot(Vector3.Cross(normal, tangent), bitangents[i]) < 0 ? -1 : 1);
+            Half(storedNormal.X); Half(storedNormal.Y); Half(storedNormal.Z);
+            Half(1);
+            if (sourceTangents is not null)
+            {
+                var authored = new Vector3(sourceTangents[i * 4], sourceTangents[i * 4 + 1], sourceTangents[i * 4 + 2]);
+                var handedness = sourceTangents[i * 4 + 3];
+                if (handedness is not (-1 or 1) || authored.LengthSquared() < 1e-12f
+                    || Vector3.Cross(normal, authored).LengthSquared() < 1e-12f)
+                    throw new InvalidDataException("Authored tangent frame is degenerate.");
+                Half(authored.X); Half(authored.Y); Half(authored.Z); Half(handedness);
+            }
+            else { Half(tangent.X); Half(tangent.Y); Half(tangent.Z); Half(Vector3.Dot(Vector3.Cross(normal, tangent), bitangents[i]) < 0 ? -1 : 1); }
             output.Write(v[at + 6]); output.Write(v[at + 7]);
             if (secondaryUv) { output.Write(primitive.SecondaryUv![i * 2]); output.Write(primitive.SecondaryUv[i * 2 + 1]); }
             output.Write(new byte[] { 127, 127, 255, 255 });

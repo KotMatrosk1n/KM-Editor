@@ -5,7 +5,7 @@ using BCnEncoder.Shared;
 namespace KM.Formats.Models;
 
 /// <summary>BC7 mode 5 keeps alpha endpoints independent from color quantization.</summary>
-internal static class ModelTextureAlphaBlock
+internal static partial class ModelTextureAlphaBlock
 {
     // Preserve the source's alpha representation and indices when smooth alpha
     // cannot fit the four values in mode 5. Only color endpoints are rewritten.

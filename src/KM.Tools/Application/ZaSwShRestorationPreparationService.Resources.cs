@@ -68,5 +68,31 @@ public sealed partial class ZaSwShRestorationPreparationService
             }
             return writer.Finish(model.Root);
         }
+
+        private static byte[] CompactTextures(byte[] bytes)
+        {
+            var model = new ModelBuffer(bytes); var writer = new ModelTableBuilder(bytes);
+            var original = ModelNames(model, 2);
+            var bindings = model.Tables(model.Root, 6, 128).SelectMany(m => model.Tables(m, 11, 64)).ToArray();
+            int Slot(int binding)
+            {
+                var slot = checked((int)model.Value(binding, 1));
+                return slot < original.Length ? slot : throw new InvalidDataException("Native texture index is invalid.");
+            }
+            // Conversion inputs can include roles absent from the native material.
+            // Retain every actual binding and its complete image container.
+            var used = bindings.Select(Slot).ToHashSet();
+            var retained = Enumerable.Range(0, original.Length).Where(used.Contains).ToArray();
+            var indices = retained.Select((old, index) => (old, index)).ToDictionary(p => p.old, p => p.index);
+            var slots = writer.Vector(model.Root, 2, retained.Length);
+            for (var i = 0; i < retained.Length; i++) writer.Pointer(slots[i], writer.String(original[retained[i]]));
+            foreach (var binding in bindings)
+            {
+                var mapped = indices[Slot(binding)];
+                if (model.Field(binding, 1) != 0) writer.Int32(writer.Field(binding, 1), mapped);
+                else if (mapped != 0) throw new InvalidDataException("Native implicit texture index cannot be remapped.");
+            }
+            return writer.Finish(model.Root);
+        }
     }
 }

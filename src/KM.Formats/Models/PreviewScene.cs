@@ -23,6 +23,12 @@ public sealed record PreviewMaterial(string Name, int Texture, int Mask, Vector4
 public sealed record PreviewPrimitive(float[] Vertices, uint[] Indices, PreviewMaterial Material, string Name)
 {
     public float[]? SecondaryUv { get; init; }
+    /// <summary>Authored normalized RGBA bytes for the first color attribute.</summary>
+    public float[]? Color0 { get; init; }
+    /// <summary>Authored half precision tangent XYZ and handedness for UV0.</summary>
+    public float[]? Tangent0 { get; init; }
+    /// <summary>Authored half precision tangent XYZ and handedness for UV1.</summary>
+    public float[]? Tangent1 { get; init; }
 }
 public sealed record PreviewScene(IReadOnlyList<PreviewPrimitive> Primitives, IReadOnlyList<PreviewTexture> Textures)
 {
@@ -51,7 +57,7 @@ public sealed record PreviewScene(IReadOnlyList<PreviewPrimitive> Primitives, IR
             foreach (var layer in primitive.Material.Layers) Color(layer);
             Color(primitive.Material.Uv);
             Color(primitive.Material.Wrap);
-            writer.Write(primitive.Material.Alpha.Contains("Blend", StringComparison.Ordinal) ? 1 : 0);
+            writer.Write(primitive.Material.Alpha == "Add" ? 2 : primitive.Material.Alpha.Contains("Blend", StringComparison.Ordinal) ? 1 : 0);
             foreach (var value in primitive.Vertices) writer.Write(value);
             foreach (var value in primitive.Indices) writer.Write(value);
         }
@@ -67,7 +73,8 @@ public sealed record PreviewScene(IReadOnlyList<PreviewPrimitive> Primitives, IR
                 Material = p.Material.Name,
                 p.Material.TopOriginUv,
                 p.Material.Surface,
-                SecondaryUv = p.Material.Surface?.SurfaceLayers == true ? p.SecondaryUv : null,
+                SecondaryUv = p.Material.Surface is { SurfaceLayers: true } or { RestorationEffect: 10 } ? p.SecondaryUv : null,
+                Tangent0 = p.Material.Surface?.RestorationEffect == 10 ? p.Tangent0 : null,
                 UvOrigins = new[] { p.Material.UvOrigins.X, p.Material.UvOrigins.Y, p.Material.UvOrigins.Z, p.Material.UvOrigins.W },
                 MaskChannels = new[] { p.Material.MaskChannels.X, p.Material.MaskChannels.Y, p.Material.MaskChannels.Z, p.Material.MaskChannels.W },
                 Underlay = p.Material.Underlay < 0 ? (int?)null : p.Material.Underlay,

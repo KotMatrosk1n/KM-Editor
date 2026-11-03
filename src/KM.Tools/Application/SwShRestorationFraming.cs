@@ -25,6 +25,12 @@ internal static class SwShRestorationFraming
             "venomoth" => (1.15f, 80f),
             "primeape" => (1.3f, 0f),
             "mega-charizard-x" => (1f, -100f),
+            "venusaur-mega" => (1.8f, 0f),
+            "blastoise-mega" => (1.8f, 50f),
+            "absol-mega" => (1.2f, 0f),
+            "pidgeot-mega" => (1.8f, 0f),
+            "clefable-mega" => (1f, 100f),
+            "alakazam-mega" => (1.4f, 60f),
             "mega-charizard-y" => (1.3f, -50f),
             "quilava" => (1f, 35f),
             "totodile" => (.85f, -37f),
@@ -79,7 +85,7 @@ internal static class SwShRestorationFraming
             "zangoose" => (1.4f, -52.7f),
             _ => (1f, 0f),
         };
-        if (adjustment == (1f, 0f)) return configuration;
+        if (adjustment == (1f, 0f) && definition != "raichu-mega-y") return configuration;
         var result = configuration.ToArray(); var data = new ModelBuffer(result);
         var scaleAt = data.Field(data.Root, 17); var verticalAt = data.Field(data.Root, 18);
         if (scaleAt == 0 || verticalAt == 0 || !float.IsFinite(data.Float(scaleAt)) || data.Float(scaleAt) <= 0
@@ -87,6 +93,18 @@ internal static class SwShRestorationFraming
             throw new InvalidDataException("Summary framing configuration is incomplete or invalid.");
         System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(result.AsSpan(scaleAt, 4), data.Float(scaleAt) * adjustment.Item1);
         System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(result.AsSpan(verticalAt, 4), data.Float(verticalAt) + adjustment.Item2);
+        if (definition == "raichu-mega-y")
+        {
+            // The long tail clips the right edge at the source Summary angle.
+            // View it from the opposite side, retaining native-comparable body size.
+            foreach (var field in new[] { 21, 22 })
+            {
+                var angleAt = data.Field(data.Root, field);
+                if (angleAt == 0 || !float.IsFinite(data.Float(angleAt)))
+                    throw new InvalidDataException("Mega Raichu Y Summary angle is incomplete or invalid.");
+                System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(result.AsSpan(angleAt, 4), field == 21 ? 20f : -20f);
+            }
+        }
         if (definition == "monferno")
         {
             // The inherited Summary angle hides the tail flame behind the head.

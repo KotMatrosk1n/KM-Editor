@@ -96,8 +96,7 @@ public sealed record SwShPreparedRestoration(string DefinitionId, int Definition
     {
         var rows = definition.Identities.Select(SwShRestorationForms.PersonalRow).ToHashSet();
         var stones = definition.Identities.Select(SwShRestorationMegaItems.For).OfType<SwShRestorationMegaItem>().ToArray();
-        var variants = definition.Identities.Select(i => new SwShRestorationModelVariant(i, 0, $"pm{i.Species:0000}_{i.Form:00}"))
-            .Concat(definition.AdditionalModelVariants).ToArray();
+        var variants = SwShRestorationModelResources.Variants(definition).ToArray();
         foreach (var item in items)
         {
             SwShRestorationComposer.ValidatePath(item.Path, item.Writer);
@@ -115,7 +114,7 @@ public sealed record SwShPreparedRestoration(string DefinitionId, int Definition
                     SwShRestorationComposer.IconGenders(i.Species).Any(g => item.Path == SwShRestorationComposer.IconPath(i.Species, i.Form, g))
                     || i.Species == SwShRestorationSpecies.Annihilape && i.Form == 0 && item.Path == "romfs/bin/appli/icon_pokemon/poke_icon_0979_00s_n.bntx"
                     || item.Path == $"romfs/bin/pml/evolution/evo_{SwShRestorationForms.PersonalRow(i):000}.bin"
-                    || item.Path == $"romfs/bin/pml/tamagowaza/tamagowaza_{SwShRestorationForms.PersonalRow(i):0000}.bin"
+                    || item.Path == $"romfs/bin/pml/tamagowaza/tamagowaza_{SwShRestorationForms.EggRow(i):0000}.bin"
                     || variants.Where(v => v.Identity == i).Any(v => item.Path == $"romfs/bin/archive/pokemon/{v.ResourceStem}.gfpak"
                         || item.Path == $"romfs/bin/archive/pokemon/{v.ResourceStem}_rare.gfpak"
                         || item.Path == $"romfs/bin/archive/gpokemon/{v.ResourceStem}.gfpak"

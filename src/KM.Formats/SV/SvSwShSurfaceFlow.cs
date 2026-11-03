@@ -18,10 +18,18 @@ public static class SvSwShSurfaceFlow
 
     public static IReadOnlyDictionary<string, Contract> Contracts(byte[] bytes, PreviewScene scene, Func<string, byte[]> read)
     {
+        var zorua = scene.Primitives.Any(p => p.Name.StartsWith("pm0570_00_41_", StringComparison.Ordinal));
+        var basculegionStems = new[] { "pm1006_11_41", "pm1006_12_41" }
+            .Where(stem => scene.Primitives.Any(p => p.Name.StartsWith(stem + "_", StringComparison.Ordinal))).ToArray();
+        if (basculegionStems.Length > 1) throw new InvalidDataException("Surface flow cannot mix Basculegion source forms.");
+        var basculegion = basculegionStems.Length == 1;
+        var scrollingMask = scene.Primitives.Any(p => p.Name.StartsWith("pm0089_00_11_", StringComparison.Ordinal));
         string[] expected = scene.Primitives.Any(p => p.Name.StartsWith("pm0088_", StringComparison.Ordinal)) ? ["body", "body_00"]
             : scene.Primitives.Any(p => p.Name.StartsWith("pm0089_00_00_", StringComparison.Ordinal)) ? ["body"]
-            : scene.Primitives.Any(p => p.Name.StartsWith("pm0089_00_11_", StringComparison.Ordinal)) ? ["body_a_01"]
+            : scrollingMask ? ["body_a_01"]
             : scene.Primitives.Any(p => p.Name.StartsWith("pm0571_00_41_", StringComparison.Ordinal)) ? ["body_a_00", "body_b"]
+            : zorua ? ["body_a_01", "body_b_01"]
+            : basculegion ? ["effect"]
             : throw new InvalidDataException("Surface flow requires a qualified source model.");
         var source = new ModelBuffer(bytes); var result = new Dictionary<string, Contract>(StringComparer.Ordinal);
         foreach (var material in source.Tables(source.Root, 1, 128))
@@ -38,7 +46,7 @@ public static class SvSwShSurfaceFlow
                 return at == 0 ? Vector4.Zero : new Vector4(source.Float(at), source.Float(at + 4), source.Float(at + 8), source.Float(at + 12));
             });
             var textures = source.Tables(material, 2, 128).ToDictionary(t => source.Text(t, 0)!, t => source.Text(t, 1)!);
-            var maskScroll = name == "body_a_01";
+            var maskScroll = scrollingMask;
             var uvIndex = source.Tables(material, 9, 128).SingleOrDefault(p => source.Text(p, 0) == "UVIndexLayerMask");
             if (maskScroll && (uvIndex == 0 || source.Value(uvIndex, 1) != 1
                 || scene.Primitives.Where(p => p.Material.Name == name).Any(p => p.SecondaryUv?.Length != p.Vertices.Length / 8)))
@@ -56,20 +64,23 @@ public static class SvSwShSurfaceFlow
                 || colors.Any(c => !float.IsFinite(c.X + c.Y + c.Z + c.W) || c.X is < 0 or > 1 || c.Y is < 0 or > 1 || c.Z is < 0 or > 1)))
                 throw new InvalidDataException("Source layer colors require another sampling adapter.");
             if (!maskScroll && !textures.ContainsKey("DisplacementMap")) throw new InvalidDataException("Surface flow noise is missing.");
+            if ((zorua || basculegion) && (strength != (zorua ? .05f : .036f)
+                || transform != (zorua ? new Vector4(1, 1, 0, 0) : new Vector4(1, .5f, 1, 0))
+                || textures["DisplacementMap"] != (zorua ? "pm0570_00_41_fire_a_msk.bntx" : basculegionStems[0] + "_eff_msk.bntx")))
+                throw new InvalidDataException("Source surface flow requires its qualified displacement contract.");
             var texture = source.Tables(material, 2, 128).Single(t => source.Text(t, 0) == (maskScroll ? "LayerMaskMap" : "DisplacementMap"));
             var samplers = source.Tables(material, 3, 32); var samplerIndex = checked((int)source.Value(texture, 2));
             if ((uint)samplerIndex >= samplers.Length) throw new InvalidDataException("Surface flow sampler is missing.");
-            int Address(int field) => source.Value(samplers[samplerIndex], field) switch
-            { 0 => 0, 1 => 1, 6 => 2, _ => throw new InvalidDataException("Surface flow addressing requires another adapter.") };
+            int Address(int field) => TrinityTextureAddressing.SwSh(source.Value(samplers[samplerIndex], field));
             var baseTexture = source.Tables(material, 2, 128).Single(t => source.Text(t, 0) == "BaseColorMap");
             var baseSampler = checked((int)source.Value(baseTexture, 2));
             if ((uint)baseSampler >= samplers.Length) throw new InvalidDataException("Surface base sampler is missing.");
-            int BaseAddress(int field) => source.Value(samplers[baseSampler], field) switch
-            { 0 => 0, 1 => 1, 6 => 2, _ => throw new InvalidDataException("Surface base addressing requires another adapter.") };
+            int BaseAddress(int field) => TrinityTextureAddressing.SwSh(source.Value(samplers[baseSampler], field));
             result.Add(name, new(name, textures[maskScroll ? "LayerMaskMap" : "DisplacementMap"], strength, transform, maskScroll,
                 colors.Select(c => new Vector3(c.X, c.Y, c.Z)).ToArray(), Address(9), Address(10), BaseAddress(9), BaseAddress(10)));
         }
-        if (result.Count == 0 || result.Count != expected.Count(name => scene.Primitives.Any(p => p.Material.Name == name)))
+        if (result.Count == 0 || result.Count != expected.Count(name => scene.Primitives.Any(p => p.Material.Name == name))
+            || (zorua || basculegion) && result.Count != expected.Length)
             throw new InvalidDataException("Surface flow source contract is incomplete.");
         return result;
     }
@@ -105,7 +116,7 @@ public static class SvSwShSurfaceFlow
                 writer.Reference(texture, 2, writer.Table(9, values));
             }
             Sampler("LyCol0Tex", contract.WrapU, contract.WrapV);
-            if (contract.MaskScroll) Sampler("Col0Tex", contract.BaseWrapU, contract.BaseWrapV);
+            Sampler("Col0Tex", contract.BaseWrapU, contract.BaseWrapV);
         }
         return writer.Finish(source.Root);
     }

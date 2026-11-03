@@ -6,8 +6,14 @@ namespace KM.Formats.Models;
 public sealed record PreviewSurface(float[][] Values, int[] Textures, float[][] Wraps)
 {
     public bool LayerEmission { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool LayerBaseEmission { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool SeparateBaseColors { get; init; }
+    public bool Unlit { get; init; }
     public bool MapEmission { get; init; }
     public bool SurfaceLayers { get; init; }
+    public int? GemProbeTexture { get; init; }
     public int RestorationEffect { get; init; }
     public float[][] RestorationValues { get; init; } = [];
     public bool TintSubsurfaceByBaseColor { get; init; }
@@ -74,7 +80,7 @@ public sealed record PreviewSurface(float[][] Values, int[] Textures, float[][] 
             or "DeepShadowColor" or "RimColorVal" or "ConstantColor" or "ConstantColorVal"
             or "OnGameColor" or "OnGameColorVal" or "OnGameAlpha";
 
-    internal static PreviewSurface Read(ModelBuffer data, int material, bool packed)
+    internal static PreviewSurface Read(ModelBuffer data, int material, bool packed, bool neutralBaseColors = false)
     {
         var scalars = data.Tables(material, packed ? 13 : 4, 256).ToDictionary(
             p => data.Text(p, 0) ?? "", p => data.Field(p, 1) is var at && at != 0 ? data.Float(at) : 0, StringComparer.Ordinal);
@@ -84,7 +90,8 @@ public sealed record PreviewSurface(float[][] Values, int[] Textures, float[][] 
             return at == 0 ? new float[4] : new[] { data.Float(at), data.Float(at + 4), data.Float(at + 8), packed ? 1 : data.Float(at + 12) };
         }, StringComparer.Ordinal);
         float S(string name, float fallback) => scalars.GetValueOrDefault(name, fallback);
-        float[] C(string name, float[] fallback) => colors.GetValueOrDefault(name, fallback).ToArray();
+        float[] C(string name, float[] fallback) => neutralBaseColors && KM.Formats.SV.SvSwShLayerEmission.BaseVectors.Contains(name, StringComparer.Ordinal)
+            ? [1, 1, 1, 1] : colors.GetValueOrDefault(name, fallback).ToArray();
         var values = Enumerable.Range(0, ValueCount).Select(_ => new float[4]).ToArray();
         values[0] = [1, 0, 1, 0]; values[1] = [1, 1, 0, .01f]; values[2] = [.04f, 0, 0, 32];
         values[3] = [1, 1, 0, .48f]; values[4] = [0, 0, 1, 0];

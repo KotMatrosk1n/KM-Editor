@@ -158,11 +158,7 @@ public static class SvSwShFlameMaterial
             var samplers = source.Tables(flame, 3, 32);
             var index = checked((int)source.Value(layer, 2));
             if ((uint)index >= samplers.Length) throw new InvalidDataException("S/V flame sampler is missing.");
-            uint Address(int field) => source.Value(samplers[index], field) switch
-            {
-                0 => 0, 1 => 1, 6 => 2,
-                _ => throw new InvalidDataException("S/V flame addressing requires another adapter."),
-            };
+            int Address(int field) => TrinityTextureAddressing.SwSh(source.Value(samplers[index], field));
             var binding = fire.Tables(selected[0], 11, 64).Single(t => fire.Text(t, 0) == "Blend0Tex");
             var sampler = fire.Table(binding, 2);
             var values = Enumerable.Range(0, 9).ToDictionary(f => f,

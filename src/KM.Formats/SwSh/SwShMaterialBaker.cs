@@ -3,6 +3,7 @@ using System.Numerics;
 using BCnEncoder.Decoder;
 using BCnEncoder.Shared;
 using KM.Formats.Models;
+using KM.Formats.SV;
 
 namespace KM.Formats.SwSh;
 
@@ -10,68 +11,172 @@ public sealed record SwShBakedMaterial(string ColorName, byte[] Color, string No
     string AmbientName, byte[] Ambient, double CoveredFraction, int ConflictingSamples)
 {
     public Vector2 NormalUvScale { get; init; } = Vector2.One;
+    public SwShNormalTileQualification? NormalTileQualification { get; init; }
     public Vector4 ColorUvTransform { get; init; } = new(1, 1, 0, 0);
 }
+
+public sealed record SwShNormalConflict(int PreviousTriangle, int Triangle, int X, int Y, float NormalAgreement);
 
 /// <summary>Bakes source material channels into a native object normal and ambient shader contract.</summary>
 public static class SwShMaterialBaker
 {
     private sealed record Image(int Width, int Height, bool Srgb, byte[] Pixels);
+    public static bool IsEyeMaterial(ModelBuffer source, int material) =>
+        (source.Text(material, 0) ?? "").Contains("eye", StringComparison.Ordinal)
+        || source.Tables(material, 1, 16).Select(shader => source.Text(shader, 0))
+            .SequenceEqual(new[] { "EyeClearCoat", "Eye" });
+
     public static SwShBakedMaterial Bake(PreviewPrimitive primitive, byte[] sourceMaterials, int materialIndex,
         Func<string, byte[]> readTexture, CancellationToken cancellationToken = default, bool sourceNormalDimensions = false, bool opaqueEyeSurface = false,
         bool cornealEye = false, float cornealNormalHeight = 1, Vector2? normalUvScale = null, int normalUvVerticalTile = 0,
         bool authoredAlpha = false, Vector2? staticUvScale = null, ModelTextureMipCache? encodingCache = null,
-        SwShStaticUvAtlas? staticUvAtlas = null, bool unlitSurface = false)
+        SwShStaticUvAtlas? staticUvAtlas = null, bool unlitSurface = false, bool opaqueBlendCornealEye = false,
+        float cornealPrimaryNormalHeight = 1, bool cornealPrimarySurface = false, bool staticLitEyeSurface = false, bool preserveSourceColor = false,
+        Action<SwShNormalConflict>? normalConflict = null,
+        SwShStaticUvAtlas? colorUvAtlas = null, bool sourceTangentNormals = false, SvSwShNormalAtlas? normalAtlas = null)
     {
-        if (materialIndex is < 0 or > 15) throw new InvalidDataException("Material texture identity is outside the supported range.");
+        if (materialIndex is < 0 or > 127) throw new InvalidDataException("Material texture identity is outside the supported range.");
         _ = SwShModelWriter.Bounds(primitive, 1);
         var source = new ModelBuffer(sourceMaterials);
         var tables = source.Tables(source.Root, 1, 128).Where(t => source.Text(t, 0) == primitive.Material.Name).ToArray();
         if (tables.Length != 1) throw new InvalidDataException("Source material identity is ambiguous.");
         var table = tables[0];
+        if (sourceTangentNormals)
+        {
+            SvSwShArchaludonNormals.RequireMaterial(sourceMaterials, primitive.Material.Name);
+            if (cornealEye || cornealPrimarySurface || unlitSurface || staticUvAtlas is not null || staticUvScale is not null
+                || colorUvAtlas is not null || normalUvScale is { } transform && transform != Vector2.One || normalUvVerticalTile != 0)
+                throw new InvalidDataException("Authored tangent normals require their untransformed native consumer.");
+        }
+        if (source.Tables(table, 1, 16).Any(shader => source.Text(shader, 0) == "InsideEmissionParallax"))
+            throw new InvalidDataException("Source inside emission parallax needs its own native material adapter.");
         var textures = source.Tables(table, 2, 64).ToDictionary(t => source.Text(t, 0)!, t => source.Text(t, 1)!, StringComparer.Ordinal);
-        var eye = primitive.Material.Name.Contains("eye", StringComparison.Ordinal);
+        var originalRead = readTexture;
+        var minimumImages = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        readTexture = name => minimumImages.TryGetValue(name, out var image) ? image
+            : originalRead(name);
+        void PromoteMinimum(string name) => minimumImages[name] = PromoteConstantImage(originalRead(name));
+        var eye = IsEyeMaterial(source, table);
+        if (staticLitEyeSurface)
+        {
+            if (!eye || cornealEye || cornealPrimarySurface || opaqueEyeSurface || opaqueBlendCornealEye || unlitSurface)
+                throw new InvalidDataException("Static lit eye conversion cannot combine surface profiles.");
+            KM.Formats.SV.SvSwShStaticLitEye.RequireMaterial(primitive, sourceMaterials);
+            eye = false;
+        }
         var atlas = staticUvAtlas ?? (staticUvScale is { } scale ? SwShStaticUvAtlas.For(primitive, scale) : null);
-        if (cornealEye)
+        if (colorUvAtlas is not null && (atlas is not null || cornealEye || cornealPrimarySurface || preserveSourceColor
+            || colorUvAtlas != SvSwShMouseFaceAtlas.For(sourceMaterials, primitive)))
+            throw new InvalidDataException("Independent color allocation requires its qualified mouse face surface.");
+        if (cornealEye || cornealPrimarySurface)
         {
             var shaders = source.Tables(table, 1, 16).Select(shader => source.Text(shader, 0)).ToArray();
             var heights = source.Tables(table, 4, 256).Where(parameter => source.Text(parameter, 0) is "NormalHeight" or "NormalHeight1")
                 .Select(parameter => (Name: source.Text(parameter, 0), Value: source.Field(parameter, 1) is var offset && offset != 0 ? source.Float(offset) : 0)).ToArray();
-            if (!eye || opaqueEyeSurface || primitive.Material.Alpha != "BlendPreMultiAlpha"
+            if (!eye || opaqueEyeSurface || cornealEye && cornealPrimarySurface || primitive.Material.Alpha != "BlendPreMultiAlpha"
+                    && !(opaqueBlendCornealEye && primitive.Material.Alpha == "Blend")
                 || !shaders.SequenceEqual(new[] { "EyeClearCoat", "Eye" }) || !textures.ContainsKey("NormalMap1")
                 || !float.IsFinite(cornealNormalHeight) || cornealNormalHeight is < 0 or > 1
+                || !float.IsFinite(cornealPrimaryNormalHeight) || cornealPrimaryNormalHeight is < 0 or > 2
+                || !textures.ContainsKey("NormalMap")
                 || heights.Length != 2 || heights.Select(height => height.Name).Distinct().Count() != 2
-                || heights.Any(height => height.Value != (height.Name == "NormalHeight1" ? cornealNormalHeight : 1)))
+                || heights.Any(height => height.Value != (height.Name == "NormalHeight1" ? cornealNormalHeight : cornealPrimaryNormalHeight)))
                 throw new InvalidDataException("Corneal eye conversion requires the qualified paired normal surface.");
+            if (primitive.Material.Alpha == "Blend")
+            {
+                // Straight and premultiplied blending agree only at full opacity.
+                // Qualify every authored mip, including palette-specific images.
+                var baseImage = new ModelTextureDocument(readTexture(textures["BaseColorMap"]));
+                for (var mip = 0; mip < baseImage.MipCount; mip++)
+                {
+                    var pixels = baseImage.Pixels(mip);
+                    for (var at = 3; at < pixels.Length; at += 4)
+                        if (pixels[at] != 255) throw new InvalidDataException("Straight-alpha corneal eyes require fully opaque source mips.");
+                }
+                var colors = source.Tables(table, 7, 128).Where(parameter => source.Text(parameter, 0) is
+                    "BaseColor" or "BaseColorLayer1" or "BaseColorLayer2" or "BaseColorLayer3" or "BaseColorLayer4").ToArray();
+                if (colors.Length is < 4 or > 5 || colors.Select(parameter => source.Text(parameter, 0)).Distinct().Count() != colors.Length
+                    || Enumerable.Range(1, 4).Any(layer => !colors.Any(parameter => source.Text(parameter, 0) == "BaseColorLayer" + layer))
+                    || colors.Any(parameter => source.Field(parameter, 1) is var at && (at == 0 || source.Float(at + 12) != 1)))
+                    throw new InvalidDataException("Straight-alpha corneal eyes require opaque authored color layers.");
+            }
         }
-        else if (cornealNormalHeight != 1) throw new InvalidDataException("Corneal normal strength requires an eye conversion profile.");
+        else if (cornealNormalHeight != 1 || cornealPrimaryNormalHeight != 1) throw new InvalidDataException("Corneal normal strength requires an eye conversion profile.");
+        if (opaqueBlendCornealEye && !cornealEye && !cornealPrimarySurface)
+            throw new InvalidDataException("Straight-alpha corneal eyes require a paired normal profile.");
         var templatePath = textures[eye ? "LayerMaskMap" : "BaseColorMap"];
-        var template = readTexture(templatePath); var container = new ModelTextureDocument(template);
+        var template = readTexture(templatePath);
+        var sampledScalarAlbedo = false;
+        // Some authored opaque albedos store one BC4 channel and explicitly
+        // sample it as (R,R,R,1). Resolve that source mapping through the normal
+        // image reader, then use the existing native color allocation/encoder.
+        // The editing document itself continues to reject non-color payloads.
+        if (!eye && primitive.Material.Alpha == "Opaque" && templatePath == textures["BaseColorMap"]
+            && !preserveSourceColor)
+        {
+            var metadata = new ModelBuffer(template);
+            int Pointer(int at) => checked((int)System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(metadata.Slice(at, 8)));
+            var info = Pointer(Pointer(40));
+            if (metadata.U32(info + 28) == 0x1d01 && metadata.U32(info + 88) == 0x01020202)
+            {
+                sampledScalarAlbedo = true;
+                var sampled = PreviewTexture.Read(template);
+                if (sampled.Width < 4 || sampled.Height < 4)
+                {
+                    PromoteMinimum(templatePath);
+                    template = readTexture(templatePath);
+                }
+                else template = SwShTextureAllocation.Create(template, sampled.Width, sampled.Height, srgb: false);
+            }
+        }
+        var container = new ModelTextureDocument(template);
         var colorWidth = container.Width; var colorHeight = container.Height;
+        // This qualified transparent shader samples the original mask separately.
+        // Keep the albedo's own allocation; enlarging it to the mask dimensions
+        // would regenerate the source alpha and its authored compressed mips.
         foreach (var role in new[] { "BaseColorMap", "LayerMaskMap" })
             if (textures.TryGetValue(role, out var path))
             {
                 var image = PreviewTexture.ReadBaseLevel(readTexture(path));
                 colorWidth = Math.Max(colorWidth, image.Width); colorHeight = Math.Max(colorHeight, image.Height);
             }
+        if (colorWidth < 4 || colorHeight < 4)
+        {
+            foreach (var role in new[] { "BaseColorMap", "LayerMaskMap" })
+                if (textures.TryGetValue(role, out var path)) PromoteMinimum(path);
+            template = readTexture(templatePath); container = new ModelTextureDocument(template);
+            colorWidth = container.Width; colorHeight = container.Height;
+        }
         template = SwShTextureAllocation.Create(template, colorWidth, colorHeight, container.Srgb);
         container = new ModelTextureDocument(template);
         var normalRole = cornealEye ? "NormalMap1" : "NormalMap";
+        var geometricNormalSurface = SvSwShGeometricNormalMaterial.IsQualified(primitive, source, table);
         var normalSource = textures.TryGetValue(normalRole, out var normalPath) ? Read(readTexture(normalPath))
+            : geometricNormalSurface ? null
             : unlitSurface ? new Image(4, 4, false, Enumerable.Range(0, 16).SelectMany(_ => new byte[] { 128, 128, 255, 255 }).ToArray())
             : throw new InvalidDataException("A lit material requires its authored normal map.");
-        var width = normalSource.Width;
-        var height = normalSource.Height;
-        var tangentNormals = Resize(normalSource.Pixels, normalSource.Width, normalSource.Height, width, height);
+        if (normalSource is not null && (normalSource.Width < 4 || normalSource.Height < 4))
+        {
+            PromoteMinimum(normalPath!); normalSource = Read(readTexture(normalPath!));
+        }
+        var width = normalSource?.Width ?? colorWidth;
+        var height = normalSource?.Height ?? colorHeight;
+        var tangentNormals = normalSource is null ? null : Resize(normalSource.Pixels, normalSource.Width, normalSource.Height, width, height);
         var normals = new Vector3[width * height]; var covered = new bool[normals.Length]; var conflicts = 0;
-        var vertices = primitive.Vertices;
+        var owners = normalConflict is null ? null : new int[normals.Length];
+        if (normalAtlas is not null && (sourceTangentNormals || geometricNormalSurface || cornealEye || cornealPrimarySurface
+            || unlitSurface || atlas is not null || colorUvAtlas is not null || normalUvScale is { } sharedTransform && sharedTransform != Vector2.One
+            || normalUvVerticalTile != 0))
+            throw new InvalidDataException("Shared object-normal fields require their qualified untransformed body surface.");
+        var normalGeometry = normalAtlas?.Geometry(primitive, sourceMaterials) ?? primitive;
+        var vertices = normalGeometry.Vertices;
         Vector3 Position(int i) => new(vertices[i * 16], vertices[i * 16 + 1], vertices[i * 16 + 2]);
         Vector3 Normal(int i) => new(vertices[i * 16 + 3], vertices[i * 16 + 4], vertices[i * 16 + 5]);
         Vector2 Uv(int i) => new(vertices[i * 16 + 6], vertices[i * 16 + 7]);
-        for (var triangle = 0; triangle < primitive.Indices.Length; triangle += 3)
+        for (var triangle = 0; !sourceTangentNormals && triangle < normalGeometry.Indices.Length; triangle += 3)
         {
             if ((triangle & 255) == 0) cancellationToken.ThrowIfCancellationRequested();
-            var a = checked((int)primitive.Indices[triangle]); var b = checked((int)primitive.Indices[triangle + 1]); var c = checked((int)primitive.Indices[triangle + 2]);
+            var a = checked((int)normalGeometry.Indices[triangle]); var b = checked((int)normalGeometry.Indices[triangle + 1]); var c = checked((int)normalGeometry.Indices[triangle + 2]);
             var uvA = Uv(a); var uvB = Uv(b); var uvC = Uv(c);
             var wrap = MathF.Floor(MathF.Min(uvA.Y, MathF.Min(uvB.Y, uvC.Y))); uvA.Y -= wrap; uvB.Y -= wrap; uvC.Y -= wrap;
             var u = uvB - uvA; var v = uvC - uvA; var determinant = Cross(u, v);
@@ -92,16 +197,23 @@ public static class SwShMaterialBaker
                 var normal = Unit(Normal(a) * alpha + Normal(b) * beta + Normal(c) * gamma);
                 var t = Unit(tangent - normal * Vector3.Dot(normal, tangent)); var bt = Unit(Vector3.Cross(normal, t));
                 if (Vector3.Dot(bt, bitangent) < 0) bt = -bt;
-                var index = y * width + x; var nx = tangentNormals[index * 4] / 127.5f - 1; var ny = tangentNormals[index * 4 + 1] / 127.5f - 1;
-                if (cornealEye) { nx *= cornealNormalHeight; ny *= cornealNormalHeight; }
-                var value = Unit(t * nx + bt * ny + normal * MathF.Sqrt(MathF.Max(0, 1 - nx * nx - ny * ny)));
-                if (covered[index] && Vector3.Dot(normals[index], value) < .8f) conflicts++;
+                var index = y * width + x; var nx = tangentNormals is null ? 0 : tangentNormals[index * 4] / 127.5f - 1;
+                var ny = tangentNormals is null ? 0 : tangentNormals[index * 4 + 1] / 127.5f - 1;
+                var normalHeight = cornealEye ? cornealNormalHeight : cornealPrimarySurface ? cornealPrimaryNormalHeight : 1;
+                nx *= normalHeight; ny *= normalHeight;
+                var value = geometricNormalSurface ? normal : Unit(t * nx + bt * ny + normal * MathF.Sqrt(MathF.Max(0, 1 - nx * nx - ny * ny)));
+                if (covered[index] && Vector3.Dot(normals[index], value) < .8f)
+                {
+                    conflicts++;
+                    normalConflict?.Invoke(new(owners![index], triangle / 3, x, y, Vector3.Dot(normals[index], value)));
+                }
                 normals[index] = value; covered[index] = true;
+                if (owners is not null) owners[index] = triangle / 3;
             }
         }
         var coverage = covered.Count(v => v);
-        if (coverage == 0) throw new InvalidDataException("Material has no rasterizable UV coverage.");
-        var nearest = Nearest(covered, width, height, cancellationToken);
+        if (coverage == 0 && !sourceTangentNormals) throw new InvalidDataException("Material has no rasterizable UV coverage.");
+        var nearest = sourceTangentNormals ? [] : Nearest(covered, width, height, cancellationToken);
         var normalPixels = new byte[width * height * 4];
         var ambientTemplateName = Path.GetFileNameWithoutExtension(templatePath);
         var ambientWidth = 4; var ambientHeight = 4;
@@ -109,6 +221,10 @@ public static class SwShMaterialBaker
         if (textures.TryGetValue("AOMap", out var aoPath))
         {
             var ao = Read(readTexture(aoPath));
+            if (ao.Width < 4 || ao.Height < 4)
+            {
+                PromoteMinimum(aoPath); ao = Read(readTexture(aoPath));
+            }
             ambientWidth = ao.Width; ambientHeight = ao.Height;
             occlusion = Resize(ao.Pixels, ao.Width, ao.Height, ambientWidth, ambientHeight);
         }
@@ -123,9 +239,10 @@ public static class SwShMaterialBaker
             throw new InvalidDataException("Normal texture tile requires a declared static crop.");
         if (normalScale != Vector2.One)
         {
+            if (normalScale.Y == 4) SvSwShMouseNormalTile.Require(sourceMaterials, primitive, normalScale);
             // A native repeating normal sampler can address one exact UV tile
             // without changing geometry, pixel density, or the other material maps.
-            if (atlas is not null || cornealEye || normalScale.X is not (1 or 2) || normalScale.Y is not (1 or 2))
+            if (atlas is not null || cornealEye || normalScale.X is not (1 or 2) || normalScale.Y is not (1 or 2 or 4))
                 throw new InvalidDataException("Normal texture cropping requires a supported static tile.");
             var uvs = primitive.Indices.Distinct().Select(index => Uv(checked((int)index)) - new Vector2(0, normalUvVerticalTile)).ToArray();
             var tileX = (int)MathF.Floor(uvs.Min(uv => uv.X) * normalScale.X);
@@ -147,11 +264,14 @@ public static class SwShMaterialBaker
             ambientPixels[i * 4 + 2] = eye ? (byte)166 : (byte)128; ambientPixels[i * 4 + 3] = 255;
         }
         var colorName = Path.GetFileNameWithoutExtension(templatePath);
-        if (!colorName.EndsWith(eye ? "_lym" : "_alb", StringComparison.Ordinal)) throw new InvalidDataException("Material texture naming needs a definition adapter.");
-        var identity = materialIndex.ToString("X1", System.Globalization.CultureInfo.InvariantCulture);
-        var normalName = "n" + identity + colorName[2..^3] + "nor";
-        var ambientName = "a" + identity + ambientTemplateName[2..^3] + "amb";
-        var normalTemplate = SwShTextureAllocation.Create(template, width, height, false);
+        // These qualified albedos can reference authored _ao/_msk images.
+        // Retain their real container identity; the native material binding
+        // supplies the color role independently of the donor's filename.
+        if (!sampledScalarAlbedo && !colorName.EndsWith(eye ? "_lym" : "_alb", StringComparison.Ordinal)) throw new InvalidDataException("Material texture naming needs a definition adapter.");
+        var normalName = ModelTextureIdentity.MaterialName(colorName, materialIndex, 'n')[..^3] + "nor";
+        var ambientName = ModelTextureIdentity.MaterialName(ambientTemplateName, materialIndex, 'a')[..^3] + "amb";
+        // Retain the projected authored geometry normals in RGBA8 for this source surface.
+        var normalTemplate = SwShTextureAllocation.Create(template, width, height, false, compressed: !geometricNormalSurface);
         var ambientTemplate = SwShTextureAllocation.Create(template, ambientWidth, ambientHeight, false);
         var normalImage = ModelTextureIdentity.Rename(normalTemplate, colorName, normalName, linear: true);
         var ambientImage = ModelTextureIdentity.Rename(ambientTemplate, ambientTemplateName, ambientName, linear: true);
@@ -213,7 +333,8 @@ public static class SwShMaterialBaker
                 for (var at = 3; at < original.Length; at += 4) mipImages[mip][at] = original[at];
             }
         }
-        var normalMips = SwShTextureFiltering.Mips(normalPixels, width, height, normalContainer.MipCount, normals: true);
+        var normalMips = sourceTangentNormals ? []
+            : SwShTextureFiltering.Mips(normalPixels, width, height, normalContainer.MipCount, normals: true);
         var ambientMips = SwShTextureFiltering.Mips(ambientPixels, ambientWidth, ambientHeight, ambientContainer.MipCount);
         if (atlas is not null)
         {
@@ -232,10 +353,61 @@ public static class SwShMaterialBaker
             var ambientCrop = atlas.Images(ambientMips, ambientWidth, ambientHeight);
             ambientContainer = new(SwShTextureAllocation.Create(ambientImage, ambientCrop.Width, ambientCrop.Height, false)); ambientMips = ambientCrop.Images;
         }
-        var color = container.EncodeMipImages(mipImages, cancellationToken, encodingCache);
-        return new(colorName, color, normalName, normalContainer.EncodeMipImages(normalMips, cancellationToken, encodingCache),
-            ambientName, ambientContainer.EncodeMipImages(ambientMips, cancellationToken, encodingCache), coverage / (double)covered.Length, conflicts)
-            { NormalUvScale = normalScale };
+        byte[] color;
+        byte[]? croppedColor = null; byte[]? croppedAmbient = null;
+        if (colorUvAtlas is not null)
+        {
+            var cropped = colorUvAtlas.Images(mipImages, colorWidth, colorHeight);
+            // Keep the full-density bake's original BC7 blocks, including its
+            // authored mip colors at the smallest cropped dimensions.
+            croppedColor = colorUvAtlas.Reference(container.EncodeMipImages(mipImages, cancellationToken, encodingCache),
+                SwShTextureAllocation.Create(template, cropped.Width, cropped.Height, container.Srgb));
+            // The qualified native body program selects color coordinates for
+            // AmbientTex too (SwitchAmbientTexUV is false). Keep its complete
+            // authored face states in the same cropped coordinate domain.
+            var ambientCrop = colorUvAtlas.Images(ambientMips, ambientWidth, ambientHeight);
+            croppedAmbient = colorUvAtlas.Reference(ambientContainer.EncodeMipImages(ambientMips, cancellationToken, encodingCache),
+                SwShTextureAllocation.Create(ambientImage, ambientCrop.Width, ambientCrop.Height, false));
+        }
+        if (preserveSourceColor)
+        {
+            if (eye || atlas is not null || unlitSurface || (authoredAlpha || primitive.Material.Alpha != "Opaque"))
+                throw new InvalidDataException("Source albedo requires a qualified untransformed layered surface.");
+            var original = originalRead(textures["BaseColorMap"]); var document = new ModelTextureDocument(original);
+            // The allocation above already enforces every native dimension bound.
+            // Retain the original compressed blocks and every authored mip only
+            // when that exact allocation and color encoding agree.
+            if (document.Width != colorWidth || document.Height != colorHeight || document.Srgb != container.Srgb)
+                throw new InvalidDataException("Source albedo allocation differs from its qualified native surface.");
+            var originalName = Path.GetFileNameWithoutExtension(textures["BaseColorMap"]);
+            colorName = ModelTextureIdentity.MaterialName(originalName, materialIndex, 'c');
+            color = ModelTextureIdentity.Rename(original, originalName, colorName);
+        }
+        else
+        {
+            try { color = croppedColor ?? container.EncodeMipImages(mipImages, cancellationToken, encodingCache); }
+            catch (InvalidDataException error)
+            {
+                throw new InvalidDataException($"Color conversion failed for material {primitive.Material.Name} on {primitive.Name}: {error.Message}", error);
+            }
+        }
+        byte[] normalBytes;
+        if (sourceTangentNormals)
+        {
+            // Both palettes share the original normal image. Its encoded name
+            // length can differ from the rare albedo's identity.
+            var sourceNormalName = "pm1132_00_00_" + primitive.Material.Name + "_nrm";
+            normalName = ModelTextureIdentity.MaterialName(sourceNormalName, materialIndex, 'n')[..^3] + "nor";
+            normalBytes = ModelTextureIdentity.Rename(SvSwShArchaludonNormals.Texture(sourceMaterials, primitive.Material.Name, originalRead),
+                sourceNormalName, normalName, linear: true);
+        }
+        else normalBytes = normalContainer.EncodeMipImages(normalMips, cancellationToken, encodingCache);
+        return new(colorName, color, normalName, normalBytes,
+            ambientName, croppedAmbient ?? ambientContainer.EncodeMipImages(ambientMips, cancellationToken, encodingCache), coverage / (double)covered.Length, conflicts)
+            { NormalUvScale = normalScale, NormalTileQualification = normalScale.Y == 4
+                ? new SwShNormalTileQualification(primitive.Name, primitive.Material.Name) : null,
+                ColorUvTransform = colorUvAtlas is null ? new(1, 1, 0, 0)
+                    : new(1, colorUvAtlas.DivisionsY, 0, 1 - colorUvAtlas.DivisionsY) };
     }
 
     public static byte[] Icon(byte[] sourceTexture, byte[] targetTemplate, CancellationToken cancellationToken = default,
@@ -247,9 +419,37 @@ public static class SwShMaterialBaker
         for (var row = 0; row < source.Height; row++) source.Pixels.AsSpan(row * source.Width * 4, source.Width * 4).CopyTo(pixels.AsSpan(((row + y) * target.Width + x) * 4));
         return target.EncodeMipImages(Mips(pixels, target.Width, target.Height, target.MipCount), cancellationToken, encodingCache);
     }
-    private static Image Read(byte[] bytes)
+    internal static byte[] PromoteConstantImage(byte[] bytes)
     {
         var texture = PreviewTexture.ReadBaseLevel(bytes);
+        if (texture.Width >= 4 && texture.Height >= 4) return bytes;
+        // Native allocations start at 4x4. A constant 2x2 placeholder has the
+        // same samples at every UV and LOD after expansion; other small images
+        // still need a separate adapter. Check every authored mip, including tails.
+        if (texture.Width != 2 || texture.Height != 2)
+            throw new InvalidDataException("Small source texture requires a constant 2x2 adapter.");
+        var metadata = new ModelBuffer(bytes);
+        int Pointer(int at) => checked((int)System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(metadata.Slice(at, 8)));
+        var mipCount = metadata.U16(Pointer(Pointer(40)) + 22);
+        if (mipCount is < 1 or > 32) throw new InvalidDataException("Small source texture mip count is unsupported.");
+        var first = Read(PreviewTexture.ReadLevel(bytes, 0)).Pixels.AsSpan(0, 4).ToArray();
+        for (var mip = 0; mip < mipCount; mip++)
+        {
+            var pixels = Read(PreviewTexture.ReadLevel(bytes, mip)).Pixels;
+            for (var at = 0; at < pixels.Length; at += 4)
+                if (!pixels.AsSpan(at, 4).SequenceEqual(first))
+                    throw new InvalidDataException("Small source texture is not constant across its authored mips.");
+        }
+        var allocated = new ModelTextureDocument(SwShTextureAllocation.Create(bytes, 4, 4, (texture.Format & 255) == 6, compressed: false));
+        return allocated.EncodeMipImages(Enumerable.Range(0, allocated.MipCount)
+            .Select(mip => Enumerable.Range(0, Math.Max(1, 4 >> mip) * Math.Max(1, 4 >> mip))
+                .SelectMany(_ => first).ToArray()).ToArray());
+    }
+
+    private static Image Read(byte[] bytes) => Read(PreviewTexture.ReadBaseLevel(bytes));
+
+    private static Image Read(PreviewTexture texture)
+    {
         var format = texture.Format switch
         {
             0x0b01 or 0x0b06 => CompressionFormat.Rgba, 0x1a01 or 0x1a06 => CompressionFormat.Bc1WithAlpha,

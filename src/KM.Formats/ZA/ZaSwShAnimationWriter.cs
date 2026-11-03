@@ -5,12 +5,12 @@ using KM.Formats.SwSh;
 namespace KM.Formats.ZA;
 
 /// <summary>Adapts Z-A facial material channels and native expression timing independently of S/V.</summary>
-public static class ZaSwShAnimationWriter
+public static partial class ZaSwShAnimationWriter
 {
     public static byte[] Controller(byte[] nativeController, string donorStem, string targetStem,
-        IReadOnlyList<string> materialNames, IReadOnlyDictionary<string, string[]> facialBones, bool layeredEyes = false)
+        IReadOnlyList<string> materialNames, IReadOnlyDictionary<string, string[]> facialBones, bool layeredEyes = false, bool independentHighlights = false, bool layerEmission = false, bool layerTint = false)
     {
-        var bytes = SwShAnimationWriter.Controller(nativeController, donorStem, targetStem, materialNames, facialBones, layeredEyes);
+        var bytes = SwShAnimationWriter.Controller(nativeController, donorStem, targetStem, materialNames, facialBones, compactMaterials: true);
         var source = new ModelBuffer(bytes); var writer = new ModelTableBuilder(bytes);
         foreach (var layer in source.Tables(source.Table(source.Root, 0), 0, 128))
         {
@@ -23,6 +23,8 @@ public static class ZaSwShAnimationWriter
                 if (!names.Contains("ColorUVTranslateU", StringComparer.Ordinal)) continue;
                 names = names.Concat(new[] { "ColorUVScaleU", "ColorUVScaleV", "ConstantColorVal" })
                     .Concat(layeredEyes ? ZaSwShEyelidMaterial.ScalarNames : [])
+                    .Concat(independentHighlights ? ZaSwShEyelidMaterial.HighlightScalarNames : [])
+                    .Concat(layerEmission || layerTint ? ZaSwShEyelidMaterial.EmissionScalarNames : [])
                     .Distinct(StringComparer.Ordinal).ToArray();
                 var slots = writer.Vector(floats, 1, names.Length);
                 for (var i = 0; i < names.Length; i++) { var name = writer.Table(1); writer.Pointer(slots[i], name); writer.Text(name, 0, names[i]); }
@@ -30,7 +32,8 @@ public static class ZaSwShAnimationWriter
                 {
                     var vectors = source.Table(material, 3);
                     var vectorNames = source.Tables(vectors, 1, 256).Select(parameter => source.Text(parameter, 0)!)
-                        .Concat(ZaSwShEyelidMaterial.VectorNames).Distinct(StringComparer.Ordinal).ToArray();
+                        .Concat(ZaSwShEyelidMaterial.VectorNames)
+                        .Concat(layerEmission || layerTint ? ZaSwShEyelidMaterial.EmissionVectorNames : []).Distinct(StringComparer.Ordinal).ToArray();
                     if (vectors == 0) throw new InvalidDataException("Eye vector controller mask is missing.");
                     var mode = source.Field(vectors, 0);
                     var replacement = writer.Table(2, new Dictionary<int, byte[]> { [0] = [mode == 0 ? (byte)0 : source.U8(mode)] });
@@ -153,18 +156,11 @@ public static class ZaSwShAnimationWriter
         bool emptyExpression = false)
     {
         var bytes = SwShAnimationWriter.Convert(skeleton, [], bones, aliases, completePose, expression);
+        if (expression != SwShExpressionCurve.None)
+            bytes = ExpressionSkeleton(bytes, expression, emptyExpression);
         var source = new ModelBuffer(bytes); var writer = new ModelTableBuilder(bytes);
         var frames = checked((int)source.Value(source.Table(source.Root, 0), 1));
         if (frames is < 1 or > 18000) throw new InvalidDataException("Converted Z-A animation timing is invalid.");
-        if (expression != SwShExpressionCurve.None)
-        {
-            var skeletal = source.Table(source.Root, 1);
-            var tracks = source.Tables(skeletal, 0, 4096).Where(t => !emptyExpression && expression == SwShExpressionCurve.Eyes
-                && (source.Text(t, 0) ?? "").Contains("eyelid", StringComparison.OrdinalIgnoreCase)).ToArray();
-            var slots = writer.Vector(skeletal, 0, tracks.Length);
-            var copy = writer.Append(bytes);
-            for (var i = 0; i < tracks.Length; i++) writer.Pointer(slots[i], copy + tracks[i]);
-        }
         var nativeMaterials = writer.Table(1); writer.Reference(source.Root, 2, nativeMaterials);
         var groups = (emptyExpression ? [] : materials).GroupBy(t => t.Material, StringComparer.Ordinal).ToArray();
         var materialSlots = writer.Vector(nativeMaterials, 0, groups.Length);
@@ -207,6 +203,13 @@ public static class ZaSwShAnimationWriter
                     foreach (var channel in track.Channels) Validate(channel);
                     vectors.Add((track.Parameter["EyeVector:".Length..], Enumerable.Range(0, frames)
                         .Select(frame => track.Channels.Select(channel => Sample(channel, Frame(frame))).ToArray()).ToArray()));
+                }
+                else if (track.Parameter == "SurfaceAlpha")
+                {
+                    if (track.Channels.Length != 1) throw new InvalidDataException("Surface alpha has invalid channels.");
+                    Validate(track.Channels[0]);
+                    if (track.Channels[0].Any(k => k.Value[0] is < 0 or > 1)) throw new InvalidDataException("Surface alpha is outside its range.");
+                    native.Add(("ConstantAlpha", Enumerable.Range(0, frames).Select(frame => Sample(track.Channels[0], Frame(frame))).ToArray()));
                 }
                 else if (track.Parameter is "LayerMaskScale5" or "EmissionIntensityLayer2")
                 {

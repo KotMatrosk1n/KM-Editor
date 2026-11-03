@@ -8,6 +8,11 @@ namespace KM.Formats.Models;
 /// <summary>Reorders existing BC7 endpoints and indices for a partial atlas block.</summary>
 internal static class ModelTextureBc7Crop
 {
+    private static readonly (int[] Subsets, int[] Anchors)[] TwoSubsetLayouts = Enumerable.Range(0, 64).Select(p => Layout(2, p)).ToArray();
+    private static readonly (int[] Subsets, int[] Anchors)[] ThreeSubsetLayouts = Enumerable.Range(0, 64).Select(p => Layout(3, p)).ToArray();
+    private static readonly int[][] TwoSubsetMappings = SubsetMappings(2);
+    private static readonly int[][] ThreeSubsetMappings = SubsetMappings(3);
+
     internal static byte[] Crop(ReadOnlySpan<byte> source, int x, int y, int width, int height)
     {
         if (source.Length != 16 || x < 0 || y < 0 || width < 1 || height < 1 || x + width > 4 || y + height > 4)
@@ -15,44 +20,54 @@ internal static class ModelTextureBc7Crop
         var original = source.ToArray(); var mode = BitOperations.TrailingZeroCount((uint)original[0]);
         var map = Enumerable.Range(0, 16).Select(i => (y + Math.Min(i / 4, height - 1)) * 4 + x + Math.Min(i % 4, width - 1)).ToArray();
         var bytes = original.ToArray();
-        if (mode == 7)
+        if (mode is 0 or 1 or 2 or 3 or 7)
         {
-            // A shifted two-subset block can require another partition. Probe the
-            // decoder's format tables, then retain the exact endpoints and indices.
-            var probe = original.ToArray();
-            for (var endpoint = 0; endpoint < 4; endpoint++)
+            // Shift the existing subset assignment without recompressing pixels.
+            // BC7 modes differ in endpoint precision, P-bits and anchor indices.
+            var (subsetCount, partitionBits, channels, endpointBits, pbits, sharedPbits, indexStart, indexBits) = mode switch
             {
-                Set(probe, 14 + endpoint * 5, 5, endpoint % 2 * 31);
-                Set(probe, 34 + endpoint * 5, 5, endpoint / 2 * 31);
-                Set(probe, 94 + endpoint, 1, 0);
+                0 => (3, 4, 3, 4, 77, false, 83, 3),
+                1 => (2, 6, 3, 6, 80, true, 82, 3),
+                2 => (3, 6, 3, 5, -1, false, 99, 2),
+                3 => (2, 6, 3, 7, 94, false, 98, 2),
+                _ => (2, 6, 4, 5, 94, false, 98, 2)
+            };
+            var layouts = subsetCount == 2 ? TwoSubsetLayouts : ThreeSubsetLayouts;
+            var mappings = subsetCount == 2 ? TwoSubsetMappings : ThreeSubsetMappings;
+            var endpointStart = mode + 1 + partitionBits;
+            var sourceLayout = layouts[Get(original, mode + 1, partitionBits)];
+            var indices = new int[16]; var sourceCursor = indexStart;
+            for (var i = 0; i < 16; i++)
+            {
+                var count = sourceLayout.Anchors.Contains(i) ? indexBits - 1 : indexBits;
+                indices[i] = Get(original, sourceCursor, count); sourceCursor += count;
             }
-            var assignment = Decode(probe);
-            var subsets = assignment.Select(p => p.g < 128 ? 0 : 1).ToArray();
-            var weights = new[] { 0, 82, 169, 251 };
-            var indices = assignment.Select(p => Enumerable.Range(0, 4).MinBy(i => Math.Abs(p.r - weights[i]))).ToArray();
-            for (var partition = 0; partition < 64; partition++)
+            for (var partition = 0; partition < 1 << partitionBits; partition++)
             {
-                var layout = Layout(partition);
-                for (var swap = 0; swap < 2; swap++)
+                var layout = layouts[partition];
+                foreach (var mapping in mappings)
                 {
                     bool Visible(int i) => i % 4 < width && i / 4 < height;
-                    if (Enumerable.Range(0, 16).Any(i => Visible(i) && layout.Subsets[i] != (subsets[map[i]] ^ swap))) continue;
-                    bytes = original.ToArray(); Set(bytes, 8, 6, partition);
+                    if (Enumerable.Range(0, 16).Any(i => Visible(i) && mapping[layout.Subsets[i]] != sourceLayout.Subsets[map[i]])) continue;
+                    bytes = original.ToArray(); Set(bytes, mode + 1, partitionBits, partition);
                     var reordered = Enumerable.Range(0, 16).Select(i => Visible(i) ? indices[map[i]] : 0).ToArray();
-                    for (var subset = 0; subset < 2; subset++)
+                    for (var subset = 0; subset < subsetCount; subset++)
                     {
-                        var flip = reordered[layout.Anchors[subset]] >= 2;
+                        var anchor = layout.Anchors.Single(i => layout.Subsets[i] == subset);
+                        var flip = reordered[anchor] >= 1 << (indexBits - 1);
                         for (var end = 0; end < 2; end++)
                         {
-                            var oldEnd = (subset ^ swap) * 2 + (end ^ (flip ? 1 : 0)); var newEnd = subset * 2 + end;
-                            for (var channel = 0; channel < 4; channel++)
-                                Set(bytes, 14 + (channel * 4 + newEnd) * 5, 5, Get(original, 14 + (channel * 4 + oldEnd) * 5, 5));
-                            Set(bytes, 94 + newEnd, 1, Get(original, 94 + oldEnd, 1));
+                            var oldEnd = mapping[subset] * 2 + (end ^ (flip ? 1 : 0)); var newEnd = subset * 2 + end;
+                            for (var channel = 0; channel < channels; channel++)
+                                Set(bytes, endpointStart + (channel * subsetCount * 2 + newEnd) * endpointBits, endpointBits,
+                                    Get(original, endpointStart + (channel * subsetCount * 2 + oldEnd) * endpointBits, endpointBits));
+                            if (pbits >= 0 && !sharedPbits) Set(bytes, pbits + newEnd, 1, Get(original, pbits + oldEnd, 1));
                         }
-                        if (flip) for (var i = 0; i < 16; i++) if (layout.Subsets[i] == subset) reordered[i] = 3 - reordered[i];
+                        if (sharedPbits) Set(bytes, pbits + subset, 1, Get(original, pbits + mapping[subset], 1));
+                        if (flip) for (var i = 0; i < 16; i++) if (layout.Subsets[i] == subset) reordered[i] = (1 << indexBits) - 1 - reordered[i];
                     }
-                    var cursor = 98;
-                    for (var i = 0; i < 16; i++) { var count = layout.Anchors.Contains(i) ? 1 : 2; Set(bytes, cursor, count, reordered[i]); cursor += count; }
+                    var cursor = indexStart;
+                    for (var i = 0; i < 16; i++) { var count = layout.Anchors.Contains(i) ? indexBits - 1 : indexBits; Set(bytes, cursor, count, reordered[i]); cursor += count; }
                     if (Matches(bytes)) return bytes;
                 }
             }
@@ -71,7 +86,7 @@ internal static class ModelTextureBc7Crop
             var alphaIndexBits = mode == 5 ? 2 : 5 - colorIndexBits;
             Reorder(mode == 5 ? 97 : alphaIndexBits == 3 ? 81 : 50, alphaIndexBits, [(mode == 5 ? 50 : 38, mode == 5 ? 8 : 6)]);
         }
-        else throw new InvalidDataException("The partial BC7 atlas block uses an unsupported alpha mode.");
+        else throw new InvalidDataException("The partial BC7 atlas block has an invalid mode.");
         if (!Matches(bytes)) throw new InvalidDataException("BC7 atlas index reordering changed an authored pixel.");
         return bytes;
 
@@ -99,16 +114,28 @@ internal static class ModelTextureBc7Crop
         }
     }
 
-    private static (int[] Subsets, int[] Anchors) Layout(int partition)
+    private static int[][] SubsetMappings(int count) => Enumerable.Range(0, (int)Math.Pow(count, count))
+        // A partial block can split one original subset across several output
+        // subsets. Duplicating its endpoints keeps every visible pixel exact.
+        .Select(value => Enumerable.Range(0, count).Select(i => value / (int)Math.Pow(count, i) % count).ToArray()).ToArray();
+
+    private static (int[] Subsets, int[] Anchors) Layout(int subsetCount, int partition)
     {
-        var bytes = new byte[16]; Set(bytes, 7, 1, 1); Set(bytes, 8, 6, partition);
-        for (var end = 0; end < 4; end++)
+        // Probe the decoder's standard partition and anchor tables with distinct
+        // subset colors and maximum indices. Anchor indices omit their high bit.
+        var mode = subsetCount == 2 ? 7 : 2;
+        var start = subsetCount == 2 ? 14 : 9;
+        var indices = subsetCount == 2 ? 98 : 99;
+        var bytes = new byte[16]; Set(bytes, mode, 1, 1); Set(bytes, mode + 1, 6, partition);
+        for (var end = 0; end < subsetCount * 2; end++)
         {
-            Set(bytes, 14 + end * 5, 5, end % 2 * 31); Set(bytes, 34 + end * 5, 5, end / 2 * 31);
+            Set(bytes, start + end * 5, 5, end % 2 * 31);
+            Set(bytes, start + (subsetCount * 2 + end) * 5, 5, end / 2 * 31 / (subsetCount - 1));
         }
-        for (var bit = 98; bit < 128; bit++) Set(bytes, bit, 1, 1);
+        for (var bit = indices; bit < 128; bit++) Set(bytes, bit, 1, 1);
         var decoded = Decode(bytes);
-        return (decoded.Select(p => p.g < 128 ? 0 : 1).ToArray(), Enumerable.Range(0, 16).Where(i => decoded[i].r < 200).ToArray());
+        return (decoded.Select(p => subsetCount == 2 ? (p.g < 128 ? 0 : 1) : (p.g < 64 ? 0 : p.g < 192 ? 1 : 2)).ToArray(),
+            Enumerable.Range(0, 16).Where(i => decoded[i].r < 200).ToArray());
     }
     private static ColorRgba32[] Decode(byte[] bytes) => new BcDecoder().DecodeRaw(bytes, 4, 4, CompressionFormat.Bc7);
     private static int Get(byte[] bytes, int at, int count)

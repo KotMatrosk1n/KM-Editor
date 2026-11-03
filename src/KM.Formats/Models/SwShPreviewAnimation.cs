@@ -6,7 +6,8 @@ public static class SwShPreviewAnimation
     public static PreviewClip Read(ModelBuffer data, PreviewClip clip, ICollection<string> warnings,
         IReadOnlySet<string>? fireMaterials = null, IReadOnlySet<string>? emissionMaterials = null, IReadOnlySet<string>? layerEmissionMaterials = null,
         IReadOnlySet<string>? surfaceLayerMaterials = null, IReadOnlySet<string>? mapEmissionMaterials = null,
-        IReadOnlyDictionary<string, int>? restorationMaterials = null)
+        IReadOnlyDictionary<string, int>? restorationMaterials = null, IReadOnlySet<string>? baseEmissionMaterials = null,
+        IReadOnlySet<string>? separateBaseMaterials = null)
     {
         var visibility = ReadVisibility(data, clip.Frames);
         var materials = new List<PreviewMaterialTrack>();
@@ -20,7 +21,30 @@ public static class SwShPreviewAnimation
                 var effects = new Dictionary<string, PreviewKey[][]>(StringComparer.Ordinal);
                 foreach (var vector in data.Tables(material, 3, 256))
                 {
-                    var eyeRow = restoration is 3 or 4 ? Array.IndexOf(KM.Formats.ZA.ZaSwShEyelidMaterial.VectorNames, data.Text(vector, 0)) : -1;
+                    var baseColor = baseEmissionMaterials?.Contains(name) == true
+                        ? Array.IndexOf(separateBaseMaterials?.Contains(name) == true ? KM.Formats.SV.SvSwShSourceCoverage.VectorNames
+                            : KM.Formats.SV.SvSwShLayerEmission.BaseVectors, data.Text(vector, 0)) : -1;
+                    if (baseColor >= 0)
+                    {
+                        var color = Keys(data, vector, 1, 3, false, clip.Frames);
+                        materials.Add(new(name, $"BaseColorLayer{baseColor + 1}", [color[0], color[1], color[2], []]));
+                        continue;
+                    }
+                    var emissionColor = layerEmissionMaterials?.Contains(name) == true
+                        ? Array.IndexOf(KM.Formats.SV.SvSwShLayerEmission.Vectors, data.Text(vector, 0)) : -1;
+                    if (emissionColor >= 0)
+                    {
+                        var color = Keys(data, vector, 1, 3, false, clip.Frames);
+                        materials.Add(new(name, $"EmissionColorLayer{emissionColor + 1}", [color[0], color[1], color[2], []]));
+                        continue;
+                    }
+                    if (restoration is 5 or 6 && Array.IndexOf(KM.Formats.ZA.ZaSwShEyelidMaterial.EmissionVectorNames, data.Text(vector, 0)) is var eyeEmission && eyeEmission >= 0)
+                    {
+                        var color = Keys(data, vector, 1, 3, false, clip.Frames);
+                        materials.Add(new(name, $"RestorationValue{10 + eyeEmission}", [color[0], color[1], color[2], []]));
+                        continue;
+                    }
+                    var eyeRow = restoration is 3 or 4 or 5 or 6 ? Array.IndexOf(KM.Formats.ZA.ZaSwShEyelidMaterial.VectorNames, data.Text(vector, 0)) : -1;
                     if (eyeRow >= 0)
                     {
                         var row = Keys(data, vector, 1, 3, false, clip.Frames);
@@ -43,6 +67,11 @@ public static class SwShPreviewAnimation
                 PreviewKey[][] origins = [[], [], [], []];
                 foreach (var scalar in data.Tables(material, 2, 256))
                 {
+                    if (data.Text(scalar, 0) == "ConstantAlpha")
+                    {
+                        materials.Add(new(name, "SurfaceAlpha", [Keys(data, scalar, 1, 1, false, clip.Frames)[0], [], [], []]));
+                        continue;
+                    }
                     if (!fire && restoration == 0 && data.Text(scalar, 0) == "ConstantColorVal")
                     {
                         materials.Add(new(name, "BaseColorGain", [Keys(data, scalar, 1, 1, false, clip.Frames)[0], [], [], []]));

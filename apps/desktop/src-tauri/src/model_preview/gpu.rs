@@ -13,7 +13,9 @@ pub(super) struct Mesh {
     pub(super) indices: wgpu::Buffer,
     pub(super) count: u32,
     pub(super) material: wgpu::BindGroup,
+    pub(super) gem: bool,
     pub(super) blend: bool,
+    pub(super) additive: bool,
     pub(super) colors: wgpu::Buffer,
     pub(super) values: Vec<f32>,
     pub(super) edges: Option<wgpu::Buffer>,
@@ -27,9 +29,13 @@ pub struct Renderer {
     config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
     blend_pipeline: wgpu::RenderPipeline,
+    additive_pipeline: wgpu::RenderPipeline,
     fire_pipeline: wgpu::RenderPipeline,
     mask_pipeline: wgpu::RenderPipeline,
     wire_pipeline: wgpu::RenderPipeline,
+    gem_pipeline: wgpu::RenderPipeline,
+    gem_blend_pipeline: wgpu::RenderPipeline,
+    gem_wire_pipeline: wgpu::RenderPipeline,
     pub inspection: super::inspection::Inspection,
     display: u32,
     wireframe: bool,
@@ -199,14 +205,20 @@ impl Renderer {
         });
         let mut material_entries = vec![
             wgpu::BindGroupLayoutEntry {
+                binding: 18,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
                 binding: 1,
-                visibility: wgpu::ShaderStages::FRAGMENT,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
             wgpu::BindGroupLayoutEntry {
                 binding: 2,
-                visibility: wgpu::ShaderStages::FRAGMENT,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -218,7 +230,7 @@ impl Renderer {
         for binding in [0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] {
             material_entries.push(wgpu::BindGroupLayoutEntry {
                 binding,
-                visibility: wgpu::ShaderStages::FRAGMENT,
+                visibility: if binding == 5 { wgpu::ShaderStages::VERTEX_FRAGMENT } else { wgpu::ShaderStages::FRAGMENT },
                 ty: wgpu::BindingType::Texture {
                     sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     view_dimension: wgpu::TextureViewDimension::D2,
@@ -231,18 +243,53 @@ impl Renderer {
             label: Some("Base color"),
             entries: &material_entries,
         });
-        let mut assets = super::gpu_assets::Assets::new(&device, material_layout.clone());
+        // The gem entry point consumes at most seven textures. Its own layout keeps the
+        // ordinary sixteen-map renderer within the existing device limits.
+        let mut gem_entries: Vec<_> = material_entries.iter()
+            .filter(|entry| [0, 1, 2, 3, 5, 6, 8, 13, 18].contains(&entry.binding)).copied().collect();
+        gem_entries.push(wgpu::BindGroupLayoutEntry {
+            binding: 19, visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::Cube, multisampled: false,
+            }, count: None,
+        });
+        gem_entries.push(wgpu::BindGroupLayoutEntry {
+            binding: 20, visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None,
+        });
+        gem_entries.push(wgpu::BindGroupLayoutEntry {
+            binding: 21, visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None,
+        });
+        gem_entries.push(wgpu::BindGroupLayoutEntry {
+            binding: 22, visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None,
+        });
+        let gem_material_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Source gem"), entries: &gem_entries,
+        });
+        let mut assets = super::gpu_assets::Assets::new(&device, material_layout.clone(), gem_material_layout.clone());
         let meshes = assets.meshes(&device, &queue, &scene);
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Static model"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("preview.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(concat!(include_str!("preview.wgsl"), "\n", include_str!("preview_gem.wgsl")).into()),
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Static model"),
             bind_group_layouts: &[&camera_layout, &material_layout],
             push_constant_ranges: &[],
         });
-        let create_pipeline = |blend: bool, wire: bool, effect: u32| {
+        let gem_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Source gem"), bind_group_layouts: &[&camera_layout, &gem_material_layout], push_constant_ranges: &[],
+        });
+        let create_pipeline = |blend: bool, wire: bool, effect: u32, additive: bool, gem: bool| {
+            let blending = if additive {
+                Some(wgpu::BlendState {
+                    color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::SrcAlpha, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
+                    alpha: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::Zero, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
+                })
+            } else if blend { Some(wgpu::BlendState::ALPHA_BLENDING) } else { None };
             let stencil_face = wgpu::StencilFaceState {
                 compare: if effect == 1 { wgpu::CompareFunction::Equal } else { wgpu::CompareFunction::Always },
                 fail_op: wgpu::StencilOperation::Keep,
@@ -250,12 +297,12 @@ impl Renderer {
                 pass_op: if effect == 2 { wgpu::StencilOperation::Replace } else { wgpu::StencilOperation::Keep },
             };
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Static model"), layout: Some(&layout),
+            label: Some("Static model"), layout: Some(if gem { &gem_layout } else { &layout }),
             vertex: wgpu::VertexState { module: &shader, entry_point: Some(if wire { "vs_wire" } else { "vs_main" }), compilation_options: Default::default(),
-                buffers: &[wgpu::VertexBufferLayout { array_stride: 72, step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32x4, 4 => Float32x4, 5 => Float32x2] }] },
-            fragment: Some(wgpu::FragmentState { module: &shader, entry_point: Some(if wire { "fs_wire" } else { "fs_main" }), compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState { format: config.format, blend: if blend { Some(wgpu::BlendState::ALPHA_BLENDING) } else { None }, write_mask: if effect == 2 { wgpu::ColorWrites::empty() } else { wgpu::ColorWrites::ALL } })] }),
+                buffers: &[wgpu::VertexBufferLayout { array_stride: 88, step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32x4, 4 => Float32x4, 5 => Float32x2, 6 => Float32x4] }] },
+            fragment: Some(wgpu::FragmentState { module: &shader, entry_point: Some(if wire { "fs_wire" } else if gem { "fs_gem" } else { "fs_main" }), compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState { format: config.format, blend: blending, write_mask: if effect == 2 { wgpu::ColorWrites::empty() } else { wgpu::ColorWrites::ALL } })] }),
             primitive: wgpu::PrimitiveState { topology: if wire { wgpu::PrimitiveTopology::LineList } else { wgpu::PrimitiveTopology::TriangleList }, cull_mode: None, ..Default::default() },
             depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth24PlusStencil8, depth_write_enabled: !blend && !wire && effect == 0,
                 depth_compare: if effect == 2 { wgpu::CompareFunction::Always } else { wgpu::CompareFunction::LessEqual },
@@ -264,11 +311,15 @@ impl Renderer {
             multisample: Default::default(), multiview: None, cache: None
         })
         };
-        let pipeline = create_pipeline(false, false, 0);
-        let blend_pipeline = create_pipeline(true, false, 0);
-        let wire_pipeline = create_pipeline(false, true, 0);
-        let fire_pipeline = create_pipeline(true, false, 1);
-        let mask_pipeline = create_pipeline(false, false, 2);
+        let pipeline = create_pipeline(false, false, 0, false, false);
+        let blend_pipeline = create_pipeline(true, false, 0, false, false);
+        let additive_pipeline = create_pipeline(true, false, 0, true, false);
+        let wire_pipeline = create_pipeline(false, true, 0, false, false);
+        let fire_pipeline = create_pipeline(true, false, 1, false, false);
+        let mask_pipeline = create_pipeline(false, false, 2, false, false);
+        let gem_pipeline = create_pipeline(false, false, 0, false, true);
+        let gem_blend_pipeline = create_pipeline(true, false, 0, false, true);
+        let gem_wire_pipeline = create_pipeline(false, true, 0, false, true);
         let inspection = super::inspection::Inspection::take(&mut scene);
         let background = super::background::Background::new(&device, config.format);
         let mut result = Self {
@@ -279,9 +330,13 @@ impl Renderer {
             config,
             pipeline,
             blend_pipeline,
+            additive_pipeline,
             fire_pipeline,
             mask_pipeline,
             wire_pipeline,
+            gem_pipeline,
+            gem_blend_pipeline,
+            gem_wire_pipeline,
             inspection,
             display: 0,
             wireframe: false,
@@ -664,22 +719,21 @@ impl Renderer {
             });
             self.background.draw(&mut pass);
             pass.set_bind_group(0, &self.camera_group, &[]);
-            for blend in [false, true] {
-                pass.set_pipeline(if blend {
-                    &self.blend_pipeline
-                } else {
-                    &self.pipeline
-                });
+            for blend_mode in 0..3 {
+
                 for (i, mesh) in self
                     .meshes
                     .iter()
                     .enumerate()
-                    .filter(|(_, mesh)| mesh.blend == blend)
+                    .filter(|(_, mesh)| (if mesh.additive { 2 } else if mesh.blend { 1 } else { 0 }) == blend_mode)
                 {
                     if self.rig.meshes[i].surface.as_ref().is_some_and(|s| s.effect > 0) { continue; }
                     if self.hidden.contains(&i) || !self.rig.visible(i, frame_position) {
                         continue;
                     }
+                    pass.set_pipeline(if mesh.gem {
+                        if mesh.blend { &self.gem_blend_pipeline } else { &self.gem_pipeline }
+                    } else { match blend_mode { 2 => &self.additive_pipeline, 1 => &self.blend_pipeline, _ => &self.pipeline } });
                     pass.set_bind_group(1, &mesh.material, &[]);
                     pass.set_vertex_buffer(0, mesh.vertices.slice(..));
                     pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
@@ -705,12 +759,13 @@ impl Renderer {
                     }
                 }
             }
-            pass.set_pipeline(&self.wire_pipeline);
+
             for (i, mesh) in self.meshes.iter().enumerate() {
                 if (self.wireframe || selected_meshes[i])
                     && !self.hidden.contains(&i)
                     && self.rig.visible(i, frame_position)
                 {
+                    pass.set_pipeline(if mesh.gem { &self.gem_wire_pipeline } else { &self.wire_pipeline });
                     pass.set_bind_group(1, &mesh.material, &[]);
                     pass.set_vertex_buffer(0, mesh.vertices.slice(..));
                     let Some(edges) = &mesh.edges else {

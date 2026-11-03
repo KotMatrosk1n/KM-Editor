@@ -5,6 +5,7 @@ use glam::Vec3;
 pub struct Texture {
     pub width: u32,
     pub height: u32,
+    pub layers: u32,
     pub format: wgpu::TextureFormat,
     pub bytes: Vec<u8>,
     pub mips: Vec<Vec<u8>>,
@@ -16,6 +17,7 @@ pub struct Primitive {
     pub mask: Option<usize>,
     pub material: [f32; 28],
     pub blend: bool,
+    pub additive: bool,
 }
 pub struct Scene {
     pub resolution: u32,
@@ -55,6 +57,10 @@ impl<'a> Reader<'a> {
         Ok(v)
     }
 }
+// Exact native 2D states consumed by gem_sample; other tuples stay rejected.
+fn gem_wrap_supported(w: &[f32]) -> bool {
+    (w[0] == w[1] && [0.0, 1.0].contains(&w[0])) || (w[0] == 0.0 && w[1] == 1.0) || (w[0] == 1.0 && w[1] == 0.0) || (w[0] == 2.0 && w[1] == 0.0)
+}
 impl Scene {
     pub fn read(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() > 96 * 1024 * 1024 {
@@ -81,6 +87,7 @@ impl Scene {
             let width = r.count(4096)? as u32;
             let height = r.count(4096)? as u32;
             let (format, block) = match r.u32()? {
+                0x1505 => (wgpu::TextureFormat::Rgba16Float, 8),
                 0x0b01 => (wgpu::TextureFormat::Rgba8Unorm, 4),
                 0x0b06 => (wgpu::TextureFormat::Rgba8UnormSrgb, 4),
                 0x1a01 => (wgpu::TextureFormat::Bc1RgbaUnorm, 8),
@@ -91,6 +98,7 @@ impl Scene {
                 0x1c06 => (wgpu::TextureFormat::Bc3RgbaUnormSrgb, 16),
                 0x1d01 => (wgpu::TextureFormat::Bc4RUnorm, 8),
                 0x1e01 => (wgpu::TextureFormat::Bc5RgUnorm, 16),
+                0x1f05 => (wgpu::TextureFormat::Bc6hRgbFloat, 16),
                 0x2001 => (wgpu::TextureFormat::Bc7RgbaUnorm, 16),
                 0x2006 => (wgpu::TextureFormat::Bc7RgbaUnormSrgb, 16),
                 _ => return Err("KM-MODEL-UNSUPPORTED".into()),
@@ -99,6 +107,14 @@ impl Scene {
                 return Err("KM-MODEL-UNSUPPORTED".into());
             }
             let levels = if mipmapped { r.count(13)? } else { 1 };
+            let half_cube = format == wgpu::TextureFormat::Rgba16Float;
+            let bc6_cube = format == wgpu::TextureFormat::Bc6hRgbFloat;
+            let layers = if half_cube || bc6_cube { 6 } else { 1 };
+            if half_cube && (width != height || width > 512 || levels != 1)
+                || bc6_cube && (width != 128 || height != 128 || levels != 8)
+            {
+                return Err("KM-MODEL-UNSUPPORTED".into());
+            }
             let max_levels = 32 - width.max(height).leading_zeros();
             if levels == 0 || levels > max_levels as usize {
                 return Err("KM-MODEL-UNSUPPORTED".into());
@@ -110,16 +126,21 @@ impl Scene {
                 let count = r.count(64 * 1024 * 1024)?;
                 texture_bytes += count;
                 let (bw, bh) = format.block_dimensions();
-                if count != (w.div_ceil(bw) * h.div_ceil(bh) * block) as usize
+                if count != (w.div_ceil(bw) * h.div_ceil(bh) * block * layers) as usize
                     || texture_bytes > 64 * 1024 * 1024
                 {
                     return Err("KM-MODEL-UNSUPPORTED".into());
                 }
-                data.push(r.take(count)?.to_vec());
+                let pixels = r.take(count)?;
+                if half_cube && pixels.chunks_exact(2).any(|word| u16::from_le_bytes(word.try_into().unwrap()) & 0x7c00 == 0x7c00) {
+                    return Err("KM-MODEL-UNSUPPORTED".into());
+                }
+                data.push(pixels.to_vec());
             }
             textures.push(Texture {
                 width,
                 height,
+                layers,
                 format,
                 bytes: data.remove(0),
                 mips: data,
@@ -163,7 +184,12 @@ impl Scene {
             for value in &mut material {
                 *value = r.float()?;
             }
-            let blend = r.u32()? != 0;
+            let blend_mode = r.u32()?;
+            if blend_mode > 2 {
+                return Err("KM-MODEL-UNSUPPORTED".into());
+            }
+            let blend = blend_mode != 0;
+            let additive = blend_mode == 2;
             let mut vertices = Vec::with_capacity(vertex_count * 16);
             for _ in 0..vertex_count {
                 let pos = Vec3::new(r.float()?, r.float()?, r.float()?);
@@ -203,6 +229,7 @@ impl Scene {
                 mask,
                 material,
                 blend,
+                additive,
             });
         }
         let metadata_size = r.count(16 * 1024 * 1024)?;
@@ -216,12 +243,18 @@ impl Scene {
             }) {
                 return Err("KM-MODEL-UNSUPPORTED".into());
             }
+            if primitive.texture.is_some_and(|i| textures[i].layers != 1)
+                || primitive.mask.is_some_and(|i| textures[i].layers != 1)
+                || mesh.tangent0.as_ref().is_some_and(|t| t.len() != primitive.vertices.len() / 4
+                    || t.iter().any(|v| !v.is_finite() || v.abs() > 1_000_000.0)) {
+                return Err("KM-MODEL-UNSUPPORTED".into());
+            }
             if let Some(surface) = &mesh.surface {
                 if surface.values.len() != 41
                     || !surface.constant_color_base.is_empty() && surface.constant_color_base.len() != 3
                     || surface.constant_color_base.iter().any(|v| !v.is_finite() || v.abs() > 1_000_000.0)
-                    || surface.restoration_effect > 4
-                    || surface.restoration_effect > 0 && surface.restoration_values.len() != 10
+                    || surface.restoration_effect > 10 || surface.restoration_effect == 9
+                    || surface.restoration_effect > 0 && surface.restoration_values.len() != if matches!(surface.restoration_effect, 5 | 6 | 10) { 15 } else { 10 }
                     || surface.layer_emission && surface.effect != 0
                     || surface.surface_layers
                         && (surface.layer_emission || surface.effect != 0 || mesh.secondary_uv.is_none())
@@ -244,8 +277,33 @@ impl Scene {
                     return Err("KM-MODEL-UNSUPPORTED".into());
                 }
             }
-            if mesh.highlight.is_some_and(|index| index >= texture_count)
-                || mesh.underlay.is_some_and(|index| index >= texture_count)
+            if let Some(surface) = &mesh.surface {
+                if surface.textures.iter().filter_map(|i| usize::try_from(*i).ok()).any(|i| textures[i].layers != 1)
+                    || surface.gem_probe_texture.is_some_and(|i| i >= texture_count
+                        || textures[i].format != wgpu::TextureFormat::Rgba16Float)
+                    || (surface.restoration_effect == 10) != surface.gem_probe_texture.is_some() {
+                    return Err("KM-MODEL-UNSUPPORTED".into());
+                }
+                if surface.restoration_effect == 10 {
+                    let selectors = &surface.restoration_values[10][..2];
+                    let variant = surface.restoration_values[10][2];
+                    let masked = variant == 6.0;
+                    let wraps = [&primitive.material[24..26], &mesh.underlay_wrap[..2], &surface.wraps[0][..2], &surface.wraps[2][..2], &surface.wraps[7][..2]];
+                    if surface.layer_emission || surface.surface_layers || surface.effect != 0 || primitive.additive
+                        || primitive.texture.is_none() || primitive.mask.is_some() != masked || mesh.underlay.is_none() || mesh.tangent0.is_none()
+                        || ![0.0, 6.0].contains(&variant) || surface.restoration_values[10][3] != 0.0
+                        || masked && selectors.iter().any(|v| *v != 0.0)
+                        || masked && !gem_wrap_supported(&primitive.material[26..28])
+                        || selectors.iter().any(|v| ![-1.0, 0.0, 1.0].contains(v))
+                        || selectors.contains(&1.0) && mesh.secondary_uv.is_none()
+                        || surface.textures.iter().enumerate().any(|(i,t)| if [0,2,7].contains(&i) { *t < 0 } else { *t != -1 })
+                        || wraps.iter().any(|w| !gem_wrap_supported(w)) {
+                        return Err("KM-MODEL-UNSUPPORTED".into());
+                    }
+                }
+            }
+            if mesh.highlight.is_some_and(|index| index >= texture_count || textures[index].layers != 1)
+                || mesh.underlay.is_some_and(|index| index >= texture_count || textures[index].layers != 1)
                 || mesh
                     .mask_uv
                     .iter()
