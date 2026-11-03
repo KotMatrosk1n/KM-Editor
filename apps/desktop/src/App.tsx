@@ -2,6 +2,7 @@ import { evolutionDraftFields, evolutionDraftsEqual, orderEvolutionDraftRows, pl
 import { learnsetDraftsEqual, projectLearnsetDraftRows, replaceLearnsetDraftRecord, replaceLearnsetDrafts, settleLearnsetDrafts, stagedLearnsetSlotMap, type PokemonLearnsetLocalDraft } from './features/pokemon/learnsetDrafts';
 import { LearnsetClipboardActions } from './features/pokemon/LearnsetClipboardActions';
 import { InteractiveTableRow, VirtualTableBody } from './components/VirtualTable';
+import { EditorWorkspaceHeader, EditorWorkspaceSection, SectionedEditorWorkspace } from './components/SectionedEditorWorkspace';
 import { PokemonSearchBox, PokemonTable, filterPokemonRecords, formatPokemonTypes, type PokemonSelectionRecord } from './components/PokemonSelection';
 import { stageModelAsset, stageModelTexture } from './features/model-viewer/modelTextureBridge';
 /* SPDX-License-Identifier: GPL-3.0-only */
@@ -22997,17 +22998,7 @@ function ItemsSection({
   );
   const secondaryPriceLabels = getItemSecondaryPriceLabels(editorFamily);
 
-  return (
-    <>
-      <section
-        aria-labelledby="items-heading"
-        className={`panel wide-panel ${editorFamily}-editor-surface ${editorFamily}-items-section`}
-      >
-        <div className="panel-heading">
-          <Package aria-hidden="true" size={18} />
-          <h2 id="items-heading">Items</h2>
-        </div>
-
+  const browserControls = (
         <div className="items-toolbar">
           <label className="search-box items-search">
             <Search aria-hidden="true" size={18} />
@@ -23052,7 +23043,9 @@ function ItemsSection({
             value={(editSession?.pendingEdits.length ?? 0).toString()}
           />
         </div>
+  );
 
+  const editorHeader = <>
         {workflow ? (
           <EditorSessionBar
             canEdit={canEditItems && selectedItem !== null}
@@ -23099,9 +23092,20 @@ function ItemsSection({
             </button>
           </div>
         ) : null}
+  </>;
 
+  return (
+    <>
+      <section
+        aria-labelledby="items-heading"
+        className={`panel wide-panel ${editorFamily}-editor-surface ${editorFamily}-items-section`}
+      >
+        <div className="panel-heading">
+          <Package aria-hidden="true" size={18} />
+          <h2 id="items-heading">Items</h2>
+        </div>
         {workflow ? (
-          <div className="items-layout">
+          <SelectedItemPanel browserControls={browserControls} editorHeader={editorHeader} browser={
             <div
               aria-colcount={8}
               aria-label="Items"
@@ -23142,8 +23146,7 @@ function ItemsSection({
                 )}
               />
             </div>
-
-            <SelectedItemPanel
+            }
               canEditItems={canEditItems}
               editSession={editSession}
               editorFamily={editorFamily}
@@ -23162,7 +23165,6 @@ function ItemsSection({
               ordinaryDraftProject={ordinaryDraftProject}
               pokemonWorkflow={pokemonWorkflow}
             />
-          </div>
         ) : (
           <p className="empty-copy">Open Items from Workflows to load backend item data.</p>
         )}
@@ -23189,6 +23191,9 @@ type ItemEditorDraftPayload = OrdinaryFieldDraftPayload & {
 };
 
 function SelectedItemPanel({
+  browser,
+  browserControls,
+  editorHeader,
   canEditItems,
   editSession,
   editorFamily,
@@ -23207,6 +23212,9 @@ function SelectedItemPanel({
   ordinaryDraftProject,
   pokemonWorkflow
 }: {
+  browser: ReactNode;
+  browserControls: ReactNode;
+  editorHeader: ReactNode;
   canEditItems: boolean;
   editSession: EditSession | null;
   editorFamily: EditorUiFamily;
@@ -23232,7 +23240,7 @@ function SelectedItemPanel({
   ordinaryDraftProject: OrdinaryDraftProjectContext | null;
   pokemonWorkflow: PokemonWorkflow | null;
 }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const [fieldDraftsByItemId, setFieldDraftsByItemId] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -23606,7 +23614,10 @@ function SelectedItemPanel({
   ]);
 
   return (
-    <aside aria-label="Selected item provenance" className="item-inspector">
+    <SectionedEditorWorkspace sessionKey={`${ordinaryDraftProject?.projectId ?? 'project'}:${editorFamily}:items`}
+      browser={browser} browserControls={browserControls}>
+      <EditorWorkspaceHeader>
+      {editorHeader}
       <PublishedLocalEditorValidationDiagnostics
         domain="workflow.items"
         issues={itemDraftSummary.invalidFields}
@@ -23623,18 +23634,15 @@ function SelectedItemPanel({
           summary="No item selected."
         />
       ) : null}
-      <div className="panel-heading">
-        <ShieldCheck aria-hidden="true" size={18} />
-        <h3>Selected Item</h3>
-      </div>
-
       <PublishedInlineEditorError
         domain="workflow.items"
         message={itemSourceMutationError}
       />
+      </EditorWorkspaceHeader>
 
       {item ? (
         <>
+          <EditorWorkspaceSection id="details" label={t('editorSections.details')}>
           <dl className="item-provenance-list">
             <div>
               <dt>Name</dt>
@@ -23642,7 +23650,7 @@ function SelectedItemPanel({
             </div>
             <div>
               <dt>Source file</dt>
-              <dd>{item.provenance.sourceFile}</dd>
+              <dd className="pokemon-source-path" data-localization-ignore="true" title={item.provenance.sourceFile}>{item.provenance.sourceFile}</dd>
             </div>
             <div>
               <dt>Layer</dt>
@@ -23705,7 +23713,11 @@ function SelectedItemPanel({
               </>
             ) : null}
           </dl>
+          </EditorWorkspaceSection>
 
+          <EditorWorkspaceSection id="itemData" label={translateLiteral('Item Data')}
+            modified={itemDraftSummary.changedFields.length > 0 || itemDraftSummary.invalidFields.length > 0}
+            invalid={itemDraftSummary.invalidFields.length > 0}>
           <div className="item-edit-form">
             {editSession ? (
               <EditorSessionBarActions>
@@ -23931,8 +23943,11 @@ function SelectedItemPanel({
               </div>
             ) : null}
           </div>
+          </EditorWorkspaceSection>
 
           {showTechnicalMachineCompatibility ? (
+            <EditorWorkspaceSection id="compatibility" label={t('za.items.compatibility.heading')}
+              modified={localTechnicalMachineCompatibilityDraftCount > 0} invalid={hasUnavailableTechnicalMachineCompatibilityDrafts || hasConflictingTechnicalMachineDrafts}>
             <section className="inspector-block za-tm-compatibility-block">
               <div className="za-tm-compatibility-heading">
                 <h4>{t('za.items.compatibility.heading')}</h4>
@@ -24090,9 +24105,11 @@ function SelectedItemPanel({
                 </div>
               )}
             </section>
+            </EditorWorkspaceSection>
           ) : null}
 
           {item.detailGroups.map((group) => (
+            <EditorWorkspaceSection id={`detail-${encodeURIComponent(group.label)}`} label={translateLiteral(group.label)} key={group.label}>
             <section className="inspector-block" key={group.label}>
               <h4>{group.label}</h4>
               <dl className="item-provenance-list compact-dl">
@@ -24104,12 +24121,13 @@ function SelectedItemPanel({
                 ))}
               </dl>
             </section>
+            </EditorWorkspaceSection>
           ))}
         </>
       ) : (
         <p className="empty-copy">No item selected.</p>
       )}
-    </aside>
+    </SectionedEditorWorkspace>
   );
 }
 
@@ -24268,17 +24286,7 @@ function PokemonSection({
     <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
   );
 
-  return (
-    <>
-      <section
-        aria-labelledby="pokemon-heading"
-        className={`panel wide-panel ${editorFamily}-editor-surface ${editorFamily}-pokemon-section`}
-      >
-        <div className="panel-heading">
-          <Dna aria-hidden="true" size={18} />
-          <h2 id="pokemon-heading">Pokemon</h2>
-        </div>
-
+  const pokemonBrowserControls = (
         <div className="items-toolbar pokemon-toolbar">
           <PokemonSearchBox disabled={!workflow} value={searchText} onChange={onSearchChange} />
           <div className="pokemon-toolbar-side">
@@ -24336,10 +24344,22 @@ function PokemonSection({
             </div>
           </div>
         </div>
+  );
 
+  return (
+    <>
+      <section
+        aria-labelledby="pokemon-heading"
+        className={`panel wide-panel ${editorFamily}-editor-surface ${editorFamily}-pokemon-section`}
+      >
+        <div className="panel-heading">
+          <Dna aria-hidden="true" size={18} />
+          <h2 id="pokemon-heading">Pokemon</h2>
+        </div>
         {workflow ? (
-          <div className={`items-layout ${editorFamily}-pokemon-layout`}>
+          <div className={`items-layout ${editorFamily}-pokemon-layout sectioned-pokemon-layout`}>
             <SelectedPokemonPanel
+              browserControls={pokemonBrowserControls}
               canEditPokemon={canEditPokemon}
               editSession={editSession}
               editorFamily={editorFamily}
@@ -24459,7 +24479,7 @@ function SelectedPokemonSummaryCard({
           <>
             <div>
               <dt>Source file</dt>
-              <dd>{pokemon.provenance.sourceFile}</dd>
+              <dd className="pokemon-source-path" data-localization-ignore="true" title={pokemon.provenance.sourceFile}>{pokemon.provenance.sourceFile}</dd>
             </div>
             <div>
               <dt>Layer</dt>
@@ -24861,6 +24881,7 @@ function formatPokemonDexKind(kind: PokemonDexPlacement['dexKind']) {
 }
 
 function SelectedPokemonPanel({
+  browserControls,
   canEditPokemon,
   dexEditor,
   editSession,
@@ -24885,6 +24906,7 @@ function SelectedPokemonPanel({
   pokemonRecords,
   selectedPokemonEvolutionSlot
 }: {
+  browserControls: ReactNode;
   canEditPokemon: boolean;
   dexEditor: PokemonDexEditor | null;
   editSession: EditSession | null;
@@ -26151,14 +26173,16 @@ function SelectedPokemonPanel({
     newLearnsetMoveOptions
   );
   const parsedNewLearnsetLevel = parseEditableIntegerDraft(newLearnsetLevelDraft);
-  const canAddLearnsetMove =
-    canModifyLearnsetStructure &&
-    !isPokemonUpdating &&
-    (editorFamily !== 'swsh' || localLearnsetRows.length < swshPokemonMaximumLearnsetRows) &&
+  const isNewLearnsetDraftValid =
     isIntegerInRange(parsedNewLearnsetMoveId, 0, pokemonMaximumUshortValue) &&
     isIntegerInRange(parsedNewLearnsetLevel, 0, learnsetMaximumLevel) &&
     (editorFamily !== 'swsh' ||
       isValidSwShLearnsetMove(parsedNewLearnsetMoveId, learnsetMoveOptions));
+  const canAddLearnsetMove =
+    canModifyLearnsetStructure &&
+    !isPokemonUpdating &&
+    (editorFamily !== 'swsh' || localLearnsetRows.length < swshPokemonMaximumLearnsetRows) &&
+    isNewLearnsetDraftValid;
   const moveLearnsetRow = useCallback(
     async (sourceSlot: number, targetSlot: number, _action: string) => {
       if (!pokemon || !canModifyLearnsetStructure) return false;
@@ -26294,10 +26318,7 @@ function SelectedPokemonPanel({
     !isPokemonUpdating &&
     pokemonDraftChangedCount > 0 &&
     pokemonDraftInvalidCount === 0;
-  const canAddEvolution =
-    canModifyEvolutionStructure &&
-    !isPokemonUpdating &&
-    (editorFamily !== 'swsh' || orderedEvolutions.length < swshPokemonMaximumEvolutionRows) &&
+  const isNewEvolutionDraftValid =
     isIntegerInRange(parsedNewEvolutionMethod, 0, pokemonMaximumUshortValue) &&
     isIntegerInRange(parsedNewEvolutionArgument, 0, pokemonMaximumUshortValue) &&
     isIntegerInRange(parsedNewEvolutionSpecies, 0, pokemonMaximumUshortValue) &&
@@ -26312,6 +26333,11 @@ function SelectedPokemonPanel({
         evolutionMethodOptions,
         pokemonSpeciesOptions
       ));
+  const canAddEvolution =
+    canModifyEvolutionStructure &&
+    !isPokemonUpdating &&
+    (editorFamily !== 'swsh' || orderedEvolutions.length < swshPokemonMaximumEvolutionRows) &&
+    isNewEvolutionDraftValid;
   const handleSelectedEvolutionSpeciesChange = (value: string) => {
     const previousSpeciesId = parseEditableIntegerDraft(
       evolutionSpeciesDraft,
@@ -26554,15 +26580,45 @@ function SelectedPokemonPanel({
       setDexSwapDraftsByPokemonId({});
     });
 
+  const workingPersonalLabel = (field: string, fallback: ReactNode): ReactNode => {
+    const draft = personalDrafts[field];
+    if (draft === undefined || (pokemon && draft === String(getEditablePersonalFieldValue(pokemon, field)))) return fallback;
+    const definition = contextualPersonalFields.find(candidate => candidate.field === field);
+    return definition?.options.find(option => String(option.value) === draft)?.label ?? draft;
+  };
+  const detailsPokemon = pokemon ? {
+    ...pokemon,
+    type1: String(workingPersonalLabel('type1', pokemon.type1)),
+    type2: String(workingPersonalLabel('type2', pokemon.type2)),
+    dexPresence: {
+      ...pokemon.dexPresence,
+      isPresentInGame: personalDrafts.isPresentInGame === undefined ? pokemon.dexPresence.isPresentInGame : personalDrafts.isPresentInGame === '1',
+      regionalDexIndex: parseOptionalInteger(personalDrafts.regionalDexIndex ?? '') ?? pokemon.dexPresence.regionalDexIndex,
+      armorDexIndex: parseOptionalInteger(personalDrafts.armorDexIndex ?? '') ?? pokemon.dexPresence.armorDexIndex,
+      crownDexIndex: parseOptionalInteger(personalDrafts.crownDexIndex ?? '') ?? pokemon.dexPresence.crownDexIndex
+    }
+  } : null;
+  const workingStats = ['hp', 'attack', 'defense', 'specialAttack', 'specialDefense', 'speed']
+    .map(field => parseOptionalInteger(personalDrafts[field] ?? String(pokemon ? getEditablePersonalFieldValue(pokemon, field) ?? '' : '')));
+  const hasNewEvolutionDraft = pokemonDraftRecordKey !== null && !!newEvolutionDraftsByPokemonId[pokemonDraftRecordKey];
+  const hasNewLearnsetDraft = pokemonDraftRecordKey !== null && !!newLearnsetDraftsByPokemonId[pokemonDraftRecordKey];
+
   return (
-    <aside
-      aria-label="Selected Pokemon provenance"
-      className={`item-inspector ${editorFamily}-pokemon-inspector`}
+    <SectionedEditorWorkspace
+      sessionKey={`${ordinaryDraftProject?.projectId ?? 'project'}:${editorFamily}:pokemon`}
+      browser={pokemonTable}
+      browserControls={browserControls}
+      browserVisibleRows={5}
     >
+      <EditorWorkspaceHeader>
       <PublishedLocalEditorValidationDiagnostics
         domain="workflow.pokemon"
         issues={[
-          ...personalDraftSummary.invalidFields,
+          ...personalDraftSummary.invalidFields.map(issue => ({ ...issue,
+            label: issue.field === 'materialDropItem' ? t('pokemon.materialDrops.item')
+              : issue.field === 'materialDropRate' ? t('pokemon.materialDrops.rate')
+              : issue.field === 'materialDropCount' ? t('pokemon.materialDrops.count') : issue.label
+          })),
           ...(!alphaMoveDraftState.isValid
             ? [{
                 field: 'alphaMoveId',
@@ -26653,24 +26709,20 @@ function SelectedPokemonPanel({
         </EditorSessionBarActions>
       ) : null}
 
-      <div className={`${editorFamily}-pokemon-selected-stack`}>
-        <div className="panel-heading">
-          <ShieldCheck aria-hidden="true" size={18} />
-          <h3>Selected Pokemon</h3>
-        </div>
-
         <PublishedInlineEditorError
           domain="workflow.pokemon"
           message={pokemonSourceMutationError}
         />
+      </EditorWorkspaceHeader>
 
-        {pokemon ? (
+        {pokemon && detailsPokemon ? (
           <>
+          <EditorWorkspaceSection id="details" label={t('editorSections.details')}>
+          <div className="pokemon-details-grid">
             <SelectedPokemonSummaryCard
               dexEditor={dexEditor}
               editorFamily={editorFamily}
-              pokemon={pokemon}
-              showIdentity={false}
+              pokemon={detailsPokemon}
             />
 
           <div className={`inspector-block ${editorFamily}-pokemon-stats-block`}>
@@ -26678,31 +26730,31 @@ function SelectedPokemonPanel({
             <dl className="item-provenance-list compact-dl">
               <div>
                 <dt>HP</dt>
-                <dd>{pokemon.baseStats.hp}</dd>
+                <dd>{workingPersonalLabel('hp', pokemon.baseStats.hp)}</dd>
               </div>
               <div>
                 <dt>Attack</dt>
-                <dd>{pokemon.baseStats.attack}</dd>
+                <dd>{workingPersonalLabel('attack', pokemon.baseStats.attack)}</dd>
               </div>
               <div>
                 <dt>Defense</dt>
-                <dd>{pokemon.baseStats.defense}</dd>
+                <dd>{workingPersonalLabel('defense', pokemon.baseStats.defense)}</dd>
               </div>
               <div>
                 <dt>Sp. Atk</dt>
-                <dd>{pokemon.baseStats.specialAttack}</dd>
+                <dd>{workingPersonalLabel('specialAttack', pokemon.baseStats.specialAttack)}</dd>
               </div>
               <div>
                 <dt>Sp. Def</dt>
-                <dd>{pokemon.baseStats.specialDefense}</dd>
+                <dd>{workingPersonalLabel('specialDefense', pokemon.baseStats.specialDefense)}</dd>
               </div>
               <div>
                 <dt>Speed</dt>
-                <dd>{pokemon.baseStats.speed}</dd>
+                <dd>{workingPersonalLabel('speed', pokemon.baseStats.speed)}</dd>
               </div>
               <div>
                 <dt>Total</dt>
-                <dd>{pokemon.baseStats.total}</dd>
+                <dd>{workingStats.every(value => value !== null) ? workingStats.reduce<number>((sum, value) => sum + (value ?? 0), 0) : '-'}</dd>
               </div>
             </dl>
           </div>
@@ -26712,38 +26764,42 @@ function SelectedPokemonPanel({
             <dl className="item-provenance-list compact-dl">
               <div>
                 <dt>Ability 1</dt>
-                <dd data-localization-ignore="true">{pokemon.abilities.ability1Label}</dd>
+                <dd data-localization-ignore="true">{workingPersonalLabel('ability1', pokemon.abilities.ability1Label)}</dd>
               </div>
               <div>
                 <dt>Ability 2</dt>
-                <dd data-localization-ignore="true">{pokemon.abilities.ability2Label}</dd>
+                <dd data-localization-ignore="true">{workingPersonalLabel('ability2', pokemon.abilities.ability2Label)}</dd>
               </div>
               <div>
                 <dt>Hidden</dt>
-                <dd data-localization-ignore="true">{pokemon.abilities.hiddenAbilityLabel}</dd>
+                <dd data-localization-ignore="true">{workingPersonalLabel('hiddenAbility', pokemon.abilities.hiddenAbilityLabel)}</dd>
               </div>
               <div>
                 <dt>Catch rate</dt>
-                <dd>{pokemon.catchRate}</dd>
+                <dd>{workingPersonalLabel('catchRate', pokemon.catchRate)}</dd>
               </div>
               <div>
                 <dt>Base EXP</dt>
-                <dd>{pokemon.baseExperience}</dd>
+                <dd>{workingPersonalLabel('baseExperience', pokemon.baseExperience)}</dd>
               </div>
               <div>
                 <dt>Gender</dt>
-                <dd>{pokemon.genderRatioLabel}</dd>
+                <dd>{workingPersonalLabel('genderRatio', pokemon.genderRatioLabel)}</dd>
               </div>
               <div>
                 <dt>Height / weight</dt>
                 <dd>
-                  {pokemon.height} / {pokemon.weight}
+                  {workingPersonalLabel('height', pokemon.height)} / {workingPersonalLabel('weight', pokemon.weight)}
                 </dd>
               </div>
             </dl>
           </div>
+          </div>
+          </EditorWorkspaceSection>
 
-          {editorFamily === 'za' ? (
+          {editorFamily === 'za' && alphaMove ? (
+            <EditorWorkspaceSection id="alphaMove" label={translateLiteral('Alpha Move')}
+              modified={alphaMoveDraftState.isChanged} invalid={!alphaMoveDraftState.isValid}>
             <div className="inspector-block za-pokemon-alpha-move-block">
               <h4>Alpha Move</h4>
               {alphaMove ? (
@@ -26790,6 +26846,7 @@ function SelectedPokemonPanel({
                       label={translateLiteral('Alpha-exclusive move')}
                     />
                     <SearchableOptionInput
+                      wrapSelectedValue
                       ariaLabel={translateLiteral('Alpha-exclusive move')}
                       ariaDescribedBy={alphaMoveDescriptionIds || undefined}
                       ariaInvalid={alphaMoveDraftState.error ? true : undefined}
@@ -26869,9 +26926,16 @@ function SelectedPokemonPanel({
                 </p>
               )}
             </div>
+            </EditorWorkspaceSection>
           ) : null}
 
           {editorFamily === 'za' && dexEditor ? (
+            <EditorWorkspaceSection id="dexPlacement" label={translateLiteral('Pokédex Placement')}
+              modified={selectedDexSwapDraft !== null}
+              invalid={selectedDexSwapDraft !== null && !dexEditor.placements.some(placement =>
+                placement.dexKind === selectedDexSwapDraft.destinationDexKind &&
+                placement.speciesId !== pokemon.speciesId &&
+                placement.speciesId === parseEditableIntegerDraft(selectedDexSwapDraft.target))}>
             <ZaPokemonDexPlacementEditor
               canEditPokemon={canEditPokemon}
               dexEditor={dexEditor}
@@ -26893,15 +26957,22 @@ function SelectedPokemonPanel({
               }
               pokemon={pokemon}
             />
+            </EditorWorkspaceSection>
           ) : null}
 
+          <EditorWorkspaceSection id="speciesData" label={t('editorSections.speciesData')}
+            modified={personalDraftSummary.changedFields.length > 0 || personalDraftSummary.invalidFields.length > 0}
+            invalid={personalDraftSummary.invalidFields.length > 0}>
           <div className={`inspector-block ${editorFamily}-pokemon-personal-edit-block`}>
-            <h4>Personal Edit</h4>
+            <h4>{t('editorSections.speciesData')}</h4>
             <div className="editable-field-groups">
               {personalFieldGroups.map((group) => (
                 <fieldset className={`editable-field-group ${group.group === 'Alpha Size' ? 'alpha-size-group' : ''}`} key={group.group}>
-                  <legend>{translateLiteral(group.group)}</legend>
+                  <legend>{editorFamily === 'sv' && group.group === 'Material Drops' ? t('pokemon.materialDrops.title') : translateLiteral(group.group)}</legend>
                   {group.group === 'Alpha Size' ? <AlphaSizeHelp /> : null}
+                  {editorFamily === 'sv' && group.group === 'Material Drops' ? (
+                    <p className="muted">{t(pokemon.materialDrop ? 'pokemon.materialDrops.help' : 'pokemon.materialDrops.unavailable')}</p>
+                  ) : null}
                   <div className="editable-field-grid">
                     {group.fields.map((field) => {
                       const currentValue = pokemon
@@ -26921,6 +26992,7 @@ function SelectedPokemonPanel({
                           disabled={
                             !canEditPokemon ||
                             editSession === null ||
+                            (field.field.startsWith('materialDrop') && !pokemon.materialDrop) ||
                             (field.field === formFieldName && pokemon.personal.formCount <= 1)
                           }
                           disabledReason={
@@ -26963,16 +27035,15 @@ function SelectedPokemonPanel({
               ))}
             </div>
           </div>
+          </EditorWorkspaceSection>
           </>
-        ) : (
-          <p className="empty-copy">No Pokemon selected.</p>
-        )}
-      </div>
+        ) : null}
 
-      <div className={`${editorFamily}-pokemon-left-stack`}>
-        {pokemonTable}
       {pokemon ? (
         <>
+          <EditorWorkspaceSection id="learnset" label={translateLiteral('Learnset')}
+            modified={learnsetDraftReview.changes.length > 0 || learnsetDraftReview.invalidCount > 0 || hasNewLearnsetDraft}
+            invalid={learnsetDraftReview.invalidCount > 0 || (hasNewLearnsetDraft && !isNewLearnsetDraftValid)}>
           <div className={`inspector-block ${editorFamily}-pokemon-learnset-block`}>
             <h4>Learnset</h4>
             <LearnsetClipboardActions family={editorFamily}
@@ -27219,6 +27290,7 @@ function SelectedPokemonPanel({
                               />
                               {learnsetMoveOptionsForDraft.length > 0 ? (
                                 <SearchableOptionInput
+                                  wrapSelectedValue
                                   ariaLabel={translateLiteral('Move')}
                                   disabled={!canEditLearnsetFields}
                                   id={`pokemon-learnset-${pokemon.personalId}-${move.slot}-move`}
@@ -27412,6 +27484,7 @@ function SelectedPokemonPanel({
                   />
                   {newLearnsetMoveOptions.length > 0 ? (
                     <SearchableOptionInput
+                      wrapSelectedValue
                       ariaLabel={translateLiteral('New move')}
                       disabled={!canEditLearnset}
                       id="pokemon-learnset-new-move"
@@ -27491,10 +27564,14 @@ function SelectedPokemonPanel({
               </div>
             </div>
           </div>
+          </EditorWorkspaceSection>
 
+          {pokemon.compatibility.length > 0 ? <EditorWorkspaceSection id="compatibility" label={t('editorSections.moveCompatibility')}
+            modified={compatibilityDraftReview.changes.length > 0 || compatibilityDraftReview.invalidCount > 0}
+            invalid={compatibilityDraftReview.invalidCount > 0}>
           <div className={`inspector-block ${editorFamily}-pokemon-compatibility-block`}>
             <div className="compatibility-heading">
-              <h4>Compatibility</h4>
+              <h4>{t('editorSections.moveCompatibility')}</h4>
               <CompatibilityActions group={selectedCompatibilityGroup} disabled={!canToggleCompatibility} onChange={updateCompatibilityDrafts} />
             </div>
             {pokemon.compatibility.length > 0 ? (
@@ -27507,6 +27584,7 @@ function SelectedPokemonPanel({
                       label={translateLiteral('Compatibility group')}
                     />
                     <SearchableOptionInput
+                      wrapSelectedValue
                       ariaLabel={translateLiteral('Compatibility group')}
                       data-km-source-site="pokemon-compatibility-group-option"
                       disabled={false}
@@ -27566,7 +27644,11 @@ function SelectedPokemonPanel({
               <p className="empty-copy">No compatibility data.</p>
             )}
           </div>
+          </EditorWorkspaceSection> : null}
 
+          <EditorWorkspaceSection id="evolutions" label={translateLiteral('Evolutions')}
+            modified={evolutionDraftReview.changes.length > 0 || evolutionDraftReview.invalidCount > 0 || hasNewEvolutionDraft}
+            invalid={evolutionDraftReview.invalidCount > 0 || (hasNewEvolutionDraft && !isNewEvolutionDraftValid)}>
           <div className={`inspector-block ${editorFamily}-pokemon-evolutions-block`}>
             <h4>Evolutions</h4>
             <div className="learnset-editor">
@@ -27661,6 +27743,7 @@ function SelectedPokemonPanel({
                       label={translateLiteral('Method')}
                     />
                     <SearchableOptionInput
+                      wrapSelectedValue
                       ariaLabel={translateLiteral('Method')}
                       disabled={!canEditEvolutionFields}
                       id="pokemon-evolution-method"
@@ -27696,6 +27779,7 @@ function SelectedPokemonPanel({
                     {usesEvolutionArgumentSelector(selectedEvolutionMethodOption) &&
                     selectedEvolutionArgumentOptions.length > 0 ? (
                       <SearchableOptionInput
+                        wrapSelectedValue
                         ariaLabel={translateLiteral(
                           selectedEvolutionMethodOption?.argumentLabel ?? 'Argument'
                         )}
@@ -27734,6 +27818,7 @@ function SelectedPokemonPanel({
                     />
                     {pokemonSpeciesOptions.length > 0 ? (
                       <SearchableOptionInput
+                        wrapSelectedValue
                         ariaLabel={translateLiteral('Species')}
                         disabled={!canEditEvolutionFields}
                         id="pokemon-evolution-species"
@@ -27767,6 +27852,7 @@ function SelectedPokemonPanel({
                       label={translateLiteral('Form')}
                     />
                     <SearchableOptionInput
+                      wrapSelectedValue
                       ariaLabel={translateLiteral('Form')}
                       disabled={!canEditEvolutionFields}
                       id="pokemon-evolution-form"
@@ -27889,6 +27975,7 @@ function SelectedPokemonPanel({
                     label={translateLiteral('New method')}
                   />
                   <SearchableOptionInput
+                    wrapSelectedValue
                     ariaLabel={translateLiteral('New method')}
                     disabled={!canEditEvolution}
                     id="pokemon-new-evolution-method"
@@ -27918,6 +28005,7 @@ function SelectedPokemonPanel({
                   {usesEvolutionArgumentSelector(newEvolutionMethodOption) &&
                   newEvolutionArgumentOptions.length > 0 ? (
                     <SearchableOptionInput
+                      wrapSelectedValue
                       ariaLabel={translateLiteral(
                         newEvolutionMethodOption?.argumentLabel ?? 'New argument'
                       )}
@@ -27950,6 +28038,7 @@ function SelectedPokemonPanel({
                   />
                   {pokemonSpeciesOptions.length > 0 ? (
                     <SearchableOptionInput
+                      wrapSelectedValue
                       ariaLabel={translateLiteral('New species')}
                       disabled={!canEditEvolution}
                       id="pokemon-new-evolution-species"
@@ -27983,6 +28072,7 @@ function SelectedPokemonPanel({
                     label={translateLiteral('New form')}
                   />
                   <SearchableOptionInput
+                    wrapSelectedValue
                     ariaLabel={translateLiteral('New form')}
                     disabled={!canEditEvolution}
                     id="pokemon-new-evolution-form"
@@ -28045,10 +28135,10 @@ function SelectedPokemonPanel({
               </div>
             </div>
           </div>
+          </EditorWorkspaceSection>
         </>
       ) : null}
-      </div>
-    </aside>
+    </SectionedEditorWorkspace>
   );
 }
 
@@ -28111,14 +28201,7 @@ function MovesSection({
       )
     : null;
 
-  return (
-    <>
-      <section aria-labelledby="moves-heading" className="panel wide-panel">
-        <div className="panel-heading">
-          <Zap aria-hidden="true" size={18} />
-          <h2 id="moves-heading">Moves</h2>
-        </div>
-
+  const browserControls = (
         <div className="items-toolbar moves-toolbar">
           <label className="search-box items-search">
             <Search aria-hidden="true" size={18} />
@@ -28144,7 +28227,9 @@ function MovesSection({
             value={workflow ? workflow.stats.activeFlagCount.toString() : '0'}
           />
         </div>
+  );
 
+  const editorHeader = <>
         {workflow ? (
           <EditorSessionBar
             canEdit={canEditMoves && selectedMove !== null}
@@ -28154,9 +28239,17 @@ function MovesSection({
             onStart={onStartEditSession}
           />
         ) : null}
+  </>;
 
+  return (
+    <>
+      <section aria-labelledby="moves-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <Zap aria-hidden="true" size={18} />
+          <h2 id="moves-heading">Moves</h2>
+        </div>
         {workflow ? (
-          <div className="items-layout moves-layout">
+          <SelectedMovePanel browserControls={browserControls} editorHeader={editorHeader} browser={
             <div
               aria-colcount={8}
               aria-label="Moves"
@@ -28255,8 +28348,7 @@ function MovesSection({
                 }}
               />
             </div>
-
-            <SelectedMovePanel
+            }
               baselineValues={
                 selectedMove
                   ? (baselineValuesByMoveId[selectedMove.moveId.toString()] ?? null)
@@ -28287,7 +28379,6 @@ function MovesSection({
               selectedRuntimeVariant={selectedRuntimeVariant}
               scriptedBosses={workflow.scriptedBosses}
             />
-          </div>
         ) : (
           <p className="empty-copy">Open Moves from the sidebar to load backend move data.</p>
         )}
@@ -28896,6 +28987,9 @@ function MovePlayerDamageDescriptor({
 }
 
 function SelectedMovePanel({
+  browser,
+  browserControls,
+  editorHeader,
   baselineValues,
   canEditMoves,
   editSession,
@@ -28913,6 +29007,9 @@ function SelectedMovePanel({
   selectedRuntimeVariant,
   scriptedBosses
 }: {
+  browser: ReactNode;
+  browserControls: ReactNode;
+  editorHeader: ReactNode;
   baselineValues: Record<string, number | null> | null;
   canEditMoves: boolean;
   editSession: EditSession | null;
@@ -29285,7 +29382,10 @@ function SelectedMovePanel({
     : null;
 
   return (
-    <aside aria-label="Selected move details" className="item-inspector">
+    <SectionedEditorWorkspace sessionKey={`${ordinaryDraftProject?.projectId ?? 'project'}:${ordinaryDraftProject?.game ?? 'game'}:moves`}
+      browser={browser} browserControls={browserControls}>
+      <EditorWorkspaceHeader>
+      {editorHeader}
       <PublishedLocalEditorValidationDiagnostics
         domain="workflow.moves"
         issues={
@@ -29308,18 +29408,15 @@ function SelectedMovePanel({
           summary="No move selected."
         />
       ) : null}
-      <div className="panel-heading">
-        <ShieldCheck aria-hidden="true" size={18} />
-        <h3>Selected Move</h3>
-      </div>
-
       <PublishedInlineEditorError
         domain="workflow.moves"
         message={moveSourceMutationError}
       />
+      </EditorWorkspaceHeader>
 
       {move ? (
         <>
+          <EditorWorkspaceSection id="details" label={t('editorSections.details')}>
           <dl className="item-provenance-list">
             <div>
               <dt>Name</dt>
@@ -29413,7 +29510,7 @@ function SelectedMovePanel({
             </div>
             <div>
               <dt>{t('moves.inspector.catalogSourceFile')}</dt>
-              <dd>{move.provenance.sourceFile}</dd>
+              <dd className="pokemon-source-path" data-localization-ignore="true" title={move.provenance.sourceFile}>{move.provenance.sourceFile}</dd>
             </div>
             <div>
               <dt>{t('moves.inspector.catalogSourceLayer')}</dt>
@@ -29434,7 +29531,11 @@ function SelectedMovePanel({
               </div>
             ) : null}
           </dl>
+          </EditorWorkspaceSection>
 
+          <EditorWorkspaceSection id="moveData" label={translateLiteral('Move Data')}
+            modified={moveDraftSummary.changedFields.length > 0 || moveDraftSummary.invalidFields.length > 0 || moveRelationalValidationIssues.length > 0 || moveDecimalValidationIssues.length > 0}
+            invalid={moveDraftSummary.invalidFields.length > 0 || moveRelationalValidationIssues.length > 0 || moveDecimalValidationIssues.length > 0}>
           <div className="item-edit-form move-edit-form">
             <div className="editable-field-groups">
               {move.hasRuntimeData && runtimeVariantOptions.length > 0 ? (
@@ -29914,8 +30015,9 @@ function SelectedMovePanel({
             ) : null}
           </div>
 
+          </EditorWorkspaceSection>
           {!move.hasRuntimeData ? (
-            <>
+            <EditorWorkspaceSection id="reference" label={translateLiteral('Core Stats')}>
           <div className="inspector-block">
             <h4>Core Stats</h4>
             <dl className="item-provenance-list compact-dl">
@@ -30050,13 +30152,13 @@ function SelectedMovePanel({
               <p className="empty-copy">No active flags.</p>
             )}
           </div>
-            </>
+            </EditorWorkspaceSection>
           ) : null}
         </>
       ) : (
         <p className="empty-copy">No move selected.</p>
       )}
-    </aside>
+    </SectionedEditorWorkspace>
   );
 }
 
@@ -31369,17 +31471,8 @@ function TrainersSection({
     workflow
   ]);
 
-  return (
+  const browserControls = (
     <>
-      <section
-        aria-labelledby="trainers-heading"
-        className={`panel wide-panel ${editorFamily}-editor-surface ${editorFamily}-trainers-section`}
-      >
-        <div className="panel-heading">
-          <Activity aria-hidden="true" size={18} />
-          <h2 id="trainers-heading">Trainers</h2>
-        </div>
-
         <div className="items-toolbar trainers-toolbar">
           <label className="search-box items-search">
             <Search aria-hidden="true" size={18} />
@@ -31479,8 +31572,6 @@ function TrainersSection({
           </div>
         ) : null}
 
-        {workflow ? (
-          <>
             {supportsTrainerCategories ? (
               <div
                 aria-label="Trainer categories"
@@ -31506,7 +31597,9 @@ function TrainersSection({
               </div>
             ) : null}
 
-            <div className="trainers-layout">
+    </>
+  );
+  const trainerTable = workflow ? (
               <div
                 aria-colcount={6}
                 aria-label="Trainers"
@@ -31551,8 +31644,23 @@ function TrainersSection({
                   )}
                 />
               </div>
+  ) : null;
 
+  return (
+    <>
+      <section
+        aria-labelledby="trainers-heading"
+        className={`panel wide-panel ${editorFamily}-editor-surface ${editorFamily}-trainers-section`}
+      >
+        <div className="panel-heading">
+          <Activity aria-hidden="true" size={18} />
+          <h2 id="trainers-heading">Trainers</h2>
+        </div>
+
+        {workflow ? (
               <SelectedTrainerPanel
+                browser={trainerTable}
+                browserControls={browserControls}
                 canEditTrainers={canEditTrainers}
                 editSession={editSession}
                 editorFamily={editorFamily}
@@ -31573,10 +31681,11 @@ function TrainersSection({
                 trainerRecords={trainers}
                 zaClassPairOptions={workflow.zaClassPairOptions}
               />
-            </div>
-          </>
         ) : (
-          <p className="empty-copy">Open Trainers from Workflows to load backend trainer data.</p>
+          <>
+            {browserControls}
+            <p className="empty-copy">Open Trainers from Workflows to load backend trainer data.</p>
+          </>
         )}
       </section>
 
@@ -31683,6 +31792,8 @@ function ZaTrainerBulkConfirmationModal({
 }
 
 function SelectedTrainerPanel({
+  browser,
+  browserControls,
   canEditTrainers,
   editSession,
   editorFamily,
@@ -31703,6 +31814,8 @@ function SelectedTrainerPanel({
   trainerRecords,
   zaClassPairOptions
 }: {
+  browser?: ReactNode;
+  browserControls?: ReactNode;
   canEditTrainers: boolean;
   editSession: EditSession | null;
   editorFamily: EditorUiFamily;
@@ -32435,6 +32548,9 @@ function SelectedTrainerPanel({
   const closePartySlotContextMenu = useCallback(() => {
     setPartySlotContextMenu(null);
   }, []);
+  const handleTrainerSectionChange = useCallback((section: string | null) => {
+    if (section !== 'party') setPartySlotContextMenu(null);
+  }, []);
 
   useEffect(() => {
     setPartySlotContextMenu(null);
@@ -32753,7 +32869,7 @@ function SelectedTrainerPanel({
     });
 
   return (
-    <aside aria-label="Selected trainer provenance" className="trainer-inspector">
+    <>
       <PublishedLocalEditorValidationDiagnostics
         domain="workflow.trainers"
         issues={trainerStagePlan.invalidFields}
@@ -32805,6 +32921,16 @@ function SelectedTrainerPanel({
           </span>
         </EditorSessionBarActions>
       ) : null}
+      <SectionedEditorWorkspace
+        sessionKey={`${ordinaryDraftProject?.projectId ?? 'project'}:${editorFamily}:trainers`}
+        initialSection="aiFlags"
+        browser={browser}
+        browserControls={browserControls}
+        browserVisibleRows={5}
+        onActiveSectionChange={handleTrainerSectionChange}
+      >
+      <EditorWorkspaceHeader afterBrowser>
+      <aside aria-label="Selected trainer provenance" className="trainer-inspector trainer-selection-details">
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
         <h3>Selected Trainer</h3>
@@ -32824,19 +32950,19 @@ function SelectedTrainerPanel({
             </div>
             <div>
               <dt>Data file</dt>
-              <dd>{trainer.provenance.sourceFile}</dd>
+              <dd title={trainer.provenance.sourceFile}>{trainer.provenance.sourceFile}</dd>
             </div>
             <div>
               <dt>Party file</dt>
-              <dd>{trainer.provenance.teamSourceFile}</dd>
+              <dd title={trainer.provenance.teamSourceFile}>{trainer.provenance.teamSourceFile}</dd>
             </div>
             <div>
               <dt>Class file</dt>
-              <dd>{trainer.provenance.classSourceFile ?? 'Not loaded'}</dd>
+              <dd title={trainer.provenance.classSourceFile ?? 'Not loaded'}>{trainer.provenance.classSourceFile ?? 'Not loaded'}</dd>
             </div>
             <div>
               <dt>Class ball scope</dt>
-              <dd>{trainer.classBallScope}</dd>
+              <dd title={trainer.classBallScope}>{trainer.classBallScope}</dd>
             </div>
             {showTerastallizationDetails ? (
               <>
@@ -32939,6 +33065,15 @@ function SelectedTrainerPanel({
             />
           ) : null}
 
+        </>
+      ) : null}
+      </aside>
+      </EditorWorkspaceHeader>
+      {trainer ? (
+        <>
+          <EditorWorkspaceSection id="aiFlags" label={translateLiteral('AI Flags')}
+            modified={trainerDraftSummary.changedFields.length > 0}
+            invalid={trainerDraftSummary.invalidFields.length > 0}>
           <div className="trainer-edit-form">
             {trainer.aiFlagStates.length > 0 ? (
               <div className="trainer-ai-flags-panel">
@@ -33087,6 +33222,12 @@ function SelectedTrainerPanel({
                 </fieldset>
               ))}
             </div>
+          </div>
+          </EditorWorkspaceSection>
+          <EditorWorkspaceSection id="party" label={translateLiteral('Party')}
+            modified={trainerStagePlan.updates.some(update => update.trainerId === trainer.trainerId && update.slot !== null)}
+            invalid={trainerStagePlan.invalidFields.some(issue => issue.field.startsWith(`trainer:${trainer.trainerId}:`) && issue.field.split(':').length > 3)}>
+          <div className="trainer-edit-form">
             <div className="trainer-party-header">
               <strong>Party</strong>
               <div
@@ -33522,10 +33663,12 @@ function SelectedTrainerPanel({
             )}
 
           </div>
+          </EditorWorkspaceSection>
         </>
       ) : (
         <p className="empty-copy">No trainer selected.</p>
       )}
+      </SectionedEditorWorkspace>
       {partySlotContextMenu ? (
         <TrainerPartySlotContextMenu
           copyDisabledReason={contextMenuCopyDisabledReason}
@@ -33540,7 +33683,7 @@ function SelectedTrainerPanel({
           triggerElement={partySlotContextMenu.triggerElement}
         />
       ) : null}
-    </aside>
+    </>
   );
 }
 
@@ -33819,6 +33962,7 @@ function TrainerDraftField({
         <SearchableOptionInput
           ariaLabel={localizedFieldLabel}
           data-km-source-site="trainer-draft-field-boolean-option"
+          wrapSelectedValue
           disabled={effectiveDisabled}
           id={inputId}
           isFiniteCatalog
@@ -33831,6 +33975,7 @@ function TrainerDraftField({
         <SearchableOptionInput
           ariaLabel={field.label}
           data-km-source-site="trainer-draft-field-option"
+          wrapSelectedValue
           disabled={effectiveDisabled}
           emptyOptionLabel={emptyOptionLabel}
           id={inputId}
@@ -37245,6 +37390,12 @@ function localizePendingEditFieldLabel(
 ) {
   if (details.fieldLocalizationKey) {
     return t(details.fieldLocalizationKey);
+  }
+
+  if (edit.domain === 'workflow.pokemon' && isScarletVioletGame(context.selectedGame)) {
+    if (edit.field === 'materialDropItem') return t('pokemon.materialDrops.item');
+    if (edit.field === 'materialDropRate') return t('pokemon.materialDrops.rate');
+    if (edit.field === 'materialDropCount') return t('pokemon.materialDrops.count');
   }
 
   const fieldLabel = details.fieldLabel;
@@ -62807,6 +62958,12 @@ function getEditablePersonalFieldValue(pokemon: PokemonRecord, field: string) {
     return size ? alphaSizeNumber(size.scale) : null;
   }
   switch (field) {
+    case 'materialDropItem':
+      return pokemon.materialDrop?.itemId ?? null;
+    case 'materialDropRate':
+      return pokemon.materialDrop?.rate ?? null;
+    case 'materialDropCount':
+      return pokemon.materialDrop?.count ?? null;
     case 'hp':
       return pokemon.baseStats.hp;
     case 'attack':
@@ -63918,6 +64075,9 @@ function getPokemonPersonalFieldDraftState(
   currentValue: number | null,
   field: PokemonEditableField
 ): PokemonPersonalFieldDraftState {
+  if (currentValue === null && field.field.startsWith('materialDrop')) {
+    return { error: null, isChanged: false, isValid: true, normalizedValue: null };
+  }
   if (currentValue === null) {
     return {
       error: 'This value is not available for this record.',
@@ -64041,8 +64201,11 @@ function PokemonPersonalFieldInput({
     currentValue
   );
   const { t, translateLiteral } = useLocalization();
-  const localizedFieldLabel = translateLiteral(field.label);
-  const localizedHelpText = field.field.startsWith(alphaSizePrefix) ? t('pokemon.alphaSize.help') : disabledReason
+  const materialDropLabel = field.field === 'materialDropItem' ? t('pokemon.materialDrops.item')
+    : field.field === 'materialDropRate' ? t('pokemon.materialDrops.rate')
+    : field.field === 'materialDropCount' ? t('pokemon.materialDrops.count') : null;
+  const localizedFieldLabel = materialDropLabel ?? translateLiteral(field.label);
+  const localizedHelpText = materialDropLabel ? t('pokemon.materialDrops.help') : field.field.startsWith(alphaSizePrefix) ? t('pokemon.alphaSize.help') : disabledReason
     ? translateLiteral(disabledReason)
     : getEditableFieldHelp(field, t, {
         domain: 'pokemon',
@@ -64050,7 +64213,7 @@ function PokemonPersonalFieldInput({
         label: localizedFieldLabel,
         optionCount: options.length
       });
-  const localizedHoverText = field.field.startsWith(alphaSizePrefix) ? t('pokemon.alphaSize.help') : disabledReason
+  const localizedHoverText = materialDropLabel ? t('pokemon.materialDrops.help') : field.field.startsWith(alphaSizePrefix) ? t('pokemon.alphaSize.help') : disabledReason
     ? translateLiteral(disabledReason)
     : getEditableFieldHoverHelp(field, t, {
         domain: 'pokemon',
@@ -64072,6 +64235,7 @@ function PokemonPersonalFieldInput({
         <SearchableOptionInput
           ariaLabel={localizedFieldLabel}
           data-km-source-site="pokemon-personal-field-boolean-option"
+          wrapSelectedValue
           disabled={disabled}
           id={inputId}
           isFiniteCatalog
@@ -64082,8 +64246,10 @@ function PokemonPersonalFieldInput({
         />
       ) : options.length > 0 ? (
         <SearchableOptionInput
-          ariaLabel={field.label}
+          ariaLabel={localizedFieldLabel}
           data-km-source-site="pokemon-personal-field-option"
+          isFiniteCatalog={field.field === 'materialDropItem'}
+          wrapSelectedValue
           disabled={disabled}
           id={inputId}
           onChange={onChange}

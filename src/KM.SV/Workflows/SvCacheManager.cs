@@ -161,6 +161,7 @@ public sealed partial class SvCacheManager
         return
         [
             SvDataPaths.PersonalArray,
+            SvDataPaths.MaterialDropArray,
             SvDataPaths.MoveDataArray,
             SvDataPaths.ItemDataArray,
             SvDataPaths.EvolutionItemConversionArray,

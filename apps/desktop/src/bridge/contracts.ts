@@ -1628,6 +1628,13 @@ export const pokemonRecordSchema = z.strictObject({
   height: z.number().int().nonnegative(),
   learnset: z.array(pokemonLearnsetMoveSchema),
   learnsetSyncBaseForm: z.number().int().nonnegative().nullable().optional(),
+  materialDrop: z.strictObject({
+    itemId: z.number().int().nonnegative(),
+    item: z.string(),
+    rate: z.number().int().min(0).max(100),
+    count: z.number().int().min(0).max(127),
+    provenance: pokemonProvenanceSchema,
+  }).nullable().optional().default(null),
   name: z.string(),
   personal: pokemonPersonalDetailsSchema,
   personalId: z.number().int().nonnegative(),

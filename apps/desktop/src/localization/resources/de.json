@@ -1,5 +1,18 @@
 {
   "keys": {
+    "pokemon.materialDrops.title": "Materialfunde",
+    "pokemon.materialDrops.item": "Material",
+    "pokemon.materialDrops.rate": "Fundrate (%)",
+    "pokemon.materialDrops.count": "Materialmenge",
+    "pokemon.materialDrops.help": "Bearbeite Material, Fundrate und Menge für besiegte oder gefangene wilde Pokémon. Alle Formen dieser Art teilen diese Werte.",
+    "pokemon.materialDrops.unavailable": "Für diese Art ist kein Materialeintrag verfügbar.",
+    "editorSections.details": "Details",
+    "editorSections.speciesData": "Artendaten",
+    "editorSections.moveCompatibility": "TR/TM/HM/Ei-Attacken",
+    "editorSections.sections": "Editorbereiche",
+    "editorSections.modified": "Geändert",
+    "editorSections.invalid": "Gültige Werte erforderlich",
+    "editorSections.resizeBrowser": "Datensatzliste vergrößern oder verkleinern",
     "customGifts.chance": "Ziehungswahrscheinlichkeit (%)",
     "customGifts.slotChance": "{chance}% Wahrscheinlichkeit",
     "customGifts.poolSummary": "{count}/14 Plätze belegt. Gesamtwahrscheinlichkeit: {total}% / 100%.",

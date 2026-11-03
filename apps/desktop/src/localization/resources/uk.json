@@ -1,5 +1,18 @@
 {
   "keys": {
+    "pokemon.materialDrops.title": "Матеріали, що випадають",
+    "pokemon.materialDrops.item": "Матеріал",
+    "pokemon.materialDrops.rate": "Імовірність випадіння (%)",
+    "pokemon.materialDrops.count": "Кількість матеріалу",
+    "pokemon.materialDrops.help": "Змініть матеріал, імовірність і кількість, які отримують після перемоги над диким покемоном або його спіймання. Ці значення спільні для всіх форм виду.",
+    "pokemon.materialDrops.unavailable": "Для цього виду немає запису про матеріали.",
+    "editorSections.details": "Відомості",
+    "editorSections.speciesData": "Дані виду",
+    "editorSections.moveCompatibility": "TR/TM/HM/Яєчні прийоми",
+    "editorSections.sections": "Розділи редактора",
+    "editorSections.modified": "Змінено",
+    "editorSections.invalid": "Потрібні припустимі значення",
+    "editorSections.resizeBrowser": "Змінити розмір списку записів",
     "customGifts.chance": "Шанс випадіння (%)",
     "customGifts.slotChance": "Шанс {chance}%",
     "customGifts.poolSummary": "Зайнято місць: {count}/14. Загальний шанс: {total}% / 100%.",

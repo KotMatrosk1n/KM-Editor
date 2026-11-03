@@ -59,6 +59,7 @@ export type SearchableOptionInputProps = Readonly<{
   showToggle?: boolean;
   tooltipContent?: ReactNode;
   value: string;
+  wrapSelectedValue?: boolean;
 }>;
 
 type MenuItem =
@@ -97,7 +98,8 @@ export function SearchableOptionInput({
   required,
   showToggle = true,
   tooltipContent,
-  value
+  value,
+  wrapSelectedValue = false
 }: SearchableOptionInputProps) {
   const { translateLiteral } = useLocalization();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -264,8 +266,11 @@ export function SearchableOptionInput({
       const menuGap = 6;
       const maximumHeight = 240;
       const availableWidth = Math.max(0, window.innerWidth - viewportGap * 2);
+      const readableWidth = wrapSelectedValue
+        ? 20 * parseFloat(getComputedStyle(anchor).fontSize)
+        : rect.width;
       const width = Math.min(
-        Math.max(rect.width, menuMinimumWidth ?? rect.width),
+        Math.max(rect.width, menuMinimumWidth ?? readableWidth),
         availableWidth
       );
       const left = Math.min(
@@ -289,13 +294,16 @@ export function SearchableOptionInput({
     };
 
     updatePosition();
+    const observer = new ResizeObserver(updatePosition);
+    if (containerRef.current) observer.observe(containerRef.current);
     window.addEventListener('resize', updatePosition);
     window.addEventListener('scroll', updatePosition, true);
     return () => {
+      observer.disconnect();
       window.removeEventListener('resize', updatePosition);
       window.removeEventListener('scroll', updatePosition, true);
     };
-  }, [hasMenu, menuMinimumWidth, portalMenu]);
+  }, [hasMenu, menuMinimumWidth, portalMenu, wrapSelectedValue]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -499,12 +507,19 @@ export function SearchableOptionInput({
       <div
         className={[
           'searchable-option-input',
+          wrapSelectedValue ? 'searchable-option-wrap-value' : '',
           disabled ? 'searchable-option-disabled' : '',
           className ?? ''
         ].filter(Boolean).join(' ')}
         data-localization-ignore={effectiveLocalizationIgnore}
+        data-show-value={wrapSelectedValue && !isOpen && !hasUserQuery ? 'true' : undefined}
         ref={containerRef}
       >
+        {wrapSelectedValue ? (
+          <span aria-hidden="true" className="searchable-option-selected-value">
+            {formattedValue || '\u00a0'}
+          </span>
+        ) : null}
         <input
           aria-activedescendant={
             hasMenu && activeOptionIndex >= 0

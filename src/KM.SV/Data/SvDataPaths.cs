@@ -5,6 +5,7 @@ namespace KM.SV.Data;
 public static class SvDataPaths
 {
     public const string PersonalArray = "avalon/data/personal_array.bin";
+    public const string MaterialDropArray = "world/data/item/dropitemdata/dropitemdata_array.bin";
     public const string MoveDataArray = "avalon/data/waza_array.bin";
     public const string ItemDataArray = "world/data/item/itemdata/itemdata_array.bin";
     public const string EvolutionItemConversionArray = "world/data/battle/plib_item_conversion/plib_item_conversion_array.bin";

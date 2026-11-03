@@ -1,5 +1,18 @@
 {
   "keys": {
+    "pokemon.materialDrops.title": "Matériaux obtenus",
+    "pokemon.materialDrops.item": "Matériau",
+    "pokemon.materialDrops.rate": "Taux d’obtention (%)",
+    "pokemon.materialDrops.count": "Quantité de matériau",
+    "pokemon.materialDrops.help": "Modifiez le matériau, son taux d’obtention et sa quantité pour les Pokémon sauvages vaincus ou capturés. Toutes les formes de cette espèce partagent ces valeurs.",
+    "pokemon.materialDrops.unavailable": "Aucune entrée de matériau n’est disponible pour cette espèce.",
+    "editorSections.details": "Détails",
+    "editorSections.speciesData": "Données d’espèce",
+    "editorSections.moveCompatibility": "TR/TM/HM/Capacités Œuf",
+    "editorSections.sections": "Sections de l’éditeur",
+    "editorSections.modified": "Modifié",
+    "editorSections.invalid": "Valeurs valides requises",
+    "editorSections.resizeBrowser": "Redimensionner la liste des entrées",
     "customGifts.chance": "Probabilité de tirage (%)",
     "customGifts.slotChance": "{chance}% de probabilité",
     "customGifts.poolSummary": "{count}/14 emplacements utilisés. Probabilité totale : {total}% / 100%.",

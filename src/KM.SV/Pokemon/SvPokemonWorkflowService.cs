@@ -13,8 +13,11 @@ using KM.SV.Workflows;
 
 namespace KM.SV.Pokemon;
 
-internal sealed class SvPokemonWorkflowService
+internal sealed partial class SvPokemonWorkflowService
 {
+    internal const string MaterialDropCountField = "materialDropCount";
+    internal const string MaterialDropItemField = "materialDropItem";
+    internal const string MaterialDropRateField = "materialDropRate";
     private const string WorkflowLabel = "Pokemon Data";
     private const string WorkflowDescription =
         "Edit Scarlet/Violet personal data, evolutions, learnsets, and move compatibility.";
@@ -83,6 +86,9 @@ internal sealed class SvPokemonWorkflowService
 
     private static readonly IReadOnlyList<SvPokemonEditableField> BaseEditableFields =
     [
+        CreateField(MaterialDropItemField, "Material", "Material Drops", 0, int.MaxValue),
+        CreateField(MaterialDropRateField, "Drop rate (%)", "Material Drops", 0, 100),
+        CreateField(MaterialDropCountField, "Material drop count", "Material Drops", 0, sbyte.MaxValue),
         CreateField(SvPokemonWorkflowService.HPField, "HP", "Base Stats", 0, byte.MaxValue),
         CreateField(SvPokemonWorkflowService.AttackField, "Attack", "Base Stats", 0, byte.MaxValue),
         CreateField(SvPokemonWorkflowService.DefenseField, "Defense", "Base Stats", 0, byte.MaxValue),
@@ -350,12 +356,13 @@ internal sealed class SvPokemonWorkflowService
         var labels = SvTextLabelLookup.None();
         var pokemon = Array.Empty<SvPokemonRecord>();
         IReadOnlyDictionary<int, string> evolutionItemArgumentLabels = CreateDefaultEvolutionItemArgumentLabels(labels);
+        IReadOnlyList<int>? materialItemIds = null;
 
         try
         {
             labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
             var spriteLabels = SvTextLabelLookup.Load(project, fileSource, new List<ValidationDiagnostic>());
-            evolutionItemArgumentLabels = LoadEvolutionItemArgumentLabels(project, labels, diagnostics);
+            evolutionItemArgumentLabels = LoadEvolutionItemArgumentLabels(project, labels, diagnostics, out materialItemIds);
             var tmCatalog = SvTechnicalMachineCatalog.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, SvDataPaths.PersonalArray);
             SvEvolutionItemConversionState? conversionState = null;
@@ -386,6 +393,7 @@ internal sealed class SvPokemonWorkflowService
                     spriteLabels,
                     tmCatalog,
                     evolutionItemArgumentLabels).ToArray();
+                pokemon = LoadMaterialDrops(project, pokemon, labels, diagnostics);
             }
             catch (Exception exception) when (
                 exception is IndexOutOfRangeException
@@ -427,7 +435,7 @@ internal sealed class SvPokemonWorkflowService
             pokemon.Count(record => record.DexPresence.IsPresentInGame),
             pokemon.Sum(record => record.Evolutions.Count),
             pokemon.Sum(record => record.Learnset.Count),
-            source is null ? 0 : 1);
+            (source is null ? 0 : 1) + (pokemon.Any(row => row.MaterialDrop is not null) ? 1 : 0));
 
         return new SvPokemonWorkflow(
             summary,
@@ -435,18 +443,23 @@ internal sealed class SvPokemonWorkflowService
             stats,
             CreateEvolutionOptions(pokemon, labels, evolutionItemArgumentLabels),
             CreateMoveOptions(pokemon, labels),
-            CreateEditableFields(labels),
+            CreateEditableFields(labels, materialItemIds ?? pokemon
+                .Where(row => row.MaterialDrop is not null)
+                .Select(row => row.MaterialDrop!.ItemId).ToArray()),
             diagnostics);
     }
 
     private IReadOnlyDictionary<int, string> LoadEvolutionItemArgumentLabels(
         OpenedProject project,
         SvTextLabelLookup labels,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        out IReadOnlyList<int>? materialItemIds)
     {
+        materialItemIds = null;
         try
         {
             var argumentLabels = new Dictionary<int, string>();
+            var materials = new List<int>();
             var source = fileSource.Read(project, SvDataPaths.ItemDataArray);
             var table = global::ItemDataArray.GetRootAsItemDataArray(new ByteBuffer(source.Bytes));
             fileSource.EnsureBoundedTableCount(table.ValuesLength, "The S/V evolution-item table");
@@ -461,8 +474,13 @@ internal sealed class SvPokemonWorkflowService
                 {
                     argumentLabels[item.Id] = labels.Item(item.Id);
                 }
+                if (item.Id > 0 && item.FieldPocket == global::FieldPocket.FPOCKET_MATERIAL)
+                {
+                    materials.Add(item.Id);
+                }
             }
 
+            materialItemIds = materials;
             return argumentLabels;
         }
         catch (FileNotFoundException)
@@ -472,7 +490,7 @@ internal sealed class SvPokemonWorkflowService
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
             diagnostics.Add(SvWorkflowSupport.Warning(
-                $"Item metadata could not be decoded; edited evolution items may be missing from Use Item selectors: {exception.Message}",
+                $"Item metadata could not be decoded; Use Item selectors use defaults, and Material selectors use existing drops: {exception.Message}",
                 $"romfs/{SvDataPaths.ItemDataArray}"));
             return CreateDefaultEvolutionItemArgumentLabels(labels);
         }
@@ -978,15 +996,20 @@ internal sealed class SvPokemonWorkflowService
             .ToArray();
     }
 
-    private static IReadOnlyList<SvPokemonEditableField> CreateEditableFields(SvTextLabelLookup labels)
+    private static IReadOnlyList<SvPokemonEditableField> CreateEditableFields(
+        SvTextLabelLookup labels, IReadOnlyList<int> materialItemIds)
     {
         var abilityOptions = CreateIndexedOptions(labels.AbilityNameCount, labels.Ability, includeNone: true);
+        var materialOptions = materialItemIds.Append(0).Where(id => id >= 0).Distinct().Order()
+            .Select(id => new SvPokemonEditableFieldOption(id,
+                $"{id.ToString("000", CultureInfo.InvariantCulture)} {labels.Item(id)}")).ToArray();
 
         return BaseEditableFields
             .Select(field =>
             {
                 var options = field.Field switch
                 {
+                    MaterialDropItemField => materialOptions,
                     SvPokemonWorkflowService.Type1Field or SvPokemonWorkflowService.Type2Field => TypeOptions,
                     SvPokemonWorkflowService.Ability1Field
                         or SvPokemonWorkflowService.Ability2Field
@@ -1003,7 +1026,7 @@ internal sealed class SvPokemonWorkflowService
                     ? field
                     : field with
                     {
-                        MaximumValue = options.Count > 0 ? options.Max(option => option.Value) : field.MaximumValue,
+                        MaximumValue = field.Field != MaterialDropItemField && options.Count > 0 ? options.Max(option => option.Value) : field.MaximumValue,
                         Options = options,
                     };
             })

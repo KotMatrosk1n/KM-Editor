@@ -297,7 +297,7 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
           </div></details> : null}
           <div className="model-viewer__properties model-viewer__properties--secondary" hidden={!editing}>
           {editing ? <nav className="model-workspace__tabs" aria-label={t('modelWorkspace.inspector')}>
-            {['parts','materials','textures','scene'].map(value => <button type="button" key={value} aria-pressed={tab === value} onClick={() => setTab(value)}>{t(`modelWorkspace.${value}`)}</button>)}
+            {['parts','materials','textures','scene'].map(value => <button className="editor-section-choice" type="button" key={value} aria-pressed={tab === value} onClick={() => setTab(value)}>{t(`modelWorkspace.${value}`)}</button>)}
           </nav> : null}
           {editing && tab === 'history' ? <ModelHistoryPanel /> : null}
           <div hidden={editing && tab !== 'parts'}>{editing ? <ModelParts parts={viewer.info?.parts ?? []} options={options} onOptions={setOptions} onSelect={selectPart}

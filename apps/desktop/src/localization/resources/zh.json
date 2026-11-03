@@ -1,5 +1,18 @@
 {
   "keys": {
+    "pokemon.materialDrops.title": "掉落材料",
+    "pokemon.materialDrops.item": "材料",
+    "pokemon.materialDrops.rate": "掉落概率（%）",
+    "pokemon.materialDrops.count": "材料数量",
+    "pokemon.materialDrops.help": "编辑击败或捕捉野生宝可梦时获得的材料、掉落概率和数量。该物种的所有形态共用这些数值。",
+    "pokemon.materialDrops.unavailable": "此物种没有可用的材料掉落记录。",
+    "editorSections.details": "详情",
+    "editorSections.speciesData": "种族数据",
+    "editorSections.moveCompatibility": "TR/TM/HM/蛋招式",
+    "editorSections.sections": "编辑器分区",
+    "editorSections.modified": "已修改",
+    "editorSections.invalid": "需要有效值",
+    "editorSections.resizeBrowser": "调整记录列表大小",
     "customGifts.chance": "抽取概率（%）",
     "customGifts.slotChance": "{chance}% 概率",
     "customGifts.poolSummary": "已使用 {count}/14 个位置。总概率：{total}% / 100%。",

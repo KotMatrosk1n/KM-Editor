@@ -1,5 +1,18 @@
 {
   "keys": {
+    "pokemon.materialDrops.title": "Material Drops",
+    "pokemon.materialDrops.item": "Material",
+    "pokemon.materialDrops.rate": "Drop rate (%)",
+    "pokemon.materialDrops.count": "Material drop count",
+    "pokemon.materialDrops.help": "Edit the material, drop rate, and count for wild Pokemon defeated or caught. All forms of this species share these values.",
+    "pokemon.materialDrops.unavailable": "No material drop row is available for this species.",
+    "editorSections.details": "Details",
+    "editorSections.speciesData": "Species Data",
+    "editorSections.moveCompatibility": "TR/TM/HM/Egg Moves",
+    "editorSections.sections": "Editor sections",
+    "editorSections.modified": "Modified",
+    "editorSections.invalid": "Needs valid values",
+    "editorSections.resizeBrowser": "Resize record browser",
     "customGifts.chance": "Draw odds (%)",
     "customGifts.slotChance": "{chance}% odds",
     "customGifts.poolSummary": "{count}/14 slots used. Total odds: {total}% / 100%.",

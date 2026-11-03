@@ -257,7 +257,12 @@ public sealed record PokemonRecordDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     IReadOnlyList<PokemonAlphaSizeDto>? AlphaSizes = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    int? LearnsetSyncBaseForm = null);
+    int? LearnsetSyncBaseForm = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    PokemonMaterialDropDto? MaterialDrop = null);
+
+public sealed record PokemonMaterialDropDto(
+    int ItemId, string Item, int Rate, int Count, PokemonProvenanceDto Provenance);
 
 public sealed record PokemonAlphaSizeDto(
     string Field, string ResourcePath, IReadOnlyList<int> Genders,

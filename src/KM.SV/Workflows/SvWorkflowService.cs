@@ -318,6 +318,7 @@ public sealed partial class SvWorkflowService
         {
             SvDataPaths.ItemDataArray,
             SvDataPaths.PersonalArray,
+            SvDataPaths.MaterialDropArray,
             SvDataPaths.EvolutionItemConversionArray,
             SvDataPaths.MoveDataArray,
             SvDataPaths.TrainerDataArray,

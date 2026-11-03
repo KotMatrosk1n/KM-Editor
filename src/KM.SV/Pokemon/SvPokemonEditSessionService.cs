@@ -629,14 +629,7 @@ internal sealed partial class SvPokemonEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var validation = Validate(paths, session);
-        var plan = SvEditSessionSupport.CreateSingleFileChangePlan(
-            paths,
-            session,
-            SvEditSessionSupport.PokemonDomain,
-            SvDataPaths.PersonalArray,
-            "Pokemon Data",
-            validation.Diagnostics,
-            outputMode);
+        var plan = CreatePokemonDataChangePlan(paths, session, validation.Diagnostics, outputMode);
         if (!plan.CanApply)
         {
             return SvChangePlanSourceGuard.Capture(paths, session, plan, outputMode);
@@ -645,10 +638,15 @@ internal sealed partial class SvPokemonEditSessionService
         try
         {
             var project = projectWorkspaceService.Open(paths);
+            var personalEdits = session.PendingEdits.Where(edit => !IsMaterialDropEdit(edit)).ToArray();
+            var materialEdits = session.PendingEdits.Where(IsMaterialDropEdit).ToArray();
+            if (materialEdits.Length > 0) _ = PrepareMaterialDropBytes(project, materialEdits);
+            if (personalEdits.Length == 0)
+                return SvChangePlanSourceGuard.Capture(paths, session, plan, outputMode);
             var source = fileSource.Read(project, SvDataPaths.PersonalArray);
             var rows = ReadRows(source.Bytes);
             var conversionState = SvEvolutionItemConversionState.Load(project, fileSource);
-            PrepareEvolutionItemConversions(rows, session.PendingEdits, conversionState);
+            PrepareEvolutionItemConversions(rows, personalEdits, conversionState);
             if (!conversionState.Modified)
             {
                 return SvChangePlanSourceGuard.Capture(paths, session, plan, outputMode);
@@ -673,15 +671,14 @@ internal sealed partial class SvPokemonEditSessionService
                     plan.Diagnostics),
                 outputMode);
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or InvalidOperationException or ArgumentException)
+        catch (Exception exception) when (exception is IOException or InvalidDataException or InvalidOperationException or ArgumentException or OverflowException)
         {
             var diagnostics = plan.Diagnostics
                 .Append(SvEditSessionSupport.CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    $"Pokemon Data could not prepare evolution item conversions: {exception.Message}",
+                    $"Pokemon Data could not prepare output: {exception.Message}",
                     SvEditSessionSupport.PokemonDomain,
-                    file: $"romfs/{SvDataPaths.EvolutionItemConversionArray}",
-                    expected: "Readable evolution item conversion table with an unused parameter slot"))
+                    expected: "Readable Pokemon source tables and supported edit values"))
                 .ToArray();
             return new ChangePlan(plan.SessionId, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
@@ -720,57 +717,22 @@ internal sealed partial class SvPokemonEditSessionService
         try
         {
             var project = projectWorkspaceService.Open(paths);
-            var source = fileSource.Read(project, SvDataPaths.PersonalArray);
-            var rows = ReadRows(source.Bytes);
-            var conversionState = SvEvolutionItemConversionState.Load(project, fileSource);
-            PrepareEvolutionItemConversions(rows, session.PendingEdits, conversionState);
-            var baseRows = NeedsBaseRows(session.PendingEdits)
-                ? ReadRows(fileSource.ReadBase(project, SvDataPaths.PersonalArray).Bytes)
-                : rows;
-            var deferredCompatibilityRemovals = new List<(PendingEdit Edit, string GroupId, int Slot)>();
-            foreach (var edit in session.PendingEdits)
-            {
-                if (IsIndexedCompatibilityRemoval(edit, out var groupId, out var slot))
-                {
-                    deferredCompatibilityRemovals.Add((edit, groupId, slot));
-                }
-                else
-                {
-                    ApplyEdit(rows, baseRows, edit, conversionState, diagnostics);
-                }
-            }
-
-            foreach (var group in deferredCompatibilityRemovals.GroupBy(candidate => (candidate.Edit.RecordId, candidate.GroupId)))
-            {
-                foreach (var removal in group.OrderByDescending(candidate => candidate.Slot))
-                {
-                    ApplyEdit(rows, baseRows, removal.Edit, conversionState, diagnostics);
-                }
-            }
+            var materialEdits = session.PendingEdits.Where(IsMaterialDropEdit).ToArray();
+            var materialBytes = materialEdits.Length > 0 ? PrepareMaterialDropBytes(project, materialEdits) : null;
+            var personalSession = session with { PendingEdits = session.PendingEdits.Where(edit => !IsMaterialDropEdit(edit)).ToArray() };
+            if (personalSession.PendingEdits.Count > 0)
+                WritePersonalPokemonData(paths, project, personalSession, outputMode, writtenFiles, diagnostics);
 
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
                 return SvEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
-            var personalBytes = WriteRows(rows);
-            var conversionBytes = conversionState.Modified
-                ? conversionState.Write()
-                : null;
-            if (conversionBytes is not null)
+            if (materialBytes is not null)
             {
-                SvWorkflowFileSource.Write(
-                    paths,
-                    SvDataPaths.EvolutionItemConversionArray,
-                    conversionBytes,
-                    outputMode);
-                writtenFiles.Add(SvEditSessionSupport.GeneratedReference(
-                    SvDataPaths.EvolutionItemConversionArray,
-                    outputMode));
+                SvWorkflowFileSource.Write(paths, SvDataPaths.MaterialDropArray, materialBytes, outputMode);
+                writtenFiles.Add(SvEditSessionSupport.GeneratedReference(SvDataPaths.MaterialDropArray, outputMode));
             }
-
-            SvWorkflowFileSource.Write(paths, SvDataPaths.PersonalArray, personalBytes, outputMode);
-            writtenFiles.Add(SvEditSessionSupport.GeneratedReference(SvDataPaths.PersonalArray, outputMode));
             if (outputMode == SvOutputMode.Standalone)
             {
                 writtenFiles.Add(SvEditSessionSupport.GeneratedDescriptorReference());
@@ -787,7 +749,8 @@ internal sealed partial class SvPokemonEditSessionService
                 DiagnosticSeverity.Error,
                 $"Pokemon Data output could not be written: {exception.Message}",
                 SvEditSessionSupport.PokemonDomain,
-                file: $"romfs/{SvDataPaths.PersonalArray}",
+                file: session.PendingEdits.All(IsMaterialDropEdit)
+                    ? $"romfs/{SvDataPaths.MaterialDropArray}" : $"romfs/{SvDataPaths.PersonalArray}",
                 expected: "Readable source and writable output root"));
         }
 
@@ -834,6 +797,8 @@ internal sealed partial class SvPokemonEditSessionService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var normalizedField = field.Trim();
+        if (IsMaterialDropField(normalizedField))
+            return CreateMaterialDropEdit(workflow, pokemon, normalizedField, value, diagnostics);
         if (TryParseCompatibilityGroupField(normalizedField, out var replacementGroupId))
         {
             var group = pokemon.Compatibility.FirstOrDefault(candidate => candidate.GroupId == replacementGroupId);
@@ -1043,6 +1008,12 @@ internal sealed partial class SvPokemonEditSessionService
             return;
         }
 
+        if (IsMaterialDropEdit(edit))
+        {
+            _ = CreateMaterialDropEdit(workflow, pokemon, edit.Field!, edit.NewValue ?? "", diagnostics);
+            return;
+        }
+
         if (TryParseLearnsetField(edit.Field, out _, out _))
         {
             _ = ParseLearnsetOperation(edit, pokemon, diagnostics);
@@ -1141,6 +1112,10 @@ internal sealed partial class SvPokemonEditSessionService
 
     private static EditSession ReplaceCompatibilityGroupOrRemoveNoOp(SvPokemonWorkflow loadedWorkflow, EditSession session, PendingEdit pendingEdit)
     {
+        if (IsMaterialDropEdit(pendingEdit)
+            && loadedWorkflow.Pokemon.FirstOrDefault(row => row.PersonalId.ToString(CultureInfo.InvariantCulture) == pendingEdit.RecordId)?.MaterialDrop is { } drop
+            && pendingEdit.NewValue == MaterialDropValue(drop, pendingEdit.Field).ToString(CultureInfo.InvariantCulture))
+            return session with { PendingEdits = session.PendingEdits.Where(edit => !ShouldReplacePendingEdit(edit, pendingEdit)).ToArray() };
         if (TryParseCompatibilityGroupField(pendingEdit.Field, out var groupId)
             && int.TryParse(pendingEdit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId))
         {
@@ -1224,6 +1199,8 @@ internal sealed partial class SvPokemonEditSessionService
         {
             return workflow;
         }
+
+        if (IsMaterialDropEdit(edit)) return OverlayMaterialDrop(workflow, personalId, edit);
 
         return workflow with
         {
