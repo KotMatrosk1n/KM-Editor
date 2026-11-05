@@ -55,16 +55,16 @@ public static partial class SwShRestorationForms
                 throw new InvalidDataException("Native form table has an incompatible length.");
             var expected = value.AsSpan(source * size, size).ToArray();
             var baseline = destination < original.Length / size ? original.AsSpan(destination * size, size).ToArray()
-                : new byte[size];
+                : SwShRestorationSpecies.EmptyRecord(size);
             var actual = destination < value.Length / size ? value.AsSpan(destination * size, size).ToArray()
-                : new byte[size];
+                : SwShRestorationSpecies.EmptyRecord(size);
             if (!actual.AsSpan().SequenceEqual(normalize ? expected : baseline))
                 throw new InvalidDataException("Native form record changed outside the restoration workflow.");
             if (destination >= value.Length / size)
             {
                 var first = value.Length / size;
                 Array.Resize(ref value, checked((destination + 1) * size));
-                for (var row = first; row <= destination; row++) new byte[size].CopyTo(value, row * size);
+                for (var row = first; row <= destination; row++) SwShRestorationSpecies.EmptyRecord(size).CopyTo(value, row * size);
             }
             (normalize ? baseline : expected).CopyTo(value, destination * size);
             outputs[path] = value;
@@ -84,20 +84,20 @@ public static partial class SwShRestorationForms
                     CloneFile($"romfs/bin/pml/evolution/evo_{source:000}.bin", $"romfs/bin/pml/evolution/evo_{destination:000}.bin");
                 }
 
-            if (group.Key == 6 || !group.Any(IsMega)) continue;
+            if (!group.Any(HasSeparateEggFiles)) continue;
             var eggPath = EggPath(group.Key);
             var nativeEgg = native(eggPath) ?? throw new InvalidDataException("Native base egg list is missing.");
             var egg = Required(eggPath).ToArray();
             ValidateEgg(nativeEgg); ValidateEgg(egg);
             var nativeFirst = BinaryPrimitives.ReadUInt16LittleEndian(nativeEgg);
-            var restoredFirst = checked((ushort)(2048 + block.FirstRow));
+            var restoredFirst = checked((ushort)(OlderFormEggOffset + block.FirstRow));
             if (BinaryPrimitives.ReadUInt16LittleEndian(egg) != (normalize ? restoredFirst : nativeFirst))
                 throw new InvalidDataException("Form egg mapping changed outside the restoration workflow.");
             BinaryPrimitives.WriteUInt16LittleEndian(egg, normalize ? nativeFirst : restoredFirst);
             outputs[eggPath] = egg;
             for (var form = 1; form <= block.NativeAlternateCount; form++)
                 if (!group.Any(i => i.Form == form))
-                    CloneFile(EggPath(nativeFirst + form - 1), EggPath(2048 + block.PersonalRow(form)));
+                    CloneFile(EggPath(nativeFirst + form - 1), EggPath(OlderFormEggOffset + block.PersonalRow(form)));
         }
         if (!normalize) outputs[SwShRestorationComposer.PersonalPath] = ApplyHeaders(outputs[SwShRestorationComposer.PersonalPath]!, EnabledForms(state));
         return outputs;

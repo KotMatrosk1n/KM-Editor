@@ -69,7 +69,12 @@ internal static class SwShRestorationCustomizations
             if (!selection.Enabled) { selections.Add(selection); continue; }
             var previous = SwShRestorationStateStore.ReadPrepared(paths, selection.CustomizationHash ?? selection.PreparedHash);
             var items = previous.Contributions.ToDictionary(c => (c.Path, c.Key));
-            var touched = items.Values.Where(c => changed.Contains(c.Path) && readOutput(c.Path) is not null).ToArray();
+            var changedItems = items.Values.Where(c => changed.Contains(c.Path)).ToArray();
+            // The verified snapshot is immutable. Probe each changed file once,
+            // rather than reading a shared bank again for every semantic entry.
+            var availablePaths = changedItems.Select(c => c.Path).Distinct(StringComparer.Ordinal)
+                .Where(path => readOutput(path) is not null).ToHashSet(StringComparer.Ordinal);
+            var touched = changedItems.Where(c => availablePaths.Contains(c.Path)).ToArray();
             if (touched.Length > 0)
                 foreach (var item in SwShRestorationComposer.Compose(touched, readOutput, false, captureOnly: true).RetainedCustomizations)
                     items[(item.Path, item.Key)] = SwShRestorationDependencies.Retain(items[(item.Path, item.Key)], item, state.State);

@@ -169,16 +169,31 @@ public static class SwShRestorationComposer
                 case SwShRestorationWriter.Learnset:
                 {
                     var size = kind == SwShRestorationWriter.Personal ? SwShPersonalTable.RecordSize : 260;
-                    if (current.Length % size != 0) throw new InvalidDataException("Shared Pokemon table has an invalid length.");
+                    if (current.Length % size != 0 || current.Length / size > 4096)
+                        throw new InvalidDataException("Shared Pokemon table has an invalid length.");
                     var result = current.ToArray();
                     foreach (var item in items)
                     {
                         var row = Number(item.Key);
-                        if (!SwShRestorationForms.IsRegisteredRow(row) || row >= result.Length / size || item.After.Length != size || item.Before?.Length != size)
+                        var appended = row >= SwShRestorationSpecies.NativeRecordCount;
+                        if (!SwShRestorationForms.IsRegisteredRow(row) || item.After.Length != size
+                            || (appended ? item.Before is not null : item.Before?.Length != size)
+                            || current.Length / size < SwShRestorationSpecies.NativeRecordCount || row >= 4096)
                             throw new InvalidDataException("Restoration record identity or length is invalid.");
-                        Select(item, current.AsSpan(row * size, size).ToArray())!.CopyTo(result, row * size);
+                        var empty = appended ? SwShRestorationSpecies.EmptyRecord(size) : null;
+                        var actual = row < current.Length / size ? current.AsSpan(row * size, size).ToArray() : null;
+                        if (appended && Equal(actual, empty) && (enable || !Equal(item.After, empty))) actual = null;
+                        var selected = Select(item, actual);
+                        if (captureOnly) continue;
+                        if (row >= result.Length / size && selected is not null)
+                        {
+                            var oldCount = result.Length / size;
+                            Array.Resize(ref result, checked((row + 1) * size));
+                            for (var id = oldCount; id <= row; id++) SwShRestorationSpecies.EmptyRecord(size).CopyTo(result, id * size);
+                        }
+                        if (row < result.Length / size) (selected ?? empty!).CopyTo(result, row * size);
                     }
-                    outputs.Add(group.Key, result); break;
+                    outputs.Add(group.Key, captureOnly ? current : result); break;
                 }
                 case SwShRestorationWriter.Icons:
                 {
@@ -286,7 +301,7 @@ public static class SwShRestorationComposer
     }
     // Retain the shared route in already prepared packages while also supplying
     // the native genderless lookup used by these registered identities.
-    public static IReadOnlyList<int> IconGenders(int species) => species is 100 or 101 or 386 or 491 ? [0, 3] : [0];
+    public static IReadOnlyList<int> IconGenders(int species) => species is 100 or 101 or 386 or 491 or 774 ? [0, 3] : [0];
     public static string IconPath(int species, int form = 0, int gender = 0) =>
         $"romfs/bin/appli/icon_pokemon/poke_icon_{SwShRestorationSpecies.IconSpecies(species):0000}_{form:00}{(gender == 3 ? "n" : "s")}_n.bntx";
     public static string IconKey(int species, int form = 0, int gender = 0) => form == 0 && gender == 0 ? SwShRestorationSpecies.IconSpecies(species).ToString(CultureInfo.InvariantCulture)

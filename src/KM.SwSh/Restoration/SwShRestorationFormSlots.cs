@@ -128,37 +128,53 @@ public static class SwShRestorationFormSlots
         new(801, 1152, 3, 1168, 1),
         new(807, 1079, 1, 0, 0),
         new(870, 1080, 1, 0, 0),
+        // Appended blocks preserve every native and previously reserved form row.
+        new(664, 1439, 19, 0, 0),
+        new(665, 1458, 19, 0, 0),
+        new(666, 1477, 19, 0, 0),
+        new(669, 1496, 4, 0, 0),
+        new(671, 1500, 4, 0, 0),
+        new(741, 1514, 3, 0, 0),
+        new(774, 1517, 13, 0, 0),
     });
     private static readonly IReadOnlyDictionary<int, SwShRestorationFormBlock> BySpecies = Blocks.ToDictionary(b => b.Species);
 
     public static int? PlannedPersonalRow(int species, int form) => BySpecies.TryGetValue(species, out var block)
         && form > 0 && form <= block.AlternateCount ? block.PersonalRow(form) : null;
 
+    public static int RecordCapacity => Math.Max(SwShRestorationSpecies.NativeRecordCount, Blocks.Max(b => b.FirstRow + b.AlternateCount));
+
+    internal static bool IsPlannedRow(int row) => Blocks.Any(b => row >= b.FirstRow && row < b.FirstRow + b.AlternateCount);
+
     /// <summary>Check native ownership and effective destination rows before using a reservation.</summary>
     public static void Validate(ReadOnlySpan<byte> nativeData, ReadOnlySpan<byte> currentData)
     {
         var native = SwShPersonalTable.Parse(nativeData, 1192).Records;
-        var current = SwShPersonalTable.Parse(currentData, 1192).Records;
-        if (native.Count != 1192 || current.Count != native.Count)
+        var current = SwShPersonalTable.Parse(currentData, 4096).Records;
+        if (native.Count != SwShRestorationSpecies.NativeRecordCount || current.Count < native.Count)
             throw new InvalidDataException("Form reservations require a compatible personal table.");
         var nativeOwners = SwShEffectivePokemonCatalog.Identities(native).ToDictionary(e => e.PersonalId, e => e.Identity);
         var currentOwners = SwShEffectivePokemonCatalog.Identities(current).ToDictionary(e => e.PersonalId, e => e.Identity);
         var reserved = new HashSet<int>();
         foreach (var block in Blocks)
         {
-            var original = native[block.Species];
-            if (original.FormStatsIndex != block.NativeFirstRow || Math.Max(0, original.FormCount - 1) != block.NativeAlternateCount)
+            var baseRow = SwShRestorationSpecies.BaseRow(block.Species);
+            var original = baseRow < native.Count ? native[baseRow] : null;
+            if ((original?.FormStatsIndex ?? 0) != block.NativeFirstRow || Math.Max(0, (original?.FormCount ?? 0) - 1) != block.NativeAlternateCount)
                 throw new InvalidDataException($"Species {block.Species} has incompatible native form ownership.");
             for (var form = 1; form <= block.AlternateCount; form++)
             {
                 var row = block.PersonalRow(form);
                 var identity = new SwShPokemonIdentity(block.Species, form);
-                if (row <= SwShEffectivePokemonCatalog.MaximumSpecies || row >= native.Count || !reserved.Add(row)
+                if (row <= SwShEffectivePokemonCatalog.MaximumSpecies || !reserved.Add(row)
+                    || SwShRestorationSpecies.SpeciesAtReservedRow(row) is not null
                     || nativeOwners.TryGetValue(row, out var owner) && owner != identity
                     || currentOwners.TryGetValue(row, out owner) && owner != identity)
                     throw new InvalidDataException($"Planned form row {row} is already owned by another identity.");
-                if (!currentOwners.ContainsKey(row) && !currentData.Slice(row * SwShPersonalTable.RecordSize, SwShPersonalTable.RecordSize)
-                    .SequenceEqual(nativeData.Slice(row * SwShPersonalTable.RecordSize, SwShPersonalTable.RecordSize)))
+                if (!currentOwners.ContainsKey(row) && row < current.Count && (row < native.Count
+                    ? !currentData.Slice(row * SwShPersonalTable.RecordSize, SwShPersonalTable.RecordSize)
+                        .SequenceEqual(nativeData.Slice(row * SwShPersonalTable.RecordSize, SwShPersonalTable.RecordSize))
+                    : currentData.Slice(row * SwShPersonalTable.RecordSize, SwShPersonalTable.RecordSize).ContainsAnyExcept((byte)0)))
                     throw new InvalidDataException($"Planned form row {row} contains other personal data.");
             }
         }

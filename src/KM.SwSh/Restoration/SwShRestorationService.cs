@@ -88,9 +88,11 @@ public sealed partial class SwShRestorationService
             var preview = Preview(paths, session);
             var references = CheckReferences(paths, preview);
             if (references.References.Count > 0) return new(session.Id, [], ReferenceDiagnostics(references));
-            var sources = preview.Sources.Concat(references.Sources).Distinct().ToArray();
+            var sources = preview.Sources.Concat(references.Sources).ToHashSet();
+            SwShRestorationFormDependencies.ValidateNative(preview.State, path =>
+                preview.Files.TryGetValue(path, out var value) ? value : ReadEffective(paths, path, sources));
             var writes = preview.Files.Keys.Order(StringComparer.Ordinal).Select(path => new PlannedFileWrite(path,
-                path == SwShRestorationComposer.PersonalPath ? sources : [],
+                path == SwShRestorationComposer.PersonalPath ? sources.ToArray() : [],
                 System.IO.File.Exists(Output(paths, path, includeExecutable: true)), "Update restored Pokemon while retaining unrelated resources and project customizations.")).ToArray();
             return SwShChangePlanSourceGuard.Capture(paths, new(session.Id, writes, []) { EffectivePendingEdits = session.PendingEdits }, preserveExplicitSourceLayers: true);
         }
@@ -144,6 +146,20 @@ public sealed partial class SwShRestorationService
         var snapshot = SwShRestorationStateStore.Read(paths); var selections = snapshot.State.Selections.ToDictionary(s => s.DefinitionId, StringComparer.Ordinal);
         var owned = SwShRestorationOwnership.ExactFiles(paths);
         var outputs = new Dictionary<string, byte[]?>(StringComparer.Ordinal); var sources = new HashSet<ProjectFileReference>(); var removed = new HashSet<SwShPokemonIdentity>();
+        // Only retain resource identities here. Payloads remain under the existing
+        // artifact read limits, and each selection still uses its current hash.
+        var sharedKeys = new Dictionary<string, HashSet<(string Path, SwShRestorationWriter Writer, string Key)>>(StringComparer.Ordinal);
+        HashSet<(string Path, SwShRestorationWriter Writer, string Key)> SharedKeys(string hash)
+        {
+            if (sharedKeys.TryGetValue(hash, out var keys)) return keys;
+            keys = SwShRestorationStateStore.ReadPrepared(paths, hash).Contributions
+                .Where(c => SwShRestorationMegaItems.IsItemContribution(c)
+                    || c.Writer == SwShRestorationWriter.SpeciesText
+                    || c.Writer == SwShRestorationWriter.Camp && c.Key.Contains("/common/", StringComparison.Ordinal))
+                .Select(c => (c.Path, c.Writer, c.Key)).ToHashSet();
+            sharedKeys.Add(hash, keys);
+            return keys;
+        }
         var needsSoundMemory = false;
         byte[]? Current(string path)
         {
@@ -215,10 +231,7 @@ public sealed partial class SwShRestorationService
             if (!intent.Enabled) effective = SwShRestorationCustomizations.IncludeLooseModels(paths, effective, owned);
             if (!intent.Enabled) VerifyVoiceRemoval(paths, effective, Current(SwShRestorationComposer.VoicesPath)!);
             var shared = selections.Values.Where(s => s.Enabled && s.DefinitionId != intent.DefinitionId)
-                .SelectMany(s => SwShRestorationStateStore.ReadPrepared(paths, s.CustomizationHash ?? s.PreparedHash).Contributions)
-                .Where(c => SwShRestorationMegaItems.IsItemContribution(c)
-                    || c.Writer == SwShRestorationWriter.Camp && c.Key.Contains("/common/", StringComparison.Ordinal))
-                .Select(c => (c.Path, c.Writer, c.Key)).ToHashSet();
+                .SelectMany(s => SharedKeys(s.CustomizationHash ?? s.PreparedHash)).ToHashSet();
             foreach (var item in effective.Contributions.Where(c => c.Writer == SwShRestorationWriter.File))
             {
                 if (!System.IO.File.Exists(Output(paths, item.Path))) continue;
@@ -262,11 +275,23 @@ public sealed partial class SwShRestorationService
             foreach (var file in SwShRestorationDependencies.Reconcile(paths, snapshot.State, state, Current)) outputs[file.Key] = file.Value;
         if (hasForms)
             foreach (var file in SwShRestorationForms.Storage(NativeFormFile, Current, state, normalize: false)) outputs[file.Key] = file.Value;
+        if (!assetsOnly && (outputs.ContainsKey(SwShRestorationComposer.PersonalPath) || outputs.ContainsKey(SwShRestorationComposer.LearnsetPath)))
+        {
+            var personal = Current(SwShRestorationComposer.PersonalPath)!;
+            var learnset = Current(SwShRestorationComposer.LearnsetPath)!;
+            if (personal.Length > SwShRestorationSpecies.NativeRecordCount * 176 || learnset.Length > SwShRestorationSpecies.NativeRecordCount * 260)
+            {
+                var aligned = SwShRestorationSpecies.AlignTables(personal, learnset);
+                if (!aligned.Personal.AsSpan().SequenceEqual(personal)) outputs[SwShRestorationComposer.PersonalPath] = aligned.Personal;
+                if (!aligned.Learnset.AsSpan().SequenceEqual(learnset)) outputs[SwShRestorationComposer.LearnsetPath] = aligned.Learnset;
+            }
+        }
         if (needsSoundMemory) AddSoundMemory(paths, outputs, sources);
         if (!assetsOnly)
         {
             AddMegaItemProtection(paths, state, outputs, sources);
             AddSpeciesSupport(paths, state, outputs, sources);
+            if (SwShRestorationDependencies.Enabled(state).Count != 0) AddTableMemory(paths, outputs, sources);
             AddCryRouting(paths, state, outputs, sources);
         }
         AddSamplerSupport(paths, state, outputs, sources);
@@ -349,6 +374,19 @@ public sealed partial class SwShRestorationService
         // Category-based protection is harmless with no active stone rows and may
         // also serve stones installed by another feature; leave it installed.
         var patched = SwShRestorationMegaItemProtection.Apply(baseline, current, paths.SelectedGame!.Value);
+        if (!patched.AsSpan().SequenceEqual(current)) outputs[relative] = patched;
+    }
+
+    private static void AddTableMemory(ProjectPaths paths, IDictionary<string, byte[]?> outputs, ISet<ProjectFileReference> sources)
+    {
+        if (string.IsNullOrWhiteSpace(paths.BaseExeFsPath))
+            throw new InvalidDataException("Select the game's Base ExeFS folder to apply the memory required by restored Pokemon tables.");
+        const string relative = SwShRestorationTableMemoryPatcher.MainPath;
+        var baseline = BoundedRead(Path.Combine(paths.BaseExeFsPath, "main")); sources.Add(new(ProjectFileLayer.Base, relative));
+        var current = baseline; var output = Output(paths, relative, includeExecutable: true);
+        if (outputs.TryGetValue(relative, out var pending) && pending is not null) current = pending;
+        else if (System.IO.File.Exists(output)) { current = BoundedRead(output); sources.Add(new(ProjectFileLayer.Layered, relative)); }
+        var patched = SwShRestorationTableMemoryPatcher.Apply(baseline, current, paths.SelectedGame!.Value);
         if (!patched.AsSpan().SequenceEqual(current)) outputs[relative] = patched;
     }
 
@@ -497,14 +535,14 @@ public sealed partial class SwShRestorationService
     {
         var output = Output(paths, relative);
         var native = Path.Combine(paths.BaseRomFsPath!, relative[6..].Replace('/', Path.DirectorySeparatorChar));
-        if (System.IO.File.Exists(output)) { sources.Add(new(ProjectFileLayer.Layered, relative)); return BoundedRead(output); }
-        if (System.IO.File.Exists(native)) { sources.Add(new(ProjectFileLayer.Base, relative)); return BoundedRead(native); }
+        if (System.IO.File.Exists(output)) { sources.Add(new(ProjectFileLayer.Layered, relative)); return BoundedRead(output, SwShRestorationSourceBudget.MaximumBytes(relative)); }
+        if (System.IO.File.Exists(native)) { sources.Add(new(ProjectFileLayer.Base, relative)); return BoundedRead(native, SwShRestorationSourceBudget.MaximumBytes(relative)); }
         return null;
     }
-    private static byte[] BoundedRead(string path)
+    private static byte[] BoundedRead(string path, int maximumBytes = 64 * 1024 * 1024)
     {
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        if (stream.Length > 64 * 1024 * 1024) throw new InvalidDataException("Restoration source exceeds its file budget.");
+        if (stream.Length > maximumBytes) throw new InvalidDataException("Restoration source exceeds its file budget.");
         var bytes = new byte[checked((int)stream.Length)]; stream.ReadExactly(bytes); return bytes;
     }
     private static string Output(ProjectPaths paths, string relative, bool includeExecutable = false)

@@ -91,6 +91,14 @@ public static partial class SvSwShLayerEmission
         var spherical = scene.Primitives.Any(p => p.Name.StartsWith("pm0100_00_41_", StringComparison.Ordinal)
             || p.Name.StartsWith("pm0101_00_41_", StringComparison.Ordinal));
         var tynamo = scene.Primitives.Any(p => p.Name.StartsWith("pm0602_00_00_", StringComparison.Ordinal));
+        var volbeat = scene.Primitives.Any(p => p.Name.StartsWith("pm0313_00_00_", StringComparison.Ordinal));
+        var toucannon = scene.Primitives.Any(p => p.Name.StartsWith("pm0809_00_00_", StringComparison.Ordinal));
+        var litleo = scene.Primitives.Any(p => p.Name.StartsWith("pm0704_00_00_", StringComparison.Ordinal));
+        var pyroarMale = scene.Primitives.Any(p => p.Name.StartsWith("pm0705_00_00_", StringComparison.Ordinal));
+        var pyroarFemale = scene.Primitives.Any(p => p.Name.StartsWith("pm0705_01_00_", StringComparison.Ordinal));
+        // Both Minior donor states retain the meteor mesh names. The four core
+        // surfaces and mouth share authored layers, even while the shell hides them.
+        var minior = scene.Primitives.Any(p => p.Name.StartsWith("pm0824_11_00_", StringComparison.Ordinal));
         var expected = scene.Primitives.Any(p => p.Name.StartsWith("pm0075_00_11_", StringComparison.Ordinal))
             ? new[] { "body_b" } : scene.Primitives.Any(p => p.Name.StartsWith("pm0076_00_11_", StringComparison.Ordinal))
                 ? new[] { "body_a_01", "body_a_02", "body_b_01" }
@@ -99,6 +107,12 @@ public static partial class SvSwShLayerEmission
                 : scene.Primitives.Any(p => p.Name.StartsWith("pm0386_11_00_", StringComparison.Ordinal)) ? new[] { "body_b_01", "body_b_02", "body_b_00", "body_a" }
                 : scene.Primitives.Any(p => p.Name.StartsWith("pm0386_", StringComparison.Ordinal)) ? new[] { "body_a_01", "body_a_02", "body_a_00", "body_b" }
                 : tynamo ? new[] { "body_00", "body_01" }
+                : volbeat ? new[] { "body_b" }
+                : toucannon ? new[] { "body_b_00", "body_b_01", "body_b_02", "body_b_03" }
+                : litleo ? new[] { "body_a_02", "body_a_03" }
+                : pyroarMale ? new[] { "body_a_01", "body_b_00" }
+                : pyroarFemale ? new[] { "body_a_01" }
+                : minior ? new[] { "body_a_00", "body_a_01", "body_a_02", "body_a_03", "eye" }
                 : throw new InvalidDataException("Layer emission requires a qualified source model.");
         foreach (var name in expected)
         {
@@ -110,22 +124,40 @@ public static partial class SvSwShLayerEmission
                 "body_b" => 2, "body_a_00" => scene.Primitives.Any(p => p.Name.StartsWith("pm0386_14_", StringComparison.Ordinal)) ? 1 : 2,
                 _ => 1,
             };
-            if (deoxys ? sections != deoxysSections : spherical ? sections is < 1 or > 2 : sections != 1)
+            if (minior ? sections != (name == "body_a_02" ? 2 : 1) : deoxys ? sections != deoxysSections : spherical ? sections is < 1 or > 2 : volbeat ? sections != 3 : sections != 1)
                 throw new InvalidDataException("Layer emission geometry is ambiguous.");
+            if (toucannon && !scene.Primitives.Where(p => p.Material.Name == name).Select(p => p.Name)
+                    .SequenceEqual(["pm0809_00_00_body_mesh_shape"]))
+                throw new InvalidDataException("Toucannon emission geometry requires another adapter.");
+            if (minior && !scene.Primitives.Where(p => p.Material.Name == name).Select(p => p.Name).Order(StringComparer.Ordinal)
+                    .SequenceEqual(name == "eye" ? new[] { "pm0824_11_00_eye_mesh_shape" }
+                        : name == "body_a_02" ? new[] { "pm0824_11_00_core_mesh_shape", "pm0824_11_00_mouth_mesh_shape" }
+                        : new[] { "pm0824_11_00_core_mesh_shape" }))
+                throw new InvalidDataException("Minior emission geometry requires another adapter.");
             var material = source.Tables(source.Root, 1, 128).Single(m => source.Text(m, 0) == name);
             var scalars = source.Tables(material, 4, 256).ToDictionary(p => source.Text(p, 0)!, p => source.Field(p, 1) is var at && at != 0 ? source.Float(at) : 0);
             var vectors = source.Tables(material, 7, 256).ToDictionary(p => source.Text(p, 0)!, p =>
             { var at = source.Field(p, 1); return new Vector4(source.Float(at), source.Float(at + 4), source.Float(at + 8), source.Float(at + 12)); });
             var transparent = name.EndsWith("_02", StringComparison.Ordinal) && scene.Primitives.Any(p => p.Name.StartsWith("pm0386_", StringComparison.Ordinal));
             var colorMap = source.Tables(material, 2, 64).Any(t => source.Text(t, 0) == "EmissionColorMap");
+            var initial = minior ? name switch
+                {
+                    "body_a_00" => new[] { .8f, .8f, 0f, .8f },
+                    "body_a_03" => new[] { .8f, .8f, .8f, 0f },
+                    "eye" => new[] { .8f, .8f, 0f, 0f },
+                    _ => new[] { .8f, .8f, .8f, .8f },
+                } : new float[4];
+            var expectedUv = new Vector4(tynamo || pyroarMale || pyroarFemale
+                || toucannon && name is ("body_b_02" or "body_b_03") ? 2 : 1, 1, 0, 0);
             if (!source.Tables(material, 1, 16).Select(t => source.Text(t, 0)).SequenceEqual(transparent
-                    ? ["Transparent", "TransparentInner"] : [tynamo ? "IkCharacter" : spherical ? "SSS" : "Standard"])
-                || vectors["UVScaleOffset"] != new Vector4(tynamo ? 2 : 1, 1, 0, 0)
+                    ? ["Transparent", "TransparentInner"] : [tynamo || litleo || pyroarMale || pyroarFemale ? "IkCharacter" : spherical || volbeat || toucannon ? "SSS" : "Standard"])
+                || vectors["UVScaleOffset"] != expectedUv || (minior || toucannon) && colorMap
                 || (colorMap ? scalars["EmissionIntensity"] is not (.1f or .2f) : scalars["EmissionIntensity"] != 0)
-                || !colorMap && Enumerable.Range(1, 4).Any(layer => scalars["LayerMaskScale" + layer] != 1 || scalars["EmissionIntensityLayer" + layer] != 0))
+                || !colorMap && Enumerable.Range(1, 4).Any(layer => scalars["LayerMaskScale" + layer] != 1 || scalars["EmissionIntensityLayer" + layer] != initial[layer - 1]))
                 throw new InvalidDataException("Source emission surface requires another adapter.");
             var colors = Enumerable.Range(1, 4).Select(layer => colorMap ? new Vector4(0, 0, 0, 1) : vectors["EmissionColorLayer" + layer]).ToArray();
-            if (colors.Any(c => !float.IsFinite(c.X + c.Y + c.Z + c.W) || c.X is < 0 or > 2 || c.Y is < 0 or > 2 || c.Z is < 0 or > 2 || c.W != 1))
+            var maximumColor = volbeat ? 2.5f : 2;
+            if (colors.Any(c => !float.IsFinite(c.X + c.Y + c.Z + c.W) || c.X < 0 || c.X > maximumColor || c.Y < 0 || c.Y > maximumColor || c.Z < 0 || c.Z > maximumColor || c.W != 1))
                 throw new InvalidDataException("Source emission color exceeds its supported range.");
             var texture = source.Tables(material, 2, 64).Single(t => source.Text(t, 0) == (colorMap ? "EmissionColorMap" : "LayerMaskMap"));
             var selector = source.Tables(material, 9, 256).SingleOrDefault(p => source.Text(p, 0) == (colorMap ? "UVIndexEmission" : "UVIndexLayerMask"));
@@ -133,13 +165,22 @@ public static partial class SvSwShLayerEmission
             if (uvIndex is not (0 or uint.MaxValue)) throw new InvalidDataException("Source emission mask coordinates need another adapter.");
             var samplers = source.Tables(material, 3, 32); var sampler = checked((int)source.Value(texture, 2));
             if ((uint)sampler >= samplers.Length) throw new InvalidDataException("Source emission sampler is missing.");
+            if (toucannon && name == "body_b_01" && (uvIndex != uint.MaxValue || colorMap || source.Value(samplers[sampler], 9) != 1 || source.Value(samplers[sampler], 10) != 1))
+                throw new InvalidDataException("Toucannon emission mask requires another adapter.");
+            var mirrored = pyroarMale || pyroarFemale || toucannon && name != "body_b_01";
+            if (mirrored && (uvIndex != uint.MaxValue || colorMap || source.Value(samplers[sampler], 9) != 6 || source.Value(samplers[sampler], 10) != 1))
+                throw new InvalidDataException("Source mirrored emission mask requires another adapter.");
             result.Add(name, new(name, source.Text(texture, 1)!, colors.Select(c => new Vector3(c.X, c.Y, c.Z)).ToArray())
                 { ColorMap = colorMap, BaseColorMap = colorMap
                     && source.Tables(material, 2, 64).Any(t => source.Text(t, 0) == "BaseColorMap" && source.Text(t, 1) == source.Text(texture, 1))
                     && !source.Tables(material, 2, 64).Any(t => source.Text(t, 0) == "LayerMaskMap")
                     && (!vectors.TryGetValue("BaseColor", out var baseColor) || baseColor == Vector4.One),
-                    Initial = colorMap ? [scalars["EmissionIntensity"], 0, 0, 0] : new float[4],
-                    Transparent = transparent, MaskUv = uvIndex == 0 ? new(1, 1, 0, 0) : vectors["UVScaleOffset"],
+                    Initial = colorMap ? [scalars["EmissionIntensity"], 0, 0, 0] : initial,
+                    MaximumIntensity = minior ? 1.5f : 1,
+                    MaskScale = colorMap ? Vector4.One : new(scalars["LayerMaskScale1"], scalars["LayerMaskScale2"], scalars["LayerMaskScale3"], scalars["LayerMaskScale4"]),
+                    Transparent = transparent, MirroredMask = mirrored, AnimatedColors = minior,
+                    BaseColors = toucannon ? ToucannonBaseColors(source, material, vectors, name) : minior ? MiniorBaseColors(vectors) : null,
+                    MaskUv = uvIndex == 0 ? new(1, 1, 0, 0) : vectors["UVScaleOffset"],
                     MaskWrap = new(source.Value(samplers[sampler], 9), source.Value(samplers[sampler], 10)) });
         }
         return result;
@@ -204,7 +245,7 @@ public static partial class SvSwShLayerEmission
         var originals = source.Tables(source.Root, 6, 128);
         var (programStart, _) = source.Vector(source.Root, 3, 4, 256);
         var original = sourceProgram is null ? originals[0] : originals.Single(m => source.StringAt(programStart + checked((int)source.Value(m, 8)) * 4) == sourceProgram);
-        if (programName is BaseProgramName or UnlitBaseProgramName or OpaqueCoverageProgramName or SvSwShSourceCoverage.OpaqueProgramName or SvSwShSourceBase.ProgramName or SvSwShSourceBase.UnlitProgramName) RequireNativeBaseSlots(source, original);
+        if (programName is BaseProgramName or UnlitBaseProgramName or OpaqueCoverageProgramName or SvSwShSourceCoverage.OpaqueProgramName or SvSwShSourceBase.ProgramName or SvSwShSourceBase.MirroredProgramName or SvSwShSourceBase.UnlitProgramName) RequireNativeBaseSlots(source, original);
         if (programName is OpaqueCoverageProgramName or SvSwShSourceCoverage.OpaqueProgramName) RequireNativeCoverageSlots(source, original);
         if (programName == PointLightProgramName)
         {
@@ -280,7 +321,8 @@ public static partial class SvSwShLayerEmission
             if (contract.MirroredMask)
             {
                 ValidateMirroredMask(contract);
-                foreach (var role in contract.BaseColors is null ? new[] { "EmissionMaskTex" } : ["EmissionMaskTex", "Col0Tex"])
+                foreach (var role in contract.BaseColors is null || SvSwShSourceBase.IsToucannon(contract)
+                    ? new[] { "EmissionMaskTex" } : ["EmissionMaskTex", "Col0Tex"])
                 {
                     var texture = source.Tables(material, 11, 64).Single(t => source.Text(t, 0) == role);
                     var sampler = source.Table(texture, 2);
@@ -364,10 +406,11 @@ public static partial class SvSwShLayerEmission
                     throw new InvalidDataException("Original source alpha UV animation requires another tile adapter.");
                 if (scalars.Length == 0 && colors.Length == 0 && bases.Length == 0 && alphas.Length == 0) continue;
                 var bound = scene.Primitives.Any(p => p.Name == mesh && p.Material.Name == name);
-                // Qualified LODs and fish genders repeat their bound surface's curves.
+                // Qualified LODs repeat their bound surface's curves.
                 // Remove a repeated scalar set only after comparing every channel
                 // against its bound counterpart in this same clip.
-                var repeatedLod = !bound && (RepeatedQualifiedLod(source, track, material, scene));
+                var repeatedLod = !bound && (RepeatedQualifiedLod(source, track, material, scene)
+                    || RepeatedToucannonWing(source, track, material, scene));
                 // Leave other bound materials intact for the supplied strict decoder.
                 // Layered eyelids own their scalar channels separately; repeated LOD
                 // channels must still match the bound mesh before reaching that decoder.
@@ -493,6 +536,38 @@ public static partial class SvSwShLayerEmission
         if (original == 0) return false;
         var channels = source.Tables(material, 1, 256); var originals = source.Tables(original, 1, 256);
         if (channels.Length != originals.Length) return false;
+        foreach (var channel in channels)
+        {
+            var counterpart = originals.SingleOrDefault(c => source.Text(c, 0) == source.Text(channel, 0));
+            if (counterpart == 0) return false;
+            var keys = source.Tables(source.Table(channel, 1), 0, 18000);
+            var originalKeys = source.Tables(source.Table(counterpart, 1), 0, 18000);
+            float Value(int key, int field) => source.Field(key, field) is var at && at != 0 ? source.Float(at) : 0;
+            if (keys.Length != originalKeys.Length || !keys.Zip(originalKeys).All(pair => Value(pair.First, 0) == Value(pair.Second, 0)
+                && Value(pair.First, 1) == Value(pair.Second, 1))) return false;
+        }
+        return true;
+    }
+
+    private static bool RepeatedToucannonWing(ModelBuffer source, int track, int material, PreviewScene scene)
+    {
+        // The donor repeats the body's beak-emission channels on wing targets
+        // named body_b_00, while all four actual wings bind body_b_04. Preserve
+        // the bound body animation and remove only exact redundant scalar sets.
+        var mesh = source.Text(track, 0)!;
+        if (mesh is not ("pm0809_00_00_left_wing_mesh_shape" or "pm0809_00_00_right_wing_mesh_shape"
+            or "pm0809_00_00_left_closewing_mesh_shape" or "pm0809_00_00_right_closewing_mesh_shape")
+            || source.Text(material, 0) != "body_b_00"
+            || !scene.Primitives.Any(p => p.Name == mesh && p.Material.Name == "body_b_04")
+            || !scene.Primitives.Any(p => p.Name == "pm0809_00_00_body_mesh_shape" && p.Material.Name == "body_b_00")
+            || source.Tables(material, 2, 256).Length != 0 || source.Tables(material, 3, 256).Length != 0) return false;
+        var originalTrack = source.Tables(source.Root, 1, 512).SingleOrDefault(t => source.Text(t, 0) == "pm0809_00_00_body_mesh_shape");
+        if (originalTrack == 0 || source.Table(originalTrack, 4) == 0) return false;
+        var original = source.Tables(source.Table(originalTrack, 4), 2, 128).SingleOrDefault(m => source.Text(m, 0) == "body_b_00");
+        if (original == 0) return false;
+        var channels = source.Tables(material, 1, 256); var originals = source.Tables(original, 1, 256);
+        if (channels.Length != 2 || channels.Length != originals.Length
+            || channels.Any(c => source.Text(c, 0) is not ("EmissionIntensityLayer2" or "EmissionIntensityLayer4"))) return false;
         foreach (var channel in channels)
         {
             var counterpart = originals.SingleOrDefault(c => source.Text(c, 0) == source.Text(channel, 0));

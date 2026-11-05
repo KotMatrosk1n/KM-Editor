@@ -111,8 +111,7 @@ public static class SwShMaterialBaker
         // sample it as (R,R,R,1). Resolve that source mapping through the normal
         // image reader, then use the existing native color allocation/encoder.
         // The editing document itself continues to reject non-color payloads.
-        if (!eye && primitive.Material.Alpha == "Opaque" && templatePath == textures["BaseColorMap"]
-            && !preserveSourceColor)
+        if (!eye && primitive.Material.Alpha == "Opaque" && templatePath == textures["BaseColorMap"])
         {
             var metadata = new ModelBuffer(template);
             int Pointer(int at) => checked((int)System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(metadata.Slice(at, 8)));
@@ -131,10 +130,10 @@ public static class SwShMaterialBaker
         }
         var container = new ModelTextureDocument(template);
         var colorWidth = container.Width; var colorHeight = container.Height;
-        // This qualified transparent shader samples the original mask separately.
+        // Qualified source-color shaders sample the original mask separately.
         // Keep the albedo's own allocation; enlarging it to the mask dimensions
         // would regenerate the source alpha and its authored compressed mips.
-        foreach (var role in new[] { "BaseColorMap", "LayerMaskMap" })
+        foreach (var role in preserveSourceColor ? new[] { "BaseColorMap" } : new[] { "BaseColorMap", "LayerMaskMap" })
             if (textures.TryGetValue(role, out var path))
             {
                 var image = PreviewTexture.ReadBaseLevel(readTexture(path));
@@ -373,11 +372,17 @@ public static class SwShMaterialBaker
         {
             if (eye || atlas is not null || unlitSurface || (authoredAlpha || primitive.Material.Alpha != "Opaque"))
                 throw new InvalidDataException("Source albedo requires a qualified untransformed layered surface.");
-            var original = originalRead(textures["BaseColorMap"]); var document = new ModelTextureDocument(original);
+            var original = originalRead(textures["BaseColorMap"]);
+            // The qualified scalar mapping above is sampled as (R,R,R,1).
+            // Retain that native BC4 container, including its channel mapping
+            // and authored mip chain; it does not need a recoloring document.
+            var scalar = sampledScalarAlbedo ? PreviewTexture.Read(original) : null;
+            var document = sampledScalarAlbedo ? null : new ModelTextureDocument(original);
             // The allocation above already enforces every native dimension bound.
             // Retain the original compressed blocks and every authored mip only
             // when that exact allocation and color encoding agree.
-            if (document.Width != colorWidth || document.Height != colorHeight || document.Srgb != container.Srgb)
+            if ((scalar?.Width ?? document!.Width) != colorWidth || (scalar?.Height ?? document!.Height) != colorHeight
+                || (scalar is not null ? (scalar.Format & 255) == 6 : document!.Srgb) != container.Srgb)
                 throw new InvalidDataException("Source albedo allocation differs from its qualified native surface.");
             var originalName = Path.GetFileNameWithoutExtension(textures["BaseColorMap"]);
             colorName = ModelTextureIdentity.MaterialName(originalName, materialIndex, 'c');

@@ -1,5 +1,7 @@
+// SPDX-License-Identifier: GPL-3.0-only
 using System.Numerics;
 using KM.Formats.Models;
+using KM.Formats.SwSh;
 
 namespace KM.Formats.SV;
 
@@ -8,6 +10,24 @@ public static class SvSwShCornealMaterial
     public const string ProgramName = "Cornea";
     public const string NativeProgramName = "Body00";
     public const string EnvironmentName = "sphere_0330a_env";
+
+    public static (float Primary, float Corneal) SourceNormalHeights(ModelBuffer source, int material)
+    {
+        if (!source.Tables(material, 1, 16).Select(shader => source.Text(shader, 0))
+                .SequenceEqual(new[] { "EyeClearCoat", "Eye" })
+            || !new[] { "NormalMap", "NormalMap1" }.All(role => source.Tables(material, 2, 64).Count(t => source.Text(t, 0) == role) == 1))
+            throw new InvalidDataException("Corneal normal strengths require their authored paired surface.");
+        float Strength(string name, float maximum)
+        {
+            var rows = source.Tables(material, 4, 256).Where(parameter => source.Text(parameter, 0) == name).ToArray();
+            if (rows.Length != 1) throw new InvalidDataException("Corneal normal strength is missing or ambiguous.");
+            var at = source.Field(rows[0], 1); var value = at == 0 ? 0 : source.Float(at);
+            if (!float.IsFinite(value) || value < 0 || value > maximum)
+                throw new InvalidDataException("Corneal normal strength is outside its supported range.");
+            return value;
+        }
+        return (Strength("NormalHeight", 2), Strength("NormalHeight1", 1));
+    }
 
     public static byte[] Template(byte[] bodyModel, byte[] reflectionModel)
     {
@@ -48,9 +68,20 @@ public static class SvSwShCornealMaterial
         return writer.Finish(body.Root);
     }
 
-    public static PreviewPrimitive Normals(PreviewPrimitive primitive, byte[] objectNormals)
+    public static PreviewPrimitive Normals(PreviewPrimitive primitive, byte[] objectNormals,
+        byte[]? sourceMaterials = null, string? sourceMaterialName = null)
     {
-        if (!primitive.Material.Name.Contains("eye", StringComparison.Ordinal))
+        var eye = primitive.Material.Name.Contains("eye", StringComparison.Ordinal);
+        if (sourceMaterials is not null)
+        {
+            var source = new ModelBuffer(sourceMaterials);
+            var name = sourceMaterialName ?? primitive.Material.Name;
+            var material = source.Tables(source.Root, 1, 128).Single(t => source.Text(t, 0) == name);
+            if (primitive.Material.Name != name && !primitive.Material.Name.StartsWith(name + "_mesh", StringComparison.Ordinal))
+                throw new InvalidDataException("Corneal normal material alias is not its source consumer.");
+            eye = SwShMaterialBaker.IsEyeMaterial(source, material);
+        }
+        if (!eye)
             throw new InvalidDataException("Corneal normals require an eye surface.");
         var texture = new ModelTextureDocument(objectNormals); var pixels = texture.Pixels();
         if (texture.Srgb) throw new InvalidDataException("Corneal normals must be linear.");
@@ -69,18 +100,27 @@ public static class SvSwShCornealMaterial
         return primitive with { Vertices = vertices };
     }
 
-    public static byte[] GlobalLoop(byte[] animation)
+    public static byte[] GlobalLoop(byte[] animation, IReadOnlySet<string>? eyeMaterials = null)
     {
         var source = new ModelBuffer(animation); var writer = new ModelTableBuilder(animation);
+        var retained = new List<(int Slot, int Target)>();
         foreach (var material in source.Tables(source.Table(source.Root, 2), 0, 128)
-            .Where(material => source.Text(material, 0)!.Contains("eye", StringComparison.Ordinal)))
+            .Where(material => eyeMaterials?.Contains(source.Text(material, 0)!)
+                ?? source.Text(material, 0)!.Contains("eye", StringComparison.Ordinal)))
             foreach (var field in new[] { 2, 3 })
             {
                 var parameters = source.Tables(material, field, 256)
                     .Where(parameter => source.Text(parameter, 0) is not ("SphereMapColorVal" or "SphereMapColor")).ToArray();
-                var slots = writer.Vector(material, field, parameters.Length); var copy = writer.Append(animation);
-                for (var index = 0; index < parameters.Length; index++) writer.Pointer(slots[index], copy + parameters[index]);
+                var slots = writer.Vector(material, field, parameters.Length);
+                for (var index = 0; index < parameters.Length; index++) retained.Add((slots[index], parameters[index]));
             }
+        // Allocate all forward-reference slots before retaining the shared subgraph.
+        // No retained parameter is mutated by this filter.
+        if (retained.Count > 0)
+        {
+            var copy = writer.Append(animation);
+            foreach (var (slot, target) in retained) writer.Pointer(slot, copy + target);
+        }
         return writer.Finish(source.Root);
     }
 }

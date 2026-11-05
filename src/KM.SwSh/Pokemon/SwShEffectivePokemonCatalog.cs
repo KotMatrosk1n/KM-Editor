@@ -205,7 +205,8 @@ public sealed record SwShEffectivePokemonCatalog(string Revision, IReadOnlyList<
             layer = ProjectFileLayer.Base;
         }
         var info = new FileInfo(path);
-        if (!info.Exists || info.Length is < 1 or > 64 * 1024 * 1024) throw new InvalidDataException("Pokemon source is missing or exceeds its read budget.");
+        if (!info.Exists || info.Length < 1 || info.Length > SwShRestorationSourceBudget.MaximumBytes(relativePath))
+            throw new InvalidDataException("Pokemon source is missing or exceeds its read budget.");
         var bytes = File.ReadAllBytes(path);
         sources?.Add(new(layer, relativePath));
         return bytes;

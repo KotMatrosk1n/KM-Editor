@@ -87,6 +87,7 @@ public static class SwShKnownExecutableCompositionVerifier
             if (!NormalizeSpecies(retail, ref normalized, expectedGame, ref recognizedTransformation)
                 || !NormalizeMegaItems(retail, ref normalized, expectedGame, ref recognizedTransformation)
                 || !NormalizeSoundMemory(retail, ref normalized, expectedGame, ref recognizedTransformation)
+                || !NormalizeTableMemory(retail, ref normalized, expectedGame, ref recognizedTransformation)
                 || !NormalizeTreeQuantity(retail, ref normalized, expectedGame, ref recognizedTransformation)
                 || !NormalizeAdventures(retail, ref normalized, expectedGame, baseAdventureArchive, currentAdventureArchive, ref recognizedTransformation)
                 || !NormalizeTrainers(retail, ref normalized, expectedGame, ref recognizedTransformation)
@@ -155,6 +156,14 @@ public static class SwShKnownExecutableCompositionVerifier
     {
         if (!KM.SwSh.Restoration.SwShRestorationMegaItemProtection.Read(normalized, game).Installed) return true;
         normalized = KM.SwSh.Restoration.SwShRestorationMegaItemProtection.RestoreFromBase(retail, normalized, game);
+        recognizedTransformation = true;
+        return true;
+    }
+
+    private static bool NormalizeTableMemory(byte[] retail, ref byte[] normalized, ProjectGame game, ref bool recognizedTransformation)
+    {
+        if (!KM.SwSh.Restoration.SwShRestorationTableMemoryPatcher.Read(normalized, game).Installed) return true;
+        normalized = KM.SwSh.Restoration.SwShRestorationTableMemoryPatcher.RestoreFromBase(retail, normalized, game);
         recognizedTransformation = true;
         return true;
     }

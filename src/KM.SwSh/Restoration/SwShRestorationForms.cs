@@ -12,10 +12,12 @@ public static partial class SwShRestorationForms
         SwShRestorationFormCandidates.ResolveFormLabel(identity.Species, identity.Form)
             ?.StartsWith("Mega", StringComparison.Ordinal) == true;
 
-    // Native egg-file identities are independent of personal rows. New Mega
-    // forms use separate files while earlier restorations retain their paths.
-    public static int EggRow(SwShPokemonIdentity identity) => IsMega(identity) && identity.Species != 6
-        ? checked(2048 + PersonalRow(identity)) : PersonalRow(identity);
+    // Keep restored form egg files outside native and previously reserved files.
+    private const int OlderFormEggOffset = 2048;
+    private static bool HasSeparateEggFiles(SwShPokemonIdentity identity) => IsMega(identity) && identity.Species != 6
+        || identity.Form != 0 && identity.Species is 664 or 665 or 666 or 669 or 670 or 671 or 741 or 774;
+    public static int EggRow(SwShPokemonIdentity identity) => HasSeparateEggFiles(identity)
+        ? checked(OlderFormEggOffset + PersonalRow(identity)) : PersonalRow(identity);
     public static string EggPath(int row) => $"romfs/bin/pml/tamagowaza/tamagowaza_{row:0000}.bin";
 
     public static int PersonalRow(SwShPokemonIdentity identity) => identity.Form == 0 ? SwShRestorationSpecies.BaseRow(identity.Species)

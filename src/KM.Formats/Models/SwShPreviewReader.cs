@@ -138,7 +138,8 @@ public sealed class SwShPreviewReader(Func<string, byte[]> read)
                 if (gain != 0) surface.Values[5][3] = data.Field(gain, 1) is var at && at != 0 ? data.Float(at) : 0;
             }
             if (surfaceLayers) maskUv = underlayUv;
-            if (SwShPreviewLayerEmission.UsesProgram(data, material, KM.Formats.SV.SvSwShLayerEmission.MirroredProgramName))
+            if (SwShPreviewLayerEmission.UsesProgram(data, material, KM.Formats.SV.SvSwShLayerEmission.MirroredProgramName)
+                || SwShPreviewLayerEmission.UsesProgram(data, material, KM.Formats.SV.SvSwShSourceBase.MirroredProgramName))
                 maskUv = new Vector4(2, 1, 0, 0);
             surface = SwShPreviewRestorationMaterial.Read(data, material, surface, restorationEffect);
             if (restorationEffect is 3 or 4) origins = Vector4.Zero;

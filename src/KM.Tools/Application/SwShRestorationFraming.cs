@@ -83,6 +83,55 @@ internal static class SwShRestorationFraming
             "yanma" => (0.85f, 145.2f),
             "yanmega" => (0.5f, 34.6f),
             "zangoose" => (1.4f, -52.7f),
+            // Keep the Summary view centered and fully framed across idle poses.
+            "victreebel" => (1.6f, 70f),
+            "furret" => (0.55f, -20f),
+            "spinarak" => (0.5f, -55f),
+            "hoppip" => (1.5f, 80f),
+            "skiploom" => (0.75f, 5f),
+            "wurmple" => (0.23f, 10f),
+            "silcoon" => (0.55f, -25f),
+            "cascoon" => (0.65f, -30f),
+            "masquerain" => (0.65f, 130f),
+            "hariyama" => (0.9f, 90f),
+            "meditite" => (0.65f, 0f),
+            "volbeat" or "illumise" => (1.5f, 0f),
+            "spoink" => (1f, 0f),
+            "chingling" => (0.8f, -50f),
+            "tropius" => (0.8f, 0f),
+            "scatterbug" or "scatterbug-polar" or "scatterbug-tundra" or
+            "scatterbug-continental" or "scatterbug-garden" or "scatterbug-elegant" or
+            "scatterbug-meadow" or "scatterbug-modern" or "scatterbug-marine" or
+            "scatterbug-archipelago" or "scatterbug-high-plains" or "scatterbug-sandstorm" or
+            "scatterbug-river" or "scatterbug-monsoon" or "scatterbug-savanna" or
+            "scatterbug-sun" or "scatterbug-ocean" or "scatterbug-jungle" or
+            "scatterbug-fancy" or "scatterbug-poke-ball" => (0.5f, -45f),
+            "spewpa" or "spewpa-polar" or "spewpa-tundra" or
+            "spewpa-continental" or "spewpa-garden" or "spewpa-elegant" or
+            "spewpa-meadow" or "spewpa-modern" or "spewpa-marine" or
+            "spewpa-archipelago" or "spewpa-high-plains" or "spewpa-sandstorm" or
+            "spewpa-river" or "spewpa-monsoon" or "spewpa-savanna" or
+            "spewpa-sun" or "spewpa-ocean" or "spewpa-jungle" or
+            "spewpa-fancy" or "spewpa-poke-ball" => (0.6f, -40f),
+            "pyroar" => (1.9f, 40f),
+            "flabebe" or "flabebe-yellow" or "flabebe-orange" or
+            "flabebe-blue" or "flabebe-white" => (0.55f, -55f),
+            "floette" or "floette-yellow" or "floette-orange" or
+            "floette-blue" or "floette-white" or "floette-eternal" => (0.65f, -70f),
+            "florges" or "florges-yellow" or "florges-orange" or
+            "florges-blue" or "florges-white" => (1.4f, 45f),
+            "gogoat" => (1.8f, 40f),
+            "trumbeak" => (1f, 145f),
+            "toucannon" => (1f, 160f),
+            "yungoos" => (0.4f, 0f),
+            "gumshoos" => (0.5f, -25f),
+            "crabominable" => (1.5f, 0f),
+            "minior" or "minior-meteor-orange" or "minior-meteor-yellow" or
+            "minior-meteor-green" or "minior-meteor-blue" or "minior-meteor-indigo" or
+            "minior-meteor-violet" or "minior-core-red" or "minior-core-orange" or
+            "minior-core-yellow" or "minior-core-green" or "minior-core-blue" or
+            "minior-core-indigo" or "minior-core-violet" => (1.25f, 100f),
+            "bruxish" => (1f, 130f),
             _ => (1f, 0f),
         };
         if (adjustment == (1f, 0f) && definition != "raichu-mega-y") return configuration;
@@ -209,7 +258,7 @@ internal static class SwShRestorationFraming
     }
 
     internal static SwShConvertedGeometry IdleBounds(IReadOnlyDictionary<string, byte[]> members, string modelFolder,
-        string animationFolder, string stem, SwShConvertedGeometry geometry)
+        string animationFolder, string stem, SwShConvertedGeometry geometry, bool fullCycle = false)
     {
         // SwSh scales the actor using its posed idle height, including in the party screen.
         var scene = new SwShPreviewReader(path => members[modelFolder + Path.GetFileName(path)]).Load(stem + ".gfbmdl");
@@ -218,39 +267,58 @@ internal static class SwShRestorationFraming
         var world = new Matrix4x4[bones.Length]; var skin = new Matrix4x4[bones.Length];
         var scales = new Vector3[bones.Length];
         static Vector3 Vector(float[] values) => new(values[0], values[1], values[2]);
-        static float[] First(PreviewKey[]? keys, float[] fallback) => keys is { Length: > 0 } ? keys[0].Value : fallback;
-        for (var i = 0; i < bones.Length; i++)
+        static float[] Sample(PreviewKey[]? keys, float[] fallback, int frame, bool rotation = false)
         {
-            var bone = bones[i]; var track = clip.Tracks.SingleOrDefault(t => t.Bone == i);
-            var scale = First(track?.Scale, bone.Scale); var rotation = First(track?.Rotation, bone.Rotation);
-            if (scale.Any(value => !float.IsFinite(value))) throw new InvalidDataException("Source idle scale is invalid.");
-            scales[i] = Vector(scale);
-            var local = Matrix4x4.CreateScale(scales[i])
-                * Matrix4x4.CreateFromQuaternion(new(rotation[0], rotation[1], rotation[2], rotation[3]));
-            if (bone.CompensateScale && bone.Parent >= 0)
+            if (keys is not { Length: > 0 }) return fallback;
+            if (frame <= keys[0].Frame) return keys[0].Value;
+            if (frame >= keys[^1].Frame) return keys[^1].Value;
+            var upper = Array.FindIndex(keys, key => key.Frame > frame);
+            var a = keys[upper - 1]; var b = keys[upper];
+            var fraction = (frame - a.Frame) / (b.Frame - a.Frame);
+            if (rotation)
             {
-                float Inverse(float value) => MathF.Abs(value) > .000001f ? 1 / value : 0;
-                var parent = scales[bone.Parent];
-                local *= Matrix4x4.CreateScale(Inverse(parent.X), Inverse(parent.Y), Inverse(parent.Z));
+                var q = Quaternion.Slerp(new(a.Value[0], a.Value[1], a.Value[2], a.Value[3]),
+                    new(b.Value[0], b.Value[1], b.Value[2], b.Value[3]), fraction);
+                return [q.X, q.Y, q.Z, q.W];
             }
-            local *= Matrix4x4.CreateTranslation(Vector(First(track?.Translation, bone.Translation)));
-            world[i] = bone.Parent < 0 ? local : local * world[bone.Parent];
-            var b = bone.InverseBind;
-            var inverse = new Matrix4x4(b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
-                b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]);
-            skin[i] = inverse * world[i];
+            return a.Value.Zip(b.Value, (x, y) => x + (y - x) * fraction).ToArray();
         }
         var minimum = new Vector3(float.PositiveInfinity); var maximum = new Vector3(float.NegativeInfinity);
-        foreach (var primitive in scene.Primitives)
-            for (var vertex = 0; vertex < primitive.Vertices.Length; vertex += 16)
+        // Spoink's first frame is compressed; its full authored bounce defines the camera envelope.
+        for (var frame = 0; frame < (fullCycle ? clip.Frames : 1); frame++)
+        {
+            for (var i = 0; i < bones.Length; i++)
             {
-                var values = primitive.Vertices; var position = new Vector3(values[vertex], values[vertex + 1], values[vertex + 2]);
-                var posed = Vector3.Zero;
-                for (var influence = 0; influence < 4; influence++)
-                    if (values[vertex + 12 + influence] > 0)
-                        posed += Vector3.Transform(position, skin[(int)values[vertex + 8 + influence]]) * values[vertex + 12 + influence];
-                minimum = Vector3.Min(minimum, posed); maximum = Vector3.Max(maximum, posed);
+                var bone = bones[i]; var track = clip.Tracks.SingleOrDefault(t => t.Bone == i);
+                var scale = Sample(track?.Scale, bone.Scale, frame); var rotation = Sample(track?.Rotation, bone.Rotation, frame, true);
+                if (scale.Any(value => !float.IsFinite(value))) throw new InvalidDataException("Source idle scale is invalid.");
+                scales[i] = Vector(scale);
+                var local = Matrix4x4.CreateScale(scales[i])
+                    * Matrix4x4.CreateFromQuaternion(new(rotation[0], rotation[1], rotation[2], rotation[3]));
+                if (bone.CompensateScale && bone.Parent >= 0)
+                {
+                    float Inverse(float value) => MathF.Abs(value) > .000001f ? 1 / value : 0;
+                    var parent = scales[bone.Parent];
+                    local *= Matrix4x4.CreateScale(Inverse(parent.X), Inverse(parent.Y), Inverse(parent.Z));
+                }
+                local *= Matrix4x4.CreateTranslation(Vector(Sample(track?.Translation, bone.Translation, frame)));
+                world[i] = bone.Parent < 0 ? local : local * world[bone.Parent];
+                var b = bone.InverseBind;
+                var inverse = new Matrix4x4(b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
+                    b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]);
+                skin[i] = inverse * world[i];
             }
+            foreach (var primitive in scene.Primitives)
+                for (var vertex = 0; vertex < primitive.Vertices.Length; vertex += 16)
+                {
+                    var values = primitive.Vertices; var position = new Vector3(values[vertex], values[vertex + 1], values[vertex + 2]);
+                    var posed = Vector3.Zero;
+                    for (var influence = 0; influence < 4; influence++)
+                        if (values[vertex + 12 + influence] > 0)
+                            posed += Vector3.Transform(position, skin[(int)values[vertex + 8 + influence]]) * values[vertex + 12 + influence];
+                    minimum = Vector3.Min(minimum, posed); maximum = Vector3.Max(maximum, posed);
+                }
+        }
         if (!float.IsFinite(minimum.X + minimum.Y + minimum.Z + maximum.X + maximum.Y + maximum.Z) || maximum.Y <= minimum.Y)
             throw new InvalidDataException("Source idle framing is invalid.");
         return geometry with { Minimum = minimum, Maximum = maximum };
