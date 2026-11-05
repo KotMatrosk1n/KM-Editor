@@ -22,6 +22,14 @@ public sealed partial class SwShRestorationPreparationService
                 && source.U16(at + 4) == species && source.U16(at + 2) == identity.Form).ToArray();
             if (candidates.Length != 1) throw new InvalidDataException("Source Pokemon gameplay identity is missing or ambiguous.");
             var table = candidates[0]; var detail = source.Field(table, 0);
+            int NationalSpecies(int developmentSpecies, int form)
+            {
+                var matches = source.Tables(source.Root, 0, 4096).Where(t => source.Field(t, 0) is var at && at != 0
+                    && source.U16(at) == developmentSpecies && source.U16(at + 2) == form)
+                    .Select(t => (int)source.U16(source.Field(t, 0) + 4)).Distinct().ToArray();
+                return matches.Length == 1 && SwShRestorationSpecies.IsSpecies(matches[0]) ? matches[0]
+                    : throw new InvalidDataException("The source development species has no unambiguous National identity.");
+            }
             if (profile.SourceSpecies is { } sourceId && source.U16(detail) != sourceId)
                 throw new InvalidDataException("The source development species identity changed.");
             int Scalar(int field, bool wide = false) => source.Field(table, field) is var at && at != 0 ? wide ? source.U16(at) : source.U8(at) : 0;
@@ -31,12 +39,13 @@ public sealed partial class SwShRestorationPreparationService
                 return Enumerable.Range(0, count).Select(i => (int)source.U16(start + i * 2)).ToArray();
             }
             var nativePersonal = Native(SwShRestorationComposer.PersonalPath[6..]);
-            if (species == SwShRestorationSpecies.Annihilape) SwShRestorationSpecies.ValidateReservation(nativePersonal, nativePersonal);
+            if (species > SwShEffectivePokemonCatalog.MaximumSpecies) SwShRestorationSpecies.ValidateReservation(nativePersonal, nativePersonal);
             var personalTable = SwShPersonalTable.Parse(nativePersonal, 4096);
             if (identity.Form != 0) SwShRestorationFormSlots.Validate(nativePersonal, nativePersonal);
-            if (personalId >= personalTable.Records.Count || personalTable.Records[personalId].IsPresentInGame)
+            if (personalId < personalTable.Records.Count && personalTable.Records[personalId].IsPresentInGame)
                 throw new InvalidDataException("Restoration target is already native or has no personal slot.");
-            var before = nativePersonal.AsSpan(personalId * SwShPersonalTable.RecordSize, SwShPersonalTable.RecordSize).ToArray(); var row = before.ToArray();
+            var before = SwShRestorationSpecies.NativeRecord(nativePersonal, personalId, SwShPersonalTable.RecordSize);
+            var row = before?.ToArray() ?? new byte[176];
             var stats = source.Field(table, 22); var yields = source.Field(table, 21); int[] order = [0, 1, 2, 5, 3, 4];
             for (var i = 0; i < order.Length; i++) row[i] = source.U8(stats + order[i]);
             row[6] = checked((byte)Scalar(5)); row[7] = checked((byte)Scalar(6)); row[8] = checked((byte)Scalar(11)); row[9] = checked((byte)Scalar(19));
@@ -44,7 +53,8 @@ public sealed partial class SwShRestorationPreparationService
             for (var i = 0; i < order.Length; i++) { var value = source.U8(yields + order[i]); if (value > 3) throw new InvalidDataException("Source EV yield is unsupported."); ev |= value << (i * 2); }
             var gender = source.Field(table, 12); var hatch = source.Field(table, 15);
             if (gender == 0 || source.U8(gender) != profile.GenderKind || source.U8(gender + 1) != profile.FemalePercent
-                || hatch == 0 || source.U16(hatch) != profile.HatchedSpecies || source.U16(hatch + 2) != 0)
+                || hatch == 0 || (source.U16(hatch) == 0 && source.U16(hatch + 2) == 0 ? 0 : NationalSpecies(source.U16(hatch), source.U16(hatch + 2))) != profile.HatchedSpecies
+                || source.U16(hatch + 2) != profile.HatchedForm)
                 throw new InvalidDataException("Source gender or hatch identity needs another conversion profile.");
             Put16(row, 10, ev); row.AsSpan(12, 6).Clear(); row[18] = profile.GenderThreshold; row[19] = checked((byte)Scalar(16)); row[20] = checked((byte)Scalar(17));
             row[21] = checked((byte)Scalar(10)); row[22] = checked((byte)Scalar(13)); row[23] = checked((byte)Scalar(14));
@@ -76,7 +86,7 @@ public sealed partial class SwShRestorationPreparationService
             Compatibility(60, 16, SwShPokemonWorkflowService.GetDefaultCompatibilityMoveIds(SwShPokemonWorkflowService.TechnicalRecordCompatibilityGroupId));
             Compatibility(168, 4, SwShPokemonWorkflowService.GetDefaultCompatibilityMoveIds(SwShPokemonWorkflowService.ArmorTutorCompatibilityGroupId));
             BinaryPrimitives.WriteUInt32LittleEndian(row.AsSpan(76), checked((uint)SwShRestorationSpecies.IconSpecies(species))); Put16(row, 86, profile.HatchedSpecies); row.AsSpan(88, 8).Clear(); row.AsSpan(172, 4).Clear();
-            if (identity.Form != 0) { Put16(row, 90, 1); Put16(row, 94, profile.HatchedForm); }
+            if (identity.Form != 0 || profile.HatchedForm != 0) { Put16(row, 90, 1); Put16(row, 94, profile.HatchedForm); }
             _ = SwShPersonalTable.Parse(row);
             var result = new List<SwShRestorationContribution>
             { new(SwShRestorationComposer.PersonalPath, SwShRestorationWriter.Personal, personalId.ToString(CultureInfo.InvariantCulture), before, row) };
@@ -94,15 +104,17 @@ public sealed partial class SwShRestorationPreparationService
             if (learnNative.Length / 260 != personalTable.Records.Count || learnNative.Length % 260 != 0) throw new InvalidDataException("Target learnset and personal identities disagree.");
             if (species == SwShRestorationSpecies.Annihilape && learnNative.AsSpan(personalId * 260, 260).ContainsAnyExcept((byte)255))
                 throw new InvalidDataException("The reserved new species learnset row is occupied in Base RomFS.");
-            result.Add(new(SwShRestorationComposer.LearnsetPath, SwShRestorationWriter.Learnset, personalId.ToString(CultureInfo.InvariantCulture), learnNative.AsSpan(personalId * 260, 260).ToArray(), learnset));
+            result.Add(new(SwShRestorationComposer.LearnsetPath, SwShRestorationWriter.Learnset, personalId.ToString(CultureInfo.InvariantCulture), SwShRestorationSpecies.NativeRecord(learnNative, personalId, 260), learnset));
             var (evolutionStart, evolutionCount) = source.Vector(table, 23, 16, 9); var evolution = new byte[72];
             for (var i = 0; i < evolutionCount; i++)
             {
-                var at = evolutionStart + i * 16; var destination = source.U16(at + 12); var form = source.U16(at + 14);
-                // Farigiraf and Twin Beam are unavailable in the native target.
-                if (species == 203 && destination == 928 && form == 0 && source.U16(at + 2) == 21 && source.U16(at + 4) == 888) continue;
+                var at = evolutionStart + i * 16; var form = source.U16(at + 14);
+                var destination = NationalSpecies(source.U16(at + 12), form);
+                if (species == 203 && destination == 981 && form == 0 && source.U16(at + 2) == 21 && source.U16(at + 4) == 888) continue;
                 if (!TryProfile(new(destination, form), out var evolved) || evolved.HatchedSpecies != profile.HatchedSpecies || evolved.HatchedForm != profile.HatchedForm) throw new InvalidDataException("Evolution needs an undeclared restoration dependency.");
                 var method = source.U16(at + 2); var argument = (int)source.U16(at + 4);
+                var level = (int)source.U16(at);
+                if (method == 22) argument = NationalSpecies(argument, 0);
                 if (method is 6 or 8 or 17 or 18 or 19 or 20 or 42)
                 {
                     var mapping = EvolutionItemConversionTable.Read(Donor("world/data/battle/plib_item_conversion/plib_item_conversion_array.bin"))
@@ -112,12 +124,14 @@ public sealed partial class SwShRestorationPreparationService
                     argument = mapping[0].ItemId;
                 }
                 Put16(evolution, i * 8, method); Put16(evolution, i * 8 + 2, argument); Put16(evolution, i * 8 + 4, destination);
-                evolution[i * 8 + 6] = checked((byte)form); evolution[i * 8 + 7] = checked((byte)source.U16(at));
+                evolution[i * 8 + 6] = checked((byte)form); evolution[i * 8 + 7] = checked((byte)level);
             }
             result.Add(File($"bin/pml/evolution/evo_{personalId:000}.bin", evolution));
-            var eggMoves = Moves(25).Where(MoveAvailable).ToArray(); var eggs = new byte[4 + eggMoves.Length * 2]; Put16(eggs, 0, personalId); Put16(eggs, 2, eggMoves.Length);
+            var eggMoves = Moves(25).Where(MoveAvailable).ToArray(); var eggs = new byte[4 + eggMoves.Length * 2]; Put16(eggs, 0, identity.Form == 0 && species <= 898
+                ? BinaryPrimitives.ReadUInt16LittleEndian(Native(SwShRestorationForms.EggPath(species)[6..]))
+                : SwShRestorationForms.EggRow(identity)); Put16(eggs, 2, eggMoves.Length);
             for (var i = 0; i < eggMoves.Length; i++) Put16(eggs, 4 + i * 2, eggMoves[i]);
-            result.Add(File($"bin/pml/tamagowaza/tamagowaza_{personalId:0000}.bin", eggs));
+            result.Add(File($"bin/pml/tamagowaza/tamagowaza_{SwShRestorationForms.EggRow(identity):0000}.bin", eggs));
             foreach (var iconGender in SwShRestorationComposer.IconGenders(species))
             {
                 var icon = new byte[8]; Put16(icon, 0, SwShRestorationSpecies.IconSpecies(species)); Put16(icon, 2, identity.Form); Put16(icon, 4, iconGender);
@@ -126,7 +140,7 @@ public sealed partial class SwShRestorationPreparationService
             var camp = SwShGfPackFile.Parse(Native(SwShRestorationComposer.CampPath[6..]));
             foreach (var group in new[] { "common", "motion", "face", "ball", "turning" })
             {
-                if (group == "common" && personalTable.Records[species].IsPresentInGame) continue;
+                if (group == "common" && species <= SwShEffectivePokemonCatalog.MaximumSpecies && personalTable.Records[species].IsPresentInGame) continue;
                 string Name(int id, int form = 0) => group == "common" ? $"poke_{id:0000}_XX_X.bin" : $"poke_{group}_{id:0000}_{form:00}_0.bin";
                 var folder = $"bin/pokemon_data/pokecamp/{group}/";
                 var data = camp.ReadFileByHash(SwShGfPackFile.HashMemberPath(folder + Name(profile.NativeTemplate)), 1024 * 1024);

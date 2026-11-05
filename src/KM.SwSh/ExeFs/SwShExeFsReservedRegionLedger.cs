@@ -63,6 +63,7 @@ internal static class SwShExeFsReservedRegionLedger
     private static readonly SwShExeFsReservedRegion[] regions =
     [
         .. KM.SwSh.Restoration.SwShRestorationSoundMemoryPatcher.Reservations(),
+        .. KM.SwSh.Restoration.SwShRestorationTableMemoryPatcher.Reservations(),
         .. KM.SwSh.Restoration.SwShRestorationMegaItemProtection.Reservations(),
         .. KM.SwSh.Restoration.SwShRestorationSpeciesPatcher.Reservations(),
         .. KM.SwSh.Restoration.SwShRestorationCryPatcher.Reservations(),

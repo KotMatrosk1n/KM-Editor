@@ -34,7 +34,7 @@ public sealed partial class SwShRestorationPreparationService
             {
                 token.ThrowIfCancellationRequested();
                 var species = identity.Species;
-                var variants = new[] { (Gender: 0, Stem: $"pm{species:0000}_{identity.Form:00}") }
+                var variants = new[] { (Gender: 0, Stem: SwShRestorationModelResources.PrimaryStem(identity)) }
                     .Concat(SwShRestorationDefinitions.Get(prepared.DefinitionId).AdditionalModelVariants.Where(v => v.Identity == identity)
                         .Select(v => (Gender: v.Gender, Stem: v.ResourceStem)));
                 var personalId = SwShRestorationForms.PersonalRow(identity);

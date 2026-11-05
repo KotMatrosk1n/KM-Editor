@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 using System.Buffers.Binary;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace KM.Formats.Audio;
@@ -94,12 +95,25 @@ public sealed class SoundBankDocument
             hircWriter.Write(item.Type); hircWriter.Write(checked(item.Payload.Length + 4)); hircWriter.Write(item.Id); hircWriter.Write(item.Payload);
         }
         using var dataStream = new MemoryStream(); using var indexStream = new MemoryStream(); using var indexWriter = new BinaryWriter(indexStream);
+        // Keep every media identity while storing identical immutable samples once.
+        // DIDX addresses DATA by offset and length, independently of the media ID.
+        var extents = new Dictionary<string, List<(byte[] Bytes, uint Offset)>>(StringComparer.Ordinal);
         foreach (var item in media.Values.OrderBy(item => item.Id))
         {
-            while ((dataStream.Length & 15) != 0) dataStream.WriteByte(0);
-            indexWriter.Write(item.Id); indexWriter.Write(checked((uint)dataStream.Length)); indexWriter.Write(checked((uint)item.Bytes.Length));
-            if (dataStream.Length + item.Bytes.Length > MaximumBytes) throw new InvalidDataException("Sound bank media exceeds its size limit.");
-            dataStream.Write(item.Bytes);
+            var hash = Convert.ToHexString(SHA256.HashData(item.Bytes));
+            if (!extents.TryGetValue(hash, out var candidates)) extents.Add(hash, candidates = []);
+            var existing = candidates.FindIndex(candidate => candidate.Bytes.AsSpan().SequenceEqual(item.Bytes));
+            uint offset;
+            if (existing >= 0) offset = candidates[existing].Offset;
+            else
+            {
+                while ((dataStream.Length & 15) != 0) dataStream.WriteByte(0);
+                offset = checked((uint)dataStream.Length);
+                if (dataStream.Length + item.Bytes.Length > MaximumBytes) throw new InvalidDataException("Sound bank media exceeds its size limit.");
+                dataStream.Write(item.Bytes);
+                candidates.Add((item.Bytes, offset));
+            }
+            indexWriter.Write(item.Id); indexWriter.Write(offset); indexWriter.Write(checked((uint)item.Bytes.Length));
         }
         var replacements = new Dictionary<string, byte[]>(StringComparer.Ordinal)
         {

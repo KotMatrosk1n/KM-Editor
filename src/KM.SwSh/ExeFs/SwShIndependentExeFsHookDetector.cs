@@ -21,6 +21,7 @@ internal static class SwShIndependentExeFsHookDetector
         var fpsPatchKind = SwShFpsMainPatcher.Analyze(mainBytes).Kind;
         return SwShCatchCapMainPatcher.Analyze(mainBytes).Kind == SwShCatchCapInstallKind.InstalledV1
             || KM.SwSh.Restoration.SwShRestorationSoundMemoryPatcher.HasInstalledPatch(mainBytes)
+            || KM.SwSh.Restoration.SwShRestorationTableMemoryPatcher.HasInstalledPatch(mainBytes)
             || KM.SwSh.Restoration.SwShRestorationMegaItemProtection.HasInstalledPatch(mainBytes)
             || KM.SwSh.Restoration.SwShRestorationSpeciesPatcher.HasInstalledPatch(mainBytes)
             || KM.SwSh.ShakingTrees.SwShTreeQuantityPatcher.HasInstalledHook(mainBytes)

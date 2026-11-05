@@ -97,6 +97,13 @@ public static class SwShExecutableMergeSupport
         if (GameForBuild(Convert.ToHexString(NsoFile.Parse(original).BuildId)) is not { } game) return true;
         var beforeOptions = NsoFile.Parse(original);
         var afterOptions = NsoFile.Parse(merged);
+        if (KM.SwSh.Restoration.SwShRestorationTableMemoryPatcher.Reservations().Any(region =>
+            !beforeOptions.Text.DecompressedData.AsSpan(region.StartOffset!.Value, region.Length!.Value)
+                .SequenceEqual(afterOptions.Text.DecompressedData.AsSpan(region.StartOffset!.Value, region.Length!.Value))))
+        {
+            try { _ = KM.SwSh.Restoration.SwShRestorationTableMemoryPatcher.Read(merged, game); }
+            catch (InvalidDataException) { return false; }
+        }
         if (KM.SwSh.Restoration.SwShRestorationSpeciesPatcher.Reservations().Any(region =>
             !beforeOptions.Text.DecompressedData.AsSpan(region.StartOffset!.Value, region.Length!.Value)
                 .SequenceEqual(afterOptions.Text.DecompressedData.AsSpan(region.StartOffset.Value, region.Length.Value))))

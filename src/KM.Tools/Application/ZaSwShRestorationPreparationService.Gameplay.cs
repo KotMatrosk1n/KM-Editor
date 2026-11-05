@@ -42,10 +42,10 @@ public sealed partial class ZaSwShRestorationPreparationService
             var personalTable = SwShPersonalTable.Parse(nativePersonal, 4096);
             if (species > SwShEffectivePokemonCatalog.MaximumSpecies) SwShRestorationSpecies.ValidateReservation(nativePersonal, nativePersonal);
             if (identity.Form != 0) SwShRestorationFormSlots.Validate(nativePersonal, nativePersonal);
-            if (personalId >= personalTable.Records.Count || personalTable.Records[personalId].IsPresentInGame)
+            if (personalId < personalTable.Records.Count && personalTable.Records[personalId].IsPresentInGame)
                 throw new InvalidDataException("Restoration target is already native or has no personal slot.");
-            var before = nativePersonal.AsSpan(personalId * SwShPersonalTable.RecordSize, SwShPersonalTable.RecordSize).ToArray();
-            var row = before.ToArray();
+            var before = SwShRestorationSpecies.NativeRecord(nativePersonal, personalId, SwShPersonalTable.RecordSize);
+            var row = before?.ToArray() ?? new byte[176];
             var stats = source.Field(table, 20); var yields = source.Field(table, 19); int[] order = [0, 1, 2, 5, 3, 4];
             for (var i = 0; i < order.Length; i++) row[i] = source.U8(stats + order[i]);
             row[6] = checked((byte)Scalar(3)); row[7] = checked((byte)Scalar(4)); row[8] = checked((byte)Scalar(9)); row[9] = checked((byte)Scalar(17));
@@ -111,7 +111,7 @@ public sealed partial class ZaSwShRestorationPreparationService
             for (var i = 0; i < learned.Count; i++) { Put16(learnset, i * 4, learned[i].Move); Put16(learnset, i * 4 + 2, learned[i].Level); }
             var learnNative = Native(SwShRestorationComposer.LearnsetPath[6..]);
             if (learnNative.Length / 260 != personalTable.Records.Count || learnNative.Length % 260 != 0) throw new InvalidDataException("Target learnset and personal identities disagree.");
-            result.Add(new(SwShRestorationComposer.LearnsetPath, SwShRestorationWriter.Learnset, personalId.ToString(CultureInfo.InvariantCulture), learnNative.AsSpan(personalId * 260, 260).ToArray(), learnset));
+            result.Add(new(SwShRestorationComposer.LearnsetPath, SwShRestorationWriter.Learnset, personalId.ToString(CultureInfo.InvariantCulture), SwShRestorationSpecies.NativeRecord(learnNative, personalId, 260), learnset));
             var (evolutionStart, evolutionCount) = source.Vector(table, 21, 16, 9); var evolution = new byte[72];
             for (var i = 0; i < evolutionCount; i++)
             {
@@ -124,12 +124,57 @@ public sealed partial class ZaSwShRestorationPreparationService
                     Put16(evolution, i * 8 + 4, 979);
                     continue;
                 }
-                if (!Profiles.TryGetValue(destination, out var evolutionProfile) || evolutionProfile.HatchedSpecies != profile.HatchedSpecies || form != 0) throw new InvalidDataException("Evolution needs an undeclared restoration dependency.");
+                if (!TryProfile(new(destination, form), out var evolutionProfile)
+                    || (evolutionProfile.EvolutionFamilySpecies ?? evolutionProfile.HatchedSpecies)
+                        != (profile.EvolutionFamilySpecies ?? profile.HatchedSpecies)
+                    || evolutionProfile.HatchedForm != profile.HatchedForm)
+                    throw new InvalidDataException("Evolution needs an undeclared restoration dependency.");
+                var stone = (species, destination, source.U16(at + 4)) switch
+                {
+                    (603, 604, 4) => 83, // Thunder Stone
+                    (70, 71, 6) => 85, // Leaf Stone
+                    (670, 671, 7) => 107, // Shiny Stone
+                    (739, 740, 52) => 849, // Ice Stone
+                    _ => 0,
+                };
+                if (source.U16(at + 2) == 8 && stone != 0 && source.U16(at) == 0)
+                {
+                    Put16(evolution, i * 8, 8); Put16(evolution, i * 8 + 2, stone);
+                    Put16(evolution, i * 8 + 4, destination); evolution[i * 8 + 6] = checked((byte)form);
+                    continue;
+                }
+                if (species == 433 && destination == 358 && source.U16(at + 2) == 3
+                    && source.U16(at + 4) == 0 && source.U16(at) == 0)
+                {
+                    Put16(evolution, i * 8, 3); // Native friendship at night.
+                    Put16(evolution, i * 8 + 4, destination); evolution[i * 8 + 6] = checked((byte)form);
+                    continue;
+                }
                 if (species == 603 && destination == 604 && source.U16(at + 2) == 8 && source.U16(at + 4) == 4)
                 {
                     // Z-A's Thunder Stone parameter 4 maps to native item 83.
                     Put16(evolution, i * 8, 8); Put16(evolution, i * 8 + 2, 83);
                     Put16(evolution, i * 8 + 4, destination);
+                    continue;
+                }
+                if (species == 739 && destination == 740 && source.U16(at + 2) == 39
+                    && source.U16(at + 4) == 0 && source.U16(at) == 0)
+                {
+                    // SwSh has no source summit location. Prefer the source's
+                    // working Ice Stone branch and omit the unusable location
+                    // branch. A donor without that item route uses level 30.
+                    var hasIceStone = Enumerable.Range(0, evolutionCount).Any(index =>
+                    {
+                        var route = evolutionStart + index * 16;
+                        return source.U16(route) == 0 && source.U16(route + 2) == 8
+                            && source.U16(route + 4) == 52 && source.U16(route + 12) == source.U16(at + 12)
+                            && source.U16(route + 14) == form;
+                    });
+                    if (!hasIceStone)
+                    {
+                        Put16(evolution, i * 8, 4); Put16(evolution, i * 8 + 4, destination);
+                        evolution[i * 8 + 6] = checked((byte)form); evolution[i * 8 + 7] = 30;
+                    }
                     continue;
                 }
                 if (source.U16(at + 2) != 4 || source.U16(at + 4) != 0 || source.U16(at) is < 1 or > 100)

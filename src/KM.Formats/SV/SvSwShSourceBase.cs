@@ -5,11 +5,16 @@ namespace KM.Formats.SV;
 public static class SvSwShSourceBase
 {
     public const string ProgramName = "SourceLayerBase";
+    public const string MirroredProgramName = "MirrorSourceBase";
     public const string UnlitProgramName = "SourceUnlitBase";
     public static readonly string[] TransparentPrograms = ["SourceBaseFront", "SourceBaseBack"];
-    public static readonly string[] AllPrograms = [ProgramName, UnlitProgramName, .. TransparentPrograms];
+    public static readonly string[] AllPrograms = [ProgramName, MirroredProgramName, UnlitProgramName, .. TransparentPrograms];
 
-    internal static bool Recognizes(SvSwShLayerEmission.Contract c) => (c.Name, c.Mask, c.Transparent, c.Unlit) switch
+    internal static bool IsToucannon(SvSwShLayerEmission.Contract c) => (c.Name, c.Mask, c.Transparent, c.Unlit) is
+        ("body_b_00" or "body_b_01", "pm0809_00_00_body_b_lym.bntx", false, false)
+        or ("body_b_02" or "body_b_03", "pm0809_00_00_body_b_02_lym.bntx", false, false);
+
+    internal static bool Recognizes(SvSwShLayerEmission.Contract c) => IsToucannon(c) || (c.Name, c.Mask, c.Transparent, c.Unlit) switch
     {
         ("body_b", "pm0036_51_00_00_body_b_lym.bntx", false, true) => true,
         ("body_b_00" or "body_b_01", "pm0359_52_00_body_b_lym.bntx", false, false) => true,
@@ -31,6 +36,7 @@ public static class SvSwShSourceBase
             || c.PointColor is not null || c.UniformEmission || c.Additive || c.ColorMap || c.BaseColorMap
             || c.Lava || c.FresnelNormal is not null || c.FresnelNormal1 is not null)
             throw new InvalidDataException("Separate source tints require a qualified base palette.");
-        return c.Transparent ? TransparentPrograms[inner ? 1 : 0] : c.Unlit ? UnlitProgramName : ProgramName;
+        return IsToucannon(c) && c.MaskUv.X == 2 ? MirroredProgramName
+            : c.Transparent ? TransparentPrograms[inner ? 1 : 0] : c.Unlit ? UnlitProgramName : ProgramName;
     }
 }

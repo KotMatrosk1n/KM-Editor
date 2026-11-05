@@ -587,7 +587,7 @@ public sealed partial class ZaSwShRestorationPreparationService
             }
             var battleEntry = SwShRestorationFraming.BattleEntry(members, modelFolder, animationFolder, stem);
             var framingGeometry = profile.IdleFraming
-                ? SwShRestorationFraming.IdleBounds(members, modelFolder, animationFolder, stem, geometry!) : geometry!;
+                ? SwShRestorationFraming.IdleBounds(members, modelFolder, animationFolder, stem, geometry!, fullCycle: species == 325) : geometry!;
             members[$"bin/pokemon/{stem}/{stem}.gfbpokecfg"] = SwShModelWriter.Configuration(configuration, species, framingGeometry, materialNames,
                 profile.BattleHeight, profile.FieldHeight);
             var summaryPath = $"bin/pokemon/{stem}/{stem}.gfbpokecfg";

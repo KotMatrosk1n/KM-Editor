@@ -12,6 +12,24 @@ public sealed partial class SwShRestorationPreparationService
         private SwShStaticUvAtlas StaticAtlas(PreviewPrimitive primitive, Vector2 scale) => Profile(currentIdentity).CenteredStaticUv
             ? SwShStaticUvAtlas.CenteredRepeat(primitive, scale) : SwShStaticUvAtlas.For(primitive, scale);
 
+        private Vector2? StaticAtlasScale(PreviewPrimitive primitive)
+        {
+            var profile = Profile(currentIdentity);
+            if (profile.StaticUvScales?.TryGetValue(primitive.Name, out var meshScale) == true) return meshScale;
+            return null;
+        }
+
+        private SwShStaticUvAtlas? StaticAtlas(PreviewPrimitive primitive) => StaticAtlasScale(primitive) is { } scale
+            ? StaticAtlas(primitive, scale) : null;
+
+        private void RequireStaticAtlasMaterials(PreviewScene scene, PreviewClip clip)
+        {
+            if (clip.Materials.Any(t => t.Parameter is not
+                ("EmissionIntensityLayer1" or "EmissionIntensityLayer2" or "EmissionIntensityLayer3" or "EmissionIntensityLayer4")
+                && scene.Primitives.Any(p => p.Material.Name == t.Material && StaticAtlasScale(p) is not null)))
+                throw new InvalidDataException("Animated atlas coordinates require another material adapter.");
+        }
+
         private static PreviewScene UniqueMaterials(PreviewScene scene)
         {
             var names = new HashSet<string>(StringComparer.Ordinal);
@@ -28,14 +46,25 @@ public sealed partial class SwShRestorationPreparationService
         }
 
         private SwShBakedMaterial?[] BakePalette(PreviewScene scene, byte[] materialBytes, bool rare, string sourcePath,
-            RestorationTexturePool textures, bool nativeFlames = false)
+            RestorationTexturePool textures, bool nativeFlames = false, IReadOnlySet<string>? sourceColorMaterials = null)
         {
+            if (Profile(currentIdentity).SourceLayeredAlbedo && (sourceColorMaterials is null || sourceColorMaterials.Count == 0))
+                throw new InvalidDataException("Source albedo has no qualified native layer consumer.");
+            var sourceMaterials = new ModelBuffer(materialBytes);
+            var eyeMaterials = sourceMaterials.Tables(sourceMaterials.Root, 1, 128)
+                .Where(material => SwShMaterialBaker.IsEyeMaterial(sourceMaterials, material))
+                .Select(material => sourceMaterials.Text(material, 0)!).ToHashSet(StringComparer.Ordinal);
             var shared = new Dictionary<string, SwShBakedMaterial>(StringComparer.Ordinal);
             return scene.Primitives.Select((primitive, index) =>
             {
                 if (nativeFlames && primitive.Material.Name == "fire") return null;
+                var eye = eyeMaterials.Contains(primitive.Material.Name);
+                var cornealHeights = Profile(currentIdentity).CornealEyes && eye
+                    ? KM.Formats.SV.SvSwShCornealMaterial.SourceNormalHeights(sourceMaterials,
+                        sourceMaterials.Tables(sourceMaterials.Root, 1, 128).Single(m => sourceMaterials.Text(m, 0) == primitive.Material.Name))
+                    : (Primary: 1f, Corneal: 1f);
                 if (Profile(currentIdentity).LayeredEyes && !Profile(currentIdentity).CornealEyes
-                    && primitive.Material.Name.Contains("eye", StringComparison.Ordinal)) return null;
+                    && eye) return null;
                 var normalScale = Profile(currentIdentity).NormalUvScales?.GetValueOrDefault(primitive.Name, Vector2.One) ?? Vector2.One;
                 var share = Profile(currentIdentity).SharedMaterialTextures && normalScale == Vector2.One;
                 if (share && shared.TryGetValue(primitive.Material.Name, out var previous)) return previous;
@@ -55,24 +84,28 @@ public sealed partial class SwShRestorationPreparationService
                 Report("textures", (rare ? scene.Primitives.Count : 0) + index, scene.Primitives.Count * 2);
                 var material = SwShMaterialBaker.Bake(bakingPrimitive, materialBytes, index,
                     name => Donor(TrinityPreviewReader.Resolve(sourcePath, name)), token, sourceNormalDimensions: Profile(currentIdentity).CompactResources,
-                    opaqueEyeSurface: Profile(currentIdentity).OpaqueEyeSurface && primitive.Material.Name.Contains("eye", StringComparison.Ordinal),
-                    cornealEye: Profile(currentIdentity).CornealEyes && primitive.Material.Name.Contains("eye", StringComparison.Ordinal),
-                    cornealNormalHeight: Profile(currentIdentity).CornealNormalHeights?.GetValueOrDefault(primitive.Material.Name, 1) ?? 1,
+                    opaqueEyeSurface: Profile(currentIdentity).OpaqueEyeSurface && eye,
+                    cornealEye: Profile(currentIdentity).CornealEyes && eye,
+                    cornealNormalHeight: Profile(currentIdentity).CornealNormalHeights?.GetValueOrDefault(primitive.Material.Name, cornealHeights.Corneal) ?? cornealHeights.Corneal,
                     normalUvScale: normalScale,
                     normalUvVerticalTile: Profile(currentIdentity).NormalUvVerticalTiles?.GetValueOrDefault(primitive.Name) ?? 0,
                     authoredAlpha: Profile(currentIdentity).TransparentBody && primitive.Material.Alpha != "Opaque"
-                        && !primitive.Material.Name.Contains("eye", StringComparison.Ordinal)
+                        && !eye
                         || Profile(currentIdentity).AuthoredAlpha && primitive.Material.Name is "l_eye_b" or "l_highlight",
-                    staticUvAtlas: Profile(currentIdentity).StaticUvScales is { } scales && scales.TryGetValue(primitive.Name, out var uvScale) ? StaticAtlas(bakingPrimitive, uvScale) : null,
+                    staticUvAtlas: StaticAtlas(bakingPrimitive),
                     encodingCache: textureEncoding,
-                    unlitSurface: Profile(currentIdentity).LavaLayers && primitive.Material.Name == "fire");
+                    unlitSurface: Profile(currentIdentity).LavaLayers && primitive.Material.Name == "fire",
+                    cornealPrimaryNormalHeight: Profile(currentIdentity).CornealPrimaryNormalHeights?.GetValueOrDefault(primitive.Material.Name, cornealHeights.Primary) ?? cornealHeights.Primary,
+                    preserveSourceColor: sourceColorMaterials?.Contains(primitive.Material.Name) == true
+                        || currentIdentity.Species == 733 && currentIdentity.Form == 0
+                            && KM.Formats.SV.SvSwShLayerEmission.PreservesToucannonUnlayeredAlbedo(materialBytes, primitive));
                 if (share && material.ConflictingSamples != 0)
                     throw new InvalidDataException("Shared material normal coordinates require another target adapter.");
                 // Eyes can share a layer mask while having different palette colors.
                 // Give each material and palette its own native texture identity.
                 (string Name, byte[] Bytes) Add(string original, byte[] bytes, char prefix)
                 {
-                    var name = prefix + index.ToString("X1", System.Globalization.CultureInfo.InvariantCulture) + original[2..];
+                    var name = ModelTextureIdentity.MaterialName(original, index, prefix);
                     var renamed = ModelTextureIdentity.Rename(bytes, original, name);
                     return (textures.Add(name, renamed), renamed);
                 }
@@ -95,11 +128,12 @@ public sealed partial class SwShRestorationPreparationService
                 .ToDictionary(e => e.Bone.Name, StringComparer.Ordinal);
             SwShEffectLocator Convert(string name, string original)
             {
-                if (!entries.TryGetValue(original, out var entry) || entry.Bone.Parent != -1 || entry.Bone.Scale.Any(v => !float.IsFinite(v) || MathF.Abs(v - 1) > .00001f)
+                if (!entries.TryGetValue(original, out var entry) || entry.Bone.Parent != -1 || entry.Bone.Scale.Any(v => !float.IsFinite(v) || v <= 0)
                     || entry.Parent is null || !scene.Rig.Bones.Any(b => b.Name == entry.Parent))
                     throw new InvalidDataException("S/V effect attachment requires another target adapter.");
-                var p = entry.Bone.Translation; var q = entry.Bone.Rotation;
-                return new(name, aliases[entry.Parent], new(p[0] * 100, p[1] * 100, p[2] * 100)) { Rotation = new(q[0], q[1], q[2], q[3]) };
+                var p = entry.Bone.Translation; var q = entry.Bone.Rotation; var s = entry.Bone.Scale;
+                return new(name, aliases[entry.Parent], new(p[0] * 100, p[1] * 100, p[2] * 100))
+                { Rotation = new(q[0], q[1], q[2], q[3]), Scale = new(s[0], s[1], s[2]) };
             }
             var mapping = new Dictionary<string, string>(StringComparer.Ordinal)
             {

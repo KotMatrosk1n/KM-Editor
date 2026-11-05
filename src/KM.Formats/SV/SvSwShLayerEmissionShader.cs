@@ -61,6 +61,8 @@ public static class SvSwShLayerEmissionShader
 
     public static byte[] SourceLayerBase(byte[] template) => Convert(template, 20);
 
+    public static byte[] MirroredSourceBase(byte[] template) => Convert(template, 23);
+
     public static byte[] SourceUnlitBase(byte[] template) => Convert(template, 21);
 
     public static byte[] TransparentSourceBase(byte[] template) => Convert(template, 22);
@@ -92,12 +94,12 @@ public static class SvSwShLayerEmissionShader
         var transparent = identity is "CB0AB209AA69541813F7395E6D3355608E047E5D1D4C66617D66E7ACF8055276" or "A01BA67B64010C74E9A8D1C7FB3CEDC5EFAD07F18049F57D1595B26B45A4B699";
         if (mode is 12 or 13 or 18 or 22 && !transparent)
             throw new InvalidDataException("Transparent base palette requires its pinned cell shader.");
-        if (mode is 14 or 15 or 16 or 17 or 19 or 20 or 21 && transparent)
+        if (mode is 14 or 15 or 16 or 17 or 19 or 20 or 21 or 23 && transparent)
             throw new InvalidDataException("Uniform emission requires its pinned opaque shader.");
         if (identity is not ("1EAC62E9112F11530759B7F8FD91C53ED73EF5C4B2195591282EC4E354C07D37" or "FBB44266C993CCFF1EC67B48E26A89B13981836CD0A6071E4F2BF8F4156135A2") && (!transparent || mode is not (0 or 12 or 13 or 18 or 22)))
             throw new InvalidDataException("Layer emission shader program needs another adapter.");
-        var basePalette = mode is 8 or 9 or 12 or 13 or 15 or 16 or 17 or 18 or 19 or 20 or 21 or 22;
-        var baseSlots = mode is 18 or 19 or 20 or 21 or 22 ? new[] { 19, 20, 21, 22 } : mode == 17 ? new[] { 4, 5, 6, 7 }
+        var basePalette = mode is 8 or 9 or 12 or 13 or 15 or 16 or 17 or 18 or 19 or 20 or 21 or 22 or 23;
+        var baseSlots = mode is 18 or 19 or 20 or 21 or 22 or 23 ? new[] { 19, 20, 21, 22 } : mode == 17 ? new[] { 4, 5, 6, 7 }
             : mode is 12 or 13 ? new[] { 0, 2, 16, 17 } : new[] { 0, 2, 15, 16 };
         var baseWords = baseSlots.SelectMany(slot => Enumerable.Range(slot * 4, 3)).ToHashSet();
         if (controlLength < 0x848 || Integer(control) != unchecked((int)0x98761234) || Integer(data) != 0x12345678
@@ -386,6 +388,9 @@ public static class SvSwShLayerEmissionShader
                     var u = (int)(instruction >> 8 & 255); var v = (int)(instruction >> 20 & 255);
                     if (u >= 56 || v >= 56) throw new InvalidDataException("Base palette coordinates are unsupported.");
                     Move(80, u); Move(81, v);
+                    // Toucannon's beak mask tiles twice in U. The original albedo
+                    // sample keeps its own unit coordinates and clamped sampler.
+                    if (mode == 23) { Constant(82, 2); Multiply(80, 80, 82); }
                 }
                 if (mode is 4 or 5 or 10 && instruction >> 56 == 0xd8 && (instruction >> 36 & 8191) == 8)
                 { Move(80, (int)(instruction >> 8 & 255)); Move(81, (int)(instruction >> 20 & 255)); }
@@ -541,7 +546,7 @@ public static class SvSwShLayerEmissionShader
                 if (mode is 4 or 10 or 13 or 14 or 15 or 16 or 17 or 18 or 19) continue;
                 if (slot != 10) continue;
                 if (!colorCaptured || emissionCaptured) throw new InvalidDataException("Layer emission mask input is ambiguous.");
-                if (mode == 6)
+                if (mode is 6 or 23)
                 {
                     var u = (int)(instruction >> 8 & 255); var v = (int)(instruction >> 20 & 255);
                     if (u >= 56 || v >= 56) throw new InvalidDataException("Mirrored emission mask coordinates are unsupported.");
@@ -551,7 +556,7 @@ public static class SvSwShLayerEmissionShader
                     Constant(82, 2); Multiply(80, u, 82); Move(81, v);
                 }
                 // Read all four source mask channels using the native color coordinates.
-                Emit(0xd830000000070000UL | 10UL << 36 | 62UL << 28 | (mode is 5 or 6 ? 81UL << 20 | 80UL << 8 : instruction & (255UL << 20 | 255UL << 8)) | 60, true);
+                Emit(0xd830000000070000UL | 10UL << 36 | 62UL << 28 | (mode is 5 or 6 or 23 ? 81UL << 20 | 80UL << 8 : instruction & (255UL << 20 | 255UL << 8)) | 60, true);
                 if (mode == 7) Constant(63, 0);
                 if (mode == 11) { Constant(61, 0); Constant(62, 0); Constant(63, 0); }
                 if (mode == 3)

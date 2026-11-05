@@ -16,6 +16,34 @@ public sealed partial class ZaSwShRestorationPreparationService
                 AirborneBattle: true);
             return true;
         }
+        if (identity.Species is 664 or 665 or 666 && identity.Form is >= 1 and <= 19
+            && Profiles.TryGetValue(identity.Species, out var butterfly))
+        {
+            profile = butterfly with
+            {
+                ResourceStem = identity.Species == 666 ? $"pm0708_{11 + identity.Form:00}_00" : butterfly.ResourceStem,
+                OutputStem = $"pm{identity.Species:0000}_{identity.Form:00}",
+                HatchedForm = 18,
+                SourceVoiceForm = 0,
+            };
+            return true;
+        }
+        if ((identity.Species is 669 or 671 && identity.Form is >= 1 and <= 4
+            || identity.Species == 670 && identity.Form is >= 1 and <= 5)
+            && Profiles.TryGetValue(identity.Species, out var flowerOrTrim))
+        {
+            var sourceModel = identity.Species + 44;
+            profile = flowerOrTrim with
+            {
+                ResourceStem = $"pm{sourceModel:0000}_{11 + identity.Form:00}_00",
+                OutputStem = $"pm{identity.Species:0000}_{identity.Form:00}",
+                HatchedForm = identity.Species is 669 or 670 or 671 && identity.Form <= 4 ? identity.Form : 0,
+                // Floette's five colors share FORM00, Eternal Flower uses
+                // FORM01 and its Mega has the separate FORM02 voice selector.
+                SourceVoiceForm = identity.Species == 670 && identity.Form == 5 ? 1 : 0,
+            };
+            return true;
+        }
         profile = null!;
         return identity.Form == 0 && Profiles.TryGetValue(identity.Species, out profile!);
     }
@@ -46,6 +74,37 @@ public sealed partial class ZaSwShRestorationPreparationService
 
     private static readonly IReadOnlyDictionary<int, SpeciesProfile> Profiles = new Dictionary<int, SpeciesProfile>
     {
+        [69] = new(43, 69, 60, 70, 70, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true),
+        [70] = new(44, 69, 137, 100, 100, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, AnimationOffset: 20000, LayeredEyes: true),
+        [71] = new(45, 69, 221, 170, 170, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, AnimationOffset: 20000),
+        [167] = new(595, 167, 50, 50, 50, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true),
+        [168] = new(596, 167, 140, 110, 110, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true),
+        [307] = new(236, 307, 56, 60, 60, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, SeparateFemale: true),
+        [308] = new(237, 307, 144, 130, 130, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, SeparateFemale: true),
+        [325] = new(577, 325, 66, 70, 70, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, LayerEmission: true),
+        [326] = new(575, 325, 165, 90, 90, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, LayerEmission: true),
+        // Donor/native hatch identity is Chimecho; Chingling remains its evolution-family dependency.
+        // Native incense-dependent breeding still requires separate runtime qualification.
+        [358] = new(425, 358, 159, 60, 60, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, AnimationOffset: 20000, EvolutionFamilySpecies: 433),
+        [433] = new(425, 433, 57, 20, 20, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, AnimationOffset: 20000),
+        [664] = new(10, 664, 40, 30, 30, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, ResourceStem: "pm0706_00_00", LayeredEyes: true, HatchedForm: 18),
+        [665] = new(11, 664, 75, 30, 30, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, ResourceStem: "pm0707_00_00", LayeredEyes: true, HatchedForm: 18, IndependentEyeHighlights: true),
+        [666] = new(12, 664, 185, 120, 120, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, ResourceStem: "pm0708_11_00", AnimationOffset: 20000, LayeredEyes: true, HatchedForm: 18),
+        [667] = new(403, 667, 74, 60, 60, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, FemalePercent: 89, GenderThreshold: 225, ResourceStem: "pm0704_00_00", LayerEmission: true,
+            NormalTiles: [new("body_a_01", new(2, 2))]),
+        [668] = new(405, 667, 177, 150, 150, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, SeparateFemale: true, FemalePercent: 89, GenderThreshold: 225, ResourceStem: "pm0705_00_00", LayerEmission: true),
+        [669] = new(742, 669, 61, 10, 10, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, FemalePercent: 0, GenderThreshold: 254, GenderKind: 2, ResourceStem: "pm0713_11_00", AnimationOffset: 20000),
+        [670] = new(743, 669, 130, 20, 20, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, FemalePercent: 0, GenderThreshold: 254, GenderKind: 2, ResourceStem: "pm0714_11_00", AnimationOffset: 20000),
+        [671] = new(282, 669, 248, 110, 110, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, FemalePercent: 0, GenderThreshold: 254, GenderKind: 2, ResourceStem: "pm0715_11_00", AnimationOffset: 20000),
+        [672] = new(831, 672, 70, 90, 90, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, ResourceStem: "pm0728_00_00"),
+        [673] = new(832, 672, 186, 170, 170, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, ResourceStem: "pm0729_00_00"),
+        [739] = new(98, 739, 68, 60, 60, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, ResourceStem: "pm0859_00_00"),
+        [740] = new(99, 739, 167, 170, 170, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, ResourceStem: "pm0860_00_00", LayeredEyes: true),
+        [265] = new(10, 265, 56, 30, 30, "_body_b_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, PlaAssets: true, ConventionalCatchRate: 255),
+        [266] = new(11, 265, 72, 60, 60, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, PlaAssets: true, ConventionalCatchRate: 120),
+        [267] = new(12, 265, 198, 100, 100, "_body_a_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, PlaAssets: true, ConventionalCatchRate: 45, SeparateFemale: true, AnimationOffset: 20000, EmptyEyes: true),
+        [268] = new(11, 265, 72, 70, 70, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, PlaAssets: true, ConventionalCatchRate: 120),
+        [269] = new(12, 265, 193, 120, 120, "_body_a_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, PlaAssets: true, ConventionalCatchRate: 45, SeparateFemale: true, AnimationOffset: 20000, EmptyEyes: true, MotionOverrides: new Dictionary<string, string> { ["ba10_waitA01"] = "20001" }),
         [179] = new(831, 179, 56, 60, 60, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, LayerEmission: true),
         [180] = new(25, 179, 128, 80, 80, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, LayerEmission: true),
         [181] = new(849, 179, 255, 140, 140, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, LayerEmission: true),
