@@ -117,7 +117,7 @@ public static class SwShRestorationComposer
                         var id = Number(item.Key);
                         var owned = JsonSerializer.Deserialize<SwShRestoredSpeciesName>(item.After)
                             ?? throw new InvalidDataException("Restored species name is missing.");
-                        if (id != SwShRestorationSpecies.Annihilape || owned.OriginalLineCount != 899 || item.Before is not null
+                        if (SwShRestorationSpecies.DisplayName(id) is null || owned.OriginalLineCount != 899 || item.Before is not null
                             || string.IsNullOrWhiteSpace(owned.Line.Text))
                             throw new InvalidDataException("Restored species text identity is invalid.");
                         SwShGameTextFile.ValidateText(owned.Line.Text); minimum = Math.Min(minimum, owned.OriginalLineCount);
@@ -301,7 +301,7 @@ public static class SwShRestorationComposer
     }
     // Retain the shared route in already prepared packages while also supplying
     // the native genderless lookup used by these registered identities.
-    public static IReadOnlyList<int> IconGenders(int species) => species is 100 or 101 or 386 or 491 or 774 ? [0, 3] : [0];
+    public static IReadOnlyList<int> IconGenders(int species) => species is 100 or 101 or 382 or 383 or 386 or 483 or 484 or 491 or 720 or 774 ? [0, 3] : [0];
     public static string IconPath(int species, int form = 0, int gender = 0) =>
         $"romfs/bin/appli/icon_pokemon/poke_icon_{SwShRestorationSpecies.IconSpecies(species):0000}_{form:00}{(gender == 3 ? "n" : "s")}_n.bntx";
     public static string IconKey(int species, int form = 0, int gender = 0) => form == 0 && gender == 0 ? SwShRestorationSpecies.IconSpecies(species).ToString(CultureInfo.InvariantCulture)

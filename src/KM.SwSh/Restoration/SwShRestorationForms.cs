@@ -15,7 +15,7 @@ public static partial class SwShRestorationForms
     // Keep restored form egg files outside native and previously reserved files.
     private const int OlderFormEggOffset = 2048;
     private static bool HasSeparateEggFiles(SwShPokemonIdentity identity) => IsMega(identity) && identity.Species != 6
-        || identity.Form != 0 && identity.Species is 664 or 665 or 666 or 669 or 670 or 671 or 741 or 774;
+        || identity.Form != 0 && identity.Species is 211 or 382 or 383 or 483 or 484 or 550 or 664 or 665 or 666 or 669 or 670 or 671 or 705 or 706 or 720 or 724 or 741 or 774;
     public static int EggRow(SwShPokemonIdentity identity) => HasSeparateEggFiles(identity)
         ? checked(OlderFormEggOffset + PersonalRow(identity)) : PersonalRow(identity);
     public static string EggPath(int row) => $"romfs/bin/pml/tamagowaza/tamagowaza_{row:0000}.bin";
@@ -26,7 +26,7 @@ public static partial class SwShRestorationForms
         : throw new InvalidDataException("Restoration form has no registered personal reservation.");
 
     internal static bool IsRegisteredRow(int row) => row is >= 1 and <= SwShEffectivePokemonCatalog.MaximumSpecies
-        || row == SwShRestorationSpecies.AnnihilapeRow
+        || SwShRestorationSpecies.SpeciesAtReservedRow(row) is not null
         || SwShRestorationDefinitions.All.SelectMany(d => d.Identities).Any(i => i.Form != 0 && PersonalRow(i) == row);
 
     internal static byte[] NormalizeHeaders(byte[] native, byte[] current, SwShRestorationState state)
@@ -35,11 +35,12 @@ public static partial class SwShRestorationForms
         var result = current.ToArray();
         foreach (var group in EnabledForms(state).GroupBy(i => i.Species))
         {
-            var offset = group.Key * SwShPersonalTable.RecordSize;
+            var offset = SwShRestorationSpecies.BaseRow(group.Key) * SwShPersonalTable.RecordSize;
             var first = group.Select(i => PersonalRow(i) - i.Form + 1).Distinct().Single();
             if (BinaryPrimitives.ReadUInt16LittleEndian(result.AsSpan(offset + 30)) != first || result[offset + 32] != Math.Max(SwShRestorationFormSlots.Blocks.Single(b => b.Species == group.Key).NativeAlternateCount, group.Max(i => i.Form)) + 1)
                 throw new InvalidDataException("Restored form ownership changed outside the restoration workflow.");
-            native.AsSpan(offset + 30, 3).CopyTo(result.AsSpan(offset + 30));
+            if (offset < native.Length) native.AsSpan(offset + 30, 3).CopyTo(result.AsSpan(offset + 30));
+            else result.AsSpan(offset + 30, 3).Clear();
             // An independently restored base owns its ordinary one-form header.
             if (state.Selections.Where(s => s.Enabled).SelectMany(s => SwShRestorationDefinitions.Get(s.DefinitionId).Identities)
                 .Contains(new(group.Key, 0))) result[offset + 32] = 1;
@@ -52,7 +53,7 @@ public static partial class SwShRestorationForms
         var result = current.ToArray();
         foreach (var group in identities.Where(i => i.Form != 0).GroupBy(i => i.Species))
         {
-            var offset = checked(group.Key * SwShPersonalTable.RecordSize);
+            var offset = checked(SwShRestorationSpecies.BaseRow(group.Key) * SwShPersonalTable.RecordSize);
             var first = group.Select(i => PersonalRow(i) - i.Form + 1).Distinct().Single();
             if (result.Length % SwShPersonalTable.RecordSize != 0 || offset + SwShPersonalTable.RecordSize > result.Length
                 || group.Any(i => PersonalRow(i) >= result.Length / SwShPersonalTable.RecordSize)

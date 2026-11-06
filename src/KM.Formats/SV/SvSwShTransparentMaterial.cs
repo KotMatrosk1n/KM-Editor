@@ -85,6 +85,22 @@ public static class SvSwShTransparentMaterial
     public static void RequireSource(byte[] bytes, PreviewScene scene, bool deoxys = false)
     {
         var source = new ModelBuffer(bytes);
+        var dialga = scene.Primitives.Any(p => p.Name.StartsWith("pm0483_12_00_", StringComparison.Ordinal));
+        var palkia = scene.Primitives.Any(p => p.Name.StartsWith("pm0484_12_00_", StringComparison.Ordinal));
+        if (dialga || palkia)
+        {
+            var stem = dialga ? "pm0483_12_00" : "pm0484_12_00";
+            var name = dialga ? "body_b_01" : "body_a_02";
+            var surfaces = scene.Primitives.Where(p => p.Material.Name == name).ToArray();
+            var material = source.Tables(source.Root, 1, 128).Single(t => source.Text(t, 0) == name);
+            if (scene.Primitives.Any(p => !p.Name.StartsWith(stem + "_", StringComparison.Ordinal))
+                || surfaces.Length != 1 || surfaces[0].Name != stem + (dialga ? "_gem_mesh_shape" : "_cover_mesh_shape")
+                || surfaces[0].Vertices.Length != (dialga ? 81 : 218) * 16 || surfaces[0].Indices.Length != (dialga ? 174 : 1152)
+                || surfaces[0].Material.Alpha != "BlendPreMultiAlpha"
+                || !source.Tables(material, 1, 16).Select(t => source.Text(t, 0)).SequenceEqual(["Transparent", "TransparentInner"]))
+                throw new InvalidDataException("Origin transparent surface requires its qualified source geometry and two passes.");
+            return;
+        }
         if (deoxys)
         {
             var name = scene.Primitives.Any(p => p.Name.StartsWith("pm0386_11_00_", StringComparison.Ordinal)) ? "body_b_02" : "body_a_02";

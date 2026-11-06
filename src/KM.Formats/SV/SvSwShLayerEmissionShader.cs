@@ -63,6 +63,8 @@ public static class SvSwShLayerEmissionShader
 
     public static byte[] MirroredSourceBase(byte[] template) => Convert(template, 23);
 
+    public static byte[] GroudonFiveLayers(byte[] template) => Convert(template, 24);
+
     public static byte[] SourceUnlitBase(byte[] template) => Convert(template, 21);
 
     public static byte[] TransparentSourceBase(byte[] template) => Convert(template, 22);
@@ -94,11 +96,11 @@ public static class SvSwShLayerEmissionShader
         var transparent = identity is "CB0AB209AA69541813F7395E6D3355608E047E5D1D4C66617D66E7ACF8055276" or "A01BA67B64010C74E9A8D1C7FB3CEDC5EFAD07F18049F57D1595B26B45A4B699";
         if (mode is 12 or 13 or 18 or 22 && !transparent)
             throw new InvalidDataException("Transparent base palette requires its pinned cell shader.");
-        if (mode is 14 or 15 or 16 or 17 or 19 or 20 or 21 or 23 && transparent)
+        if (mode is 14 or 15 or 16 or 17 or 19 or 20 or 21 or 23 or 24 && transparent)
             throw new InvalidDataException("Uniform emission requires its pinned opaque shader.");
         if (identity is not ("1EAC62E9112F11530759B7F8FD91C53ED73EF5C4B2195591282EC4E354C07D37" or "FBB44266C993CCFF1EC67B48E26A89B13981836CD0A6071E4F2BF8F4156135A2") && (!transparent || mode is not (0 or 12 or 13 or 18 or 22)))
             throw new InvalidDataException("Layer emission shader program needs another adapter.");
-        var basePalette = mode is 8 or 9 or 12 or 13 or 15 or 16 or 17 or 18 or 19 or 20 or 21 or 22 or 23;
+        var basePalette = mode is 8 or 9 or 12 or 13 or 15 or 16 or 17 or 18 or 19 or 20 or 21 or 22 or 23 or 24;
         var baseSlots = mode is 18 or 19 or 20 or 21 or 22 or 23 ? new[] { 19, 20, 21, 22 } : mode == 17 ? new[] { 4, 5, 6, 7 }
             : mode is 12 or 13 ? new[] { 0, 2, 16, 17 } : new[] { 0, 2, 15, 16 };
         var baseWords = baseSlots.SelectMany(slot => Enumerable.Range(slot * 4, 3)).ToHashSet();
@@ -171,29 +173,41 @@ public static class SvSwShLayerEmissionShader
             // coverage, then sequentially interpolates each layer and normalizes.
             // The fifth (global) intensity owns a separate native scalar, while
             // its RGB uses an otherwise neutral layer-shadow vector.
-            Add(89, 60, 61); Add(89, 62, 89); Add(89, 63, 89); Constant(88, 1);
+            if (mode == 24)
+            {
+                Uniform(88, 5, 7); Uniform(89, 5, 9); Fma(93, 80, 88, 89);
+                Uniform(88, 5, 8); Uniform(89, 5, 11); Fma(94, 81, 88, 89);
+                Emit(0xd830000000070000UL | 12UL << 36 | 86UL << 28 | 94UL << 20 | 93UL << 8 | 84, true);
+                Move(92, 84);
+            }
+            Add(89, 60, 61); Add(89, 62, 89); Add(89, 63, 89);
+            if (mode == 24) Add(89, 92, 89);
+            Constant(88, 1);
             Emit(0x5c5c100000070000UL | 1UL << 45 | 89UL << 20 | 88UL << 8 | 84);
-            Move(85, 84); Uniform(86, 5, 22); Add(87, 88, 86, true);
+            Move(85, 84);
+            if (mode == 24) Constant(86, 0); else Uniform(86, 5, 22);
+            Add(87, 88, 86, true);
             Constant(89, 0); Maximum(87, 87, 89);
             for (var c = 0; c < 3; c++)
             {
                 Multiply(80 + c, 56 + c, 84); Multiply(80 + c, 80 + c, 87);
                 Uniform(88, 6, 32 + c); Multiply(68 + c, 88, 86); Multiply(68 + c, 68 + c, 84);
             }
-            for (var layer = 0; layer < 4; layer++)
+            for (var layer = 0; layer < (mode == 24 ? 5 : 4); layer++)
             {
+                var mask = layer == 4 ? 92 : 60 + layer;
                 Uniform(86, 5, 18 + layer); Constant(88, 1); Add(87, 88, 86, true);
                 Constant(89, 0); Maximum(87, 87, 89);
                 for (var c = 0; c < 3; c++)
                 {
-                    Uniform(88, 6, baseSlots[layer] * 4 + c); Multiply(88, 88, 87);
+                    Uniform(88, 6, (layer == 4 ? 32 : baseSlots[layer] * 4) + c); Multiply(88, 88, 87);
                     Fma(89, 56 + c, 88, 80 + c, negativeAddend: true);
-                    Fma(80 + c, 60 + layer, 89, 80 + c);
+                    Fma(80 + c, mask, 89, 80 + c);
                     Uniform(88, 6, (4 + layer) * 4 + c);
                     Fma(89, 86, 88, 68 + c, negativeAddend: true);
-                    Fma(68 + c, 60 + layer, 89, 68 + c);
+                    Fma(68 + c, mask, 89, 68 + c);
                 }
-                Fma(89, 60 + layer, 85, 60 + layer, negative: true); Add(85, 85, 89);
+                Fma(89, mask, 85, mask, negative: true); Add(85, 85, 89);
             }
             Constant(88, BitConverter.Int32BitsToSingle(0x3727c5ac)); Maximum(85, 85, 88);
             Emit(0x5080000000470000UL | 85UL << 8 | 86);
@@ -336,11 +350,11 @@ public static class SvSwShLayerEmissionShader
                 // These unused layer controls carry four independent source emission channels.
                 // Keep their original neutral values in the inherited diffuse calculation.
                 if (uniform && (buffer == 5 && word is >= 18 and <= 21 || buffer == 6 && word is >= 16 and <= 30 && word % 4 != 3
-                    || mode is 13 or 15 or 16 or 18 or 19 && (buffer == 5 && word == 22 || buffer == 6 && word is >= 32 and <= 34)
+                    || mode is 13 or 15 or 16 or 18 or 19 or 24 && (buffer == 5 && word == 22 || buffer == 6 && word is >= 32 and <= 34)
                     || mode == 16 && (buffer == 5 && word == 23 || buffer == 6 && word is >= 36 and <= 38)))
                 {
-                    var neutral = mode is 13 or 15 or 16 or 18 or 19 && buffer == 5 && word == 22 ? 1
-                        : mode is 13 or 15 or 16 or 18 or 19 && buffer == 6 && word is >= 32 and <= 34 ? 1
+                    var neutral = mode is 13 or 15 or 16 or 18 or 19 or 24 && buffer == 5 && word == 22 ? 1
+                        : mode is 13 or 15 or 16 or 18 or 19 or 24 && buffer == 6 && word is >= 32 and <= 34 ? 1
                         : mode == 16 && (buffer == 5 && word == 23 || buffer == 6 && word is >= 36 and <= 38) ? 1
                         : buffer == 5 ? (word % 2 == 0 ? 1f : 0f) : (word / 4 % 2 == 0 ? 1f : 0f);
                     Constant(79, neutral);
@@ -439,12 +453,12 @@ public static class SvSwShLayerEmissionShader
                             UnlitPalette(destination, second); emissionCaptured = true;
                             continue;
                         }
-                        if (mode is 13 or 15 or 16 or 18 or 19)
+                        if (mode is 13 or 15 or 16 or 18 or 19 or 24)
                         {
                             if (mode == 16) { Move(90, 80); Move(91, 81); }
                             CoveragePalette(destination, second); emissionCaptured = true;
                             // The qualified opaque eye pass ignores albedo alpha.
-                            if (mode is 15 or 16 or 19) Constant(second + 1, 1);
+                            if (mode is 15 or 16 or 19 or 24) Constant(second + 1, 1);
                             if (mode == 16)
                             {
                                 // Sample the independent authored corneal normal, baked
@@ -543,7 +557,7 @@ public static class SvSwShLayerEmissionShader
                         emissionCaptured = true;
                     }
                 }
-                if (mode is 4 or 10 or 13 or 14 or 15 or 16 or 17 or 18 or 19) continue;
+                if (mode is 4 or 10 or 13 or 14 or 15 or 16 or 17 or 18 or 19 or 24) continue;
                 if (slot != 10) continue;
                 if (!colorCaptured || emissionCaptured) throw new InvalidDataException("Layer emission mask input is ambiguous.");
                 if (mode is 6 or 23)
@@ -609,7 +623,7 @@ public static class SvSwShLayerEmissionShader
         template.AsSpan(data + constants, constantLength).CopyTo(output.AsSpan(data + newConstants));
         void Write(int offset, int value) => BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(offset, 4), value);
         Write(stage + 24, newLength); Write(control + 0x6f8, newEnd - 0x30);
-        Write(control + 0x700, newConstants); Write(control + 0x704, newLength); Write(control + 0x70c, mode is 4 or 5 or 10 ? 112 : mode is 1 or 2 or 6 or 8 or 9 or 12 or 13 or 15 or 16 or 17 or 18 or 19 or 20 or 21 or 22 ? 96 : 80);
+        Write(control + 0x700, newConstants); Write(control + 0x704, newLength); Write(control + 0x70c, mode is 4 or 5 or 10 ? 112 : mode is 1 or 2 or 6 or 8 or 9 or 12 or 13 or 15 or 16 or 17 or 18 or 19 or 20 or 21 or 22 or 24 ? 96 : 80);
         for (var index = 0; index < code.Count; index += 3)
         {
             var offset = data + 0x80 + index / 3 * 32;

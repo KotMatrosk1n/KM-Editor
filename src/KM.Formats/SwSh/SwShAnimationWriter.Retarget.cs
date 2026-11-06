@@ -38,10 +38,24 @@ public static partial class SwShAnimationWriter
                     if (at == ancestor) return true;
                 return false;
             }
-            if (!Descends(targetBones, index, targetIndices[pivot])
-                || !Descends(sourceBones, sourceIndex, source[boneMap[pivot]])
-                || branchAnchors?.ContainsKey(reference) == true)
-                throw new InvalidDataException("Retarget translation reference must describe a descendant segment in both rigs.");
+            int MappedParent(int child)
+            {
+                var at = targetBones[child].Parent;
+                while (at >= 0 && !boneMap.ContainsKey(targetBones[at].Name)) at = targetBones[at].Parent;
+                return at;
+            }
+            var descendant = Descends(targetBones, index, targetIndices[pivot])
+                && Descends(sourceBones, sourceIndex, source[boneMap[pivot]]);
+            var anchor = MappedParent(targetIndices[pivot]);
+            // A leaf pivot's distance from its parent is not a body proportion.
+            // A sibling segment may supply the scale only beneath the same mapped
+            // anchor in both rigs. This retains every moving translation key.
+            var sibling = anchor >= 0 && MappedParent(index) == anchor
+                && Descends(sourceBones, source[boneMap[pivot]], source[boneMap[targetBones[anchor].Name]])
+                && Descends(sourceBones, sourceIndex, source[boneMap[targetBones[anchor].Name]]);
+            if (index == targetIndices[pivot] || (!descendant && !sibling) || branchAnchors?.ContainsKey(reference) == true
+                || branchAnchors?.ContainsKey(pivot) == true)
+                throw new InvalidDataException("Retarget translation reference requires a descendant or a segment under the same mapped anchor in both rigs.");
             var parent = targetBones[index].Parent;
             var targetLocal = Matrix4x4.Identity;
             for (var at = index; at >= 0; at = targetBones[at].Parent)
@@ -253,7 +267,7 @@ public static partial class SwShAnimationWriter
                 throw new InvalidDataException("Retarget fixed translation requires a constant unit-scale source offset and direct parent.");
             var length = originalRest.Translation.Length();
             // A moving pivot may have a near-zero bind offset unrelated to body
-            // proportions. An explicit descendant segment supplies its displacement
+            // proportions. An explicit anatomical segment supplies its displacement
             // scale without dropping translation keys or relaxing the ratio budget.
             var ratio = referenceRatios is not null && referenceRatios.TryGetValue(bone.Name, out var referenceRatio)
                 ? referenceRatio : fixedTranslation || length < .00001f ? 1 : targetRest.Translation.Length() / length;

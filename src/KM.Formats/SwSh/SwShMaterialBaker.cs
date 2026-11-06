@@ -352,6 +352,18 @@ public static class SwShMaterialBaker
             var ambientCrop = atlas.Images(ambientMips, ambientWidth, ambientHeight);
             ambientContainer = new(SwShTextureAllocation.Create(ambientImage, ambientCrop.Width, ambientCrop.Height, false)); ambientMips = ambientCrop.Images;
         }
+        // These authored translucent surfaces cannot retain smooth alpha after
+        // recoloring into BC7's shared color and alpha index layout.
+        if (primitive.Name == "pm0483_12_00_gem_mesh_shape" && primitive.Material.Name == "body_b_01"
+            || primitive.Name == "pm0484_12_00_cover_mesh_shape" && primitive.Material.Name == "body_a_02")
+        {
+            var size = primitive.Name.StartsWith("pm0483_", StringComparison.Ordinal) ? 512 : 1024;
+            if (primitive.Material.Alpha != "BlendPreMultiAlpha" || colorWidth != size || colorHeight != size
+                || eye || atlas is not null || preserveSourceColor)
+                throw new InvalidDataException("Origin translucent surface allocation changed.");
+            container = new(SwShTextureAllocation.Create(template, colorWidth, colorHeight, container.Srgb,
+                compressed: false, mipCount: container.MipCount));
+        }
         byte[] color;
         byte[]? croppedColor = null; byte[]? croppedAmbient = null;
         if (colorUvAtlas is not null)

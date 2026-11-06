@@ -83,6 +83,12 @@ public sealed class ModelTextureDocument
         return PixelBytes(Decode(levels[mip], original));
     }
 
+    internal byte[] EncodedMipBlocks(int mip)
+    {
+        if ((uint)mip >= levels.Length) throw new ArgumentOutOfRangeException(nameof(mip));
+        return Linear(levels[mip], original);
+    }
+
     /// <summary>Replaces complete encoded mip blocks without changing their checked container layout.</summary>
     public byte[] WithMipBlocks(IReadOnlyList<byte[]> blocks)
     {

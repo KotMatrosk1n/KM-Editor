@@ -10,7 +10,7 @@ public static class PlaRestorationVoiceGraph
 {
     public static IReadOnlyDictionary<string, uint> Resolve(SoundBankDocument bank, int species)
     {
-        if (bank.Version != 135 || species is not (46 or 47 or 265 or 266 or 267 or 268 or 269))
+        if (bank.Version != 135 || species is not (46 or 47 or 265 or 266 or 267 or 268 or 269 or 399 or 400))
             throw new InvalidDataException("PLA cry identity or bank version is unsupported.");
         SoundBankObject Object(byte type, uint id) => bank.Objects.SingleOrDefault(o => o.Type == type && o.Id == id)
             ?? throw new InvalidDataException("PLA cry graph is incomplete.");

@@ -48,7 +48,7 @@ internal static class SwShRestorationDependencies
         var expected = Resolve(original, Enabled(state)); var result = captured.After.ToArray();
         if (original.Writer == SwShRestorationWriter.Personal
             && int.TryParse(original.Key, out var row)
-            && SwShRestorationForms.EnabledForms(state).Where(i => i.Species == row).ToArray() is { Length: > 0 } forms)
+            && SwShRestorationForms.EnabledForms(state).Where(i => SwShRestorationSpecies.BaseRow(i.Species) == row).ToArray() is { Length: > 0 } forms)
         {
             var first = forms.Select(i => SwShRestorationForms.PersonalRow(i) - i.Form + 1).Distinct().Single();
             if (BinaryPrimitives.ReadUInt16LittleEndian(result.AsSpan(30)) == first && result[32] == forms.Max(i => i.Form) + 1)

@@ -102,15 +102,16 @@ public sealed record SwShPreparedRestoration(string DefinitionId, int Definition
             SwShRestorationComposer.ValidatePath(item.Path, item.Writer);
             var valid = item.Writer switch
             {
-                SwShRestorationWriter.SpeciesText => definition.Identities.Contains(new(SwShRestorationSpecies.Annihilape, 0))
-                    && item.Key == SwShRestorationSpecies.Annihilape.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                SwShRestorationWriter.SpeciesText => definition.Identities.Any(i => SwShRestorationSpecies.DisplayName(i.Species) is not null
+                    && item.Key == i.Species.ToString(System.Globalization.CultureInfo.InvariantCulture)),
                 SwShRestorationWriter.Items or SwShRestorationWriter.ItemText =>
                     stones.Any(stone => item.Key == stone.ItemId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
                 SwShRestorationWriter.Personal or SwShRestorationWriter.Learnset =>
                     int.TryParse(item.Key, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id) && rows.Contains(id),
                 SwShRestorationWriter.Icons => definition.Identities.Any(i => SwShRestorationComposer.IconGenders(i.Species).Any(g => item.Key == SwShRestorationComposer.IconKey(i.Species, i.Form, g))
                     || i.Species == SwShRestorationSpecies.Annihilape && i.Form == 0 && item.Key == "979"),
-                SwShRestorationWriter.File => item.Key.Length == 0 && (stones.Any(stone => item.Path == SwShRestorationMegaItems.IconPath(stone.ItemId)) || definition.Identities.Any(i =>
+                SwShRestorationWriter.File => item.Key.Length == 0 && (SwShRestorationEvolutionPolicy.IsNativeParentFile(definition, item)
+                    || stones.Any(stone => item.Path == SwShRestorationMegaItems.IconPath(stone.ItemId)) || definition.Identities.Any(i =>
                     SwShRestorationComposer.IconGenders(i.Species).Any(g => item.Path == SwShRestorationComposer.IconPath(i.Species, i.Form, g))
                     || i.Species == SwShRestorationSpecies.Annihilape && i.Form == 0 && item.Path == "romfs/bin/appli/icon_pokemon/poke_icon_0979_00s_n.bntx"
                     || item.Path == $"romfs/bin/pml/evolution/evo_{SwShRestorationForms.PersonalRow(i):000}.bin"

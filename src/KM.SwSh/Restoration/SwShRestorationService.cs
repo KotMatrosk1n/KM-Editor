@@ -330,12 +330,12 @@ public sealed partial class SwShRestorationService
         IDictionary<string, byte[]?> outputs, ISet<ProjectFileReference> sources)
     {
         var enabled = SwShRestorationDependencies.Enabled(state);
-        var newSpecies = enabled.Contains(new(SwShRestorationSpecies.Annihilape, 0));
+        var newSpecies = enabled.Any(identity => identity.Species > SwShEffectivePokemonCatalog.MaximumSpecies);
         if (!newSpecies && !enabled.Any(identity => identity.Form != 0)) return;
         var personal = outputs.TryGetValue(SwShRestorationComposer.PersonalPath, out var pendingPersonal) && pendingPersonal is not null
             ? pendingPersonal : SwShEffectivePokemonCatalog.Read(paths, SwShRestorationComposer.PersonalPath, sources: sources);
         var independentForms = enabled.Any(identity => identity.Form != 0
-            && (personal[identity.Species * KM.Formats.SwSh.SwShPersonalTable.RecordSize + 33] & 64) == 0);
+            && (personal[SwShRestorationSpecies.BaseRow(identity.Species) * KM.Formats.SwSh.SwShPersonalTable.RecordSize + 33] & 64) == 0);
         if (!independentForms && !newSpecies) return;
         if (string.IsNullOrWhiteSpace(paths.BaseExeFsPath))
             throw new InvalidDataException("Select the game's Base ExeFS folder to support the restored Pokemon identity.");

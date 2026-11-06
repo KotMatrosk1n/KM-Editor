@@ -28,7 +28,7 @@ public static class PtAdpcmDecoder
         var channels = BinaryPrimitives.ReadUInt16LittleEndian(fmt[2..]); var rate = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(fmt[4..]));
         var block = BinaryPrimitives.ReadUInt16LittleEndian(fmt[12..]);
         if (BinaryPrimitives.ReadUInt16LittleEndian(fmt) != 0x8311 || BinaryPrimitives.ReadUInt16LittleEndian(fmt[14..]) != 4
-            || channels is < 1 or > 2 || rate is < 8000 or > 192000 || block % channels != 0 || block / channels is not (0x24 or 0x104)
+            || channels is < 1 or > 2 || rate is < 6000 or > 192000 || block % channels != 0 || block / channels is not (0x24 or 0x104)
             || data.Size == 0 || data.Size % block != 0)
             throw new InvalidDataException("Cry media uses an unsupported PTADPCM layout.");
         var frameSize = block / channels; var frameSamples = 2 + 2 * (frameSize - 5);

@@ -12,7 +12,7 @@ public sealed partial class SwShRestorationPreparationService
     {
         internal IReadOnlyList<SwShRestorationContribution> Names(SwShPokemonIdentity identity)
         {
-            if (identity.Species != SwShRestorationSpecies.Annihilape) return [];
+            if (identity.Species <= SwShEffectivePokemonCatalog.MaximumSpecies) return [];
             var result = new List<SwShRestorationContribution>();
             foreach (var language in SwShRestorationSpeciesText.Languages)
             {
@@ -27,10 +27,10 @@ public sealed partial class SwShRestorationPreparationService
                 if (sourceId >= source.Lines.Count || string.IsNullOrWhiteSpace(source.Lines[sourceId].Text))
                     throw new InvalidDataException("The new species source name is unavailable.");
                 var line = source.Lines[sourceId];
-                if (language == "English" && line.Text != "Annihilape")
+                if (language == "English" && line.Text != SwShRestorationSpecies.DisplayName(identity.Species))
                     throw new InvalidDataException("The source species name does not match the registered identity.");
                 SwShGameTextFile.ValidateText(line.Text);
-                result.Add(new(path, SwShRestorationWriter.SpeciesText, "979", null,
+                result.Add(new(path, SwShRestorationWriter.SpeciesText, identity.Species.ToString(System.Globalization.CultureInfo.InvariantCulture), null,
                     JsonSerializer.SerializeToUtf8Bytes(new SwShRestoredSpeciesName(native.Lines.Count, line))));
             }
             return result;

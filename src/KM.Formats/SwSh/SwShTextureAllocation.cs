@@ -7,7 +7,19 @@ namespace KM.Formats.SwSh;
 /// <summary>Allocates a bounded compressed image chain while preserving native texture metadata.</summary>
 public static class SwShTextureAllocation
 {
-    public static byte[] Create(byte[] template, int width, int height, bool srgb, bool compressed = true)
+    /// <summary>Retains an authored BC7 mip tail without filtering or recompressing its image blocks.</summary>
+    public static byte[] MipTail(byte[] template, int firstMip)
+    {
+        var source = new ModelTextureDocument(template);
+        if (source.Format is not (0x2001 or 0x2006) || firstMip < 1 || firstMip >= source.MipCount)
+            throw new InvalidDataException("Converted texture requires a stored BC7 mip tail.");
+        var allocated = Create(template, source.Width >> firstMip, source.Height >> firstMip, source.Srgb,
+            mipCount: source.MipCount - firstMip);
+        return new ModelTextureDocument(allocated).WithMipBlocks(Enumerable.Range(firstMip, source.MipCount - firstMip)
+            .Select(source.EncodedMipBlocks).ToArray());
+    }
+
+    public static byte[] Create(byte[] template, int width, int height, bool srgb, bool compressed = true, int? mipCount = null)
     {
         if (width is < 4 or > 2048 || height is < 4 or > 2048 || !PowerOfTwo(width) || !PowerOfTwo(height)
             || (long)width * height > 2 * 1024 * 1024)
@@ -31,7 +43,10 @@ public static class SwShTextureAllocation
             || info + 120 > metadataEnd || oldPointers < info + 120 || (oldPointers & 7) != 0
             || oldPointersEnd > metadataEnd)
             throw new InvalidDataException("Converted texture relocation ranges are unsupported.");
-        var count = 1 + (int)Math.Log2(Math.Max(width, height));
+        var fullCount = 1 + (int)Math.Log2(Math.Max(width, height));
+        var count = mipCount ?? fullCount;
+        if (count < 1 || count > fullCount)
+            throw new InvalidDataException("Converted texture mip count is outside its dimensions.");
         var pointers = Align(metadataEnd, 8);
         if (pointers + count * 8 > block)
             throw new InvalidDataException("Converted texture metadata has no room for its mip references.");

@@ -54,7 +54,12 @@ public sealed partial class SwShRestorationPreparationService
             var eyeMaterials = sourceMaterials.Tables(sourceMaterials.Root, 1, 128)
                 .Where(material => SwShMaterialBaker.IsEyeMaterial(sourceMaterials, material))
                 .Select(material => sourceMaterials.Text(material, 0)!).ToHashSet(StringComparer.Ordinal);
-            var shared = new Dictionary<string, SwShBakedMaterial>(StringComparer.Ordinal);
+            var groups = Profile(currentIdentity).NormalSharingGroups;
+            if (groups is not null && groups.Any(pair => pair.Value is < 0 or > 127
+                || scene.Primitives.Count(p => p.Name == pair.Key) != 1))
+                throw new InvalidDataException("Normal sharing group has missing or ambiguous geometry.");
+            int Group(PreviewPrimitive primitive) => groups?.GetValueOrDefault(primitive.Name, -1) ?? -1;
+            var shared = new Dictionary<(string Material, int Group), SwShBakedMaterial>();
             return scene.Primitives.Select((primitive, index) =>
             {
                 if (nativeFlames && primitive.Material.Name == "fire") return null;
@@ -66,13 +71,16 @@ public sealed partial class SwShRestorationPreparationService
                 if (Profile(currentIdentity).LayeredEyes && !Profile(currentIdentity).CornealEyes
                     && eye) return null;
                 var normalScale = Profile(currentIdentity).NormalUvScales?.GetValueOrDefault(primitive.Name, Vector2.One) ?? Vector2.One;
-                var share = Profile(currentIdentity).SharedMaterialTextures && normalScale == Vector2.One;
-                if (share && shared.TryGetValue(primitive.Material.Name, out var previous)) return previous;
+                var group = Group(primitive);
+                var share = normalScale == Vector2.One && (group >= 0
+                    || Profile(currentIdentity).SharedMaterialTextures && !Profile(currentIdentity).SeparateNormalSections);
+                var key = (primitive.Material.Name, group);
+                if (share && shared.TryGetValue(key, out var previous)) return previous;
                 var bakingPrimitive = primitive;
                 if (share)
                 {
                     var vertices = new List<float>(); var indices = new List<uint>();
-                    foreach (var section in scene.Primitives.Where(section => section.Material.Name == primitive.Material.Name
+                    foreach (var section in scene.Primitives.Where(section => section.Material.Name == primitive.Material.Name && Group(section) == group
                         && (Profile(currentIdentity).NormalUvScales?.GetValueOrDefault(section.Name, Vector2.One) ?? Vector2.One) == Vector2.One))
                     {
                         var offset = checked((uint)(vertices.Count / 16));
@@ -99,7 +107,7 @@ public sealed partial class SwShRestorationPreparationService
                     preserveSourceColor: sourceColorMaterials?.Contains(primitive.Material.Name) == true
                         || currentIdentity.Species == 733 && currentIdentity.Form == 0
                             && KM.Formats.SV.SvSwShLayerEmission.PreservesToucannonUnlayeredAlbedo(materialBytes, primitive));
-                if (share && material.ConflictingSamples != 0)
+                if ((share || Profile(currentIdentity).SeparateNormalSections) && material.ConflictingSamples != 0)
                     throw new InvalidDataException("Shared material normal coordinates require another target adapter.");
                 // Eyes can share a layer mask while having different palette colors.
                 // Give each material and palette its own native texture identity.
@@ -115,7 +123,7 @@ public sealed partial class SwShRestorationPreparationService
                 Report("textures", (rare ? scene.Primitives.Count : 0) + index + 1, scene.Primitives.Count * 2);
                 var result = material with { ColorName = color.Name, Color = color.Bytes, NormalName = normal.Name, Normal = normal.Bytes,
                     AmbientName = ambient.Name, Ambient = ambient.Bytes };
-                if (share) shared.Add(primitive.Material.Name, result);
+                if (share) shared.Add(key, result);
                 return result;
             }).ToArray();
         }

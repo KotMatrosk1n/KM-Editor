@@ -8,6 +8,29 @@ public sealed partial class ZaSwShRestorationPreparationService
     private static readonly IReadOnlyDictionary<SwShPokemonIdentity, SpeciesProfile> MegaProfiles =
         new Dictionary<SwShPokemonIdentity, SpeciesProfile>
         {
+        [new(382, 1)] = new(382, 382, 335, 80, 980, "_body_alb",
+                SourceFraming: true, IdleFraming: true, MeshVisibility: true, LayerEmission: true, FemalePercent: 0, GenderThreshold: 255,
+                ResourceStem: "pm0382_51_00", OutputStem: "pm0382_01", GenderKind: 3,
+                AnimationOffset: 10000, HatchedForm: 0, SourceSpecies: 382,
+                BakeNormalTiles: true, NormalTiles: [
+                    new("body_b_00", new(1, 2), "pm0382_51_00_core_mesh_shape"),
+                    new("body_b_00", new(1, 2), "pm0382_51_00_entrails_mesh_shape"),
+                    new("body_b_00", new(1, 2), "pm0382_51_00_entrailstail_mesh_shape"),
+                    new("body_b_00", new(1, 2), "pm0382_51_00_mouthura_mesh_shape"),
+                    new("body_b_02", new(1, 2), "pm0382_51_00_mouth_mesh_shape"),
+                    new("body_a_01", new(1, 2), "pm0382_51_00_mouth_mesh_shape")],
+                MotionOverrides: new Dictionary<string, string> { ["mouth01"] = "10001", ["ba10_waitB01"] = "10001" }),
+        [new(383, 1)] = new(383, 383, 335, 180, 500, "_body_alb",
+                SourceFraming: true, IdleFraming: true, MeshVisibility: true, LayerEmission: true, FemalePercent: 0, GenderThreshold: 255,
+                ResourceStem: "pm0383_51_00", OutputStem: "pm0383_01", GenderKind: 3,
+                AnimationOffset: 0, HatchedForm: 0, SourceSpecies: 383,
+                StandaloneMotionTimelines: new Dictionary<string, (int Frames, bool Loop)> {
+                    ["pm0383_51_00_00001_battlewait01_loop_offscreen"] = (149, true),
+                    ["pm0383_51_00_00300_roar01_offscreen"] = (161, false),
+                    ["pm0383_51_00_00400_attack01_offscreen"] = (135, false),
+                    ["pm0383_51_00_00450_rangeattack01_offscreen"] = (149, false) },
+                MotionOverrides: new Dictionary<string, string> { ["mouth01"] = "00001", ["ba10_waitB01"] = "00001" }),
+
             [new(26, 2)] = new(26, 172, 218, 120, 120, "_body_alb",
                 SourceFraming: true, IdleFraming: true, MeshVisibility: true, LayerEmission: true, FemalePercent: 50, GenderThreshold: 127,
                 ResourceStem: "pm0026_51_00", OutputStem: "pm0026_02", GenderKind: 0,

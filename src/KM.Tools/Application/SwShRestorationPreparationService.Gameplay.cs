@@ -112,21 +112,55 @@ public sealed partial class SwShRestorationPreparationService
                 var destination = NationalSpecies(source.U16(at + 12), form);
                 if (species == 203 && destination == 981 && form == 0 && source.U16(at + 2) == 21 && source.U16(at + 4) == 888) continue;
                 if (!TryProfile(new(destination, form), out var evolved) || evolved.HatchedSpecies != profile.HatchedSpecies || evolved.HatchedForm != profile.HatchedForm) throw new InvalidDataException("Evolution needs an undeclared restoration dependency.");
-                var method = source.U16(at + 2); var argument = (int)source.U16(at + 4);
-                var level = (int)source.U16(at);
+                var original = new SwShEvolutionRecord(i, source.U16(at + 2), source.U16(at + 4), destination, form, source.U16(at));
+                var converted = SwShRestorationEvolutionPolicy.Convert(identity, original);
+                var method = converted.Method; var argument = converted.Argument; var level = converted.Level;
+                if (method is < 1 or > 49 or 35 || method == 21 && !MoveAvailable(argument))
+                    throw new InvalidDataException("Evolution condition needs an explicit supported replacement.");
                 if (method == 22) argument = NationalSpecies(argument, 0);
                 if (method is 6 or 8 or 17 or 18 or 19 or 20 or 42)
                 {
+                    if (converted != original)
+                    {
+                        if (!SwShItemTable.Parse(Native(SwShItemTable.ItemDataRelativePath[6..]), 4096).Records.Any(r => r.ItemId == argument))
+                            throw new InvalidDataException("Replacement evolution item is unavailable in the target.");
+                    }
+                    else
+                    {
                     var mapping = EvolutionItemConversionTable.Read(Donor("world/data/battle/plib_item_conversion/plib_item_conversion_array.bin"))
                         .Where(r => r.ParameterId == argument && r.ItemId > 0).ToArray();
                     if (mapping.Length != 1 || !SwShItemTable.Parse(Native(SwShItemTable.ItemDataRelativePath[6..]), 4096).Records.Any(r => r.ItemId == mapping[0].ItemId))
                         throw new InvalidDataException("Evolution item has no supported native identity.");
                     argument = mapping[0].ItemId;
+                    }
                 }
                 Put16(evolution, i * 8, method); Put16(evolution, i * 8 + 2, argument); Put16(evolution, i * 8 + 4, destination);
                 evolution[i * 8 + 6] = checked((byte)form); evolution[i * 8 + 7] = checked((byte)level);
             }
             result.Add(File($"bin/pml/evolution/evo_{personalId:000}.bin", evolution));
+            // Native parents keep every native route. Only the two explicitly
+            // requested regional branches add a new route to their table.
+            if (SwShRestorationEvolutionPolicy.NativeParent(identity) is { } parentSpecies)
+            {
+                var parentTables = source.Tables(source.Root, 0, 4096).Where(t => source.Field(t, 0) is var at && at != 0
+                    && source.U16(at + 4) == parentSpecies && source.U16(at + 2) == 0).ToArray();
+                if (parentTables.Length != 1) throw new InvalidDataException("Regional evolution parent is ambiguous.");
+                var parentPath = $"bin/pml/evolution/evo_{parentSpecies:000}.bin";
+                var nativeRows = SwShEvolutionSet.Parse(Native(parentPath)).Evolutions.ToList();
+                if (nativeRows.Any(r => r.Species == species && r.Form == identity.Form))
+                    throw new InvalidDataException("Regional evolution destination is already native.");
+                var freeSlot = Enumerable.Range(0, SwShEvolutionSet.MaxEvolutionCount)
+                    .FirstOrDefault(slot => nativeRows.All(r => r.Slot != slot), -1);
+                if (freeSlot < 0) throw new InvalidDataException("The native parent's evolution table is full.");
+                var route = SwShRestorationEvolutionPolicy.Convert(new(parentSpecies, 0),
+                    new(freeSlot, 0, 0, species, identity.Form, 0));
+                if (route.Method != 8 || route.Argument != SwShRestorationEvolutionPolicy.DuskStone
+                    || !SwShItemTable.Parse(Native(SwShItemTable.ItemDataRelativePath[6..]), 4096).Records.Any(r => r.ItemId == route.Argument))
+                    throw new InvalidDataException("Regional evolution replacement has no native item.");
+                nativeRows.Add(route);
+                result.Add(File(parentPath, SwShEvolutionSet.Write(nativeRows)));
+                nativeParentEvolutionPaths.Add("romfs/" + parentPath);
+            }
             var eggMoves = Moves(25).Where(MoveAvailable).ToArray(); var eggs = new byte[4 + eggMoves.Length * 2]; Put16(eggs, 0, identity.Form == 0 && species <= 898
                 ? BinaryPrimitives.ReadUInt16LittleEndian(Native(SwShRestorationForms.EggPath(species)[6..]))
                 : SwShRestorationForms.EggRow(identity)); Put16(eggs, 2, eggMoves.Length);
@@ -143,7 +177,10 @@ public sealed partial class SwShRestorationPreparationService
                 if (group == "common" && species <= SwShEffectivePokemonCatalog.MaximumSpecies && personalTable.Records[species].IsPresentInGame) continue;
                 string Name(int id, int form = 0) => group == "common" ? $"poke_{id:0000}_XX_X.bin" : $"poke_{group}_{id:0000}_{form:00}_0.bin";
                 var folder = $"bin/pokemon_data/pokecamp/{group}/";
-                var data = camp.ReadFileByHash(SwShGfPackFile.HashMemberPath(folder + Name(profile.NativeTemplate)), 1024 * 1024);
+                // The native legendary templates have no ball table. Their new
+                // forms retain their other metadata and use the standard ball row.
+                var campTemplate = species is 483 or 484 && identity.Form == 1 && group == "ball" ? 1 : profile.NativeTemplate;
+                var data = camp.ReadFileByHash(SwShGfPackFile.HashMemberPath(folder + Name(campTemplate)), 1024 * 1024);
                 if (group == "common")
                 {
                     var metadata = new ModelBuffer(data); var field = metadata.Field(metadata.Root, 2);
