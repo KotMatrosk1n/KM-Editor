@@ -129,13 +129,17 @@ public static class SwShRestorationFormSlots
         new(807, 1079, 1, 0, 0),
         new(870, 1080, 1, 0, 0),
         // Appended blocks preserve every native and previously reserved form row.
+        new(550, 1430, 2, 1009, 1),
         new(664, 1439, 19, 0, 0),
         new(665, 1458, 19, 0, 0),
         new(666, 1477, 19, 0, 0),
         new(669, 1496, 4, 0, 0),
         new(671, 1500, 4, 0, 0),
+        new(720, 1513, 1, 0, 0),
         new(741, 1514, 3, 0, 0),
         new(774, 1517, 13, 0, 0),
+        new(902, 1532, 1, 0, 0),
+        new(905, 1533, 1, 0, 0),
     });
     private static readonly IReadOnlyDictionary<int, SwShRestorationFormBlock> BySpecies = Blocks.ToDictionary(b => b.Species);
 

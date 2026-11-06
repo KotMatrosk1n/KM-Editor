@@ -139,7 +139,7 @@ public sealed class SoundBankDocument
 
     public static byte[] EncodePcm16(ReadOnlySpan<float> samples, int channels, int sampleRate)
     {
-        if (channels is < 1 or > 2 || sampleRate is < 8000 or > 192000 || samples.Length % channels != 0 || samples.Length > 32 * 1024 * 1024)
+        if (channels is < 1 or > 2 || sampleRate is < 6000 or > 192000 || samples.Length % channels != 0 || samples.Length > 32 * 1024 * 1024)
             throw new InvalidDataException("Cry PCM format is unsupported.");
         using var output = new MemoryStream(); using var writer = new BinaryWriter(output);
         writer.Write(Encoding.ASCII.GetBytes("RIFF")); writer.Write(checked(60 + samples.Length * 2));

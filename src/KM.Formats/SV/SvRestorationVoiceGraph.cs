@@ -40,7 +40,7 @@ public static class SvRestorationVoiceGraph
         var action = Object(3, U32(evt.Payload, 1));
         if (action.Payload.Length < 6 || action.Payload[0] != 3 || action.Payload[1] != 4)
             throw new InvalidDataException("S/V voice event does not contain a play action.");
-        var choice = Switch(Object(6, U32(action.Payload, 2)).Payload);
+        var choice = Switch(Object(6, U32(action.Payload, 2)).Payload, nativeContextStates: species == 522);
         var gain = choice.Gain;
         if (choice.Group == SwShVoiceWriter.Hash("FORM"))
         {
@@ -92,7 +92,7 @@ public static class SvRestorationVoiceGraph
         return (gain, minimum, maximum);
     }
 
-    private static (uint Group, Dictionary<uint, uint[]> States, float Gain, uint Default) Switch(byte[] bytes, bool inactiveCompanion = false)
+    private static (uint Group, Dictionary<uint, uint[]> States, float Gain, uint Default) Switch(byte[] bytes, bool inactiveCompanion = false, bool nativeContextStates = false)
     {
         // Version 140 stores effect, metadata and attachment flags before the parent data.
         // Parse the property bundle instead of assuming a fixed child offset.
@@ -127,9 +127,17 @@ public static class SvRestorationVoiceGraph
         if ((auxiliaryFlags & 8) != 0) for (var i = 0; i < 4; i++) _ = Word();
         if (Word() != 0) throw new InvalidDataException("S/V voice switch has unsupported auxiliary routing.");
         Zero(); _ = Byte(); _ = Byte(); _ = Byte(); _ = Byte(); _ = Byte();
-        Zero(); Zero(); // State counts.
-        if (!inactiveCompanion) { Zero(); Zero(); }
-        else
+        if (nativeContextStates)
+        {
+            // Blitzle's source context states belong to S/V's mixer. SwSh owns
+            // those contexts; retain the ordinary authored PV switch below.
+            var stateChunk = Convert.FromHexString("05040200030200070201020200000201016612EC3B00016507EC3481CFDF100000");
+            if (!bytes.AsSpan(at).StartsWith(stateChunk)) throw new InvalidDataException("S/V context state bindings changed.");
+            at += stateChunk.Length;
+        }
+        else { Zero(); Zero(); }
+        if (!inactiveCompanion && !nativeContextStates) { Zero(); Zero(); }
+        else if (inactiveCompanion)
         {
             if (Byte() != 1 || Byte() != 0 || Word() != 2781638929 || Byte() != 0 || Byte() != 2 || Byte() != 0)
                 throw new InvalidDataException("S/V voice companion modulation is unsupported.");

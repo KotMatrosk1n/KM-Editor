@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 using System.Security.Cryptography;
 using KM.Formats.Models;
+using KM.Formats.SwSh;
 
 namespace KM.Tools.Application;
 
@@ -111,6 +112,45 @@ public sealed partial class SwShRestorationPreparationService
                 : pair.Key.EndsWith(".bntx", StringComparison.Ordinal) ? textures.Contains(pair.Key)
                 : pair.Key.EndsWith(".bnsh_vsh", StringComparison.Ordinal) || pair.Key.EndsWith(".bnsh_fsh", StringComparison.Ordinal) ? shaders.Contains(pair.Key)
                 : true).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+            if (Path.GetFileName(modelPath) is "pm0484_01.gfbmdl" or "pm0484_01_rare.gfbmdl")
+            {
+                // Keep the independent pearl, body and translucent-cover images.
+                // Their authored 512px mip chains fit the native model loading
+                // pool; retaining five 1024px images exhausts it in Summary.
+                var rare = Path.GetFileName(modelPath) == "pm0484_01_rare.gfbmdl";
+                foreach (var name in new[] { rare ? "d00484_12_00_body_b_rare_alb" : "c00484_12_00_body_b_alb",
+                    rare ? "d10484_12_00_body_a_rare_alb" : "c10484_12_00_body_a_alb",
+                    rare ? "pm0484_12_00_body_a_rare_alb" : "pm0484_12_00_body_a_alb",
+                    "pm0484_12_00_body_a_lym", "pm0484_12_00_body_c_alb" })
+                {
+                    var path = folder + name + ".bntx";
+                    if (!selected.TryGetValue(path, out var bytes))
+                        throw new InvalidDataException("Origin Palkia layered texture is missing.");
+                    var texture = new ModelTextureDocument(bytes);
+                    if (texture.Width != 1024 || texture.Height != 1024 || texture.MipCount != 11)
+                        throw new InvalidDataException("Origin Palkia layered texture dimensions changed.");
+                    selected[path] = SwShTextureAllocation.MipTail(bytes, 1);
+                }
+            }
+            if (Path.GetFileName(modelPath) is "pm0720_01.gfbmdl" or "pm0720_01_rare.gfbmdl")
+            {
+                // Unbound's four body maps otherwise exhaust the model loader
+                // pool even when opened first in a fresh Summary session.
+                // Preserve each independent image using its authored mip tail.
+                var bodyMaps = textures.Where(path =>
+                    Path.GetFileName(path) is "a00774_12_00_body_a_amb.bntx" or "a30774_12_00_body_b_amb.bntx"
+                    or "c00774_12_00_body_a_alb.bntx" or "c30774_12_00_body_b_alb.bntx"
+                    or "b00774_12_00_body_a_rare_amb.bntx" or "b30774_12_00_body_b_rare_amb.bntx"
+                    or "d00774_12_00_body_a_rare_alb.bntx" or "d30774_12_00_body_b_rare_alb.bntx").ToArray();
+                if (bodyMaps.Length != 4) throw new InvalidDataException("Hoopa Unbound body texture set changed.");
+                foreach (var path in bodyMaps)
+                {
+                    var texture = new ModelTextureDocument(selected[path]);
+                    if (texture.Width != 1024 || texture.Height != 1024 || texture.MipCount != 11)
+                        throw new InvalidDataException("Hoopa Unbound body texture dimensions changed.");
+                    selected[path] = SwShTextureAllocation.MipTail(selected[path], 1);
+                }
+            }
             SwShRestorationResourceBudget.Validate(selected);
             return selected;
         }

@@ -27,6 +27,7 @@ public static partial class SvSwShLayerEmission
     public const string CoverageTrack = "CoverageEmission";
     public const string UniformProgramName = "UniformEmission";
     public const string OpaqueCoverageProgramName = "OpaqueCoverage";
+    public const string FiveLayerProgramName = "GroudonFiveLayers";
     public const string PointLightProgramName = "PointLightEye";
     public const string PointLightIntensity = "L1ConstantColorSd1Val";
     public const string PointLightColor = "L1ConstantColorSd1";
@@ -64,7 +65,8 @@ public static partial class SvSwShLayerEmission
         public Vector3? PointColor { get; init; }
         public float PointIntensity { get; init; }
         public bool UniformEmission { get; init; }
-        public string Program(bool inner = false) => SeparateBaseColors
+        public string? FifthMask { get; init; }
+        public string Program(bool inner = false) => FifthMask is not null ? FiveLayerProgramName : SeparateBaseColors
             ? SvSwShSourceBase.Program(this, inner)
             : PointColor is not null ? PointLightProgramName : UniformEmission ? UniformProgramName : NormalizedCoverage ? Transparent ? CoveragePrograms[inner ? 1 : 0] : OpaqueCoverageProgramName : Additive ? AdditiveProgramName : Unlit ? UnlitBaseProgramName : BaseColors is not null ? Transparent ? TransparentBasePrograms[inner ? 1 : 0] : BaseProgramName : MaskScale.W == 0 ? ThreeLayerProgramName : MirroredMask && MaskUv.X == 2 ? MirroredProgramName : Lava ? LavaProgramName : FresnelNormal is not null ? FresnelMirrorOnce ? FresnelMirrorProgramName : FresnelProgramName : ColorMap ? MapProgramName : Transparent ? TransparentPrograms[inner ? 1 : 0] : ProgramName;
     }
@@ -75,6 +77,13 @@ public static partial class SvSwShLayerEmission
 
     private static IReadOnlyDictionary<string, Contract> ContractsCore(byte[] bytes, PreviewScene scene)
     {
+        if (scene.Primitives.Any(p => p.Name.StartsWith("pm0383_51_00_", StringComparison.Ordinal)))
+            return GroudonContracts(bytes, scene);
+        if (DialgaContracts(bytes, scene) is { } dialga) return dialga;
+        if (PalkiaContracts(bytes, scene) is { } palkia) return palkia;
+        if (BodyDonorContracts(bytes, scene) is { } bodyDonors) return bodyDonors;
+        if (scene.Primitives.Any(p => p.Name.StartsWith("pm0382_51_00_", StringComparison.Ordinal)))
+            return KyogreContracts(bytes, scene);
         if (scene.Primitives.Any(p => p.Name.StartsWith("pm0036_51_00_", StringComparison.Ordinal)))
             return ClefableContracts(bytes, scene);
         if (scene.Primitives.Any(p => p.Name.StartsWith("pm0359_52_00_", StringComparison.Ordinal)))
@@ -92,6 +101,8 @@ public static partial class SvSwShLayerEmission
             || p.Name.StartsWith("pm0101_00_41_", StringComparison.Ordinal));
         var tynamo = scene.Primitives.Any(p => p.Name.StartsWith("pm0602_00_00_", StringComparison.Ordinal));
         var volbeat = scene.Primitives.Any(p => p.Name.StartsWith("pm0313_00_00_", StringComparison.Ordinal));
+        var blitzle = scene.Primitives.Any(p => p.Name.StartsWith("pm0522_00_00_", StringComparison.Ordinal));
+        var enamorus = scene.Primitives.Any(p => p.Name.StartsWith("pm1004_12_00_", StringComparison.Ordinal));
         var toucannon = scene.Primitives.Any(p => p.Name.StartsWith("pm0809_00_00_", StringComparison.Ordinal));
         var litleo = scene.Primitives.Any(p => p.Name.StartsWith("pm0704_00_00_", StringComparison.Ordinal));
         var pyroarMale = scene.Primitives.Any(p => p.Name.StartsWith("pm0705_00_00_", StringComparison.Ordinal));
@@ -108,6 +119,7 @@ public static partial class SvSwShLayerEmission
                 : scene.Primitives.Any(p => p.Name.StartsWith("pm0386_", StringComparison.Ordinal)) ? new[] { "body_a_01", "body_a_02", "body_a_00", "body_b" }
                 : tynamo ? new[] { "body_00", "body_01" }
                 : volbeat ? new[] { "body_b" }
+                : blitzle || enamorus ? new[] { "body_b" }
                 : toucannon ? new[] { "body_b_00", "body_b_01", "body_b_02", "body_b_03" }
                 : litleo ? new[] { "body_a_02", "body_a_03" }
                 : pyroarMale ? new[] { "body_a_01", "body_b_00" }
@@ -124,11 +136,15 @@ public static partial class SvSwShLayerEmission
                 "body_b" => 2, "body_a_00" => scene.Primitives.Any(p => p.Name.StartsWith("pm0386_14_", StringComparison.Ordinal)) ? 1 : 2,
                 _ => 1,
             };
-            if (minior ? sections != (name == "body_a_02" ? 2 : 1) : deoxys ? sections != deoxysSections : spherical ? sections is < 1 or > 2 : volbeat ? sections != 3 : sections != 1)
+            if (minior ? sections != (name == "body_a_02" ? 2 : 1) : deoxys ? sections != deoxysSections : spherical ? sections is < 1 or > 2 : enamorus ? sections != 2 : volbeat ? sections != 3 : sections != 1)
                 throw new InvalidDataException("Layer emission geometry is ambiguous.");
             if (toucannon && !scene.Primitives.Where(p => p.Material.Name == name).Select(p => p.Name)
                     .SequenceEqual(["pm0809_00_00_body_mesh_shape"]))
                 throw new InvalidDataException("Toucannon emission geometry requires another adapter.");
+            if ((blitzle || enamorus) && !scene.Primitives.Where(p => p.Material.Name == name).Select(p => p.Name).Order(StringComparer.Ordinal)
+                    .SequenceEqual(blitzle ? new[] { "pm0522_00_00_body_mesh_shape" }
+                        : new[] { "pm1004_12_00_tail_a_mesh_shape", "pm1004_12_00_tail_b_mesh_shape" }))
+                throw new InvalidDataException("Body emission geometry requires another adapter.");
             if (minior && !scene.Primitives.Where(p => p.Material.Name == name).Select(p => p.Name).Order(StringComparer.Ordinal)
                     .SequenceEqual(name == "eye" ? new[] { "pm0824_11_00_eye_mesh_shape" }
                         : name == "body_a_02" ? new[] { "pm0824_11_00_core_mesh_shape", "pm0824_11_00_mouth_mesh_shape" }
@@ -150,13 +166,13 @@ public static partial class SvSwShLayerEmission
             var expectedUv = new Vector4(tynamo || pyroarMale || pyroarFemale
                 || toucannon && name is ("body_b_02" or "body_b_03") ? 2 : 1, 1, 0, 0);
             if (!source.Tables(material, 1, 16).Select(t => source.Text(t, 0)).SequenceEqual(transparent
-                    ? ["Transparent", "TransparentInner"] : [tynamo || litleo || pyroarMale || pyroarFemale ? "IkCharacter" : spherical || volbeat || toucannon ? "SSS" : "Standard"])
+                    ? ["Transparent", "TransparentInner"] : [tynamo || litleo || pyroarMale || pyroarFemale ? "IkCharacter" : spherical || volbeat || toucannon || blitzle || enamorus ? "SSS" : "Standard"])
                 || vectors["UVScaleOffset"] != expectedUv || (minior || toucannon) && colorMap
                 || (colorMap ? scalars["EmissionIntensity"] is not (.1f or .2f) : scalars["EmissionIntensity"] != 0)
                 || !colorMap && Enumerable.Range(1, 4).Any(layer => scalars["LayerMaskScale" + layer] != 1 || scalars["EmissionIntensityLayer" + layer] != initial[layer - 1]))
                 throw new InvalidDataException("Source emission surface requires another adapter.");
             var colors = Enumerable.Range(1, 4).Select(layer => colorMap ? new Vector4(0, 0, 0, 1) : vectors["EmissionColorLayer" + layer]).ToArray();
-            var maximumColor = volbeat ? 2.5f : 2;
+            var maximumColor = blitzle ? 3.5f : volbeat ? 2.5f : 2;
             if (colors.Any(c => !float.IsFinite(c.X + c.Y + c.Z + c.W) || c.X < 0 || c.X > maximumColor || c.Y < 0 || c.Y > maximumColor || c.Z < 0 || c.Z > maximumColor || c.W != 1))
                 throw new InvalidDataException("Source emission color exceeds its supported range.");
             var texture = source.Tables(material, 2, 64).Single(t => source.Text(t, 0) == (colorMap ? "EmissionColorMap" : "LayerMaskMap"));
@@ -167,7 +183,7 @@ public static partial class SvSwShLayerEmission
             if ((uint)sampler >= samplers.Length) throw new InvalidDataException("Source emission sampler is missing.");
             if (toucannon && name == "body_b_01" && (uvIndex != uint.MaxValue || colorMap || source.Value(samplers[sampler], 9) != 1 || source.Value(samplers[sampler], 10) != 1))
                 throw new InvalidDataException("Toucannon emission mask requires another adapter.");
-            var mirrored = pyroarMale || pyroarFemale || toucannon && name != "body_b_01";
+            var mirrored = blitzle || pyroarMale || pyroarFemale || toucannon && name != "body_b_01";
             if (mirrored && (uvIndex != uint.MaxValue || colorMap || source.Value(samplers[sampler], 9) != 6 || source.Value(samplers[sampler], 10) != 1))
                 throw new InvalidDataException("Source mirrored emission mask requires another adapter.");
             result.Add(name, new(name, source.Text(texture, 1)!, colors.Select(c => new Vector3(c.X, c.Y, c.Z)).ToArray())
@@ -245,8 +261,15 @@ public static partial class SvSwShLayerEmission
         var originals = source.Tables(source.Root, 6, 128);
         var (programStart, _) = source.Vector(source.Root, 3, 4, 256);
         var original = sourceProgram is null ? originals[0] : originals.Single(m => source.StringAt(programStart + checked((int)source.Value(m, 8)) * 4) == sourceProgram);
-        if (programName is BaseProgramName or UnlitBaseProgramName or OpaqueCoverageProgramName or SvSwShSourceCoverage.OpaqueProgramName or SvSwShSourceBase.ProgramName or SvSwShSourceBase.MirroredProgramName or SvSwShSourceBase.UnlitProgramName) RequireNativeBaseSlots(source, original);
-        if (programName is OpaqueCoverageProgramName or SvSwShSourceCoverage.OpaqueProgramName) RequireNativeCoverageSlots(source, original);
+        if (programName is FiveLayerProgramName or BaseProgramName or UnlitBaseProgramName or OpaqueCoverageProgramName or SvSwShSourceCoverage.OpaqueProgramName or SvSwShSourceBase.ProgramName or SvSwShSourceBase.MirroredProgramName or SvSwShSourceBase.UnlitProgramName) RequireNativeBaseSlots(source, original);
+        if (programName is FiveLayerProgramName or OpaqueCoverageProgramName or SvSwShSourceCoverage.OpaqueProgramName) RequireNativeCoverageSlots(source, original);
+        if (programName == FiveLayerProgramName)
+        {
+            var rows = source.Tables(original, 13, 256);
+            if (new[] { (7, "Layer1UVScaleU"), (8, "Layer1UVScaleV"), (9, "Layer1UVTranslateU"), (11, "Layer1UVTranslateV") }
+                .Any(p => rows.Length <= p.Item1 || source.Text(rows[p.Item1], 0) != p.Item2))
+                throw new InvalidDataException("Primal Groudon native fifth-mask UV slots changed.");
+        }
         if (programName == PointLightProgramName)
         {
             if (sourceProgram != SvSwShCornealMaterial.ProgramName) throw new InvalidDataException("Point light eyes require the paired native corneal surface.");
@@ -351,7 +374,7 @@ public static partial class SvSwShLayerEmission
             foreach (var p in source.Tables(material, 12, 256))
                 if (source.Text(p, 0) is "Layer1Enable" or "EmissionMaskUse" or "SwitchEmissionMaskTexUV")
                 { var at = source.Field(p, 1); if (at != 0) writer.Write(at, [0]); }
-            if (contract.NormalizedCoverage || contract.SeparateBaseColors)
+            if (contract.NormalizedCoverage || contract.SeparateBaseColors || contract.FifthMask is not null)
             {
                 BindCoverageParameters(source, writer, material, contract);
                 continue;
@@ -402,9 +425,10 @@ public static partial class SvSwShLayerEmission
                 var bases = contracts.TryGetValue(name, out var baseContract) && baseContract.Unlit
                     ? vectors.Where(p => source.Text(p, 0)?.StartsWith("BaseColorLayer", StringComparison.Ordinal) == true).ToArray() : [];
                 var alphas = baseContract?.Additive == true ? vectors.Where(p => source.Text(p, 0) == "BaseColor").ToArray() : [];
+                var fifthUvs = baseContract?.FifthMask is not null ? vectors.Where(p => source.Text(p, 0) == "UVScaleOffset5").ToArray() : [];
                 if (baseContract?.PreservesTextureAlpha == true && vectors.Any(p => source.Text(p, 0)?.StartsWith("UV", StringComparison.Ordinal) == true))
                     throw new InvalidDataException("Original source alpha UV animation requires another tile adapter.");
-                if (scalars.Length == 0 && colors.Length == 0 && bases.Length == 0 && alphas.Length == 0) continue;
+                if (scalars.Length == 0 && colors.Length == 0 && bases.Length == 0 && alphas.Length == 0 && fifthUvs.Length == 0) continue;
                 var bound = scene.Primitives.Any(p => p.Name == mesh && p.Material.Name == name);
                 // Qualified LODs repeat their bound surface's curves.
                 // Remove a repeated scalar set only after comparing every channel
@@ -421,10 +445,16 @@ public static partial class SvSwShLayerEmission
                     throw new InvalidDataException("Source emission target is not qualified: " + mesh + "/" + name);
                 foreach (var alpha in alphas)
                     additional.Add(ReadSlashAlpha(source, alpha, mesh, contracts[name], (float)skeleton.Rate / rate));
+                foreach (var uv in fifthUvs)
+                {
+                    if (!bound) throw new InvalidDataException("Primal Groudon fifth-layer UV target is not bound.");
+                    additional.Add(ReadGroudonFifthUv(source, uv, name, (float)skeleton.Rate / rate));
+                }
                 foreach (var scalar in scalars)
                 {
                     var parameter = source.Text(scalar, 0)!;
-                    var coverage = bound && contracts[name].NormalizedCoverage && parameter == "EmissionIntensity";
+                    var coverage = bound && (contracts[name].NormalizedCoverage && parameter == "EmissionIntensity"
+                        || contracts[name].FifthMask is not null && parameter == "EmissionIntensityLayer5");
                     var uniform = bound && contracts[name].UniformEmission && parameter == "EmissionIntensity";
                     if (coverage || uniform) RequireCoverageKeys(source, scalar);
                     var fresnel = bound && contracts[name].FresnelNormal is not null;
@@ -442,7 +472,7 @@ public static partial class SvSwShLayerEmission
                     if (bound) additional.Add(new(name, coverage ? CoverageTrack : fresnel || uniform ? "EmissionIntensityLayer" + (layer + 1) : parameter, [keys]));
                 }
                 if (scalars.Length != 0) writer.Vector(material, 1, 0);
-                if (colors.Length == 0 && bases.Length == 0 && alphas.Length == 0) continue;
+                if (colors.Length == 0 && bases.Length == 0 && alphas.Length == 0 && fifthUvs.Length == 0) continue;
                 if (!bound || colors.Length != 0 && !contracts[name].AnimatedColors
                     || bases.Length != 0 && contracts[name].BaseColors is null)
                     throw new InvalidDataException("Source emission color target is not qualified.");
@@ -457,7 +487,7 @@ public static partial class SvSwShLayerEmission
                     var keys = Enumerable.Range(0, 4).Select(channel => ReadColorKeys(source, source.Table(channels, channel), (float)skeleton.Rate / rate, channel == 3, alpha)).ToArray();
                     additional.Add(new(name, parameter, keys));
                 }
-                var retained = vectors.Except(colors).Except(bases).Except(alphas).ToArray();
+                var retained = vectors.Except(colors).Except(bases).Except(alphas).Except(fifthUvs).ToArray();
                 var slots = writer.Vector(material, 2, retained.Length);
                 for (var i = 0; i < slots.Length; i++) retainedVectors.Add((slots[i], retained[i]));
             }
@@ -494,9 +524,13 @@ public static partial class SvSwShLayerEmission
         foreach (var contract in contracts.Values.Where(c => c.Additive))
             if (!additional.Any(t => t.Material == contract.Name && t.Parameter == "SurfaceAlpha"))
                 additional.Add(new(contract.Name, "SurfaceAlpha", [[new(0, [0])]]));
-        foreach (var contract in contracts.Values.Where(c => c.NormalizedCoverage))
+        foreach (var contract in contracts.Values.Where(c => c.NormalizedCoverage || c.FifthMask is not null))
             if (!additional.Any(t => t.Material == contract.Name && t.Parameter == CoverageTrack))
                 additional.Add(new(contract.Name, CoverageTrack, [[new(0, [contract.GlobalEmissionInitial])]]));
+        foreach (var contract in contracts.Values.Where(c => c.FifthMask is not null))
+            if (!additional.Any(t => t.Material == contract.Name && t.Parameter == "UVScaleOffset3"))
+                additional.Add(new(contract.Name, "UVScaleOffset3", new[] { 1f, 1f, 0f, 0f }
+                    .Select(value => new[] { new PreviewKey(0, [value]) }).ToArray()));
         return WithBaseColors(decoded with { Materials = decoded.Materials.Concat(additional).ToArray() }, contracts);
     }
 

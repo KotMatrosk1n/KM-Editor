@@ -15,13 +15,24 @@ public static class SwShRestorationSpecies
     // Native Runerigus already owns icon resource 979. Keep the logical species
     // separate from its reserved miniature resource, as native species do.
     public const int AnnihilapeIconId = 1010;
-    public static int IconSpecies(int species) => species == Annihilape ? AnnihilapeIconId : species;
-    public static IEnumerable<int> BaseSpecies => Enumerable.Range(1, SwShEffectivePokemonCatalog.MaximumSpecies).Append(Annihilape);
-    public static bool IsSpecies(int species) => species is >= 1 and <= SwShEffectivePokemonCatalog.MaximumSpecies or Annihilape;
+    // Keep the established extended dispatch mapping beyond native egg files 1192..1250.
+    private const int AppendedRowOffset = 352;
+    private static readonly int[] AdditionalSpecies = [901, 902, 904, 905];
+    public static int IconSpecies(int species) => species == Annihilape ? AnnihilapeIconId
+        : AdditionalSpecies.Contains(species) ? 1011 + species - 899 : species;
+    public static IEnumerable<int> BaseSpecies => Enumerable.Range(1, SwShEffectivePokemonCatalog.MaximumSpecies).Append(Annihilape).Concat(AdditionalSpecies);
+    public static bool IsSpecies(int species) => species is >= 1 and <= SwShEffectivePokemonCatalog.MaximumSpecies or Annihilape || AdditionalSpecies.Contains(species);
     public static int BaseRow(int species) => species == Annihilape ? AnnihilapeRow
         : species is >= 1 and <= SwShEffectivePokemonCatalog.MaximumSpecies ? species
+        : AdditionalSpecies.Contains(species) ? species + AppendedRowOffset
         : throw new InvalidDataException("The logical Pokemon species is not registered.");
-    public static int? SpeciesAtReservedRow(int row) => row == AnnihilapeRow ? Annihilape : null;
+    public static int? SpeciesAtReservedRow(int row) => row == AnnihilapeRow ? Annihilape
+        : AdditionalSpecies.Contains(row - AppendedRowOffset) ? row - AppendedRowOffset : null;
+    public static string? DisplayName(int species) => species switch
+    {
+        901 => "Ursaluna", 902 => "Basculegion", 904 => "Overqwil", 905 => "Enamorus",
+        Annihilape => "Annihilape", _ => null,
+    };
 
     public static byte[] EmptyRecord(int size) => size == SwShPersonalTable.RecordSize ? new byte[size]
         : size == 260 ? Enumerable.Repeat((byte)255, size).ToArray()

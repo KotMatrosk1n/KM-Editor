@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 using KM.SwSh.Pokemon;
+using KM.Formats.SwSh;
 
 namespace KM.Tools.Application;
 
@@ -20,7 +21,9 @@ public sealed partial class SwShRestorationPreparationService
         bool TransparentBody = false, bool CenteredStaticUv = false, bool LavaLayers = false, bool EmptyEyes = false,
         int? ColorSelector = null, IReadOnlySet<string>? StandaloneAnimations = null,
         bool SourceLayeredAlbedo = false, bool CompactTextureReferences = false, bool LayeredEyeEmission = false,
-        IReadOnlyDictionary<string, float>? CornealPrimaryNormalHeights = null);
+        IReadOnlyDictionary<string, float>? CornealPrimaryNormalHeights = null, int RemoveDetailLevels = 0, bool SeparateNormalSections = false,
+        IReadOnlyDictionary<string, int>? NormalSharingGroups = null,
+        IReadOnlyList<SwShNormalSectionPartition>? NormalSectionPartitions = null);
 
     private static IReadOnlyDictionary<string, System.Numerics.Vector2> DeoxysAtlas(string form) =>
         new Dictionary<string, System.Numerics.Vector2>
@@ -31,6 +34,22 @@ public sealed partial class SwShRestorationPreparationService
 
     private static readonly IReadOnlyDictionary<SwShPokemonIdentity, SpeciesProfile> FormProfiles = new Dictionary<SwShPokemonIdentity, SpeciesProfile>
     {
+        [new(720, 1)] = new(150, 720, 270, 0, 255, 650, 650, AuthoredMaterials: true, MeshVisibility: true,
+            SharedMaterialTextures: true, CornealEyes: true, SourceStem: "pm0774_12_00", SourceVoiceForm: 1,
+            GenderKind: 3, AnimationOffset: 20000, RemoveDetailLevels: 3),
+        [new(211, 1)] = new(211, 211, 88, 50, 127, 50, 50,
+            AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true, SourceStem: "pm0211_00_41", HatchedForm: 0, GenderKind: 0, SourceVoiceForm: 0, AnimationOffset: 10000),
+        [new(483, 1)] = new(483, 483, 306, 0, 255, 270, 700,
+            AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true, LayerEmission: true, SourceStem: "pm0483_12_00", HatchedForm: 0, GenderKind: 3, SourceVoiceForm: 0),
+        [new(484, 1)] = new(484, 484, 306, 0, 255, 240, 630,
+            AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true, LayerEmission: true, SourceStem: "pm0484_12_00", HatchedForm: 0, GenderKind: 3, SourceVoiceForm: 0),
+        [new(705, 1)] = new(705, 704, 158, 50, 127, 70, 70,
+            AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true, SourceStem: "pm0764_00_41", HatchedForm: 0, GenderKind: 0, SourceVoiceForm: 0),
+        [new(706, 1)] = new(706, 704, 270, 50, 127, 170, 170,
+            AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true, SourceStem: "pm0765_00_41", HatchedForm: 0, GenderKind: 0, SourceVoiceForm: 0),
+        [new(724, 1)] = new(724, 722, 239, 12, 31, 160, 160,
+            AuthoredMaterials: true, MeshVisibility: true, CornealEyes: true, LayeredEyes: true, LayeredEyeEmission: true, SourceStem: "pm0843_00_41", HatchedForm: 0, GenderKind: 0, SourceVoiceForm: 0),
+
         [new(386, 1)] = new(150, 386, 300, 0, 255, 170, 170, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true,
             CornealEyes: true, LayerEmission: true, SourceStem: "pm0386_12_00", SourceVoiceForm: 0, GenderKind: 3, TransparentBody: true,
             EmptyMouth: true, MotionOverrides: new Dictionary<string, string> { ["mouth01"] = "00000" }, StaticUvScales: DeoxysAtlas("12"), CenteredStaticUv: true),
@@ -90,6 +109,16 @@ public sealed partial class SwShRestorationPreparationService
                 && Profiles.TryGetValue(741, out var basis))
                 profile = basis with { SourceStem = $"pm0825_{11 + identity.Form:00}_00",
                     HatchedForm = identity.Form, SourceVoiceForm = identity.Form };
+            else if (identity is { Species: 550, Form: 2 })
+                profile = Profiles[902] with { NativeTemplate = 550, HatchedSpecies = 550, Experience = 161,
+                    SourceSpecies = 550, SourceStem = "pm0550_00_41", GenderKind = 0, GenderThreshold = 127,
+                    FemalePercent = 50, BattleHeight = 100, FieldHeight = 100, HatchedForm = 2,
+                    SourceVoiceForm = 0, SurfaceFlow = false };
+            else if (identity is { Species: 902, Form: 1 })
+                profile = Profiles[902] with { SourceStem = "pm1006_12_41", SourceVoiceForm = 0,
+                    GenderKind = 2, GenderThreshold = 254 };
+            else if (identity is { Species: 905, Form: 1 })
+                profile = Profiles[905] with { SourceStem = "pm1004_12_00", SourceVoiceForm = 1, LayerEmission = true };
             else return false;
         }
         if (identity.Species == 774 && identity.Form <= 13)
@@ -107,6 +136,21 @@ public sealed partial class SwShRestorationPreparationService
                 CornealPrimaryNormalHeights = new Dictionary<string, float> { ["l_eye"] = primary, ["r_eye"] = primary },
                 CornealNormalHeights = new Dictionary<string, float> { ["l_eye"] = corneal, ["r_eye"] = corneal } };
         }
+        if (identity.Species is 523 or 905) profile = profile with { LayerEmission = true };
+        if (identity is { Species: 902, Form: 0 }) profile = profile with { GenderThreshold = 0 };
+        if (identity.Form == 0 && identity.Species is 409 or 429)
+            profile = profile with { SeparateNormalSections = true, NormalSectionPartitions =
+                [identity.Species == 409
+                    ? new("pm0409_00_00_body_mesh_shape", "body_b", 3917, 3058, [0, 1])
+                    : new("pm0429_00_00_body_mesh_shape", "body_b", 3627, 2404, [220])] };
+        if (identity is { Species: 724, Form: 1 })
+            profile = profile with { SeparateNormalSections = true, NormalSharingGroups = new Dictionary<string, int>
+            {
+                ["pm0843_00_41_hair_mesh_shape"] = 0, ["pm0843_00_41_body_mesh_shape"] = 0,
+                ["pm0843_00_41_ivy_a_mesh_shape"] = 0, ["pm0843_00_41_ivy_b_mesh_shape"] = 0,
+                ["pm0843_00_41_cloak_a_mesh_shape"] = 1, ["pm0843_00_41_arrow_a_mesh_shape"] = 1,
+                ["pm0843_00_41_arrow_c_mesh_shape"] = 1,
+            } };
         return true;
     }
     private static SpeciesProfile Profile(SwShPokemonIdentity identity) => TryProfile(identity, out var profile) ? profile
@@ -114,6 +158,26 @@ public sealed partial class SwShRestorationPreparationService
 
     private static readonly IReadOnlyDictionary<int, SpeciesProfile> Profiles = new Dictionary<int, SpeciesProfile>
     {
+        [198] = new(821, 198, 81, 50, 127, 50, 50, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: false, CornealEyes: true, CornealNormalHeights: new Dictionary<string, float> { ["l_eye"] = .05f, ["r_eye"] = .05f }, BattleIdle: "20000", MotionOverrides: new Dictionary<string, string> { ["ba01_landA01"] = "20152", ["ba01_landB01"] = "20153", ["ba01_landC01"] = "20155", ["ba10_waitB01"] = "20010", ["ba20_buturi01"] = "20400", ["ba21_tokusyu01"] = "20450", ["ba30_damageS01"] = "20500", ["ba41_down01"] = "20520", ["ba02_roar01"] = "20300", ["eye01"] = "28000", ["mouth01"] = "28100", ["kw32_happyB01"] = "20011", ["kw35_playA01"] = "20011" }),
+        [200] = new(425, 200, 87, 50, 127, 70, 70, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true, CornealNormalHeights: new Dictionary<string, float> { ["l_eye"] = .02f, ["r_eye"] = .02f }, BattleIdle: "20001", MotionOverrides: new Dictionary<string, string> { ["ba01_landA01"] = "20152", ["ba01_landB01"] = "20153", ["ba01_landC01"] = "20155", ["ba10_waitB01"] = "20010", ["ba20_buturi01"] = "20400", ["ba21_tokusyu01"] = "20450", ["ba30_damageS01"] = "20500", ["ba41_down01"] = "20520", ["ba02_roar01"] = "20300", ["eye01"] = "28000", ["mouth01"] = "28100", ["fi20_walk01"] = "20030", ["fi21_run01"] = "20100", ["kw20_drowseA01"] = "20280", ["kw20_drowseB01"] = "20281", ["kw20_drowseC01"] = "20282", ["kw21_sleepA01"] = "20280", ["kw21_sleepB01"] = "20281", ["kw30_hate01"] = "20563", ["kw32_happyA01"] = "20550", ["kw32_happyB01"] = "20011", ["kw32_happyC01"] = "20550", ["kw33_moveA01"] = "20150", ["kw33_moveC01"] = "20155", ["kw34_lonely01"] = "20560", ["kw35_playA01"] = "20011", ["kw36_mad01"] = "20563", ["kw50_eatA01"] = "20290", ["kw50_eatB01"] = "20291", ["kw50_eatC01"] = "20292", ["kw60_touch01"] = "20320" }),
+        [216] = new(674, 216, 66, 50, 127, 60, 60, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true),
+        [217] = new(675, 216, 175, 50, 127, 170, 180, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true),
+        [408] = new(696, 408, 70, 12, 31, 90, 90, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true),
+        [409] = new(697, 408, 173, 12, 31, 160, 160, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true, CornealNormalHeights: new Dictionary<string, float> { ["l_eye"] = .2f, ["r_eye"] = .2f }),
+        [410] = new(698, 410, 70, 12, 31, 50, 50, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true, CornealNormalHeights: new Dictionary<string, float> { ["l_eye"] = .5f, ["r_eye"] = .5f }, BattleIdle: "00000"),
+        [411] = new(699, 410, 173, 12, 31, 130, 130, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true),
+        [429] = new(426, 200, 173, 50, 127, 90, 90, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true, CornealNormalHeights: new Dictionary<string, float> { ["l_eye"] = .01f, ["r_eye"] = .01f }, BattleIdle: "20001", MotionOverrides: new Dictionary<string, string> { ["ba01_landA01"] = "20152", ["ba01_landB01"] = "20153", ["ba01_landC01"] = "20155", ["ba10_waitB01"] = "20010", ["ba20_buturi01"] = "20400", ["ba21_tokusyu01"] = "20450", ["ba30_damageS01"] = "20500", ["ba41_down01"] = "20520", ["ba02_roar01"] = "20300", ["eye01"] = "28000", ["mouth01"] = "28100", ["fi20_walk01"] = "20030", ["fi21_run01"] = "20100", ["kw20_drowseA01"] = "20280", ["kw20_drowseB01"] = "20281", ["kw20_drowseC01"] = "20282", ["kw21_sleepA01"] = "20280", ["kw21_sleepB01"] = "20281", ["kw30_hate01"] = "20563", ["kw32_happyA01"] = "20550", ["kw32_happyB01"] = "20011", ["kw32_happyC01"] = "20550", ["kw33_moveA01"] = "20150", ["kw33_moveC01"] = "20155", ["kw34_lonely01"] = "20560", ["kw35_playA01"] = "20011", ["kw36_mad01"] = "20563", ["kw50_eatA01"] = "20290", ["kw50_eatB01"] = "20291", ["kw50_eatC01"] = "20292", ["kw60_touch01"] = "20320" }),
+        [430] = new(823, 198, 177, 50, 127, 90, 90, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true, BattleIdle: "20000", MotionOverrides: new Dictionary<string, string> { ["ba01_landA01"] = "20152", ["ba01_landB01"] = "20153", ["ba01_landC01"] = "20155", ["ba10_waitB01"] = "20010", ["ba20_buturi01"] = "20400", ["ba21_tokusyu01"] = "20450", ["ba30_damageS01"] = "20500", ["ba41_down01"] = "20520", ["ba02_roar01"] = "20300", ["eye01"] = "28000", ["mouth01"] = "28100", ["kw32_happyB01"] = "20011", ["kw35_playA01"] = "20011" }),
+        [522] = new(77, 522, 59, 50, 127, 80, 80, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true, LayerEmission: true),
+        [523] = new(78, 522, 174, 50, 127, 160, 160, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true),
+        [540] = new(10, 540, 62, 50, 127, 30, 30, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true),
+        [541] = new(11, 540, 133, 50, 127, 50, 50, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true),
+        [542] = new(123, 540, 225, 50, 127, 120, 120, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true),
+        [901] = new(675, 216, 275, 50, 127, 170, 240, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true, SourceSpecies: 901, SourceStem: "pm1007_00_00"),
+        [902] = new(550, 550, 265, 50, 127, 170, 300, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true, SourceSpecies: 902, BattleIdle: "10001", SourceStem: "pm1006_11_41", SurfaceFlow: true, GenderKind: 1, HatchedForm: 2, MotionOverrides: new Dictionary<string, string> { ["ba01_landA01"] = "10152", ["ba01_landB01"] = "10153", ["ba01_landC01"] = "10155", ["ba10_waitB01"] = "10010", ["ba20_buturi01"] = "10400", ["ba21_tokusyu01"] = "10450", ["ba30_damageS01"] = "10500", ["ba41_down01"] = "10520", ["ba02_roar01"] = "10300", ["eye01"] = "18000", ["mouth01"] = "18100", ["fi20_walk01"] = "10030", ["fi21_run01"] = "10100", ["kw20_drowseA01"] = "10280", ["kw20_drowseB01"] = "10281", ["kw20_drowseC01"] = "10282", ["kw21_sleepA01"] = "10280", ["kw21_sleepB01"] = "10280", ["kw30_hate01"] = "10563", ["kw32_happyA01"] = "10550", ["kw32_happyB01"] = "10011", ["kw32_happyC01"] = "10550", ["kw33_moveA01"] = "10150", ["kw33_moveC01"] = "10155", ["kw34_lonely01"] = "10560", ["kw35_playA01"] = "10011", ["kw36_mad01"] = "10563", ["kw50_eatA01"] = "10290", ["kw50_eatB01"] = "10291", ["kw50_eatC01"] = "10292", ["kw60_touch01"] = "10320" }),
+        [904] = new(211, 211, 179, 50, 127, 170, 250, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true, SourceSpecies: 904, BattleIdle: "10001", SourceStem: "pm1005_00_41", MotionOverrides: new Dictionary<string, string> { ["ba01_landA01"] = "10152", ["ba01_landB01"] = "10153", ["ba01_landC01"] = "10155", ["ba10_waitB01"] = "10010", ["ba20_buturi01"] = "10400", ["ba21_tokusyu01"] = "10450", ["ba30_damageS01"] = "10500", ["ba41_down01"] = "10520", ["ba02_roar01"] = "10300", ["eye01"] = "18000", ["mouth01"] = "18100", ["fi20_walk01"] = "10030", ["fi21_run01"] = "10100", ["kw20_drowseA01"] = "10280", ["kw20_drowseB01"] = "10281", ["kw20_drowseC01"] = "10282", ["kw21_sleepA01"] = "10280", ["kw21_sleepB01"] = "10280", ["kw30_hate01"] = "10563", ["kw32_happyA01"] = "10550", ["kw32_happyB01"] = "10011", ["kw32_happyC01"] = "10550", ["kw33_moveA01"] = "10150", ["kw33_moveC01"] = "10155", ["kw34_lonely01"] = "10560", ["kw35_playA01"] = "10011", ["kw36_mad01"] = "10563", ["kw50_eatA01"] = "10290", ["kw50_eatB01"] = "10291", ["kw50_eatC01"] = "10292", ["kw60_touch01"] = "10320" }),
+        [905] = new(641, 905, 116, 0, 254, 160, 160, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true, SourceSpecies: 905, BattleIdle: "20001", SourceStem: "pm1004_11_00", GenderKind: 2, MotionOverrides: new Dictionary<string, string> { ["ba01_landA01"] = "20152", ["ba01_landB01"] = "20153", ["ba01_landC01"] = "20155", ["ba10_waitB01"] = "20010", ["ba20_buturi01"] = "20400", ["ba21_tokusyu01"] = "20450", ["ba30_damageS01"] = "20500", ["ba41_down01"] = "20520", ["ba02_roar01"] = "20300", ["eye01"] = "28000", ["mouth01"] = "28100", ["fi20_walk01"] = "20030", ["fi21_run01"] = "20100", ["kw20_drowseA01"] = "20280", ["kw20_drowseB01"] = "20281", ["kw20_drowseC01"] = "20282", ["kw21_sleepA01"] = "20280", ["kw21_sleepB01"] = "20280", ["kw30_hate01"] = "20563", ["kw32_happyA01"] = "20550", ["kw32_happyB01"] = "20011", ["kw32_happyC01"] = "20550", ["kw33_moveA01"] = "20150", ["kw33_moveC01"] = "20155", ["kw34_lonely01"] = "20560", ["kw35_playA01"] = "20011", ["kw36_mad01"] = "20563", ["kw50_eatA01"] = "20290", ["kw50_eatB01"] = "20291", ["kw50_eatC01"] = "20292", ["kw60_touch01"] = "20320" }),
+
         [161] = new(263, 161, 43, 50, 127, 80, 80, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true),
         [162] = new(264, 161, 145, 50, 127, 170, 180, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true),
         [187] = new(546, 187, 50, 50, 127, 40, 40, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true, CornealEyes: true, BattleIdle: "20000", MotionOverrides: new Dictionary<string, string> { ["ba01_landA01"] = "20152", ["ba01_landB01"] = "20153", ["ba01_landC01"] = "20155", ["ba10_waitB01"] = "20010", ["ba20_buturi01"] = "20400", ["ba21_tokusyu01"] = "20450", ["ba30_damageS01"] = "20500", ["ba41_down01"] = "20520", ["ba02_roar01"] = "20300", ["eye01"] = "28000", ["mouth01"] = "28100", ["kw32_happyB01"] = "20011", ["kw35_playA01"] = "20011" }),

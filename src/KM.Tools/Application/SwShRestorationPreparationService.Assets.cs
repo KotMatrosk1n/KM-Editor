@@ -34,8 +34,11 @@ public sealed partial class SwShRestorationPreparationService
                     .Select(v => (Gender: v.Gender, Stem: v.ResourceStem, Source: v.SourceResourceStem ?? $"pm{species:0000}_{v.Gender:00}_00"))).ToArray();
             SwShRestorationGenderAudit.RequireModels(Donor("pokemon/catalog/catalog/poke_resource_table.trpmcatalog"),
                 profile.SourceSpecies ?? species, pokemon.Form, variants.ToDictionary(v => v.Gender, v => $"{v.Source[..6]}/{v.Source}/{v.Source}.trmdl"));
-            var scenes = variants.ToDictionary(v => v.Gender, v => new TrinityPreviewReader(Donor)
-                .Load($"pokemon/data/{v.Source[..6]}/{v.Source}/{v.Source}.trmdl"));
+            var scenes = variants.ToDictionary(v => v.Gender, v =>
+            {
+                var scene = new TrinityPreviewReader(Donor).Load($"pokemon/data/{v.Source[..6]}/{v.Source}/{v.Source}.trmdl");
+                return profile.NormalSectionPartitions is { } partitions ? SwShNormalSections.Split(scene, partitions) : scene;
+            });
             var declaredMeshes = scenes.Values.SelectMany(s => s.Primitives.Select(p => p.Name)).ToHashSet(StringComparer.Ordinal);
             var result = variants.SelectMany(v => Assets(pokemon, v.Gender, v.Stem, v.Source, scenes[v.Gender], declaredMeshes)).ToList();
             var icon = SwShRestorationPartyIcons.Create(species, Native, token, pokemon.Form, textureEncoding);
@@ -53,6 +56,8 @@ public sealed partial class SwShRestorationPreparationService
                 (sourceFolder + sourceStem + "_rare.trmtr", null), (sourceFolder + sourceStem + "_base.tracn", null) }, (path, _) => Donor(path));
             Report("reading");
             if (scene.Rig.Warnings.Length > 0) throw new InvalidDataException("Source model requires an additional conversion adapter.");
+            var detailHierarchy = profile.RemoveDetailLevels == 0 ? null : SvSwShDetailMeshHierarchy.Remove(scene, profile.RemoveDetailLevels);
+            if (detailHierarchy is not null) scene = detailHierarchy.Scene;
             if (profile.NativeFlames && profile.FlameMaterial != "fire")
                 scene = scene with { Primitives = scene.Primitives.Select(p => p.Material.Name == profile.FlameMaterial
                     ? p with { Material = p.Material with { Name = "fire" } } : p).ToArray() };
@@ -91,7 +96,8 @@ public sealed partial class SwShRestorationPreparationService
             var eyeMaterials = sourceMaterials.Tables(sourceMaterials.Root, 1, 128)
                 .Where(material => SwShMaterialBaker.IsEyeMaterial(sourceMaterials, material))
                 .Select(material => sourceMaterials.Text(material, 0)!).ToHashSet(StringComparer.Ordinal);
-            var transparent = profile.TransparentEyes || profile.TransparentBody;
+            var originTransparent = species is 483 or 484 && currentIdentity.Form == 1;
+            var transparent = profile.TransparentEyes || profile.TransparentBody || originTransparent;
             var transparentPack = transparent ? SwShGfPackFile.Parse(Native("bin/archive/pokemon/pm0577_00.gfpak")) : null;
             var fireModel = firePack is null ? null : Member(firePack, "pm0004_00.gfbmdl");
             (byte[] Model, Dictionary<string, SvSwShFlameTemplate> Parts) FlameTemplate(byte[] palette)
@@ -139,7 +145,8 @@ public sealed partial class SwShRestorationPreparationService
                 .ToDictionary(p => p.Key, p => emissionContracts![p.Value].SourceBaseAlphas, StringComparer.Ordinal);
             var lavaNames = lavaContracts is null ? null : originalNames.Where(p => lavaContracts.ContainsKey(p.Value)).ToDictionary(p => p.Key, p => lavaContracts[p.Value], StringComparer.Ordinal);
             var innerSections = transparent ? scene.Primitives.Select((p, i) => (p, i))
-                .Where(pair => profile.TransparentBody ? emissionContracts?.GetValueOrDefault(pair.p.Material.Name)?.Transparent == true : pair.p.Material.Name == "l_eye_b").Select(pair => pair.i).ToArray() : [];
+                .Where(pair => originTransparent ? pair.p.Name == (species == 483 ? "pm0483_12_00_gem_mesh_shape" : "pm0484_12_00_cover_mesh_shape")
+                    : profile.TransparentBody ? emissionContracts?.GetValueOrDefault(pair.p.Material.Name)?.Transparent == true : pair.p.Material.Name == "l_eye_b").Select(pair => pair.i).ToArray() : [];
             if (transparent)
             {
                 if (profile.TransparentEyes && profile.CornealEyes || profile.NativeFlames) throw new InvalidDataException("Combined transparent material adapters are not registered.");
@@ -313,6 +320,8 @@ public sealed partial class SwShRestorationPreparationService
                     var original = sourceMaterial.Tables(sourceMaterial.Root, 1, 128).Single(t => sourceMaterial.Text(t, 0) == primitive.Material.Name);
                     var textureNames = sourceMaterial.Tables(original, 2, 64).ToDictionary(t => sourceMaterial.Text(t, 0)!, t => Path.GetFileNameWithoutExtension(sourceMaterial.Text(t, 1)!));
                     var eye = eyeMaterials.Contains(primitive.Material.Name); var nativeMaterial = eye ? 1 : 0;
+                    if (originTransparent && innerSections.Contains(index))
+                        nativeMaterial = MaterialProgram(SvSwShTransparentMaterial.Programs[0]);
                     if (profile.TransparentEyes && primitive.Material.Name is "l_eye_b" or "l_highlight")
                         nativeMaterial = nativeMetadata.Tables(nativeMetadata.Root, 6, 128).Length - 2;
                     if (paletteEmission?.TryGetValue(primitive.Material.Name, out var emissionSurface) == true)
@@ -325,6 +334,7 @@ public sealed partial class SwShRestorationPreparationService
                     textureBindings["NormalMapTex"] = material.NormalName; textureBindings["AmbientTex"] = material.AmbientName;
                     if (profile.CornealEyes && eye) textureBindings["NormalMapTex"] = PrimaryEyeNormal(primitive, index);
                     textureBindings["LightTblTex"] = "Default_lta"; textureBindings["EffectTex"] = "projection_effect_col";
+                    if (originTransparent && innerSections.Contains(index)) textureBindings["SphereMapTex"] = SvSwShTransparentMaterial.EnvironmentName;
                     if (paletteLava?.TryGetValue(primitive.Material.Name, out var lava) == true && lava.Detail is { } detail)
                         textureBindings["LyCol0Tex"] = textures.AddAuxiliary(Path.GetFileNameWithoutExtension(detail),
                             Donor(TrinityPreviewReader.Resolve(sourceFolder + sourceStem + ".trmtr", detail)));
@@ -381,7 +391,7 @@ public sealed partial class SwShRestorationPreparationService
                 }).ToArray();
                 if (transparent) bindings = bindings.Concat(innerSections.Select(i => bindings[i] with
                 {
-                    Name = bindings[i].Name + "_inner", NativeMaterial = MaterialProgram(profile.TransparentBody
+                    Name = bindings[i].Name + "_inner", NativeMaterial = MaterialProgram(profile.TransparentBody || originTransparent
                         ? paletteEmission![scene.Primitives[i].Material.Name].PreservesTextureAlpha
                             ? paletteEmission[scene.Primitives[i].Material.Name].Program(inner: true) : SvSwShLayerEmission.TransparentPrograms[1]
                         : SvSwShTransparentMaterial.Programs[1]),
@@ -449,6 +459,7 @@ public sealed partial class SwShRestorationPreparationService
             foreach (var resource in motions)
             {
                 token.ThrowIfCancellationRequested();
+                detailHierarchy?.RequireUnanimated(resource.Bytes);
                 var clip = PreviewRigReader.Animation(new(resource.Bytes), resource.Id, scene.Rig.Bones);
                 var warnings = new List<string>();
                 var materialAnimation = Donor(Path.ChangeExtension(resource.Id, ".tracm").Replace('\\', '/'));

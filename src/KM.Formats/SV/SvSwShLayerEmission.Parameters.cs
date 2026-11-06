@@ -31,7 +31,9 @@ public static partial class SvSwShLayerEmission
                 if (field == 13)
                 {
                     var layer = Array.IndexOf(Scalars, name);
-                    values = [layer >= 0 ? contract.Initial[layer] : contract.NormalizedCoverage && name == CoverageIntensity ? contract.GlobalEmissionInitial
+                    values = [contract.FifthMask is not null && name is "Layer1UVScaleU" or "Layer1UVScaleV" ? 1
+                        : contract.FifthMask is not null && name is "Layer1UVTranslateU" or "Layer1UVTranslateV" ? 0
+                        : layer >= 0 ? contract.Initial[layer] : (contract.NormalizedCoverage || contract.FifthMask is not null) && name == CoverageIntensity ? contract.GlobalEmissionInitial
                         : !contract.NormalizedCoverage && name == "EmissionMaskVal" ? 0
                         : contract.PointColor is not null && name == PointLightIntensity ? contract.PointIntensity : at == 0 ? 0 : source.Float(at)];
                 }
@@ -40,7 +42,7 @@ public static partial class SvSwShLayerEmission
                     var layer = Array.IndexOf(contract.SeparateBaseColors ? SvSwShSourceCoverage.VectorNames : BaseVectors, name);
                     var emission = Array.IndexOf(Vectors, name);
                     var color = layer >= 0 ? contract.BaseColors![layer] : emission >= 0 ? contract.Colors[emission]
-                        : contract.NormalizedCoverage && name == CoverageColor ? contract.GlobalEmissionColor : name == PointLightColor && contract.PointColor is { } point ? point
+                        : (contract.NormalizedCoverage || contract.FifthMask is not null) && name == CoverageColor ? contract.GlobalEmissionColor : name == PointLightColor && contract.PointColor is { } point ? point
                         : new(source.Float(at), source.Float(at + 4), source.Float(at + 8));
                     values = [color.X, color.Y, color.Z];
                 }

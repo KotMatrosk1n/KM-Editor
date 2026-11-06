@@ -74,6 +74,10 @@ public sealed partial class ZaSwShRestorationPreparationService
 
     private static readonly IReadOnlyDictionary<int, SpeciesProfile> Profiles = new Dictionary<int, SpeciesProfile>
     {
+        [720] = new(150, 720, 270, 50, 50, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, FemalePercent: 0, GenderThreshold: 255, GenderKind: 3, ResourceStem: "pm0774_11_00", AnimationOffset: 20000, LayeredEyes: true),
+        [399] = new(819, 399, 50, 50, 50, "_body_a_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, PlaAssets: true, ConventionalCatchRate: 255, SeparateFemale: true),
+        [400] = new(660, 399, 144, 100, 100, "_body_b_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, PlaAssets: true, ConventionalCatchRate: 127, SeparateFemale: true),
+
         [69] = new(43, 69, 60, 70, 70, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true),
         [70] = new(44, 69, 137, 100, 100, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, AnimationOffset: 20000, LayeredEyes: true),
         [71] = new(45, 69, 221, 170, 170, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, AnimationOffset: 20000),

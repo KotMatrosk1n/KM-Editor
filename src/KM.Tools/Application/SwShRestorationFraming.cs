@@ -13,6 +13,22 @@ internal static class SwShRestorationFraming
         // dimensions intact, including airborne poses and authored crouches.
         var adjustment = definition switch
         {
+            "qwilfish-hisui" => (1f, 106f),
+            "hoopa" => (1f, -70f),
+            "bidoof" => (0.5f, 0f),
+            "cranidos" => (0.65f, 0f),
+            "bastiodon" => (0.8f, 75f),
+            "misdreavus" or "mismagius" => (1f, 80f),
+            "honchkrow" => (0.43f, 225f),
+            "blitzle" => (1.35f, 0f),
+            "leavanny" => (1.5f, 100f),
+            "basculin-white-striped" => (1f, 100f),
+            "basculegion" or "basculegion-female" => (1.5f, 105f),
+            "overqwil" => (2.1f, 40f),
+            "enamorus" => (1f, 60f),
+            "enamorus-therian" => (0.9f, 130f),
+            "kyogre-primal" => (1.75f, 0f),
+            "groudon-primal" => (4f, 0f),
             "hisuian-growlithe" => (1.15f, 0f),
             "hisuian-arcanine" => (1.15f, 0f),
             "hisuian-samurott" => (1.15f, 0f),

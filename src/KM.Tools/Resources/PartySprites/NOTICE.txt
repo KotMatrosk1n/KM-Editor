@@ -3,7 +3,7 @@ the project's contributors:
 https://github.com/msikma/pokesprite
 https://github.com/msikma/pokesprite/blob/master/contributors.md
 
-The PNG files other than Annihilape and the four Mega sprites described below
+The PNG files other than the exceptions described below
 are unchanged regular sprites from pokemon-gen8 at revision
 c5aaa610ff2acdf7fd8e2dccd181bca8be9fcb3e. The original sprite extraction is credited
 upstream to Zhorken and Kaphotics. Full contributor credits are linked above.
@@ -16,8 +16,22 @@ Its 68 by 68 source canvas is adapted to 68 by 56 by removing twelve fully
 transparent top rows. All artwork pixels, colors, and horizontal padding are
 unchanged.
 
+Origin Dialga and Origin Palkia use the regular PokeSprite artwork at the
+revision above, resized with nearest pixel sampling to 29 by 34 and 34 by 32
+pixels respectively. The artwork is centered on the 68 by 56 canvas with its
+bottom row at 51, preserving binary transparency and the sampled colors.
+
 Artwork copyright: Nintendo/Creatures Inc./GAME FREAK Inc.
-Mega Raichu X, Mega Raichu Y, Mega Absol Z, and Mega Clefable use Legends Z-A
+Ursaluna, Basculegion (both genders), Overqwil, and Enamorus (both forms) use
+unchanged 68 by 56 regular sprites from bamq/pokemon-sprites at revision
+c1958e7260a4bce93bd104e79966a27fb333c7aa:
+https://github.com/bamq/pokemon-sprites/tree/c1958e7260a4bce93bd104e79966a27fb333c7aa/pokemon/regular
+Upstream credits the National Pokedex Version Delta Icon Dex and contributors:
+https://www.deviantart.com/mbcmechachu/art/National-Pokedex-Icon-Dex-824897934
+https://docs.google.com/spreadsheets/d/1kI_PDXnbghxjN2LBvxA6Pz-QqMYlVGN3Z1EivXOYwNY/edit?gid=0#gid=0
+
+Mega Raichu X, Mega Raichu Y, Mega Absol Z, Mega Clefable, Primal Kyogre,
+and Primal Groudon use Legends Z-A
 icon sprites credited by Pokemon Workshop to Batin, ezerart, and Luis779:
 https://github.com/PokemonWorkshop/GameDataPacks/tree/d430fb553df98ccde5f9f90ece78e36b07d8083c/Gen%209/Legends%20Z-A/graphics/pokedex/pokeicon
 Their source sheets use two 32 by 32 frames. KM Editor uses the first frame,
@@ -33,5 +47,5 @@ that PokeSprite applies to its programming code. No PokeSprite code is included.
 
 KM Editor converts the 68 by 56 artwork to the native 136 by 112 party icon
 canvas by repeating each source pixel twice on both axes. The source images
-retain their original padding except for the Annihilape and four Mega canvas adjustments
+retain their original padding except for the Annihilape, Origin, Mega, and Primal canvas adjustments
 described above and are not animated.
