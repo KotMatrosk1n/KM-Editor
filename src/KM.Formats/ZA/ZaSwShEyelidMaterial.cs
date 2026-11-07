@@ -65,6 +65,10 @@ public static partial class ZaSwShEyelidMaterial
                 throw new InvalidDataException("Eye material geometry is ambiguous.");
             var primitive = primitives[0];
             var banetteEye = primitive.Name is "pm0354_51_00_eye_a_mesh_shape" or "pm0354_51_00_eye_b_mesh_shape";
+            var gengarEye = primitive.Name is "pm0094_51_00_eye_mesh_shape" or "pm0094_51_00_body_mesh_shape"
+                && name is "r_eye_a" or "l_eye_a" or "eye_b"
+                && System.Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(sourceMaterials)) is
+                    "2552BC93CEA7F7465EEDB6BE4DF5BAEF1D0108880080808CB3BF754283A06B85" or "9357D108DB9E3208D91ED25D162AB1422A5DBF6A63034771E2C8A13258410A1C";
             if (banetteEye) ZaSwShBanetteMaterial.RequireSource(sourceMaterials, scene);
             var farigirafInner = primitives.Length == 1 && name is "r_eye_a" or "l_eye_a"
                 && primitive.Name == "pm1032_00_00_eye_mesh_shape" && primitive.Material.Alpha == "BlendPreMultiAlpha"
@@ -146,6 +150,11 @@ public static partial class ZaSwShEyelidMaterial
                     || part.Name.StartsWith("pm0201_18_00_", StringComparison.Ordinal)
                     || part.Name.StartsWith("pm0115_51_00_", StringComparison.Ordinal)
                     || part.Name.StartsWith("pm0376_51_00_", StringComparison.Ordinal)
+                    || part.Name == "pm0160_51_00_eye_mesh_shape"
+                    || part.Name == "pm0475_51_00_eye_mesh_shape"
+                    || part.Name == "pm0604_51_00_eye_mesh_shape"
+                    || part.Name == "pm0705_51_00_eye_mesh_shape"
+                    || part.Name == "pm0888_51_00_eye_mesh_shape"
                     || part.Name == "pm1074_00_00_eye_mesh_shape")
                 || !textures.ContainsKey("HighlightMaskMap") || !vectors.ContainsKey("UVScaleOffset1")
                 || !vectors.ContainsKey("EmissionColorLayer5") || !scalars.TryGetValue("EmissionIntensityLayer5", out var highlightIntensity)
@@ -153,13 +162,14 @@ public static partial class ZaSwShEyelidMaterial
                 || !wraps.TryGetValue("HighlightMaskMap", out var highlightWrap) || highlightWrap.X != highlightWrap.Y
                 || highlightWrap.X is not (1 or 7) || textures.ContainsKey("OpacityMap1")))
                 throw new InvalidDataException("Independent eye highlight contract is unsupported.");
-            if (layerEmission && (independentHighlights || primitives.Length != 1 && !splitCorneal
+            if (layerEmission && (independentHighlights && primitive.Name is not ("pm0160_51_00_eye_mesh_shape" or "pm0888_51_00_eye_mesh_shape") || primitives.Length != 1 && !splitCorneal
                 || !primitives.All(part => part.Name.StartsWith("pm0843_00_41_", StringComparison.Ordinal)
                     || part.Name.StartsWith("pm1007_11_00_", StringComparison.Ordinal)
                     || part.Name.StartsWith("pm1133_11_00_", StringComparison.Ordinal)
                     || part.Name.StartsWith("pm1133_12_00_", StringComparison.Ordinal)
                     || part.Name.StartsWith("pm0522_00_00_", StringComparison.Ordinal)
                     || part.Name.StartsWith("pm0855_00_00_", StringComparison.Ordinal)
+                    || part.Name is "pm0856_51_00_eye_mesh_shape" or "pm0867_51_00_eye_mesh_shape" or "pm0888_51_00_eye_mesh_shape"
                     || part.Name is "pm0807_00_00_eye_mesh_shape" or "pm1045_00_00_body_mesh_shape"
                     || part.Name is "pm1030_00_00_eye_mesh_shape" or "pm1031_00_00_eye_mesh_shape"
                         or "pm1037_00_00_body_mesh_shape" or "pm1038_11_00_body_mesh_shape"
@@ -167,7 +177,7 @@ public static partial class ZaSwShEyelidMaterial
                         or "pm1070_00_00_eye_mesh_shape" or "pm1071_00_00_eye_mesh_shape" or "pm1036_00_00_eye_mesh_shape"
                     // Both Mega Magearna palettes and forms retain this mesh
                     // identity, with independent animated iris emission layers.
-                    || part.Name.StartsWith("pm0882_51_00_", StringComparison.Ordinal) || splitCorneal || farigirafInner || banetteEye)
+                    || part.Name.StartsWith("pm0882_51_00_", StringComparison.Ordinal) || part.Name == "pm0160_51_00_eye_mesh_shape" || splitCorneal || farigirafInner || banetteEye || gengarEye)
                 || textures.ContainsKey("OpacityMap1") || !textures.ContainsKey("LayerMaskMap")
                 || (wraps.GetValueOrDefault("LayerMaskMap") is var emissionWrap
                     && emissionWrap != Vector2.One
@@ -242,7 +252,7 @@ public static partial class ZaSwShEyelidMaterial
 
     public static byte[] Template(byte[] bodyModel, byte[] layeredModel, bool corneal = false, bool independentHighlights = false, bool layerEmission = false, bool layerTint = false)
     {
-        if ((layerEmission ? 1 : 0) + (independentHighlights ? 1 : 0) + (layerTint ? 1 : 0) > 1) throw new InvalidDataException("Eye effect samplers overlap.");
+        if (layerTint && (layerEmission || independentHighlights)) throw new InvalidDataException("Eye effect samplers overlap.");
         var programName = layerTint ? TintProgramName : layerEmission ? EmissionProgramName : independentHighlights ? HighlightProgramName : ProgramName;
         var body = new ModelBuffer(bodyModel); var layered = new ModelBuffer(layeredModel);
         var eye = body.Tables(body.Root, 6, 128).Single(material => body.Text(material, 0) == "Eye");
@@ -327,7 +337,8 @@ public static partial class ZaSwShEyelidMaterial
                 {
                     "Col0Tex" => "BaseColorMap", "NormalMapTex" => "NormalMap", "EmissionMaskTex" => "UpperEyelidColorMap",
                     "LyCol0Tex" => "LowerEyelidColorMap", "AmbientTex" => "EyelidShadowMaskMap",
-                    "EffectTex" when contract.IndependentHighlights => "HighlightMaskMap",
+                    "SphereMapTex" when contract.IndependentHighlights && contract.LayerEmission => "HighlightMaskMap",
+                    "EffectTex" when contract.IndependentHighlights && !contract.LayerEmission => "HighlightMaskMap",
                     "EffectTex" when contract.LayerEmission || contract.LayerTint => "LayerMaskMap",
                     _ => null
                 };
@@ -336,10 +347,10 @@ public static partial class ZaSwShEyelidMaterial
                 var sampler = native.Table(binding, 2);
                 var fields = new Dictionary<int, byte[]>();
                 for (var field = 0; field < 9; field++)
-                    fields[field] = native.Field(sampler, field) is var offset && offset != 0 ? native.Slice(offset, 4).ToArray() : ModelTableBuilder.Integer(0);
+                    fields[field] = native.Field(sampler, field) is var offset && offset != 0 ? native.Slice(offset, field == 4 ? 16 : 4).ToArray() : new byte[field == 4 ? 16 : 4];
                 for (var component = 0; component < 2; component++)
                     fields[1 + component] = ModelTableBuilder.Integer(TrinityTextureAddressing.SwSh(wrap[component]));
-                writer.Reference(binding, 2, writer.Table(9, fields));
+                writer.Reference(binding, 2, writer.Table(9, fields, new Dictionary<int, int> { [4] = 16 }));
             }
         }
         return writer.Finish(native.Root);

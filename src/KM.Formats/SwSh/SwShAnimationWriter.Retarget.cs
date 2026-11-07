@@ -53,9 +53,14 @@ public static partial class SwShAnimationWriter
             var sibling = anchor >= 0 && MappedParent(index) == anchor
                 && Descends(sourceBones, source[boneMap[pivot]], source[boneMap[targetBones[anchor].Name]])
                 && Descends(sourceBones, sourceIndex, source[boneMap[targetBones[anchor].Name]]);
-            if (index == targetIndices[pivot] || (!descendant && !sibling) || branchAnchors?.ContainsKey(reference) == true
+            // A facial leaf may have a tiny authored pivot rather than a
+            // meaningful segment length. Its immediate mapped parent supplies
+            // the anatomical scale while every animated displacement is retained.
+            var parentReference = anchor == index
+                && Descends(sourceBones, source[boneMap[pivot]], sourceIndex);
+            if (index == targetIndices[pivot] || (!descendant && !sibling && !parentReference) || branchAnchors?.ContainsKey(reference) == true
                 || branchAnchors?.ContainsKey(pivot) == true)
-                throw new InvalidDataException("Retarget translation reference requires a descendant or a segment under the same mapped anchor in both rigs.");
+                throw new InvalidDataException("Retarget translation reference requires a descendant, an immediate mapped parent, or a segment under the same mapped anchor in both rigs.");
             var parent = targetBones[index].Parent;
             var targetLocal = Matrix4x4.Identity;
             for (var at = index; at >= 0; at = targetBones[at].Parent)

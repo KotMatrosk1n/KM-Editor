@@ -67,6 +67,13 @@ public sealed partial class ZaSwShRestorationPreparationService
                         Profile(identity).ResourceStem ?? throw new InvalidDataException("Raichu Mega source model is missing."));
                     if (sourceForm != declared) throw new InvalidDataException("Raichu Mega source voice profile disagrees with its native model parameters.");
                 }
+                if (id == 801 && identity.Form is 2 or 3)
+                {
+                    var declared = ZaRestorationVoiceForms.MagearnaMega(Donor(ZaRestorationVoiceForms.ParametersPath),
+                        Donor(ZaRestorationVoiceForms.CatalogPath), identity.Form,
+                        Profile(identity).ResourceStem ?? throw new InvalidDataException("Magearna Mega source model is missing."));
+                    if (sourceForm != declared) throw new InvalidDataException("Magearna Mega voice profile disagrees with its native model parameters.");
+                }
                 var states = ZaRestorationVoiceGraph.ResolveLayers(source, Profile(identity).SourceSpecies ?? id, sourceForm, inactiveGroups,
                     requireSharedForm: identity.Form != 0 && sourceForm == 0 && !IndependentFloetteColorVoice(identity, Profile(identity)),
                     normalContext: normalContext);

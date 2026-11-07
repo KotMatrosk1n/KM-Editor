@@ -27,7 +27,8 @@ public static partial class ZaSwShFresnelMaterial
             ("AOMap", "SourceGemAoTex", 12), ("LocalSpecularProbe", "SourceGemProbeTex", 13) }.ToList();
         if (masked) maps.Add(((QualifiesCrabominableEmissionMask(bytes, materialName)
             || QualifiesFroslassEmissionMask(bytes, materialName)
-            || QualifiesGlalieEmissionMask(bytes, materialName))
+            || QualifiesGlalieEmissionMask(bytes, materialName)
+            || QualifiesAbomasnowEmissionMask(bytes, materialName))
             ? "FresnelMaskMap" : "MaskedEmissionMap", "SourceGemMaskTex", 14));
         var textures = source.Tables(material, 2, 32); var samplers = source.Tables(material, 3, 32);
         if (!textures.Select(t => source.Text(t, 0)).Order(StringComparer.Ordinal)
@@ -143,6 +144,9 @@ public static partial class ZaSwShFresnelMaterial
     }
 
     private sealed record MaterialTextures(int Material, TextureBinding[] Bindings, IReadOnlyDictionary<string, string> Names);
+    internal static byte[] BindSourceTextures(byte[] bytes, int material, TextureBinding[] bindings,
+        IReadOnlyDictionary<string, string> names)
+        => RewriteTextures(bytes, [new(material, bindings, names)]);
     private static byte[] RewriteTextures(byte[] bytes, IReadOnlyList<MaterialTextures> targets)
     {
         var source = new ModelBuffer(bytes); var writer = new ModelTableBuilder(bytes);

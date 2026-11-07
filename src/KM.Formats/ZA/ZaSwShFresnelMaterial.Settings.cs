@@ -28,6 +28,7 @@ public static partial class ZaSwShFresnelMaterial
         // Exact Mega Crabominable, Froslass and Glalie FresnelEffect use this
         // forward, no-aura program, with all three source selectors zero.
         if (vertex == Program(0, 0, 6, 0)) return !secondaryUv;
+        if (vertex == Program(1, 1, 6, 0)) return secondaryUv;
         return false;
     }
 
@@ -40,7 +41,8 @@ public static partial class ZaSwShFresnelMaterial
         var options = source.Tables(shader, 1, 128);
         var masked = QualifiesCrabominableEmissionMask(bytes, materialName)
             || QualifiesFroslassEmissionMask(bytes, materialName)
-            || QualifiesGlalieEmissionMask(bytes, materialName);
+            || QualifiesGlalieEmissionMask(bytes, materialName)
+            || QualifiesAbomasnowEmissionMask(bytes, materialName);
         var required = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["EnableBaseColorMap"] = "True", ["EnableEmissionColorMap"] = "False",
@@ -77,7 +79,9 @@ public static partial class ZaSwShFresnelMaterial
         var layer = Integer("UVIndexLayer1"); var ambient = Integer("UVIndexAO");
         if (layer is < -1 or > 1 || ambient is < -1 or > 1 || uvCount == "1" && (layer == 1 || ambient == 1))
             throw new InvalidDataException("ZA gem source UV selectors require another adapter.");
-        if (masked && (layer != 0 || ambient != 0 || Integer("UVIndexLayer2") != 0 || uvCount != "1"))
+        var abomasnow = QualifiesAbomasnowEmissionMask(bytes, materialName);
+        if (masked && (layer != (abomasnow ? 1 : 0) || ambient != (abomasnow ? 1 : 0)
+            || Integer("UVIndexLayer2") != 0 || uvCount != (abomasnow ? "2" : "1")))
             throw new InvalidDataException("ZA pinned masked gem requires its exact authored mask UV interface.");
         return new(layer, ambient, uvCount == "1" ? 1 : 2) { SourceVariant = masked ? 6 : NativeLightingVariant };
     }

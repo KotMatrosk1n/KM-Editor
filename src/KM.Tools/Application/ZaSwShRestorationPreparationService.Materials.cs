@@ -29,7 +29,11 @@ public sealed partial class ZaSwShRestorationPreparationService
 
         private static void RequireStaticColorTiles(PreviewClip clip, IReadOnlyList<ColorUvTile>? tiles)
         {
-            if (clip.Materials.Any(track => tiles?.Any(tile => tile.Material == track.Material) == true))
+            // Gem intensity and saturation do not change the baked tile coordinates.
+            static bool TileIndependent(PreviewMaterialTrack track) => track.Parameter is
+                "EyeScalar:SourceGemSaturation" or "EyeScalar:SourceFresnelEmission0" or "EyeScalar:SourceFresnelEmission1";
+            if (clip.Materials.Any(track => tiles?.Any(tile => tile.Material == track.Material) == true
+                && !TileIndependent(track)))
                 throw new InvalidDataException("Animated Z-A color tile materials require another adapter.");
         }
 

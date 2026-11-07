@@ -104,6 +104,9 @@ public sealed record SwShPreparedRestoration(string DefinitionId, int Definition
             {
                 SwShRestorationWriter.SpeciesText => definition.Identities.Any(i => SwShRestorationSpecies.DisplayName(i.Species) is not null
                     && item.Key == i.Species.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                SwShRestorationWriter.AbilityText => int.TryParse(item.Key, System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out var ability) && definition.Identities.Any(identity =>
+                        SwShRestorationAbilities.IsAbilityFor(identity, ability)),
                 SwShRestorationWriter.Items or SwShRestorationWriter.ItemText =>
                     stones.Any(stone => item.Key == stone.ItemId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
                 SwShRestorationWriter.Personal or SwShRestorationWriter.Learnset =>

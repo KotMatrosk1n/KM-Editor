@@ -7,6 +7,24 @@ namespace KM.Formats.SwSh;
 /// <summary>Allocates a bounded compressed image chain while preserving native texture metadata.</summary>
 public static class SwShTextureAllocation
 {
+    /// <summary>Caps a BC7 texture at an existing mip level, preserving other formats.</summary>
+    public static byte[] LimitBc7MipSize(byte[] template, int maxDimension)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxDimension);
+        var data = new ModelBuffer(template);
+        if (!data.Slice(0, 4).SequenceEqual("BNTX"u8) || data.U32(36) != 1) return template;
+        int Pointer(int at) => checked((int)BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(at, 8)));
+        var info = Pointer(Pointer(40));
+        if (!data.Slice(info, 4).SequenceEqual("BRTI"u8) || data.U32(info + 28) is not (0x2001 or 0x2006))
+            return template;
+
+        var dimension = Math.Max(data.U32(info + 36), data.U32(info + 40));
+        if (dimension <= maxDimension) return template;
+        var firstMip = 1;
+        while ((dimension >> firstMip) > maxDimension) firstMip++;
+        return MipTail(template, firstMip);
+    }
+
     /// <summary>Retains an authored BC7 mip tail without filtering or recompressing its image blocks.</summary>
     public static byte[] MipTail(byte[] template, int firstMip)
     {

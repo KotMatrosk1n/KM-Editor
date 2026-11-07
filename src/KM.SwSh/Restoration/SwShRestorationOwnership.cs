@@ -25,7 +25,7 @@ internal static class SwShRestorationOwnership
             var file = Path.Combine(original.OutputRootPath, record.Path.Value.Replace('/', Path.DirectorySeparatorChar));
             if (!File.Exists(file)) continue;
             using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
-            if (stream.Length > 64L * 1024 * 1024) continue;
+            if (stream.Length > SwShRestorationSourceBudget.MaximumBytes(record.Path.Value)) continue;
             var actual = OutputFileState.Existing(Convert.ToHexStringLower(SHA256.HashData(stream)), stream.Length);
             if (actual == record.CurrentState) result.Add(record.Path.Value);
         }

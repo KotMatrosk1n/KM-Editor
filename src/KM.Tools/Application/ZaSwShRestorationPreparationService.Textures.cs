@@ -14,10 +14,17 @@ public sealed partial class ZaSwShRestorationPreparationService
         {
             if (share)
             {
-                // Compare the complete container with a neutral identity. All mip pixels,
-                // formats and sampling metadata must agree before sharing a texture.
-                var neutral = ModelTextureIdentity.Rename(bytes, name, new string('x', name.Length));
-                var key = Convert.ToHexString(SHA256.HashData(neutral));
+                // Names and pointer padding can differ for identical images. Compare
+                // exact encoded mip blocks and all texture sampling metadata instead.
+                string key;
+                try { key = new ModelTextureDocument(bytes).ContentIdentity(); }
+                catch (InvalidDataException)
+                {
+                    // Cube maps and formats outside the checked color reader still
+                    // require byte-identical containers after neutral renaming.
+                    var neutral = ModelTextureIdentity.Rename(bytes, name, new string('x', name.Length));
+                    key = "container:" + Convert.ToHexString(SHA256.HashData(neutral));
+                }
                 if (identities.TryGetValue(key, out var existing)) return existing;
                 identities.Add(key, name);
                 if (members.TryGetValue(folder + name + ".bntx", out var previous) && !previous.AsSpan().SequenceEqual(bytes))

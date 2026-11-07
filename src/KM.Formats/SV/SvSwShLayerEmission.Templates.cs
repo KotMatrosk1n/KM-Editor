@@ -16,11 +16,14 @@ public static partial class SvSwShLayerEmission
             var pass = Array.IndexOf(TransparentPrograms, program);
             if (pass < 0) pass = Array.IndexOf(TransparentBasePrograms, program);
             if (pass < 0) pass = Array.IndexOf(SvSwShSourceBase.TransparentPrograms, program);
+            if (pass < 0) pass = Array.IndexOf(SvSwShSourceBase.DynamicTransparentPrograms, program);
             if (pass < 0) pass = Array.IndexOf(CoveragePrograms, program);
             if (pass < 0) pass = Array.IndexOf(SvSwShSourceCoverage.Programs, program);
             var source = pass >= 0 ? SvSwShTransparentMaterial.Programs[pass]
                 : program == PointLightProgramName ? SvSwShCornealMaterial.ProgramName : null;
             bytes = Template(bytes, program, source);
+            if (program == SvSwShSourceBase.DynamicProgram || SvSwShSourceBase.DynamicTransparentPrograms.Contains(program))
+                bytes = SvSwShDynamicSource.Template(bytes, program);
         }
         return bytes;
     }

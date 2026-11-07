@@ -9,11 +9,16 @@ public static class SvSwShLayerEmissionShader
     public static byte[] Convert(byte[] template)
         => Convert(template, 0);
 
+    public static byte[] SourceOcclusion(byte[] template) => Convert(template, 0, sourceOcclusion: true);
+
     public static byte[] SurfaceFlow(byte[] template)
         => Convert(template, 1);
 
     public static byte[] SurfaceLayers(byte[] template)
         => Convert(template, 2);
+
+    public static byte[] SourceSurfaceLayers(byte[] template)
+        => Convert(template, 25);
 
     public static byte[] ColorMap(byte[] template)
         => Convert(template, 3);
@@ -63,11 +68,16 @@ public static class SvSwShLayerEmissionShader
 
     public static byte[] MirroredSourceBase(byte[] template) => Convert(template, 23);
 
+    public static byte[] SharedUvSourceBase(byte[] template) => Convert(template, 20, sharedColorUv: true);
+
+    public static byte[] MatteMirroredSourceBase(byte[] template) => Convert(template, 26);
+
     public static byte[] GroudonFiveLayers(byte[] template) => Convert(template, 24);
 
     public static byte[] SourceUnlitBase(byte[] template) => Convert(template, 21);
 
     public static byte[] TransparentSourceBase(byte[] template) => Convert(template, 22);
+    public static byte[] DynamicSourceBase(byte[] template, bool transparent) => Convert(template, transparent ? 22 : 20, dynamicSource: true);
 
     /// <summary>Five-layer Unlit color with the source coverage normalization.</summary>
     public static byte[] DisplacedUnlit(byte[] template)
@@ -80,7 +90,7 @@ public static class SvSwShLayerEmissionShader
     public static byte[] Additive(byte[] template)
         => Convert(template, 11);
 
-    private static byte[] Convert(byte[] template, int mode, bool sourceCutout = false)
+    private static byte[] Convert(byte[] template, int mode, bool sourceCutout = false, bool sourceOcclusion = false, bool dynamicSource = false, bool sharedColorUv = false)
     {
         int Integer(int offset) => BinaryPrimitives.ReadInt32LittleEndian(template.AsSpan(offset, 4));
         int Pointer(int offset) => checked((int)BinaryPrimitives.ReadUInt64LittleEndian(template.AsSpan(offset, 8)));
@@ -96,12 +106,14 @@ public static class SvSwShLayerEmissionShader
         var transparent = identity is "CB0AB209AA69541813F7395E6D3355608E047E5D1D4C66617D66E7ACF8055276" or "A01BA67B64010C74E9A8D1C7FB3CEDC5EFAD07F18049F57D1595B26B45A4B699";
         if (mode is 12 or 13 or 18 or 22 && !transparent)
             throw new InvalidDataException("Transparent base palette requires its pinned cell shader.");
-        if (mode is 14 or 15 or 16 or 17 or 19 or 20 or 21 or 23 or 24 && transparent)
+        if (mode is 14 or 15 or 16 or 17 or 19 or 20 or 21 or 23 or 24 or 26 && transparent)
             throw new InvalidDataException("Uniform emission requires its pinned opaque shader.");
         if (identity is not ("1EAC62E9112F11530759B7F8FD91C53ED73EF5C4B2195591282EC4E354C07D37" or "FBB44266C993CCFF1EC67B48E26A89B13981836CD0A6071E4F2BF8F4156135A2") && (!transparent || mode is not (0 or 12 or 13 or 18 or 22)))
             throw new InvalidDataException("Layer emission shader program needs another adapter.");
-        var basePalette = mode is 8 or 9 or 12 or 13 or 15 or 16 or 17 or 18 or 19 or 20 or 21 or 22 or 23 or 24;
-        var baseSlots = mode is 18 or 19 or 20 or 21 or 22 or 23 ? new[] { 19, 20, 21, 22 } : mode == 17 ? new[] { 4, 5, 6, 7 }
+        if (sourceOcclusion && (mode != 0 || transparent)) throw new InvalidDataException("Source occlusion requires opaque native lighting.");
+        var occlusionSamples = 0;
+        var basePalette = mode is 8 or 9 or 12 or 13 or 15 or 16 or 17 or 18 or 19 or 20 or 21 or 22 or 23 or 24 or 26;
+        var baseSlots = mode is 18 or 19 or 20 or 21 or 22 or 23 or 26 ? new[] { 19, 20, 21, 22 } : mode == 17 ? new[] { 4, 5, 6, 7 }
             : mode is 12 or 13 ? new[] { 0, 2, 16, 17 } : new[] { 0, 2, 15, 16 };
         var baseWords = baseSlots.SelectMany(slot => Enumerable.Range(slot * 4, 3)).ToHashSet();
         if (controlLength < 0x848 || Integer(control) != unchecked((int)0x98761234) || Integer(data) != 0x12345678
@@ -226,6 +238,16 @@ public static class SvSwShLayerEmissionShader
                 var prefix = instruction >> 48; var destination = (int)(instruction & 255);
                 var buffer = (int)(instruction >> 34 & 31); var word = (int)(instruction >> 20 & 16383);
                 var uniform = prefix is 0x4c98 or 0x4c68 || prefix is >= 0x49a0 and <= 0x49a3;
+                if (sourceOcclusion && instruction >> 56 == 0xd8 && (instruction >> 36 & 8191) == 14)
+                {
+                    var blue = (int)(instruction >> 28 & 255);
+                    if (++occlusionSamples != 1 || destination >= 55 || blue >= 56)
+                        throw new InvalidDataException("Source occlusion native sample changed.");
+                    KM.Formats.SwSh.SwShShaderScheduling.Original(code, ref originalBoundary, instruction, scheduling >> (lane * 21) & 0x1ffff);
+                    Constant(78, -1); Constant(79, 1); Fma(destination, destination, 78, 79);
+                    Constant(destination + 1, 0); Constant(blue, 128f / 255);
+                    continue;
+                }
                 if (sourceCutout && instruction is 0x4c68101402570703UL or 0x4c68101402570103UL)
                 {
                     // Source EnableBlendStateOpaque discards fractional texture alpha
@@ -233,7 +255,7 @@ public static class SvSwShLayerEmissionShader
                     Uniform(3, 5, 37); opaqueOutputs++;
                     continue;
                 }
-                if (mode == 9 && uniform && buffer == 5 && word == 36
+                if (mode is 9 or 26 && uniform && buffer == 5 && word == 36
                     && prefix is >= 0x49a0 and <= 0x49a3
                     && unlitEmissionResults.TryGetValue((int)(instruction >> 8 & 255), out var unlitOutput))
                 {
@@ -242,8 +264,23 @@ public static class SvSwShLayerEmissionShader
                     // would add the old lit diffuse back into the Unlit surface.
                     if ((int)(instruction >> 39 & 255) != unlitOutput.Diffuse || !unlitOutputs.Add(unlitOutput.Channel))
                         throw new InvalidDataException("Unlit final surface output requires another adapter.");
-                    Constant(79, .7f);
-                    Multiply(destination, 56 + unlitOutput.Channel, 79);
+                    if (mode == 26)
+                    {
+                        // The shared material contains armor and teeth. Blend only
+                        // the red layer, after native lighting, using its source mask.
+                        KM.Formats.SwSh.SwShShaderScheduling.Original(code, ref originalBoundary, instruction, scheduling >> (lane * 21) & 0x1ffff);
+                        Constant(79, .8f);
+                        Multiply(78, 56 + unlitOutput.Channel, 79);
+                        Add(78, 78, 68 + unlitOutput.Channel);
+                        Add(78, 78, destination, true);
+                        Multiply(78, 78, 79);
+                        Fma(destination, 78, 60, destination);
+                    }
+                    else
+                    {
+                        Constant(79, .7f);
+                        Multiply(destination, 56 + unlitOutput.Channel, 79);
+                    }
                     continue;
                 }
                 if (mode is 12 or 13 or 18 or 22)
@@ -273,7 +310,7 @@ public static class SvSwShLayerEmissionShader
                     KM.Formats.SwSh.SwShShaderScheduling.Original(code, ref originalBoundary, instruction, scheduling >> (lane * 21) & 0x1ffff);
                     Move(96, 1); Move(97, 0); continue;
                 }
-                if (mode is 1 or 2)
+                if (mode is 1 or 2 or 25)
                 {
                     // This otherwise unused control carries source distortion strength.
                     // Keep its neutral value in the inherited color equation.
@@ -285,7 +322,7 @@ public static class SvSwShLayerEmissionShader
                         else Fma(destination, (int)(instruction >> 8 & 255), 95, (int)(instruction >> 39 & 255), (instruction >> 48 & 1) != 0, (instruction >> 49 & 1) != 0);
                         continue;
                     }
-                    if (mode == 2 && uniform && (buffer == 5 && word is >= 18 and <= 21 || buffer == 6 && word is >= 16 and <= 30 && word % 4 != 3))
+                    if (mode is 2 or 25 && uniform && (buffer == 5 && word is >= 18 and <= 21 || buffer == 6 && word is >= 16 and <= 30 && word % 4 != 3))
                     {
                         var neutral = buffer == 5 ? (word % 2 == 0 ? 1f : 0f) : (word / 4 % 2 == 0 ? 1f : 0f);
                         Constant(95, neutral);
@@ -301,7 +338,7 @@ public static class SvSwShLayerEmissionShader
                         if (++flowInputs != 1 || coordinate >= 55 || vertical >= 55)
                             throw new InvalidDataException("Surface flow color coordinates are unsupported.");
                         Move(80, coordinate); Move(81, vertical);
-                        if (mode == 2)
+                        if (mode is 2 or 25)
                         {
                             // The independent source mask uses UV1, passed by the paired vertex program.
                             Emit(0xE043FF918157FF50UL); Emit(0xE043FF91C157FF51UL);
@@ -313,13 +350,16 @@ public static class SvSwShLayerEmissionShader
                             Uniform(88, 5, 8); Uniform(89, 5, 11); Fma(83, 81, 88, 89);
                             // This source mask is tiled across UV1 and its loop translates
                             // by one full tile. Reduce the animated tile before sampling.
-                            Emit(0x5CA8148000070A00UL | 82UL << 20 | 84);
-                            Emit(0x5CA8148000070A00UL | 83UL << 20 | 85);
-                            Add(82, 82, 84, true); Add(83, 83, 85, true);
+                            if (mode == 2)
+                            {
+                                Emit(0x5CA8148000070A00UL | 82UL << 20 | 84);
+                                Emit(0x5CA8148000070A00UL | 83UL << 20 | 85);
+                                Add(82, 82, 84, true); Add(83, 83, 85, true);
+                            }
                             Constant(88, 1); Add(83, 88, 83, true);
                             // Tile boundaries make implicit derivatives select averaged mask
                             // mips. Sample level zero to keep the palette continuous.
-                            Emit(0xd850000000070000UL | 12UL << 36 | 62UL << 28 | 83UL << 20 | 82UL << 8 | 60, true);
+                            Emit((mode == 2 ? 0xd850000000070000UL : 0xd830000000070000UL) | 12UL << 36 | 62UL << 28 | 83UL << 20 | 82UL << 8 | 60, true);
                             Constant(68, 0); Constant(69, 0); Constant(70, 0); Constant(71, 1); Constant(74, 1);
                             for (var layer = 3; layer >= 0; layer--)
                             {
@@ -379,10 +419,11 @@ public static class SvSwShLayerEmissionShader
                         if (mode == 21) Constant(79, .7f); else Uniform(79, 5, 18);
                         Multiply(value, 56 + channel, 79);
                     }
-                    else if (mode == 9)
+                    else if (mode is 9 or 26)
                     {
                         if (!unlitEmissionResults.TryAdd(destination, (channel, value)))
                             throw new InvalidDataException("Unlit emission intermediate is ambiguous.");
+                        if (mode == 26) Add(value, value, 68 + channel);
                     }
                     else Add(value, value, 68 + channel);
                 }
@@ -448,6 +489,12 @@ public static class SvSwShLayerEmissionShader
                     if (basePalette)
                     {
                         Emit(0xd830000000070000UL | 10UL << 36 | 62UL << 28 | 81UL << 20 | 80UL << 8 | 60, true);
+                        if (dynamicSource)
+                        {
+                            for (var layer = 0; layer < 4; layer++) { Uniform(88, 5, 52 + layer); Multiply(60 + layer, 60 + layer, 88); }
+                            for (var c = 0; c < 3; c++) { Uniform(88, 5, 56 + c); Multiply(56 + c, 56 + c, 88); }
+                            Uniform(88, 5, 59); Multiply(second + 1, second + 1, 88);
+                        }
                         if (mode == 17)
                         {
                             UnlitPalette(destination, second); emissionCaptured = true;
@@ -569,8 +616,12 @@ public static class SvSwShLayerEmissionShader
                     // of the baked diffuse image, including its implicit derivatives.
                     Constant(82, 2); Multiply(80, u, 82); Move(81, v);
                 }
-                // Read all four source mask channels using the native color coordinates.
-                Emit(0xd830000000070000UL | 10UL << 36 | 62UL << 28 | (mode is 5 or 6 or 23 ? 81UL << 20 | 80UL << 8 : instruction & (255UL << 20 | 255UL << 8)) | 60, true);
+                // Some donors' albedo and layer mask share the converted two-tile
+                // color coordinates. Keep the sample taken at the albedo fetch;
+                // the native emission coordinates can carry another transform.
+                if (mode != 26 && !sharedColorUv)
+                    Emit(0xd830000000070000UL | 10UL << 36 | 62UL << 28 | (mode is 5 or 6 or 23 ? 81UL << 20 | 80UL << 8 : instruction & (255UL << 20 | 255UL << 8)) | 60, true);
+                if (dynamicSource) for (var layer = 0; layer < 4; layer++) { Uniform(88, 5, 52 + layer); Multiply(60 + layer, 60 + layer, 88); }
                 if (mode == 7) Constant(63, 0);
                 if (mode == 11) { Constant(61, 0); Constant(62, 0); Constant(63, 0); }
                 if (mode == 3)
@@ -601,14 +652,15 @@ public static class SvSwShLayerEmissionShader
                 emissionCaptured = true;
             }
         }
+        if (sourceOcclusion && occlusionSamples != 1) throw new InvalidDataException("Source occlusion input is incomplete.");
         if (mode == 11 && additiveExits != 1) throw new InvalidDataException("Additive native output is missing.");
         if (sourceCutout && (cutoutInputs != 1 || opaqueOutputs != 1))
             throw new InvalidDataException("Unlit cutout input or opaque output is ambiguous.");
-        if (mode is 9 or 17 or 21 && !unlitOutputs.SetEquals(new[] { 0, 1, 2 }))
+        if (mode is 9 or 17 or 21 or 26 && !unlitOutputs.SetEquals(new[] { 0, 1, 2 }))
             throw new InvalidDataException("Unlit final output coverage is incomplete.");
         if (mode is 12 or 13 or 18 or 22 && (baseAlphaInputs != 1 || baseAlphaOutputs != 1))
             throw new InvalidDataException("Transparent base palette alpha flow requires another adapter.");
-        if (mode is 1 or 2 ? flowInputs != 1 : !colorCaptured || !emissionCaptured || !components.SetEquals(new[] { 0, 1, 2 }))
+        if (mode is 1 or 2 or 25 ? flowInputs != 1 : !colorCaptured || !emissionCaptured || !components.SetEquals(new[] { 0, 1, 2 }))
             throw new InvalidDataException("Layer emission shader contract is incomplete.");
         while (code.Count % 3 != 0) code.Add((0x50b0000000070f00UL, 0x7ff));
         var newEnd = checked(0x80 + code.Count / 3 * 32);
@@ -618,12 +670,12 @@ public static class SvSwShLayerEmissionShader
         var output = template.ToArray();
         if (sourceCutout) output[data + 0x31] |= 0x80; // SPH commonWord0.KillsPixels, bit15.
         if (mode == 16) output[data + 0x30 + 24 + 10] |= 0x2a; // perspective location10.xyz.
-        if (mode == 2) output[data + 0x30 + 24 + 9] |= 0xa0;
+        if (mode is 2 or 25) output[data + 0x30 + 24 + 9] |= 0xa0;
         output.AsSpan(data + 0x80, capacity - 0x80).Clear();
         template.AsSpan(data + constants, constantLength).CopyTo(output.AsSpan(data + newConstants));
         void Write(int offset, int value) => BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(offset, 4), value);
         Write(stage + 24, newLength); Write(control + 0x6f8, newEnd - 0x30);
-        Write(control + 0x700, newConstants); Write(control + 0x704, newLength); Write(control + 0x70c, mode is 4 or 5 or 10 ? 112 : mode is 1 or 2 or 6 or 8 or 9 or 12 or 13 or 15 or 16 or 17 or 18 or 19 or 20 or 21 or 22 or 24 ? 96 : 80);
+        Write(control + 0x700, newConstants); Write(control + 0x704, newLength); Write(control + 0x70c, mode is 4 or 5 or 10 ? 112 : mode is 1 or 2 or 6 or 8 or 9 or 12 or 13 or 15 or 16 or 17 or 18 or 19 or 20 or 21 or 22 or 23 or 24 or 25 or 26 ? 96 : 80);
         for (var index = 0; index < code.Count; index += 3)
         {
             var offset = data + 0x80 + index / 3 * 32;

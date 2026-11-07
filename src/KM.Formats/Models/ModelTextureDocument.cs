@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 using System.Buffers.Binary;
 using System.Numerics;
+using System.Security.Cryptography;
 using BCnEncoder.Decoder;
 using BCnEncoder.Encoder;
 using BCnEncoder.Shared;
@@ -87,6 +88,22 @@ public sealed class ModelTextureDocument
     {
         if ((uint)mip >= levels.Length) throw new ArgumentOutOfRangeException(nameof(mip));
         return Linear(levels[mip], original);
+    }
+
+    /// <summary>Identifies exact image content and sampling metadata independently of names and container padding.</summary>
+    public string ContentIdentity()
+    {
+        var data = new ModelBuffer(original);
+        int Pointer(int at) => checked((int)BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(at, 8)));
+        var info = Pointer(Pointer(40));
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        // Retain flags, dimension, tiling, mip count, multisampling, format,
+        // access, extents, array size, layout controls and channel mapping.
+        // Image offsets, allocation padding and strings do not affect sampling.
+        hash.AppendData(data.Slice(info + 16, 64));
+        hash.AppendData(data.Slice(info + 88, 8));
+        for (var mip = 0; mip < levels.Length; mip++) hash.AppendData(EncodedMipBlocks(mip));
+        return Convert.ToHexString(hash.GetHashAndReset());
     }
 
     /// <summary>Replaces complete encoded mip blocks without changing their checked container layout.</summary>

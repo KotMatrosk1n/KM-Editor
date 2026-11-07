@@ -22,7 +22,7 @@ internal static class SwShPreviewFresnel
         foreach (var variant in new[] { 0, 6 })
         for (var layer = -1; layer <= 1; layer++) for (var ao = -1; ao <= 1; ao++)
         {
-            if (variant == 6 && (layer != 0 || ao != 0)) continue;
+            if (variant == 6 && !((layer == 0 && ao == 0) || (layer == 1 && ao == 1))) continue;
             var settings = new ZaSwShFresnelMaterial.Settings(layer, ao, layer == 1 || ao == 1 ? 2 : 1)
             { SourceVariant = variant, MaskUv = 0 };
             if (vertex == settings.Program && fragment == settings.Program) return settings;

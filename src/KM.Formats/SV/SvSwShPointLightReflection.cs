@@ -8,6 +8,8 @@ namespace KM.Formats.SV;
 internal static class SvSwShPointLightReflection
 {
     internal readonly record struct ZaGemBindings(bool SecondaryUv, bool Masked);
+    internal readonly record struct AuthoredBindings(bool SecondaryUv, (string Name, int Slot)[] Samplers,
+        bool EffectFrame = false, bool Tangent = false);
 
     private sealed class Node(BigInteger key, int bit)
     {
@@ -18,13 +20,15 @@ internal static class SvSwShPointLightReflection
     }
 
     internal static byte[] Add(byte[] bytes, bool vertex, bool tangentInputOnly = false,
-        bool tangentSecondaryUv = false, ZaGemBindings? zaGem = null)
+        bool tangentSecondaryUv = false, ZaGemBindings? zaGem = null, AuthoredBindings? authored = null)
     {
         if (tangentInputOnly && !vertex) throw new InvalidDataException("Authored tangent reflection requires a vertex program.");
         if (tangentSecondaryUv && (!vertex || !tangentInputOnly))
             throw new InvalidDataException("Secondary UV reflection requires its authored tangent vertex program.");
         if (zaGem is not null && (vertex || tangentInputOnly || tangentSecondaryUv))
             throw new InvalidDataException("ZA gem sampler reflection requires its dedicated fragment program.");
+        if (authored is not null && (zaGem is not null || tangentInputOnly || tangentSecondaryUv))
+            throw new InvalidDataException("Authored palette reflection requires its dedicated program.");
         int I(int at) => BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(at, 4));
         int P(int at) => checked((int)BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(at, 8)));
         var program = P(P(0x80) + 16); var reflection = P(program + 0x78); var stage = vertex ? 0 : 4;
@@ -107,7 +111,31 @@ internal static class SvSwShPointLightReflection
             }
             return dictionary;
         }
-        if (zaGem is { } gem)
+        if (authored is { } palette)
+        {
+            if (palette.Samplers.Select(s => s.Name).Distinct(StringComparer.Ordinal).Count() != palette.Samplers.Length
+                || palette.Samplers.Select(s => s.Slot).Distinct().Count() != palette.Samplers.Length
+                || palette.Samplers.Any(s => s.Slot is < 8 or > 15)
+                || groups.SelectMany(g => g).Any(v => v.Name is "IN_map2" or "OUT_Layer5UV" || palette.Samplers.Any(s => s.Name == v.Name)))
+                throw new InvalidDataException("Authored palette shader interface is ambiguous.");
+            if (!vertex && (!groups[2].OrderBy(v => v.Slot).Select(v => v.Name).SequenceEqual(new[]
+                { "Col0Tex", "EmissionMaskTex", "LyCol0Tex", "AmbientTex", "NormalMapTex", "LightTblTex", "SphereMapTex", "EffectTex" })
+                || !groups[2].OrderBy(v => v.Slot).Select(v => v.Slot).SequenceEqual(Enumerable.Range(0, 8))))
+                throw new InvalidDataException("Authored palette requires the pinned native sampler interface.");
+            if (palette.SecondaryUv)
+            {
+                if (vertex) { groups[0].Add(("IN_map2", 4)); groups[1].Add(("OUT_Layer5UV", -1)); }
+                else groups[0].Add(("OUT_Layer5UV", -1));
+            }
+            if (palette.EffectFrame)
+            {
+                if (vertex && palette.Tangent) groups[0].Add(("IN_Tangent", 2));
+                groups[vertex ? 1 : 0].Add(("OUT_SourceEffect0", -1));
+                groups[vertex ? 1 : 0].Add(("OUT_SourceEffect1", -1));
+            }
+            groups[2].AddRange(palette.Samplers);
+        }
+        else if (zaGem is { } gem)
         {
             var samplers = KM.Formats.SwSh.SwShZaFresnelSamples.Samplers(gem.Masked);
             if (!groups[2].OrderBy(v => v.Slot).Select(v => v.Name).SequenceEqual(new[]
@@ -127,7 +155,8 @@ internal static class SvSwShPointLightReflection
             }
             if (!tangentInputOnly) groups[vertex ? 1 : 0].Add(("OUT_PointLightVector", -1));
         }
-        var changedGroups = zaGem is { } bindings ? bindings.SecondaryUv ? new[] { 0, 2 } : [2]
+        var changedGroups = authored is { } authoredBindings ? authoredBindings.SecondaryUv || authoredBindings.EffectFrame ? vertex ? new[] { 0, 1, 2 } : [0, 2] : [2]
+            : zaGem is { } bindings ? bindings.SecondaryUv ? new[] { 0, 2 } : [2]
             : vertex && (!tangentInputOnly || tangentSecondaryUv) ? new[] { 0, 1 } : [0];
         foreach (var g in changedGroups) Pointer(record + g * 8, Dictionary(groups[g]));
         Align(8); var slots = checked((int)stream.Position); var total = 0;

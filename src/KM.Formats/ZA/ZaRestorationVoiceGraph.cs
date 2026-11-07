@@ -89,6 +89,7 @@ public static partial class ZaRestorationVoiceGraph
     private static (uint Group, Dictionary<uint, uint[]> States, float Gain) Switch(byte[] bytes,
         SoundBankDocument bank, IReadOnlySet<uint>? inactiveStateGroups, ZaRestorationVoiceContext? normalContext)
     {
+        bytes = NormalZygardeSelector(bytes, bank, normalContext);
         // Version 145 adds metadata and attachment flags before the parent data.
         // Parse the property bundle instead of assuming a fixed child offset.
         var at = 0;
@@ -198,7 +199,8 @@ public static partial class ZaRestorationVoiceGraph
         }
         if (!states.ContainsKey(defaultState)) throw new InvalidDataException("Z-A voice default state is missing.");
         var parameterCount = Count(); var configured = new HashSet<uint>();
-        var orphaned = QualifiedStaraptorMegaSwitch(bytes, bank) ? StaraptorOrphanedVoiceConfigurations : [];
+        var orphaned = QualifiedStaraptorMegaSwitch(bytes, bank) ? StaraptorOrphanedVoiceConfigurations
+            : QualifiedZeraoraMegaSwitch(bytes, bank) ? ZeraoraOrphanedVoiceConfigurations : [];
         for (var i = 0; i < parameterCount; i++)
         {
             var id = Word();

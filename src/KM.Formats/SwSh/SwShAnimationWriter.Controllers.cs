@@ -145,6 +145,58 @@ public static partial class SwShAnimationWriter
         return writer.Finish(source.Root);
     }
 
+    /// <summary>Keeps the species' native battle attack selectors and exit routes while using converted motions.</summary>
+    public static byte[] BattleAttackController(byte[] controller, byte[] nativeController)
+    {
+        const string battleName = "Top/battle_default";
+        const string attackName = battleName + "/attack";
+        static int Battle(ModelBuffer data)
+        {
+            var machine = data.Tables(data.Table(data.Root, 4), 0, 128).Single(node => data.Text(node, 0) == "Base");
+            return data.Tables(data.Table(machine, 1), 5, 128).Single(node => data.Text(node, 0) == battleName);
+        }
+
+        var source = new ModelBuffer(controller);
+        var native = new ModelBuffer(nativeController);
+        var battle = Battle(source);
+        var children = source.Tables(battle, 5, 128);
+        var attack = children.Single(node => source.Text(node, 0) == attackName);
+        var nativeAttack = native.Tables(Battle(native), 5, 128).Single(node => native.Text(node, 0) == attackName);
+        var bindingTable = source.Table(source.Root, 6);
+        var bindings = source.Tables(bindingTable, 0, 2048);
+        var paths = bindings.ToDictionary(node => source.Text(node, 0)!, node => source.Text(node, 1)!, StringComparer.Ordinal);
+        var aliases = native.Tables(nativeAttack, 5, 128)
+            .Select(node => native.Text(node, 0)!.Split('/')[^1])
+            .Where(name => name.StartsWith("ba20_buturi", StringComparison.Ordinal) || name.StartsWith("ba21_tokusyu", StringComparison.Ordinal))
+            .Where(name => !paths.ContainsKey(name))
+            .ToArray();
+        if (aliases.Distinct(StringComparer.Ordinal).Count() != aliases.Length)
+            throw new InvalidDataException("Native battle attack variants are ambiguous.");
+
+        var writer = new ModelTableBuilder(controller);
+        var childSlots = writer.Vector(battle, 5, children.Length);
+        var bindingSlots = writer.Vector(bindingTable, 0, bindings.Length + aliases.Length);
+        var sourceCopy = writer.Append(controller);
+        var nativeCopy = writer.Append(nativeController);
+        for (var i = 0; i < children.Length; i++)
+            writer.Pointer(childSlots[i], children[i] == attack ? nativeCopy + nativeAttack : sourceCopy + children[i]);
+        for (var i = 0; i < bindings.Length; i++)
+            writer.Pointer(bindingSlots[i], sourceCopy + bindings[i]);
+        // Sword and Shield may request an alternate selector for this species.
+        // Each category has one complete converted Mega motion.
+        for (var i = 0; i < aliases.Length; i++)
+        {
+            var name = aliases[i];
+            if (!paths.TryGetValue(name[..^2] + "01", out var path))
+                throw new InvalidDataException($"Converted battle motion is missing for {name}.");
+            var binding = writer.Table(2);
+            writer.Pointer(bindingSlots[bindings.Length + i], binding);
+            writer.Text(binding, 0, name);
+            writer.Text(binding, 1, path);
+        }
+        return writer.Finish(source.Root);
+    }
+
     public static byte[] GlobalMaterialLoop(byte[] nativeAnimation, IReadOnlyList<string> materialNames,
         IReadOnlyDictionary<string, System.Numerics.Vector2>? normalUvScales = null,
         IReadOnlyDictionary<string, System.Numerics.Vector4>? colorUvTransforms = null,

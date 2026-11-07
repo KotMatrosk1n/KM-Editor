@@ -7,6 +7,27 @@ namespace KM.Tools.Application;
 
 internal static class SwShRestorationFraming
 {
+    internal static byte[] CompensateSummaryClearance(byte[] configuration, float worldClearance, float referenceHeight)
+    {
+        // Summary plays the battle idle at its own scale. Cancel only the extra
+        // local lift introduced by changing the battle camera scale.
+        var data = new ModelBuffer(configuration);
+        var modelAt = data.Field(data.Root, 8);
+        var battleAt = data.Field(data.Root, 9);
+        var summaryAt = data.Field(data.Root, 18);
+        if (modelAt == 0 || battleAt == 0 || summaryAt == 0 || data.Float(modelAt) <= 0
+            || data.Float(battleAt) <= 0 || !float.IsFinite(referenceHeight) || referenceHeight < 0
+            || !float.IsFinite(worldClearance))
+            throw new InvalidDataException("Summary clearance requires positive configuration heights and a finite offset.");
+        var modelClearance = worldClearance * data.Float(modelAt);
+        // A zero reference is the unlifted authored Summary pose.
+        var referenceLift = referenceHeight == 0 ? 0 : modelClearance / referenceHeight;
+        var extraLift = modelClearance / data.Float(battleAt) - referenceLift;
+        var result = configuration.ToArray();
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(result.AsSpan(summaryAt, 4), data.Float(summaryAt) - extraLift);
+        return result;
+    }
+
     internal static byte[] SummaryCorrection(byte[] configuration, string definition)
     {
         // Summary uses its own scale and vertical placement. Keep battle and field
@@ -47,6 +68,81 @@ internal static class SwShRestorationFraming
             "pidgeot-mega" => (1.8f, 0f),
             "clefable-mega" => (1f, 100f),
             "alakazam-mega" => (1.4f, 60f),
+            "gengar-mega" => (1.9f, 100f),
+            "camerupt-mega" => (2.2f, 40f),
+            "emboar-mega" => (1.8f, 20f),
+            "chesnaught-mega" => (1.7f, -20f),
+            "golurk-mega" => (3.22f, 0f),
+            "falinks-mega" => (1.45f, 10f),
+            "slowbro-mega" => (2.2f, 20f),
+            "kangaskhan-mega" => (2.2f, 0f),
+            "starmie-mega" => (1.5f, 25f),
+            "pinsir-mega" => (1.5f, 0f),
+            "gyarados-mega" => (2.4f, 30f),
+            "aerodactyl-mega" => (0.48f, 190f),
+            "dragonite-mega" => (2.7f, 30f),
+            "mewtwo-mega-x" => (2.28f, 0f),
+            "eelektross-mega" => (.8f, 0f),
+            "zygarde-mega" => (7f, 0f),
+            "victreebel-mega" => (2.8f, 100f),
+            "delphox-mega" => (2.1f, 70f),
+            "greninja-mega" => (2.25f, 70f),
+            "pyroar-mega" => (2.15f, 0f),
+            "floette-mega" => (0.72f, -25f),
+            "malamar-mega" => (2.95f, 50f),
+            "barbaracle-mega" => (2.44f, 10f),
+            "dragalge-mega" => (2.3f, 0f),
+            "crabominable-mega" => (2.4f, 60f),
+            "golisopod-mega" => (1.6f, 35f),
+            "drampa-mega" => (2.5f, 80f),
+            "magearna-original-mega" => (1.3f, 0f),
+            "magearna-mega" => (1.3f, 0f),
+            "diancie-mega" => (1.1f, -40f),
+            "hawlucha-mega" => (1.25f, -15f),
+            "meowstic-mega-female" => (1.4f, 30f),
+            "meowstic-mega-male" => (1.4f, 30f),
+            "chandelure-mega" => (2.3f, 50f),
+            "scolipede-mega" => (2.62f, -40f),
+            "audino-mega" => (1.55f, 0f),
+            "excadrill-mega" => (1.3f, 0f),
+            "darkrai-mega" => (1.4f, 0f),
+            "froslass-mega" => (1.9f, 20f),
+            "gallade-mega" => (1.8f, 0f),
+            "abomasnow-mega" => (2.66f, 0f),
+            "lucario-mega-z" => (1.25f, 0f),
+            "lucario-mega" => (1.2f, 5f),
+            "garchomp-mega-z" => (2.4f, 20f),
+            "garchomp-mega" => (2.03f, 10f),
+            "lopunny-mega" => (1.35f, -30f),
+            "staraptor-mega" => (1.8f, -20f),
+            "rayquaza-mega" => (5.65f, -30f),
+            "latios-mega" => (0.7f, 90f),
+            "latias-mega" => (0.7f, 50f),
+            "metagross-mega" => (2.85f, -20f),
+            "salamence-mega" => (1.25f, -190f),
+            "glalie-mega" => (1.8f, 20f),
+            "banette-mega" => (1.7f, 0f),
+            "altaria-mega" => (1.88f, -20f),
+            "sharpedo-mega" => (2.38f, 0f),
+            "manectric-mega" => (1.75f, 0f),
+            "medicham-mega" => (1.45f, 0f),
+            "aggron-mega" => (2.30f, 0f),
+            "sableye-mega" => (0.85f, -30f),
+            "gardevoir-mega" => (1.9f, 0f),
+            "swampert-mega" => (1.65f, 0f),
+            "blaziken-mega" => (2f, 0f),
+            "scrafty-mega" => (1.08f, 0f),
+            "sceptile-mega" => (1.8f, 0f),
+            "tyranitar-mega" => (2.25f, 20f),
+            "houndoom-mega" => (1.85f, 0f),
+            "skarmory-mega" => (1.55f, 20f),
+            "heracross-mega" => (1.7f, 0f),
+            "scizor-mega" => (2f, 0f),
+            "steelix-mega" => (5f, 20f),
+            "ampharos-mega" => (1.7f, 0f),
+            "feraligatr-mega" => (2.5f, 0f),
+            "meganium-mega" => (2.65f, 0f),
+            "mewtwo-mega-y" => (1.85f, 20f),
             "mega-charizard-y" => (1.3f, -50f),
             "quilava" => (1f, 35f),
             "totodile" => (.85f, -37f),
@@ -257,20 +353,24 @@ internal static class SwShRestorationFraming
 
     internal static void MatchGiantHeight(byte[] giantConfiguration, byte[] nativeConfiguration, float battleHeight)
     {
-        var giant = new ModelBuffer(giantConfiguration); var native = new ModelBuffer(nativeConfiguration);
-        var scaleAt = giant.Field(giant.Root, 4); var heightAt = native.Field(native.Root, 9);
-        if (scaleAt == 0 || heightAt == 0)
+        var native = new ModelBuffer(nativeConfiguration);
+        var heightAt = native.Field(native.Root, 9);
+        if (heightAt == 0)
             throw new InvalidDataException("Native giant sizing configuration is incomplete.");
-        var scale = giant.Float(scaleAt); var nativeHeight = native.Float(heightAt);
-        if (!float.IsFinite(scale) || !float.IsFinite(nativeHeight) || !float.IsFinite(battleHeight)
-            || scale <= 0 || nativeHeight <= 0 || battleHeight <= 0)
+        MatchGiantHeight(giantConfiguration, native.Float(heightAt), battleHeight);
+    }
+
+    internal static void MatchGiantHeight(byte[] giantConfiguration, float previousBattleHeight, float battleHeight)
+    {
+        var giant = new ModelBuffer(giantConfiguration);
+        var scaleAt = giant.Field(giant.Root, 4);
+        if (scaleAt == 0)
+            throw new InvalidDataException("Giant sizing configuration is incomplete.");
+        if (!float.IsFinite(previousBattleHeight) || previousBattleHeight <= 0
+            || !float.IsFinite(battleHeight) || battleHeight <= 0)
             throw new InvalidDataException("Giant sizing configuration is invalid.");
-        // Giant scale multiplies ordinary battle height. Preserve the native camera's
-        // actor height without changing the imported model's ordinary dimensions.
-        var fitted = scale * nativeHeight / battleHeight;
-        if (!float.IsFinite(fitted) || fitted <= 0)
-            throw new InvalidDataException("Converted giant sizing is invalid.");
-        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(giantConfiguration.AsSpan(scaleAt, 4), fitted);
+        // Giant scale multiplies ordinary battle height, so changing one requires adjusting the other.
+        SetGiantScale(giantConfiguration, giant.Float(scaleAt) * previousBattleHeight / battleHeight);
     }
 
     internal static SwShConvertedGeometry IdleBounds(IReadOnlyDictionary<string, byte[]> members, string modelFolder,

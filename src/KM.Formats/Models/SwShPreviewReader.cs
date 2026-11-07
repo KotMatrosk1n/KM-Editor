@@ -58,7 +58,8 @@ public sealed class SwShPreviewReader(Func<string, byte[]> read)
                 surface.Values[39][3] = 0;
                 surface.Values[5] = [1, 1, 1, 1];
             }
-            var surfaceLayers = SwShPreviewLayerEmission.UsesProgram(data, material, KM.Formats.SV.SvSwShSurfaceFlow.LayerProgramName);
+            var surfaceLayers = SwShPreviewLayerEmission.UsesProgram(data, material, KM.Formats.SV.SvSwShSurfaceFlow.LayerProgramName)
+                || SwShPreviewLayerEmission.UsesProgram(data, material, KM.Formats.SV.SvSwShSurfaceFlow.SourceLayerProgramName);
             if (surfaceLayers) surface = surface with { SurfaceLayers = true };
             if (layerEmission)
             {
@@ -139,7 +140,8 @@ public sealed class SwShPreviewReader(Func<string, byte[]> read)
             }
             if (surfaceLayers) maskUv = underlayUv;
             if (SwShPreviewLayerEmission.UsesProgram(data, material, KM.Formats.SV.SvSwShLayerEmission.MirroredProgramName)
-                || SwShPreviewLayerEmission.UsesProgram(data, material, KM.Formats.SV.SvSwShSourceBase.MirroredProgramName))
+                || SwShPreviewLayerEmission.UsesProgram(data, material, KM.Formats.SV.SvSwShSourceBase.MirroredProgramName)
+                || SwShPreviewLayerEmission.UsesProgram(data, material, KM.Formats.SV.SvSwShSourceBase.MatteMirrorProgramName))
                 maskUv = new Vector4(2, 1, 0, 0);
             surface = SwShPreviewRestorationMaterial.Read(data, material, surface, restorationEffect);
             if (restorationEffect is 3 or 4) origins = Vector4.Zero;

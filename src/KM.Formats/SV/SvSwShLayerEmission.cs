@@ -10,6 +10,7 @@ namespace KM.Formats.SV;
 public static partial class SvSwShLayerEmission
 {
     public const string ProgramName = "LayerEmission";
+    public const string SourceOcclusionProgramName = "SourceAoEmission";
     public const string MapProgramName = "MapEmission";
     public const string FresnelProgramName = "FresnelEmission";
     public const string FresnelMirrorProgramName = "FresnelMirrorEmission";
@@ -41,7 +42,11 @@ public static partial class SvSwShLayerEmission
         public Vector4 MaskScale { get; init; } = Vector4.One;
         public float[] Initial { get; init; } = new float[4];
         public float MaximumIntensity { get; init; } = 1;
+        public string? SourceOcclusion { get; init; }
         public bool Transparent { get; init; }
+        public bool InnerPass { get; init; } = true;
+        public bool DynamicSource { get; init; }
+        public Vector4 GlobalBaseColor { get; init; } = Vector4.One;
         public bool ColorMap { get; init; }
         public bool BaseColorMap { get; init; }
         public bool MaskUnused { get; init; }
@@ -60,13 +65,15 @@ public static partial class SvSwShLayerEmission
         public bool Additive { get; init; }
         public bool NormalizedCoverage { get; init; }
         public bool SeparateBaseColors { get; init; }
+        public bool SharedColorUv { get; init; }
+        public bool MatteCrescent { get; init; }
         public Vector3 GlobalEmissionColor { get; init; }
         public float GlobalEmissionInitial { get; init; }
         public Vector3? PointColor { get; init; }
         public float PointIntensity { get; init; }
         public bool UniformEmission { get; init; }
         public string? FifthMask { get; init; }
-        public string Program(bool inner = false) => FifthMask is not null ? FiveLayerProgramName : SeparateBaseColors
+        public string Program(bool inner = false) => SourceOcclusion is not null ? SourceOcclusionProgramName : FifthMask is not null ? FiveLayerProgramName : SeparateBaseColors
             ? SvSwShSourceBase.Program(this, inner)
             : PointColor is not null ? PointLightProgramName : UniformEmission ? UniformProgramName : NormalizedCoverage ? Transparent ? CoveragePrograms[inner ? 1 : 0] : OpaqueCoverageProgramName : Additive ? AdditiveProgramName : Unlit ? UnlitBaseProgramName : BaseColors is not null ? Transparent ? TransparentBasePrograms[inner ? 1 : 0] : BaseProgramName : MaskScale.W == 0 ? ThreeLayerProgramName : MirroredMask && MaskUv.X == 2 ? MirroredProgramName : Lava ? LavaProgramName : FresnelNormal is not null ? FresnelMirrorOnce ? FresnelMirrorProgramName : FresnelProgramName : ColorMap ? MapProgramName : Transparent ? TransparentPrograms[inner ? 1 : 0] : ProgramName;
     }
@@ -77,6 +84,10 @@ public static partial class SvSwShLayerEmission
 
     private static IReadOnlyDictionary<string, Contract> ContractsCore(byte[] bytes, PreviewScene scene)
     {
+        if (scene.Primitives.Any(p => p.Name.StartsWith("pm0609_51_00_", StringComparison.Ordinal)))
+            return ChandelureContracts(bytes, scene);
+        if (scene.Primitives.Any(p => p.Name.StartsWith("pm0727_51_00_", StringComparison.Ordinal)))
+            return MalamarContracts(bytes, scene);
         if (scene.Primitives.Any(p => p.Name.StartsWith("pm0383_51_00_", StringComparison.Ordinal)))
             return GroudonContracts(bytes, scene);
         if (DialgaContracts(bytes, scene) is { } dialga) return dialga;
@@ -261,7 +272,7 @@ public static partial class SvSwShLayerEmission
         var originals = source.Tables(source.Root, 6, 128);
         var (programStart, _) = source.Vector(source.Root, 3, 4, 256);
         var original = sourceProgram is null ? originals[0] : originals.Single(m => source.StringAt(programStart + checked((int)source.Value(m, 8)) * 4) == sourceProgram);
-        if (programName is FiveLayerProgramName or BaseProgramName or UnlitBaseProgramName or OpaqueCoverageProgramName or SvSwShSourceCoverage.OpaqueProgramName or SvSwShSourceBase.ProgramName or SvSwShSourceBase.MirroredProgramName or SvSwShSourceBase.UnlitProgramName) RequireNativeBaseSlots(source, original);
+        if (programName is FiveLayerProgramName or BaseProgramName or UnlitBaseProgramName or OpaqueCoverageProgramName or SvSwShSourceCoverage.OpaqueProgramName or SvSwShSourceBase.ProgramName or SvSwShSourceBase.MirroredProgramName or SvSwShSourceBase.SharedUvProgramName or SvSwShSourceBase.MatteMirrorProgramName or SvSwShSourceBase.UnlitProgramName or SvSwShSourceBase.DynamicProgram) RequireNativeBaseSlots(source, original);
         if (programName is FiveLayerProgramName or OpaqueCoverageProgramName or SvSwShSourceCoverage.OpaqueProgramName) RequireNativeCoverageSlots(source, original);
         if (programName == FiveLayerProgramName)
         {
@@ -283,6 +294,7 @@ public static partial class SvSwShLayerEmission
         }
         var basePass = Array.IndexOf(TransparentBasePrograms, programName);
         var sourceBasePass = Array.IndexOf(SvSwShSourceBase.TransparentPrograms, programName);
+        if (sourceBasePass < 0) sourceBasePass = Array.IndexOf(SvSwShSourceBase.DynamicTransparentPrograms, programName);
         if (sourceBasePass >= 0) basePass = sourceBasePass;
         var coveragePass = Array.IndexOf(CoveragePrograms, programName);
         var sourceCoveragePass = Array.IndexOf(SvSwShSourceCoverage.Programs, programName);
@@ -339,6 +351,18 @@ public static partial class SvSwShLayerEmission
                 var absent = Enumerable.Range(0, 9).Where(f => source.Field(sampler, f) == 0 && f is not (1 or 2)).ToHashSet();
                 var values = Enumerable.Range(0, 9).Where(f => !absent.Contains(f)).ToDictionary(f => f,
                     f => f is 1 or 2 ? ModelTableBuilder.Integer(TrinityTextureAddressing.SwSh(contract.MaskWrap[f - 1])) : source.Slice(source.Field(sampler, f), 4).ToArray());
+                writer.Reference(texture, 2, writer.Table(9, values, absent: absent));
+            }
+            if (contract.SourceOcclusion is not null)
+            {
+                if (contract.SourceOcclusion != "pm0705_51_00_body_b_ao.bntx" || contract.Name != "body_b"
+                    || contract.MaskUv != new Vector4(1, 1, 0, 0) || contract.Transparent || contract.Unlit)
+                    throw new InvalidDataException("Source occlusion requires its qualified Pyroar body surface.");
+                var texture = source.Tables(material, 11, 64).Single(t => source.Text(t, 0) == "AmbientTex");
+                var sampler = source.Table(texture, 2);
+                var absent = Enumerable.Range(0, 9).Where(f => source.Field(sampler, f) == 0 && f is not (1 or 2)).ToHashSet();
+                var values = Enumerable.Range(0, 9).Where(f => !absent.Contains(f)).ToDictionary(f => f,
+                    f => f is 1 or 2 ? ModelTableBuilder.Integer(f == 1 ? 2 : 0) : source.Slice(source.Field(sampler, f), 4).ToArray());
                 writer.Reference(texture, 2, writer.Table(9, values, absent: absent));
             }
             if (contract.MirroredMask)
@@ -435,10 +459,17 @@ public static partial class SvSwShLayerEmission
                 // against its bound counterpart in this same clip.
                 var repeatedLod = !bound && (RepeatedQualifiedLod(source, track, material, scene)
                     || RepeatedToucannonWing(source, track, material, scene));
+                if (repeatedLod)
+                {
+                    // The complete material timeline has an identical exported
+                    // consumer. Retain it once, including animated color vectors.
+                    writer.Vector(material, 1, 0); writer.Vector(material, 2, 0);
+                    continue;
+                }
                 // Leave other bound materials intact for the supplied strict decoder.
                 // Layered eyelids own their scalar channels separately; repeated LOD
                 // channels must still match the bound mesh before reaching that decoder.
-                if (bound && !contracts.ContainsKey(name) && decode is not null) continue;
+                if ((bound || repeatedLod) && !contracts.ContainsKey(name) && decode is not null) continue;
                 var stale = name == "body_b" && (mesh == "pm0075_00_11_body_a_mesh_shape"
                     || mesh is "pm0076_00_11_bodybinc_mesh_shape" or "pm0076_00_11_body_c_mesh_shape" or "pm0076_00_11_body_d_mesh_shape");
                 if (!bound && !stale && !repeatedLod || bound && !contracts.ContainsKey(name))
@@ -552,16 +583,7 @@ public static partial class SvSwShLayerEmission
     private static bool RepeatedQualifiedLod(ModelBuffer source, int track, int material, PreviewScene scene)
     {
         var mesh = source.Text(track, 0)!;
-        var additionalMegaLod = mesh.Length > 5 && mesh[^5..] is ("_lod1" or "_lod2" or "_lod3")
-            && mesh[..^5] is ("pm0026_52_00_body_mesh_shape" or "pm0026_52_00_teeth_mesh_shape"
-                or "pm0026_52_00_rip_a_mesh_shape" or "pm0026_52_00_rip_b_mesh_shape" or "pm0026_52_00_rip_c_mesh_shape"
-                or "pm0705_51_00_body_c_mesh_shape");
-        if (!additionalMegaLod && mesh is not ("pm0705_00_00_body_mesh_shape_lod1" or "pm0705_00_00_body_mesh_shape_lod2" or "pm0705_00_00_body_mesh_shape_lod3"
-            or "pm0705_00_00_face_mesh_shape_lod1" or "pm0705_00_00_face_mesh_shape_lod2" or "pm0705_00_00_face_mesh_shape_lod3"
-            or "pm0160_51_00_arm_a_mesh_shape_lod1" or "pm0160_51_00_arm_a_mesh_shape_lod2" or "pm0160_51_00_arm_a_mesh_shape_lod3"
-            or "pm0160_51_00_arm_b_mesh_shape_lod1" or "pm0160_51_00_arm_b_mesh_shape_lod2" or "pm0160_51_00_arm_b_mesh_shape_lod3"
-            or "pm0160_51_00_eye_mesh_shape_lod1" or "pm0160_51_00_eye_mesh_shape_lod2" or "pm0160_51_00_eye_mesh_shape_lod3"
-            or "pm0160_51_00_body_mesh_shape_lod1" or "pm0160_51_00_body_mesh_shape_lod2" or "pm0160_51_00_body_mesh_shape_lod3")) return false;
+        if (mesh.Length <= 5 || mesh[^5..] is not ("_lod1" or "_lod2" or "_lod3")) return false;
         var name = source.Text(material, 0)!; var originalMesh = mesh[..^5];
         if (!scene.Primitives.Any(p => p.Name == originalMesh && p.Material.Name == name)) return false;
         var originalTrack = source.Tables(source.Root, 1, 512).SingleOrDefault(t => source.Text(t, 0) == originalMesh);
@@ -579,6 +601,24 @@ public static partial class SvSwShLayerEmission
             float Value(int key, int field) => source.Field(key, field) is var at && at != 0 ? source.Float(at) : 0;
             if (keys.Length != originalKeys.Length || !keys.Zip(originalKeys).All(pair => Value(pair.First, 0) == Value(pair.Second, 0)
                 && Value(pair.First, 1) == Value(pair.Second, 1))) return false;
+        }
+        var vectors = source.Tables(material, 2, 256); var originalVectors = source.Tables(original, 2, 256);
+        if (vectors.Length != originalVectors.Length) return false;
+        foreach (var vector in vectors)
+        {
+            var counterpart = originalVectors.SingleOrDefault(v => source.Text(v, 0) == source.Text(vector, 0));
+            if (counterpart == 0) return false;
+            for (var c = 0; c < 4; c++)
+            {
+                var curve = source.Table(source.Table(vector, 1), c);
+                var originalCurve = source.Table(source.Table(counterpart, 1), c);
+                if ((curve == 0) != (originalCurve == 0)) return false;
+                if (curve == 0) continue;
+                var keys = source.Tables(curve, 0, 18000); var originalKeys = source.Tables(originalCurve, 0, 18000);
+                float Value(int key, int field) => source.Field(key, field) is var at && at != 0 ? source.Float(at) : 0;
+                if (keys.Length != originalKeys.Length || !keys.Zip(originalKeys).All(pair => Value(pair.First, 0) == Value(pair.Second, 0)
+                    && Value(pair.First, 1) == Value(pair.Second, 1))) return false;
+            }
         }
         return true;
     }

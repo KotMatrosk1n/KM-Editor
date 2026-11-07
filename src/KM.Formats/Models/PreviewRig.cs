@@ -5,7 +5,10 @@ namespace KM.Formats.Models;
 
 public sealed record PreviewBone(string Name, int Parent, int Joint, bool CompensateScale,
     float[] Scale, float[] Rotation, float[] Translation, float[] InverseBind);
-public sealed record PreviewKey(float Frame, float[] Value);
+public sealed record PreviewKey(float Frame, float[] Value)
+{
+    public bool Step { get; init; }
+}
 public sealed record PreviewBoneTrack(int Bone, PreviewKey[] Scale, PreviewKey[] Rotation, PreviewKey[] Translation);
 public sealed record PreviewClipReference(string Id, string? Skeleton, string? Material);
 public sealed record PreviewVisibility(string Name, PreviewKey[] Keys);

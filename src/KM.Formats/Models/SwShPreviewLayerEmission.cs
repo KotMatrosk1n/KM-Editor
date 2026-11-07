@@ -8,6 +8,8 @@ public static class SwShPreviewLayerEmission
         var (start, count) = source.Vector(source.Root, 5, 4, 256); var index = source.Value(material, 10);
         if (index >= count) return false;
         var name = source.StringAt(start + checked((int)index) * 4);
+        if (KM.Formats.SwSh.SwShZaTangentBodyShader.Recognizes(name))
+            name = KM.Formats.SwSh.SwShZaTangentBodyShader.Parent(name);
         return name == programName
             || programName == KM.Formats.SV.SvSwShLayerEmission.UnlitBaseProgramName && name == KM.Formats.SV.SvSwShSourceBase.UnlitProgramName
             || programName == KM.Formats.SV.SvSwShLayerEmission.BaseProgramName
