@@ -40,6 +40,7 @@ public sealed partial class ZaSwShRestorationPreparationService
                 : pair.Key.EndsWith(".bntx", StringComparison.Ordinal) ? textures.Contains(pair.Key)
                 : pair.Key.EndsWith(".bnsh_vsh", StringComparison.Ordinal) || pair.Key.EndsWith(".bnsh_fsh", StringComparison.Ordinal) ? shaders.Contains(pair.Key)
                 : true).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+            SwShRestorationResourceBudget.LimitLayeredMegaTextures(selected, textures, modelPath);
             SwShRestorationResourceBudget.Validate(selected);
             return selected;
         }

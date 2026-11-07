@@ -15,7 +15,7 @@ public sealed partial class ZaSwShRestorationPreparationService
         private sealed record FresnelPalette(byte[] Materials,
             IReadOnlyDictionary<string, ZaSwShFresnelMaterial.Settings> Settings,
             IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Images,
-            IReadOnlyDictionary<string, (float Base, float Layer)> Defaults,
+            IReadOnlyDictionary<string, (float Base, float Layer, float Saturation)> Defaults,
             IReadOnlyDictionary<string, int> ProbeWidths);
 
         private static Dictionary<string, ZaSwShFresnelMaterial.Settings> FresnelSettings(byte[] bytes)
@@ -76,7 +76,7 @@ public sealed partial class ZaSwShRestorationPreparationService
             IReadOnlyDictionary<string, ZaSwShFresnelMaterial.Settings> settings, RestorationTexturePool pool)
         {
             var images = new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.Ordinal);
-            var defaults = new Dictionary<string, (float Base, float Layer)>(StringComparer.Ordinal);
+            var defaults = new Dictionary<string, (float Base, float Layer, float Saturation)>(StringComparer.Ordinal);
             var widths = new Dictionary<string, int>(StringComparer.Ordinal);
             var source = new ModelBuffer(materials);
             foreach (var (name, value) in settings)
@@ -107,7 +107,7 @@ public sealed partial class ZaSwShRestorationPreparationService
                     var row = source.Tables(material, 4, 256).Single(p => source.Text(p, 0) == parameter);
                     var at = source.Field(row, 1); return at == 0 ? 0 : source.Float(at);
                 }
-                defaults.Add(name, (Scalar("EmissionIntensity"), Scalar("EmissionIntensityLayer1")));
+                defaults.Add(name, (Scalar("EmissionIntensity"), Scalar("EmissionIntensityLayer1"), Scalar("BaseColorMapSaturation")));
             }
             return new(materials, settings, images, defaults, widths);
         }
@@ -147,7 +147,8 @@ public sealed partial class ZaSwShRestorationPreparationService
                     if (!normal.Defaults.TryGetValue(name, out var n)) continue;
                     var r = rare.Defaults[name];
                     foreach (var scalar in source.Tables(material, 1, 256))
-                        if (source.Text(scalar, 0) is "EmissionIntensity" && n.Base != r.Base
+                        if (source.Text(scalar, 0) is "BaseColorMapSaturation" && n.Saturation != r.Saturation
+                            || source.Text(scalar, 0) is "EmissionIntensity" && n.Base != r.Base
                             || source.Text(scalar, 0) is "EmissionIntensityLayer1" && n.Layer != r.Layer)
                             throw new InvalidDataException("ZA gem palette default and authored curve need separate animation ownership.");
                 }

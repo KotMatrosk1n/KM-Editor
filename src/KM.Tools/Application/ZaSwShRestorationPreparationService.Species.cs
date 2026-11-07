@@ -67,7 +67,8 @@ public sealed partial class ZaSwShRestorationPreparationService
         IReadOnlyList<ColorUvTile>? ColorTiles = null, bool IndependentEyeHighlights = false, bool LayeredEyeTint = false, bool LayeredEyeEmission = false,
         bool CompactTextureReferences = false,
         IReadOnlyDictionary<string, (int Frames, bool Loop)>? StandaloneMotionTimelines = null,
-        int? EvolutionFamilySpecies = null);
+        int? EvolutionFamilySpecies = null, float? PreserveGiantHeightFrom = null, float BattleClearance = 0, float? SummaryClearanceReferenceHeight = null,
+        bool NativeBattleAttackRouting = false);
 
     private sealed record NormalUvTile(string Material, System.Numerics.Vector2 Scale, string? Mesh = null);
     private sealed record ColorUvTile(string Material, System.Numerics.Vector2 Scale, string Mesh);

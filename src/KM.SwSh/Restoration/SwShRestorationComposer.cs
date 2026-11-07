@@ -7,7 +7,7 @@ using KM.Formats.SwSh;
 
 namespace KM.SwSh.Restoration;
 
-public enum SwShRestorationWriter { File, Personal, Learnset, Icons, ModelCatalog, Camp, Voices, Items, ItemText, SpeciesText }
+public enum SwShRestorationWriter { File, Personal, Learnset, Icons, ModelCatalog, Camp, Voices, Items, ItemText, SpeciesText, AbilityText }
 public sealed record SwShRestorationContribution(string Path, SwShRestorationWriter Writer, string Key, byte[]? Before, byte[] After);
 public sealed record SwShRestorationComposition(IReadOnlyDictionary<string, byte[]?> Files,
     IReadOnlyList<SwShRestorationContribution> RetainedCustomizations);
@@ -132,6 +132,31 @@ public static class SwShRestorationComposer
                         else if (id < lines.Count) lines[id] = new("", 0);
                     }
                     if (!enable) while (lines.Count > minimum && lines[^1] == new SwShGameTextLine("", 0)) lines.RemoveAt(lines.Count - 1);
+                    outputs.Add(group.Key, captureOnly ? current : table.WriteStructural(lines, GameTextNullLineEncoding.PayloadCountTwo)); break;
+                }
+                case SwShRestorationWriter.AbilityText:
+                {
+                    var table = SwShGameTextFile.Parse(current, 512); var lines = table.Lines.ToList();
+                    foreach (var item in items)
+                    {
+                        var id = Number(item.Key);
+                        var owned = JsonSerializer.Deserialize<SwShRestoredAbilityText>(item.After)
+                            ?? throw new InvalidDataException("Restored ability text is missing.");
+                        if (!SwShRestorationAbilities.HasHandler(id) || owned.OriginalLineCount != SwShRestorationAbilities.NativeTextCount
+                            || table.Lines.Count < owned.OriginalLineCount || item.Before is not null || string.IsNullOrWhiteSpace(owned.Line.Text))
+                            throw new InvalidDataException("Restored ability text identity is invalid.");
+                        SwShGameTextFile.ValidateText(owned.Line.Text);
+                        var actual = id < lines.Count && lines[id] != new SwShGameTextLine("", 0)
+                            ? JsonSerializer.SerializeToUtf8Bytes(owned with { Line = lines[id] }) : null;
+                        var chosen = Select(item, actual);
+                        if (chosen is not null)
+                        {
+                            while (lines.Count <= id) lines.Add(new("", 0));
+                            lines[id] = JsonSerializer.Deserialize<SwShRestoredAbilityText>(chosen)!.Line;
+                        }
+                        else if (id < lines.Count) lines[id] = new("", 0);
+                    }
+                    if (!enable) while (lines.Count > SwShRestorationAbilities.NativeTextCount && lines[^1] == new SwShGameTextLine("", 0)) lines.RemoveAt(lines.Count - 1);
                     outputs.Add(group.Key, captureOnly ? current : table.WriteStructural(lines, GameTextNullLineEncoding.PayloadCountTwo)); break;
                 }
                 case SwShRestorationWriter.Items:
@@ -301,7 +326,9 @@ public static class SwShRestorationComposer
     }
     // Retain the shared route in already prepared packages while also supplying
     // the native genderless lookup used by these registered identities.
-    public static IReadOnlyList<int> IconGenders(int species) => species is 100 or 101 or 382 or 383 or 386 or 483 or 484 or 491 or 720 or 774 ? [0, 3] : [0];
+    public static IReadOnlyList<int> IconGenders(int species) => species is
+        100 or 101 or 121 or 150 or 376 or 382 or 383 or 384 or 386 or 483 or 484 or 491
+        or 623 or 718 or 719 or 720 or 774 or 801 or 807 or 870 ? [0, 3] : [0];
     public static string IconPath(int species, int form = 0, int gender = 0) =>
         $"romfs/bin/appli/icon_pokemon/poke_icon_{SwShRestorationSpecies.IconSpecies(species):0000}_{form:00}{(gender == 3 ? "n" : "s")}_n.bntx";
     public static string IconKey(int species, int form = 0, int gender = 0) => form == 0 && gender == 0 ? SwShRestorationSpecies.IconSpecies(species).ToString(CultureInfo.InvariantCulture)
@@ -338,6 +365,8 @@ public static class SwShRestorationComposer
         if (expected is not null && path != expected) throw new InvalidDataException("Restoration writer cannot address this output.");
         if (kind == SwShRestorationWriter.ItemText && !SwShRestorationMegaItems.IsTextPath(path))
             throw new InvalidDataException("Restoration text target is not registered.");
+        if (kind == SwShRestorationWriter.AbilityText && !SwShRestorationAbilities.IsTextPath(path))
+            throw new InvalidDataException("Restored ability text path is invalid.");
         if (kind == SwShRestorationWriter.SpeciesText && !SwShRestorationSpeciesText.IsPath(path))
             throw new InvalidDataException("Restoration species text target is not registered.");
         if (kind == SwShRestorationWriter.File && !(path.StartsWith("romfs/bin/archive/pokemon/", StringComparison.Ordinal)

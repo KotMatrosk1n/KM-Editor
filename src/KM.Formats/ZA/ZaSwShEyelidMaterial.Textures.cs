@@ -18,10 +18,11 @@ public static partial class ZaSwShEyelidMaterial
         var bindings = new Dictionary<string, string>(StringComparer.Ordinal);
         ZaSwShMaterialBaker.Image Image(string role) => ZaSwShMaterialBaker.Read(read(contract.Textures[role]));
         Vector4 Tint(string name, Vector4 fallback) => contract.Vectors.GetValueOrDefault(name, fallback);
-        void Write(string role, char identity, int width, int height, byte[] pixels, bool srgb, bool normals = false, bool exact = false)
+        void Write(string role, char identity, int width, int height, byte[] pixels, bool srgb, bool normals = false)
         {
+            ZaSwShMaterialBaker.CompactConstant(ref pixels, ref width, ref height);
             var name = ModelTextureIdentity.MaterialName(templateName, index, identity, shiny ? 's' : 'n', lowerCase: true);
-            var allocated = SwShTextureAllocation.Create(template, width, height, srgb, compressed: !exact && role is not ("EmissionMaskTex" or "LyCol0Tex"));
+            var allocated = SwShTextureAllocation.Create(template, width, height, srgb, compressed: role is not ("EmissionMaskTex" or "LyCol0Tex"));
             var document = new ModelTextureDocument(ModelTextureIdentity.Rename(allocated, templateName, name));
             files.Add(name, document.EncodeMipImages(SwShTextureFiltering.Mips(pixels, width, height, document.MipCount, srgb, normals), token, encodingCache));
             bindings.Add(role, name);
@@ -42,9 +43,23 @@ public static partial class ZaSwShEyelidMaterial
                 throw new InvalidDataException("Eye highlight allocation is unsupported.");
             var highlightName = Path.GetFileNameWithoutExtension(contract.Textures["HighlightMaskMap"]);
             var name = ModelTextureIdentity.MaterialName(highlightName, index, 'h', shiny ? 's' : 'n', lowerCase: true);
-            files.Add(name, ModelTextureIdentity.Rename(read(contract.Textures["HighlightMaskMap"]),
-                highlightName, name));
-            bindings.Add("EffectTex", name);
+            var highlightBytes = read(contract.Textures["HighlightMaskMap"]);
+            var decoded = PreviewTexture.ReadBaseLevel(highlightBytes);
+            if (decoded.Format is 0x0b01 or 0x0b06)
+            {
+                // Preserve every authored mip while storing the linear mask
+                // with the same native BC7 format used by other eye textures.
+                var metadata = new ModelBuffer(highlightBytes);
+                int Pointer(int at) => checked((int)System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(metadata.Slice(at, 8)));
+                var count = metadata.U16(Pointer(Pointer(40)) + 22);
+                var allocated = SwShTextureAllocation.Create(highlightBytes, highlight.Width, highlight.Height,
+                    false, mipCount: count);
+                var compressed = new ModelTextureDocument(ModelTextureIdentity.Rename(allocated, highlightName, name));
+                files.Add(name, compressed.EncodeMipImages(Enumerable.Range(0, count)
+                    .Select(level => ZaSwShMaterialBaker.Read(highlightBytes, level).Pixels).ToArray(), token, encodingCache));
+            }
+            else files.Add(name, ModelTextureIdentity.Rename(highlightBytes, highlightName, name));
+            bindings.Add(contract.LayerEmission ? "SphereMapTex" : "EffectTex", name);
         }
         // Mega Magearna retains a nonempty highlight image, but its fifth
         // emission layer is disabled in both palettes. The layered-emission
@@ -137,7 +152,7 @@ public static partial class ZaSwShEyelidMaterial
             normalPixels[offset + 2] = Encode((MathF.Sqrt(MathF.Max(0, 1 - horizontal * horizontal - vertical * vertical)) + 1) * .5f, false);
             normalPixels[offset + 3] = 255;
         }
-        Write("NormalMapTex", 'n', normal.Width, normal.Height, normalPixels, false, true, exact: contract.NormalAtlasHalf is not null);
+        Write("NormalMapTex", 'n', normal.Width, normal.Height, normalPixels, false, true);
         if (contract.Scalars.GetValueOrDefault("NormalHeight") == 0 && contract.Textures.ContainsKey("OpacityMap1"))
         {
             var emission = new byte[width * height * 4];

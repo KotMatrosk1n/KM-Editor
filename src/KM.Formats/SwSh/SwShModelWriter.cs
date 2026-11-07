@@ -12,6 +12,7 @@ public sealed record SwShMaterialBinding(string Name, int NativeMaterial, IReadO
     public bool UseSecondaryUv { get; init; }
     /// <summary>Preserves authored half precision normal components.</summary>
     public bool UseSourceNormalComponents { get; init; }
+    public bool UseSourceColor0 { get; init; }
     /// <summary>Requires the authored half precision tangent frame for UV0.</summary>
     public int? SourceTangentSet { get; init; }
 }
@@ -92,6 +93,17 @@ public static class SwShModelWriter
             if ((uint)binding.NativeMaterial >= materials.Length || binding.Name != scene.Primitives[i].Material.Name)
                 throw new InvalidDataException($"Native material binding {binding.Name} ({binding.NativeMaterial}/{materials.Length}) does not match mesh material {scene.Primitives[i].Material.Name}.");
             var preserveSourceSamplers = false;
+            if (binding.UseSourceColor0)
+            {
+                if (scale != 100) throw new InvalidDataException("Source Unlit displacement requires the native scale of 100.");
+                var (vstart, vcount) = native.Vector(native.Root, 3, 4, 256);
+                var (fstart, fcount) = native.Vector(native.Root, 5, 4, 256);
+                var vi = native.Value(materials[binding.NativeMaterial], 8); var fi = native.Value(materials[binding.NativeMaterial], 10);
+                if (vi >= vcount || fi >= fcount || !ZA.ZaSwShDisplacedUnlit.Recognizes(native.StringAt(vstart + (int)vi * 4))
+                    || native.StringAt(fstart + (int)fi * 4) != native.StringAt(vstart + (int)vi * 4) || !binding.UseSourceNormalComponents)
+                    throw new InvalidDataException("Source vertex colors require their paired displacement program.");
+                preserveSourceSamplers = true;
+            }
             if (binding.SourceTangentSet is not null)
             {
                 string? Program(int field, int indexField)
@@ -104,7 +116,9 @@ public static class SwShModelWriter
                 var gem = vertex is not null && fragment is not null && binding.UseSourceNormalComponents
                     && ZA.ZaSwShFresnelMaterial.MatchesGeometryPrograms(vertex, fragment, binding.UseSecondaryUv)
                     && ZA.ZaSwShFresnelMaterial.RequiresClampRuntime(nativeModel);
-                if (binding.SourceTangentSet != 0 || !gem)
+                var body = vertex is not null && vertex == fragment && SwShZaTangentBodyShader.Recognizes(vertex)
+                    && binding.UseSourceNormalComponents && !binding.UseSecondaryUv && binding.NormalUvScale == Vector2.One;
+                if (binding.SourceTangentSet != 0 || !gem && !body)
                     throw new InvalidDataException("Authored tangent geometry requires its qualified UV0 vertex and fragment consumers.");
                 preserveSourceSamplers = true;
             }
@@ -140,7 +154,7 @@ public static class SwShModelWriter
                     [0] = ModelTableBuilder.Integer(attributes[j].Kind), [1] = ModelTableBuilder.Integer(attributes[j].Format),
                     [2] = ModelTableBuilder.Integer(attributes[j].Count),
                 }));
-            writer.Blob(mesh, 2, Vertices(primitive, joints, scale, secondaryUv, bindings[i].UseSourceNormalComponents, bindings[i].SourceTangentSet, cancellationToken));
+            writer.Blob(mesh, 2, Vertices(primitive, joints, scale, secondaryUv, bindings[i].UseSourceNormalComponents, bindings[i].SourceTangentSet, bindings[i].UseSourceColor0, cancellationToken));
         }
         slots = writer.Vector(root, 9, bones.Count);
         for (var i = 0; i < bones.Count; i++)
@@ -252,11 +266,12 @@ public static class SwShModelWriter
             }
             var absent = Enumerable.Range(0, 9).Where(f => source.Field(sampler, f) == 0).ToHashSet();
             var samplerValues = Enumerable.Range(0, 9).Where(f => !absent.Contains(f))
-                .ToDictionary(f => f, f => source.Slice(source.Field(sampler, f), 4).ToArray());
+                .ToDictionary(f => f, f => source.Slice(source.Field(sampler, f), f == 4 ? 16 : 4).ToArray());
             if (role == "NormalMapTex")
                 foreach (var axis in new[] { (Field: 1, Scale: binding.NormalUvScale.X), (Field: 2, Scale: binding.NormalUvScale.Y) })
                     if (axis.Scale != 1) { absent.Remove(axis.Field); samplerValues[axis.Field] = ModelTableBuilder.Integer(0); }
-            writer.Reference(texture, 2, writer.Table(9, samplerValues, absent: absent));
+            writer.Reference(texture, 2, writer.Table(9, samplerValues,
+                new Dictionary<int, int> { [4] = 16 }, absent));
         }
         return table;
     }
@@ -285,9 +300,12 @@ public static class SwShModelWriter
             : [MathF.Atan2(-m.M32, m.M22), y, 0];
     }
     private static byte[] Vertices(PreviewPrimitive primitive, IReadOnlyDictionary<int, int> joints, float scale, bool secondaryUv,
-        bool sourceNormalComponents, int? sourceTangentSet, CancellationToken token)
+        bool sourceNormalComponents, int? sourceTangentSet, bool sourceColor0, CancellationToken token)
     {
         var v = primitive.Vertices; var count = v.Length / 16;
+        if (sourceColor0 && primitive.Color0 is { } colors && (colors.Length != count * 4
+            || colors.Any(v => !float.IsFinite(v) || v < 0 || v > 1 || MathF.Abs(v * 255 - MathF.Round(v * 255)) > .0001f)))
+            throw new InvalidDataException("Source displacement colors must retain their normalized byte values.");
         if (sourceTangentSet is not null && (sourceTangentSet is not (0 or 1) || !sourceNormalComponents))
             throw new InvalidDataException("Authored tangents require their source normals and a dedicated native consumer.");
         var sourceTangents = sourceTangentSet == 0 ? primitive.Tangent0 : sourceTangentSet == 1 ? primitive.Tangent1 : null;
@@ -295,7 +313,7 @@ public static class SwShModelWriter
             || sourceTangents.Any(value => !float.IsFinite(value) || value != (float)(Half)value)))
             throw new InvalidDataException("Converted material requires complete authored half precision tangents.");
         if (secondaryUv && (primitive.SecondaryUv is not { } uv1 || uv1.Length != count * 2 || uv1.Any(value => !float.IsFinite(value))))
-            throw new InvalidDataException("Converted material requires complete secondary texture coordinates.");
+            throw new InvalidDataException($"Converted material {primitive.Material.Name} on {primitive.Name} requires complete secondary texture coordinates.");
         var tangents = new Vector3[count]; var bitangents = new Vector3[count];
         Vector3 Position(int i) => new(v[i * 16], v[i * 16 + 1], v[i * 16 + 2]);
         Vector2 Uv(int i) => new(v[i * 16 + 6], v[i * 16 + 7]);
@@ -339,7 +357,9 @@ public static class SwShModelWriter
             else { Half(tangent.X); Half(tangent.Y); Half(tangent.Z); Half(Vector3.Dot(Vector3.Cross(normal, tangent), bitangents[i]) < 0 ? -1 : 1); }
             output.Write(v[at + 6]); output.Write(v[at + 7]);
             if (secondaryUv) { output.Write(primitive.SecondaryUv![i * 2]); output.Write(primitive.SecondaryUv[i * 2 + 1]); }
-            output.Write(new byte[] { 127, 127, 255, 255 });
+            if (sourceColor0)
+                output.Write(primitive.Color0 is { } color ? Enumerable.Range(0, 4).Select(c => (byte)MathF.Round(color[i * 4 + c] * 255)).ToArray() : new byte[] { 0, 0, 0, 255 });
+            else output.Write(new byte[] { 127, 127, 255, 255 });
             output.Write(new[] { (byte)Math.Clamp((normal.X + 1) * 127.5f, 0, 255), (byte)Math.Clamp((normal.Y + 1) * 127.5f, 0, 255), (byte)Math.Clamp((normal.Z + 1) * 127.5f, 0, 255), (byte)255 });
             var weights = v.AsSpan(at + 12, 4).ToArray(); var sum = weights.Sum();
             if (sum <= 0 || weights.Any(w => w < 0)) throw new InvalidDataException("Skin weights are invalid.");

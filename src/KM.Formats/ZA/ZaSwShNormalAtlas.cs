@@ -100,6 +100,82 @@ public sealed class ZaSwShNormalAtlas
             .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
     }
 
+    public static IReadOnlyDictionary<string, ZaSwShNormalAtlas> Barbaracle(PreviewScene scene, byte[] materials) =>
+        Qualified(scene, materials, "Barbaracle",
+            "F08D327BF28C30D92900547ECC28D093321EA42DFD4803BDBB07AEACD065B591",
+            "ACCE375DC916C25000A2060FF54158B2C0EEE53F431AA1C7CC3B966F90618E4C",
+            "810AB911BF85FFB23654447E512EB6D70B75078BD36AEFCA945D471560FA99A3");
+
+    public static IReadOnlyDictionary<string, ZaSwShNormalAtlas> Crabominable(PreviewScene scene, byte[] materials) =>
+        Qualified(scene, materials, "Crabominable",
+            "2FDD263FD37F6D4AC2204BCF2D4EEBBD1B44F600A7D66DABE1A193C5D5701049",
+            "6C93EC8560BC21E126891628706EE644B92D7284584765A0EC743F8484308A72",
+            "7E6FF07D66C98CF40F9A3EA68278AB57DBE81B1FCEAAB3BE1B32EC0A1BC7FAEF");
+
+    public static IReadOnlyDictionary<string, ZaSwShNormalAtlas> Magearna(PreviewScene scene, byte[] materials) =>
+        Qualified(scene, materials, "Magearna",
+            "C3DFDAA6655598E4DBCDA26C8C5133EA6157DFEE8500E23F39B7353BF78D6EF6",
+            "862FBACBE6B8568D3C88F23A0023B3B0F72446DC06DAE909F2E1455999DD99A8",
+            "9AB2C0D64C2B1F68830B01D252DC6AF58BD1986540B0805C30C4B103B8154233");
+
+    public static IReadOnlyDictionary<string, ZaSwShNormalAtlas> MagearnaOriginal(PreviewScene scene, byte[] materials) =>
+        Qualified(scene, materials, "MagearnaOriginal",
+            "4A92294514296448403FE82BC84CF00AB528E83B7AED39F20546989602BB47BE",
+            "42293B45B6FDA16CD1ECF25FE63EA5E99ECDFF176FC822E1DC484F6649607341",
+            "9AB2C0D64C2B1F68830B01D252DC6AF58BD1986540B0805C30C4B103B8154233");
+
+    public static IReadOnlyDictionary<string, ZaSwShNormalAtlas> Pyroar(PreviewScene scene, byte[] materials) =>
+        Qualified(scene, materials, "Pyroar",
+            "F0FAA5497CE602B67E830BB557125DA4F4EB11FF27CB4CA1A7FD47AA98AD5464",
+            "88E001810589C93CCC0E56512077AD19DAD6AF6E0E281AEC2454824E2B56494A",
+            "7847BF7E0A399E659A3E7FE00DCA7033D903003CAD76B3995E4607A96891A0E5");
+
+    public static IReadOnlyDictionary<string, ZaSwShNormalAtlas> Darkrai(PreviewScene scene, byte[] materials) =>
+        Qualified(scene, materials, "Darkrai",
+            "A5C04F39076F31F8EAA3851FEF6A9958E72F33A621E9DB09D231DC0F9AF80025",
+            "3D995455BCB8161AFC5C675B8654C2AAA00B17B755163EA7DA01181E52135CAB",
+            "F95E9594267743DDB1796BE9F885011E4BA4F50B99464796C40C2C900FA4BAB4");
+
+    public static IReadOnlyDictionary<string, ZaSwShNormalAtlas> Glalie(PreviewScene scene, byte[] materials) =>
+        Qualified(scene, materials, "Glalie",
+            "1F8BAD8FA650AFEA95F5BC8955C0D39316C4195973C1C22490EAC53799358D54",
+            "14679C9EEBACA146550BAD1138CB30BB01F1197FD9015E072EE2719951C538E1",
+            "7E8A703CC2D7F12178B9D82341507E51151A2D8BF82C605F08BF5B3DF10CB1E5");
+
+    public static IReadOnlyDictionary<string, ZaSwShNormalAtlas> Excadrill(PreviewScene scene, byte[] materials) =>
+        Qualified(scene, materials, "Excadrill",
+            "2E9161C91B79D7AA498C2E5C112C34EAADDB5C8BAC0DA7865E252BBA25E9C245",
+            "3447357AB683557C8EF2EB95E748762980D5B3BECBEF5BCB212EBDB789E775B9",
+            "AE4E8A5D4B8F49C0D6599246B49AADDF438E241A5B617A085C8FD5600E9F0724",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["body_b"] = "body_b", ["body_a_00"] = "body_a", ["body_a_01"] = "body_a",
+                ["body_a_02"] = "body_a", ["body_a_03"] = "body_a", ["l_eye"] = "l_eye", ["r_eye"] = "r_eye",
+            });
+
+    public static IReadOnlyDictionary<string, ZaSwShNormalAtlas> Zeraora(PreviewScene scene, byte[] materials) =>
+        Qualified(scene, materials, "Zeraora",
+            "4F5BFBBA8769FDEA7C6BA07C5FF156C4723C8B9093C0BDFC1F23895454361E5D",
+            "B920921085867A9F24161C49275ADAE01522CC4313DDCED45E8EE61855CCE971",
+            "B8F4915A1A5048572172B8DBBF625C98EFD1C22A421DDEC10ACB92E4E85DE016",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["body_b_00"] = "body_b", ["body_b_01"] = "body_b", ["body_b_02"] = "body_b",
+                ["body_a_00"] = "body_a", ["body_a_01"] = "body_a", ["body_a_02"] = "body_a",
+                ["l_eye"] = "l_eye", ["r_eye"] = "r_eye",
+            }).Where(pair => pair.Key.StartsWith("body_", StringComparison.Ordinal))
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+
+    public static IReadOnlyDictionary<string, ZaSwShNormalAtlas> Zygarde(PreviewScene scene, byte[] materials) =>
+        Qualified(scene, materials, "Zygarde",
+            "540500834158C3F1C519FAF798360BDED5BA2A6BDD70B4364FFAD954D96830C5",
+            "77A14CA5B9B8BD6739CDD205E7C8A8B59F9D1B9EF40D0FFBDEAC41E9A5594360",
+            "BB979DD662B1A072892B47CF33762BA6B9823D43F79AE7ED2D0AD18F2B34A4D5")
+            // The mirrored armor and energy sections overlap with different
+            // normals. Keep their independent fields; only disjoint unions share.
+            .Where(pair => pair.Key is not ("body_a_01" or "body_e"))
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+
     private static IReadOnlyDictionary<string, ZaSwShNormalAtlas> Qualified(PreviewScene scene, byte[] materials,
         string species, string normalHash, string rareHash, string geometryHash,
         IReadOnlyDictionary<string, string>? normalGroups = null)

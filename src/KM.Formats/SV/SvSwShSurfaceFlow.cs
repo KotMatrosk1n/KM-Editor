@@ -9,16 +9,19 @@ public static class SvSwShSurfaceFlow
 {
     public const string ProgramName = "SurfaceFlow";
     public const string LayerProgramName = "SurfaceLayers";
+    public const string SourceLayerProgramName = "SourceSurfaceLayers";
     private static readonly string[] Parameters = ["Layer1UVScaleU", "Layer1UVScaleV", "Layer1UVTranslateU", "Layer1UVTranslateV"];
     private static readonly string[] ColorParameters = ["ColorUVScaleU", "ColorUVScaleV", "ColorUVTranslateU", "ColorUVTranslateV"];
     public sealed record Contract(string Name, string? Noise, float Strength, Vector4 Transform, bool MaskScroll, Vector3[] Colors,
-        int WrapU, int WrapV, int BaseWrapU, int BaseWrapV);
-    public static string Program(IReadOnlyDictionary<string, Contract> contracts) => contracts.Values.All(c => c.MaskScroll) ? LayerProgramName
+        int WrapU, int WrapV, int BaseWrapU, int BaseWrapV, bool SourceMask = false);
+    public static string Program(IReadOnlyDictionary<string, Contract> contracts) => contracts.Values.All(c => c.SourceMask) ? SourceLayerProgramName
+        : contracts.Values.All(c => c.MaskScroll) ? LayerProgramName
         : contracts.Values.All(c => !c.MaskScroll) ? ProgramName : throw new InvalidDataException("Mixed surface flow programs are not qualified.");
 
     public static IReadOnlyDictionary<string, Contract> Contracts(byte[] bytes, PreviewScene scene, Func<string, byte[]> read)
     {
         var zorua = scene.Primitives.Any(p => p.Name.StartsWith("pm0570_00_41_", StringComparison.Ordinal));
+        var excadrill = scene.Primitives.Any(p => p.Name.StartsWith("pm0530_51_00_", StringComparison.Ordinal));
         var basculegionStems = new[] { "pm1006_11_41", "pm1006_12_41" }
             .Where(stem => scene.Primitives.Any(p => p.Name.StartsWith(stem + "_", StringComparison.Ordinal))).ToArray();
         if (basculegionStems.Length > 1) throw new InvalidDataException("Surface flow cannot mix Basculegion source forms.");
@@ -29,6 +32,7 @@ public static class SvSwShSurfaceFlow
             : scrollingMask ? ["body_a_01"]
             : scene.Primitives.Any(p => p.Name.StartsWith("pm0571_00_41_", StringComparison.Ordinal)) ? ["body_a_00", "body_b"]
             : zorua ? ["body_a_01", "body_b_01"]
+            : excadrill ? ["body_a_01"]
             : basculegion ? ["effect"]
             : throw new InvalidDataException("Surface flow requires a qualified source model.");
         var source = new ModelBuffer(bytes); var result = new Dictionary<string, Contract>(StringComparer.Ordinal);
@@ -37,7 +41,7 @@ public static class SvSwShSurfaceFlow
             var name = source.Text(material, 0)!;
             if (!expected.Contains(name, StringComparer.Ordinal)) continue;
             if (!scene.Primitives.Any(p => p.Material.Name == name)
-                || !source.Tables(material, 1, 16).Select(s => source.Text(s, 0)).SequenceEqual(["Standard"]))
+                || !source.Tables(material, 1, 16).Select(s => source.Text(s, 0)).SequenceEqual([excadrill ? "IkCharacter" : "Standard"]))
                 throw new InvalidDataException("Surface flow material does not match its source geometry.");
             var scalars = source.Tables(material, 4, 256).ToDictionary(p => source.Text(p, 0)!, p => source.Field(p, 1) is var at && at != 0 ? source.Float(at) : 0);
             var vectors = source.Tables(material, 7, 256).ToDictionary(p => source.Text(p, 0)!, p =>
@@ -46,7 +50,7 @@ public static class SvSwShSurfaceFlow
                 return at == 0 ? Vector4.Zero : new Vector4(source.Float(at), source.Float(at + 4), source.Float(at + 8), source.Float(at + 12));
             });
             var textures = source.Tables(material, 2, 128).ToDictionary(t => source.Text(t, 0)!, t => source.Text(t, 1)!);
-            var maskScroll = scrollingMask;
+            var maskScroll = scrollingMask || excadrill;
             var uvIndex = source.Tables(material, 9, 128).SingleOrDefault(p => source.Text(p, 0) == "UVIndexLayerMask");
             if (maskScroll && (uvIndex == 0 || source.Value(uvIndex, 1) != 1
                 || scene.Primitives.Where(p => p.Material.Name == name).Any(p => p.SecondaryUv?.Length != p.Vertices.Length / 8)))
@@ -63,6 +67,12 @@ public static class SvSwShSurfaceFlow
                 || Enumerable.Range(1, 4).Any(i => scalars.GetValueOrDefault("LayerMaskScale" + i) != 1)
                 || colors.Any(c => !float.IsFinite(c.X + c.Y + c.Z + c.W) || c.X is < 0 or > 1 || c.Y is < 0 or > 1 || c.Z is < 0 or > 1)))
                 throw new InvalidDataException("Source layer colors require another sampling adapter.");
+            if (excadrill && (transform != new Vector4(1, 1, 0, 0)
+                || scalars.GetValueOrDefault("EmissionIntensity") != 0
+                || Enumerable.Range(1, 4).Any(i => scalars.GetValueOrDefault("EmissionIntensityLayer" + i) != 0)
+                || scene.Primitives.Where(p => p.Material.Name == name).Any(p => p.Name is not
+                    ("pm0530_51_00_body_a_mesh_shape" or "pm0530_51_00_drill_mesh_shape"))))
+                throw new InvalidDataException("Excadrill requires its qualified secondary mask and nonemissive source palette.");
             if (!maskScroll && !textures.ContainsKey("DisplacementMap")) throw new InvalidDataException("Surface flow noise is missing.");
             if ((zorua || basculegion) && (strength != (zorua ? .05f : .036f)
                 || transform != (zorua ? new Vector4(1, 1, 0, 0) : new Vector4(1, .5f, 1, 0))
@@ -77,12 +87,26 @@ public static class SvSwShSurfaceFlow
             if ((uint)baseSampler >= samplers.Length) throw new InvalidDataException("Surface base sampler is missing.");
             int BaseAddress(int field) => TrinityTextureAddressing.SwSh(source.Value(samplers[baseSampler], field));
             result.Add(name, new(name, textures[maskScroll ? "LayerMaskMap" : "DisplacementMap"], strength, transform, maskScroll,
-                colors.Select(c => new Vector3(c.X, c.Y, c.Z)).ToArray(), Address(9), Address(10), BaseAddress(9), BaseAddress(10)));
+                colors.Select(c => new Vector3(c.X, c.Y, c.Z)).ToArray(), Address(9), Address(10), BaseAddress(9), BaseAddress(10), excadrill));
         }
         if (result.Count == 0 || result.Count != expected.Count(name => scene.Primitives.Any(p => p.Material.Name == name))
             || (zorua || basculegion) && result.Count != expected.Length)
             throw new InvalidDataException("Surface flow source contract is incomplete.");
         return result;
+    }
+
+    public static PreviewScene RequireSecondaryMaskScene(byte[] bytes, PreviewScene scene, IReadOnlyDictionary<string, Contract> contracts)
+    {
+        var source = new ModelBuffer(bytes);
+        foreach (var material in source.Tables(source.Root, 1, 128))
+        {
+            var selector = source.Tables(material, 9, 128).SingleOrDefault(p => source.Text(p, 0) == "UVIndexLayerMask");
+            var index = selector == 0 ? uint.MaxValue : source.Value(selector, 1);
+            if (index is not (0 or uint.MaxValue)
+                && (index != 1 || !contracts.TryGetValue(source.Text(material, 0)!, out var contract) || !contract.SourceMask))
+                throw new InvalidDataException("Source mask has an unqualified secondary UV selector.");
+        }
+        return scene with { Rig = scene.Rig with { Warnings = scene.Rig.Warnings.Where(w => w != "materialUvUnsupported").ToArray() } };
     }
 
     public static byte[] Bind(byte[] bytes, IReadOnlyDictionary<string, Contract> contracts, IReadOnlyDictionary<string, string> names)
@@ -144,6 +168,26 @@ public static class SvSwShSurfaceFlow
             if (group.Any(track => !Equal(first, track))) throw new InvalidDataException("Source surface timelines disagree on shared material controls.");
             return first;
         }).ToArray();
+        if (contracts.Values.Any(c => c.SourceMask))
+        {
+            var colors = tracks.Where(t => t.Parameter.StartsWith("BaseColorLayer", StringComparison.Ordinal)).ToArray();
+            if (colors.Any(t => !contracts.TryGetValue(t.Material, out var c) || !c.SourceMask || t.Parameter != "BaseColorLayer3"
+                || t.Channels.Length != 4 || t.Channels.Any(k => k.Length == 0)
+                || t.Channels[3].Any(k => k.Value.Length != 1 || k.Value[0] != 1)))
+                throw new InvalidDataException("Secondary mask color animation differs from its source contract.");
+            var retained = tracks.Except(colors).ToList();
+            foreach (var contract in contracts.Values.Where(c => c.SourceMask))
+                for (var layer = 1; layer <= 4; layer++)
+                {
+                    retained.Add(new(contract.Name, "EmissionIntensityLayer" + layer, [[new(0, [0])]]));
+                    var animated = colors.SingleOrDefault(t => t.Material == contract.Name && t.Parameter == "BaseColorLayer" + layer);
+                    var color = contract.Colors[layer - 1];
+                    retained.Add(animated is not null ? animated with { Parameter = "EmissionColorLayer" + layer }
+                        : new(contract.Name, "EmissionColorLayer" + layer, new[] { color.X, color.Y, color.Z, 1 }
+                            .Select(v => new[] { new PreviewKey(0, [v]) }).ToArray()));
+                }
+            tracks = retained.ToArray();
+        }
         return decoded with { Materials = tracks };
     }
 

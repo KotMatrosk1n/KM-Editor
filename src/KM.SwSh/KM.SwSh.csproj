@@ -2,6 +2,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <EmbeddedResource Include="Resources/swsh-restoration-abilities.nso"
+                      LogicalName="KM.SwSh.Resources.swsh-restoration-abilities.nso" />
     <EmbeddedResource Include="RoyalCandy/Assets/royal-candy.rgba" />
     <EmbeddedResource Include="Resources\km-custom-gifts.nso" />
     <EmbeddedResource Include="Resources\km-custom-gifts-v1.nso" />

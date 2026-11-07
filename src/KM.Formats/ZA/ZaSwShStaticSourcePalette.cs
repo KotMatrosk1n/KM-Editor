@@ -68,13 +68,14 @@ public static class ZaSwShStaticSourcePalette
                 if (parameters.Length == 0) continue;
                 if (!materials.TryGetValue(pair.Key, out var material)) throw new InvalidDataException("Static Z-A palette material is missing.");
                 var expected = species == 354 ? ZaSwShEyelidMaterial.EmissionProgramName
-                    : parameters[0].Scalar is not null ? ZaSwShEyelidMaterial.HighlightProgramName : SvSwShSourceBase.ProgramName;
+                    : parameters[0].Scalar is not null ? ZaSwShEyelidMaterial.HighlightProgramName
+                    : species == 668 ? SvSwShSourceBase.SharedUvProgramName : SvSwShSourceBase.ProgramName;
                 foreach (var (field, binding) in new[] { (3, 8), (5, 10) })
                 {
                     var (start, count) = source.Vector(source.Root, field, 4, 256);
                     var index = source.Value(material, binding);
                     if (index >= count || source.StringAt(start + checked((int)index) * 4) != expected)
-                        throw new InvalidDataException("Static Z-A palette needs its qualified material program.");
+                        throw new InvalidDataException($"Static Z-A palette {pair.Value} needs its qualified {expected} material program.");
                 }
                 var vectors = new Dictionary<string, Vector3>(StringComparer.Ordinal);
                 foreach (var parameter in parameters)

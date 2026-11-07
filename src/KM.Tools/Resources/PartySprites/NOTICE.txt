@@ -30,8 +30,14 @@ Upstream credits the National Pokedex Version Delta Icon Dex and contributors:
 https://www.deviantart.com/mbcmechachu/art/National-Pokedex-Icon-Dex-824897934
 https://docs.google.com/spreadsheets/d/1kI_PDXnbghxjN2LBvxA6Pz-QqMYlVGN3Z1EivXOYwNY/edit?gid=0#gid=0
 
-Mega Raichu X, Mega Raichu Y, Mega Absol Z, Mega Clefable, Primal Kyogre,
-and Primal Groudon use Legends Z-A
+The Legends Z-A Mega miniatures for Victreebel, Meganium, Feraligatr,
+Skarmory, Chimecho, Froslass, Scrafty, Golurk, Chesnaught, Dragalge, Hawlucha,
+Raichu X, Raichu Y, Absol Z, Staraptor, Garchomp Z, Lucario Z, Darkrai,
+Excadrill, Scolipede, Pyroar, Floette, Barbaracle, Golisopod, Drampa, Magearna
+(including Original Color), Zeraora, Falinks, Clefable, Starmie, Dragonite,
+Heatran, Emboar, Eelektross, Chandelure, Delphox, Greninja, both Meowstic
+genders, Malamar, Zygarde, and Crabominable, plus Primal Kyogre and Primal
+Groudon, use Legends Z-A
 icon sprites credited by Pokemon Workshop to Batin, ezerart, and Luis779:
 https://github.com/PokemonWorkshop/GameDataPacks/tree/d430fb553df98ccde5f9f90ece78e36b07d8083c/Gen%209/Legends%20Z-A/graphics/pokedex/pokeicon
 Their source sheets use two 32 by 32 frames. KM Editor uses the first frame,

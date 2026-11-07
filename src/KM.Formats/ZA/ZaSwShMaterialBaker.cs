@@ -11,6 +11,17 @@ namespace KM.Formats.ZA;
 public static class ZaSwShMaterialBaker
 {
     internal sealed record Image(int Width, int Height, bool Srgb, byte[] Pixels);
+    public static byte[] CompressAuthoredMips(byte[] bytes, CancellationToken cancellationToken = default,
+        ModelTextureMipCache? encodingCache = null)
+    {
+        var data = new ModelBuffer(bytes);
+        int Pointer(int at) => checked((int)System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(at, 8)));
+        var count = data.U16(Pointer(Pointer(40)) + 22);
+        var first = Read(bytes);
+        var allocated = SwShTextureAllocation.Create(bytes, first.Width, first.Height, first.Srgb, mipCount: count);
+        return new ModelTextureDocument(allocated).EncodeMipImages(Enumerable.Range(0, count)
+            .Select(level => Read(bytes, level).Pixels).ToArray(), cancellationToken, encodingCache);
+    }
     public static byte[] Icon(byte[] sourceTexture, byte[] targetTemplate, CancellationToken cancellationToken = default,
         ModelTextureMipCache? encodingCache = null)
     {
@@ -48,7 +59,7 @@ public static class ZaSwShMaterialBaker
         Func<string, byte[]> readTexture, CancellationToken cancellationToken = default, bool layeredEyes = false,
         bool authoredAlpha = false, ModelTextureMipCache? encodingCache = null, Vector2? normalUvScale = null,
         Vector2? colorUvScale = null, bool unlit = false, ZaSwShNormalAtlas? normalAtlas = null,
-        int maximumTextureDimension = 2048)
+        int maximumTextureDimension = 2048, bool secondaryMask = false)
     {
         if (maximumTextureDimension is < 64 or > 2048 || (maximumTextureDimension & (maximumTextureDimension - 1)) != 0)
             throw new ArgumentOutOfRangeException(nameof(maximumTextureDimension));
@@ -74,6 +85,7 @@ public static class ZaSwShMaterialBaker
         {
             uint.MaxValue => uvTransform,
             0 => new Vector4(1, 1, 0, 0),
+            1 when secondaryMask => new Vector4(1, 1, 0, 0),
             _ => throw new InvalidDataException("Z-A layer mask UV set needs another material adapter."),
         };
         var normalUv = parameters.GetValueOrDefault("UVScaleOffsetNormal", new(1, 1, 0, 0));
@@ -82,7 +94,7 @@ public static class ZaSwShMaterialBaker
             || normalScale != Vector2.One && normalUv != new Vector4(1, 1, 0, 0))
             throw new InvalidDataException("Z-A generated normal tile requires an untransformed supported allocation.");
         var normalTile = normalScale == Vector2.One ? null : SwShStaticUvAtlas.For(primitive, normalScale);
-        if (normalAtlas is not null && (normalScale != Vector2.One || layeredEyes || authoredAlpha || unlit))
+        if (normalAtlas is not null && (layeredEyes || authoredAlpha || unlit))
             throw new InvalidDataException("Shared Z-A normal atlases require their qualified independent full allocation.");
         var normalGeometry = normalAtlas?.Geometry(primitive, sourceMaterials) ?? primitive;
         var colorScale = colorUvScale ?? Vector2.One;
@@ -96,7 +108,7 @@ public static class ZaSwShMaterialBaker
             "pm0070_00_00_" or "pm0707_00_00_" => new Vector2(.25f, .125f),
             "pm0708_11_00_" => new Vector2(.5f, .25f),
             "pm0511_00_00_" or "pm0513_00_00_" or "pm0515_00_00_" or "pm0516_00_00_"
-                or "pm0706_00_00_" or "pm0774_11_00_" or "pm0860_00_00_" => Vector2.Zero,
+                or "pm0706_00_00_" or "pm0774_11_00_" or "pm0860_00_00_" or "pm0923_51_00_" => Vector2.Zero,
             _ => (Vector2?)null
         } : null;
         var eyeAtlas = atlasOffset is { } eyeOffset && normalUv == new Vector4(2, 4, eyeOffset.X, eyeOffset.Y);
@@ -138,23 +150,51 @@ public static class ZaSwShMaterialBaker
             throw new InvalidDataException("Shared Z-A object-normal atlas contains incompatible overlapping sections.");
         var ambientWidth = 4; var ambientHeight = 4;
         byte[]? occlusion = null;
+        var mirroredBodyOcclusion = primitive.Name.StartsWith("pm0282_51_00_", StringComparison.Ordinal)
+            && primitive.Material.Name is "body_a" or "body_b"
+            || primitive.Name.StartsWith("pm0306_51_00_", StringComparison.Ordinal)
+            && primitive.Material.Name is "body_a_00" or "body_a_01" or "body_b_00" or "body_b_01"
+            || primitive.Name.StartsWith("pm0154_51_00_", StringComparison.Ordinal)
+            && primitive.Material.Name is "body_a" or "body_b_00" or "body_b_01";
         if (textures.TryGetValue("OcclusionMap", out var aoPath))
         {
             var ao = Read(readTexture(aoPath));
             ambientWidth = Math.Min(maximumTextureDimension, ao.Width); ambientHeight = Math.Min(maximumTextureDimension, ao.Height);
-            occlusion = Resize(ao.Pixels, ao.Width, ao.Height, ambientWidth, ambientHeight);
+            if (mirroredBodyOcclusion)
+            {
+                var role = source.Tables(table, 2, 64).Single(t => source.Text(t, 0) == "OcclusionMap");
+                var sampler = source.Tables(table, 3, 32)[checked((int)source.Value(role, 2))];
+                var selector = source.Tables(table, 9, 128).Single(t => source.Text(t, 0) == "UVIndexAO");
+                if (source.Value(selector, 1) != uint.MaxValue || uvTransform != new Vector4(2, 1, 0, 0)
+                    || source.Value(sampler, 9) != 6 || source.Value(sampler, 10) != 1)
+                    throw new InvalidDataException("Mirrored Z-A body occlusion no longer matches the authored UV contract.");
+                ambientWidth = Math.Min(maximumTextureDimension, ao.Width * 2);
+                occlusion = new byte[ambientWidth * ambientHeight * 4];
+                for (var y = 0; y < ambientHeight; y++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    for (var x = 0; x < ambientWidth; x++)
+                    {
+                        var uv = new Vector2((x + .5f) / ambientWidth, (y + .5f) / ambientHeight);
+                        occlusion[(y * ambientWidth + x) * 4] = Channel(Sample(ao, uv, uvTransform, new(6, 1)).X);
+                    }
+                }
+            }
+            else occlusion = Resize(ao.Pixels, ao.Width, ao.Height, ambientWidth, ambientHeight);
         }
+        else if (mirroredBodyOcclusion) throw new InvalidDataException("Mirrored Z-A body occlusion is missing.");
         var ambientPixels = new byte[ambientWidth * ambientHeight * 4];
         for (var i = 0; i < ambientWidth * ambientHeight; i++)
         {
             ambientPixels[i * 4] = occlusion is null ? (byte)0 : (byte)(255 - occlusion[i * 4]);
             ambientPixels[i * 4 + 2] = eye ? (byte)166 : (byte)128; ambientPixels[i * 4 + 3] = 255;
         }
+        CompactConstant(ref ambientPixels, ref ambientWidth, ref ambientHeight);
         var colorName = ModelTextureIdentity.MaterialName(templateName, materialIndex, 'z', shiny ? 's' : 'n', lowerCase: true);
         var normalName = ModelTextureIdentity.MaterialName(templateName, materialIndex, 'n', 'n', lowerCase: true);
         var ambientName = ModelTextureIdentity.MaterialName(templateName, materialIndex, 'a', 'n', lowerCase: true);
         var baseImage = Read(readTexture(textures["BaseColorMap"]));
-        var maskImage = textures.TryGetValue("LayerMaskMap", out var layerMaskPath) ? Read(readTexture(layerMaskPath)) : null;
+        var maskImage = !secondaryMask && textures.TryGetValue("LayerMaskMap", out var layerMaskPath) ? Read(readTexture(layerMaskPath)) : null;
         var highlightImage = textures.TryGetValue("HighlightMaskMap", out var highlightPath) ? Read(readTexture(highlightPath)) : null;
         var colorWidth = Math.Max(baseImage.Width, Math.Max(maskImage?.Width ?? 4, highlightImage?.Width ?? 4));
         var colorHeight = Math.Max(baseImage.Height, Math.Max(maskImage?.Height ?? 4, highlightImage?.Height ?? 4));
@@ -254,6 +294,20 @@ public static class ZaSwShMaterialBaker
             { ColorUvTransform = colorUvTransform, NormalUvScale = normalScale };
     }
 
+    // Generated constant fields have no spatial detail or derivative-dependent
+    // mip content. Keep the same texels in one compressed block instead of
+    // allocating a full material-sized image for every mesh section.
+    internal static void CompactConstant(ref byte[] pixels, ref int width, ref int height)
+    {
+        if (width <= 4 && height <= 4 || pixels.Length != checked(width * height * 4)) return;
+        var value = pixels.AsSpan(0, 4);
+        for (var at = 4; at < pixels.Length; at += 4)
+            if (!pixels.AsSpan(at, 4).SequenceEqual(value)) return;
+        var block = new byte[64];
+        for (var at = 0; at < block.Length; at += 4) value.CopyTo(block.AsSpan(at, 4));
+        pixels = block; width = height = 4;
+    }
+
     private static (byte[] Pixels, double Coverage, int Conflicts) ObjectNormalPixels(PreviewPrimitive primitive, byte[] tangentNormals, int width, int height, CancellationToken cancellationToken)
     {
         var normals = new Vector3[width * height]; var covered = new bool[normals.Length]; var conflicts = 0;
@@ -303,9 +357,9 @@ public static class ZaSwShMaterialBaker
         return (normalPixels, coverage / (double)covered.Length, conflicts);
     }
 
-    internal static Image Read(byte[] bytes)
+    internal static Image Read(byte[] bytes, int level = 0)
     {
-        var texture = PreviewTexture.ReadBaseLevel(bytes);
+        var texture = PreviewTexture.ReadLevel(bytes, level);
         var format = texture.Format switch
         {
             0x0b01 or 0x0b06 => CompressionFormat.Rgba, 0x1a01 or 0x1a06 => CompressionFormat.Bc1WithAlpha,

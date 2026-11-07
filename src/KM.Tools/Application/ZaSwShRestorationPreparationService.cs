@@ -28,6 +28,7 @@ public sealed partial class ZaSwShRestorationPreparationService
                 progress?.Report(new("models", unavailableMoves.Count, definition.Identities.Count) { Species = identity.Species, Activity = "reading" });
                 contributions.AddRange(context.Assets(identity));
                 progress?.Report(new("gameplay", unavailableMoves.Count, definition.Identities.Count) { Species = identity.Species });
+                contributions.AddRange(context.AbilityText(identity));
                 var gameplay = context.Gameplay(identity); contributions.AddRange(gameplay.Contributions); unavailableMoves.Add(identity.Species, gameplay.ExcludedMoves);
             }
             progress?.Report(new("voices", definition.Identities.Count, definition.Identities.Count));

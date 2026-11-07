@@ -24,7 +24,8 @@ public sealed partial class ZaSwShRestorationPreparationService
             var femaleCount = SwShRestorationDefinitions.Get(prepared.DefinitionId).Identities.Count(i => Profile(i).SeparateFemale);
             var itemFiles = prepared.Contributions.Where(SwShRestorationMegaItems.IsItemContribution).Select(c => c.Path).Distinct().Count();
             var additionalIcons = SwShRestorationDefinitions.Get(prepared.DefinitionId).Identities.Sum(i => SwShRestorationComposer.IconGenders(i.Species).Count - 1);
-            if (files.Count != 6 + 6 * speciesCount + 3 * femaleCount + itemFiles + additionalIcons || files.Values.Any(v => v is null)) throw new InvalidDataException("Prepared restoration output set is incomplete.");
+            var abilityFiles = prepared.Contributions.Where(c => c.Writer == SwShRestorationWriter.AbilityText).Select(c => c.Path).Distinct().Count();
+            if (files.Count != 6 + 6 * speciesCount + 3 * femaleCount + itemFiles + additionalIcons + abilityFiles || files.Values.Any(v => v is null)) throw new InvalidDataException("Prepared restoration output set is incomplete.");
             var catalog = new SwShPokemonResourceCatalog(files[SwShRestorationComposer.CatalogPath]!);
             var personal = SwShPersonalTable.Parse(files[SwShRestorationComposer.PersonalPath]!, 4096);
             var packs = new Dictionary<string, SwShGfPackFile>(StringComparer.Ordinal);

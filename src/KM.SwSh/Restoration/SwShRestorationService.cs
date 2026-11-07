@@ -155,6 +155,7 @@ public sealed partial class SwShRestorationService
             keys = SwShRestorationStateStore.ReadPrepared(paths, hash).Contributions
                 .Where(c => SwShRestorationMegaItems.IsItemContribution(c)
                     || c.Writer == SwShRestorationWriter.SpeciesText
+                    || c.Writer == SwShRestorationWriter.AbilityText
                     || c.Writer == SwShRestorationWriter.Camp && c.Key.Contains("/common/", StringComparison.Ordinal))
                 .Select(c => (c.Path, c.Writer, c.Key)).ToHashSet();
             sharedKeys.Add(hash, keys);
@@ -246,6 +247,7 @@ public sealed partial class SwShRestorationService
             {
                 contributions = contributions.Where(c => !shared.Contains((c.Path, c.Writer, c.Key))).ToArray();
             }
+            else contributions = RetainSharedAbilityText(contributions, shared, owned, Current);
             var composition = SwShRestorationComposer.Compose(contributions, Current, intent.Enabled,
                 allowOwnedCustomizations: installed?.Enabled == true, ownedPaths: owned);
             foreach (var file in composition.Files) outputs[file.Key] = file.Value;
@@ -291,6 +293,7 @@ public sealed partial class SwShRestorationService
         {
             AddMegaItemProtection(paths, state, outputs, sources);
             AddSpeciesSupport(paths, state, outputs, sources);
+            AddAbilitySupport(paths, state, outputs, sources, owned);
             if (SwShRestorationDependencies.Enabled(state).Count != 0) AddTableMemory(paths, outputs, sources);
             AddCryRouting(paths, state, outputs, sources);
         }

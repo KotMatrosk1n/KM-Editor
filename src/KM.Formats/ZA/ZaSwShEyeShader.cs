@@ -9,7 +9,7 @@ public static class ZaSwShEyeShader
     {
         if (mirrorEmissionColor && !layerEmission)
             throw new InvalidDataException("Mirrored emission eye color requires its layer consumer.");
-        if ((lava ? 1 : 0) + (independentHighlights ? 1 : 0) + (layerEmission ? 1 : 0) + (layerTint ? 1 : 0) > 1)
+        if ((lava || layerTint) && (independentHighlights || layerEmission) || lava && layerTint)
             throw new InvalidDataException("Eye effects require separate samplers.");
         int Integer(int offset) => BinaryPrimitives.ReadInt32LittleEndian(template.AsSpan(offset, 4));
         int Pointer(int offset) => checked((int)BinaryPrimitives.ReadUInt64LittleEndian(template.AsSpan(offset, 8)));
@@ -162,10 +162,10 @@ public static class ZaSwShEyeShader
             {
                 Uniform(68, 5, 49); Uniform(69, 5, 46); Fma(58, 56, 68, 69);
                 Uniform(68, 5, 50); Uniform(69, 5, 47); Fma(59, 57, 68, 69);
-                Constant(68, 1); Add(59, 68, 59, true); Sample(22, 58, 59, 60);
+                Constant(68, 1); Add(59, 68, 59, true); Sample(layerEmission ? 20 : 22, 58, 59, 60);
                 for (var component = 0; component < 3; component++)
                 {
-                    Uniform(68, 6, 72 + component); Fma(colors[component], 68, 60, colors[component]);
+                    Uniform(68, 6, (layerEmission ? 48 : 72) + component); Fma(colors[component], 68, 60, colors[component]);
                 }
             }
             if (lava || layerEmission || layerTint) Constant(94, 1);
@@ -252,7 +252,7 @@ public static class ZaSwShEyeShader
                     if ((instruction >> 8 & 255) != 1 || (instruction >> 20 & 255) != 0)
                         throw new InvalidDataException("Eye shader normal coordinates are unsupported.");
                 }
-                if (slot is 0x0e or 0x0a or 0x0c || lava && slot is 20 or 22 || (independentHighlights || layerEmission || layerTint) && slot == 22)
+                if (slot is 0x0e or 0x0a or 0x0c || lava && slot is 20 or 22 || independentHighlights && layerEmission && slot == 20 || (independentHighlights || layerEmission || layerTint) && slot == 22)
                 {
                     if (slot == 0x0e) { Constant(first, 0); Constant(first + 1, 0); Constant(second, 166 / 255f); }
                     else

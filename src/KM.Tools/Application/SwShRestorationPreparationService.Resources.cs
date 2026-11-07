@@ -151,6 +151,7 @@ public sealed partial class SwShRestorationPreparationService
                     selected[path] = SwShTextureAllocation.MipTail(selected[path], 1);
                 }
             }
+            SwShRestorationResourceBudget.LimitLayeredMegaTextures(selected, textures, modelPath);
             SwShRestorationResourceBudget.Validate(selected);
             return selected;
         }

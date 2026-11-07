@@ -7,6 +7,28 @@ namespace KM.Formats.ZA;
 /// <summary>Adapts Z-A facial material channels and native expression timing independently of S/V.</summary>
 public static partial class ZaSwShAnimationWriter
 {
+    // Some source clips retain a material from an absent effect mesh. Its
+    // curves have no consumer in the authored model; never remove a bound one.
+    public static byte[] RemoveUnboundMaterial(byte[] bytes, string name, PreviewScene scene)
+    {
+        if (name is not ("smog" or "eye") || scene.Primitives.Any(p => p.Material.Name == name))
+            throw new InvalidDataException("An unbound source animation material is now bound.");
+        var source = new ModelBuffer(bytes); var writer = new ModelTableBuilder(bytes);
+        var retained = new List<(int Slot, int Target)>();
+        foreach (var track in source.Tables(source.Root, 1, 512))
+        {
+            var timeline = source.Table(track, 4); if (timeline == 0) continue;
+            var materials = source.Tables(timeline, 2, 128).Where(m => source.Text(m, 0) != name).ToArray();
+            var slots = writer.Vector(timeline, 2, materials.Length);
+            for (var i = 0; i < materials.Length; i++) retained.Add((slots[i], materials[i]));
+        }
+        // Native offsets are unsigned and must point forward. Keep one exact
+        // copy of the retained graph after the replacement vectors.
+        var copy = writer.Append(bytes);
+        foreach (var (slot, target) in retained) writer.Pointer(slot, copy + target);
+        return writer.Finish(source.Root);
+    }
+
     public static byte[] Controller(byte[] nativeController, string donorStem, string targetStem,
         IReadOnlyList<string> materialNames, IReadOnlyDictionary<string, string[]> facialBones, bool layeredEyes = false, bool independentHighlights = false, bool layerEmission = false, bool layerTint = false)
     {
@@ -235,7 +257,7 @@ public static partial class ZaSwShAnimationWriter
                             : Sample(track.Channels[component], Frame(f))).ToArray()));
                     }
                 }
-                else throw new InvalidDataException("Z-A material animation has no native mapping.");
+                else throw new InvalidDataException($"Z-A material animation has no native mapping: {track.Material}/{track.Parameter}.");
             }
             var material = writer.Table(4); writer.Pointer(materialSlots[i], material); Text(material, 0, groups[i].Key);
             writer.Vector(material, 1, 0);
@@ -316,7 +338,9 @@ public static partial class ZaSwShAnimationWriter
     {
         if (frame <= keys[0].Frame) return keys[0].Value[0];
         for (var i = 1; i < keys.Length; i++) if (frame < keys[i].Frame)
-            return keys[i - 1].Value[0] + (keys[i].Value[0] - keys[i - 1].Value[0]) * (frame - keys[i - 1].Frame) / (keys[i].Frame - keys[i - 1].Frame);
+            return keys[i - 1].Step ? keys[i - 1].Value[0]
+                : MathF.FusedMultiplyAdd(keys[i].Value[0] - keys[i - 1].Value[0],
+                    (frame - keys[i - 1].Frame) / (keys[i].Frame - keys[i - 1].Frame), keys[i - 1].Value[0]);
         return keys[^1].Value[0];
     }
     private static float EyeSample(int frame)

@@ -9,6 +9,7 @@ namespace KM.Formats.ZA;
 public sealed class ZaRestorationVoiceContext
 {
     internal const uint NormalAlphaFrenzy = 617048655;
+    internal bool ZygardeNormalDefaults { get; private init; }
     private ZaRestorationVoiceContext() { }
 
     public static ZaRestorationVoiceContext ReadNormal(byte[] initBank)
@@ -53,10 +54,13 @@ public sealed class ZaRestorationVoiceContext
                     throw new InvalidDataException("Z-A normal cry context mapping changed.");
         }
         var parameters = Count(); var ids = new HashSet<uint>(); var foundDefault = false;
+        var zygardeDefaults = 0;
         for (var i = 0; i < parameters; i++)
         {
             var id = Word(); var value = Float(); var ramp = Word(); var up = Float(); var down = Float(); var binding = Byte();
             if (!ids.Add(id)) throw new InvalidDataException("Z-A voice context parameter is duplicated.");
+            if ((id == 46828288 && value == 10 || id == 1053578121 && value == 0 || id == 3252421901 && value == 100)
+                && ramp == 0 && up == 0 && down == 0 && binding == 0) zygardeDefaults++;
             if (id != NormalAlphaFrenzy) continue;
             if (value != 0 || ramp != 0 || up != 0 || down != 0 || binding != 0)
                 throw new InvalidDataException("Z-A normal cry context is not an unbound zero default.");
@@ -65,6 +69,6 @@ public sealed class ZaRestorationVoiceContext
         Skip(checked(Count() * 28)); // Version 145 acoustic textures.
         if (at != settings.Length || !foundSwitch || !foundDefault)
             throw new InvalidDataException("Z-A normal cry context is incomplete or has unconverted data.");
-        return new();
+        return new() { ZygardeNormalDefaults = zygardeDefaults == 3 };
     }
 }

@@ -25,7 +25,7 @@ public static class SvSwShSourceCoverage
             "L1ConstantColor0", "L1AddColor0", "L1ConstantColor1", "L1AddColor1", "L1ConstantColorSd0", "L1ConstantColorSd1",
             "DeepShadowColor", "SpecularColor", "SphereMapColor", "RimColor", "RimColorShadow", "EffectColor01",
             "ConstantColor", "OnGameColor", "OutLineCol"];
-        if (program is OpaqueProgramName or SvSwShSourceBase.ProgramName or SvSwShSourceBase.MirroredProgramName or SvSwShSourceBase.UnlitProgramName)
+        if (program is OpaqueProgramName or SvSwShSourceBase.ProgramName or SvSwShSourceBase.MirroredProgramName or SvSwShSourceBase.SharedUvProgramName or SvSwShSourceBase.MatteMirrorProgramName or SvSwShSourceBase.UnlitProgramName or SvSwShSourceBase.DynamicProgram)
             expected = [.. expected.Take(15), "ConstantColor", "OnGameColor", "OutLineCol", "EffectColor01"];
         if (colors.Length != FirstVector || !colors.Select(c => source.Text(c, 0)).SequenceEqual(expected))
             throw new InvalidDataException("Source coverage native vector interface changed.");

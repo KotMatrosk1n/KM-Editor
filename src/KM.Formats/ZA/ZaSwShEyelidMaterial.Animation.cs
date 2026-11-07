@@ -71,9 +71,12 @@ public static partial class ZaSwShEyelidMaterial
             scalars.Add(HighlightScalarNames[1], highlight.Y);
             scalars.Add(HighlightScalarNames[2], contract.Origin.X * highlight.X + highlight.Z);
             scalars.Add(HighlightScalarNames[3], contract.Origin.Y * highlight.Y + 1 - highlight.Y - highlight.W);
-            scalars.Add("ScaleUV", 0);
-            var color = contract.Vectors["EmissionColorLayer5"] * contract.Scalars["EmissionIntensityLayer5"];
-            vectors.Add("EffectColor01", new(color.X, color.Y, color.Z));
+            scalars["ScaleUV"] = 0;
+            var highlightIntensity = sample("EmissionIntensityLayer5", 0) ?? contract.Scalars["EmissionIntensityLayer5"];
+            if (!float.IsFinite(highlightIntensity) || highlightIntensity < 0)
+                throw new InvalidDataException("Eye highlight animation must remain nonnegative.");
+            var color = Vector("EmissionColorLayer5") * highlightIntensity;
+            vectors.Add(contract.LayerEmission ? "SphereMapColor" : "EffectColor01", new(color.X, color.Y, color.Z));
         }
         foreach (var (channel, first) in new[] { (3, 0), (4, 2), (2, 4) })
         {
@@ -120,7 +123,7 @@ public static partial class ZaSwShEyelidMaterial
         {
             var parameter = source.Text(vector, 0)!;
             if (parameter is not ("UVScaleOffset" or "UVScaleOffset1" or "UVScaleOffset2" or "UVScaleOffset3" or "UVScaleOffset4" or "UVScaleOffsetNormal"
-                or "EmissionColorLayer1" or "EmissionColorLayer2" or "EmissionColorLayer3" or "EmissionColorLayer4"
+                or "EmissionColorLayer1" or "EmissionColorLayer2" or "EmissionColorLayer3" or "EmissionColorLayer4" or "EmissionColorLayer5"
                 or "BaseColorLayer1" or "BaseColorLayer2" or "BaseColorLayer3" or "BaseColorLayer4"))
                 throw new InvalidDataException($"Eye vector animation needs another adapter: {parameter}.");
             var channels = source.Table(vector, 1);
@@ -130,7 +133,7 @@ public static partial class ZaSwShEyelidMaterial
         {
             var parameter = source.Text(scalar, 0)!;
             if (parameter is not ("UVRotation2" or "UVRotation3" or "UVRotation4" or "LayerMaskScale5"
-                or "EmissionIntensityLayer1" or "EmissionIntensityLayer2" or "EmissionIntensityLayer3" or "EmissionIntensityLayer4"))
+                or "EmissionIntensityLayer1" or "EmissionIntensityLayer2" or "EmissionIntensityLayer3" or "EmissionIntensityLayer4" or "EmissionIntensityLayer5"))
                 throw new InvalidDataException($"Eye scalar animation needs another adapter: {parameter}.");
             result.Add(new(name, parameter, [Keys(source.Table(scalar, 1))]));
         }
@@ -193,7 +196,7 @@ public static partial class ZaSwShEyelidMaterial
                             && source.Text(track, 0) != "ScaleUV")
                         && (!(layerEmission || layerTint) || !EmissionScalarNames.Contains(source.Text(track, 0), StringComparer.Ordinal))
                     : !VectorNames.Contains(source.Text(track, 0), StringComparer.Ordinal)
-                        && (!independentHighlights || source.Text(track, 0) != "EffectColor01")
+                        && (!independentHighlights || source.Text(track, 0) != (layerEmission ? "SphereMapColor" : "EffectColor01"))
                         && (!(layerEmission || layerTint) || !EmissionVectorNames.Contains(source.Text(track, 0), StringComparer.Ordinal))).ToArray();
                 if (retained.Length == tracks.Length) continue;
                 var slots = writer.Vector(material, field, retained.Length);
