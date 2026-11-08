@@ -2,6 +2,184 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "version": "2.6.9",
+      "summary": {
+        "en": "Restore more Pokemon and create custom gifts in Sword and Shield, edit DLC encounters and material drops in Scarlet and Violet, and follow individual files during Apply. KM Editor 2.6.9 also reorganizes the main editors and expands the Sword and Shield Randomizer."
+      },
+      "sections": [
+        {
+          "title": {
+            "en": "Sword And Shield"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Restore 247 additional regular species and forms, including Primal forms, and 91 Mega forms. The catalog now has 298 regular entries and 91 Mega entries, all marked In testing. Use your own compatible donor files to prepare models, animations, cries, party sprites, and gameplay records."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Create code gifts and badge based reward pools with Royal Gift and Mystery Gift. Royal Gift has its own menu name and icon. Gift codes accept all uppercase letters and digits, and Royal Candy has its own crowned icon."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Use Update Asset to bring supported Pokemon installed outside KM Editor under editor management. Review the affected files before applying, with compatible customizations and assignments preserved. Restoration progress identifies the assets being converted."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Wild Encounters shows named forms and updates the sprite as you change species or form. Wild held items appear with the selected Pokemon's other settings and are shared across encounters for that species and form."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Randomizer adds options for trainers, shops, world items, and more, with settings grouped by what they affect. KM1 seeds still reproduce the selected result against compatible starting data."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Disable Poke Jobs at the terminal or disable Y Comm while retaining access to Mystery Gift. Shared executable edits for Shaking Trees are recognized when they are already installed."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Restored Pokemon have improved Summary framing, battle transitions, and party sprites. Preparation reuses identical texture images, and supported expanded tables receive the memory changes they need."
+              },
+              "audience": [
+                "swsh"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Scarlet And Violet"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Edit Kitakami and Blueberry Academy wild encounters alongside Paldea. Region labels also identify the new tables in game dumps."
+              },
+              "audience": [
+                "sv"
+              ]
+            },
+            {
+              "body": {
+                "en": "Edit a Pokemon's material item and count, or use Material Drop Count to set a shared count for every Pokemon with an active material drop. Pokemon without a material keep their empty drop."
+              },
+              "audience": [
+                "sv"
+              ]
+            },
+            {
+              "body": {
+                "en": "Move descriptions match their game text entries, including moves after Tera Blast. The IV and EV Summary views restore radar graphs and display numeric values, and TM recipes and tracking show undiscovered material names."
+              },
+              "audience": [
+                "sv"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Legends Z-A"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Pokemon gender categories and ratios save using the game's native values while preserving settings for other forms."
+              },
+              "audience": [
+                "za"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Workspace And Maintenance"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Pokemon, Trainer, Item, and Move editors group related fields into compact sections. Drafts remain available when you switch sections."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Apply shows the active step, elapsed time, and the files being staged or written. The reviewed file list remains available while Apply runs."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Copy and paste complete learnsets between compatible Pokemon records. Learnsets stay in level order, and learnset and evolution edits remain local until Stage."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Project Setup gives Project Paths the full width of the page. Validation, diagnostics, and cache status remain available."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Update desktop dependencies for TLS, certificate validation, and XML parsing. App updates continue to use the signed installer."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": {
+            "en": "Complete restoration catalog"
+          },
+          "url": "https://github.com/KotMatrosk1n/KM-Editor/wiki/Restore-Missing-Pokemon"
+        },
+        {
+          "label": {
+            "en": "Full changelog"
+          },
+          "url": "https://github.com/KotMatrosk1n/KM-Editor/compare/v2.6.8...v2.6.9"
+        }
+      ]
+    },
+    {
       "version": "2.6.8",
       "summary": {
         "en": "Restore the Geodude and Alolan Geodude families in Sword and Shield, add omniboosts to ordinary moves, and work with clearer Legends Arceus records. KM Editor 2.6.8 also improves editor loading, memory use, recovery, and reviewed saves while removing Analysis Tools."
@@ -2278,6 +2456,27 @@
     }
   ],
   "announcements": [
+    {
+      "id": "create-your-next-adventure-2-6-9",
+      "title": {
+        "en": "What will you build next?"
+      },
+      "body": {
+        "en": "I am looking forward to seeing what you do with the expanded restoration catalog, custom gifts, and new encounter tools. Thank you for sharing your projects and helping track down issues. Come share what you are making in KM Hub!"
+      },
+      "audience": [
+        "all"
+      ],
+      "featured": true,
+      "links": [
+        {
+          "label": {
+            "en": "Share in KM Hub"
+          },
+          "url": "https://discord.gg/ess4reb5eB"
+        }
+      ]
+    },
     {
       "id": "create-in-hisui-2-6-7",
       "title": {
