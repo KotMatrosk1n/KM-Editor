@@ -91,7 +91,10 @@ public static partial class SwShRestorationForms
             ValidateEgg(nativeEgg); ValidateEgg(egg);
             var nativeFirst = BinaryPrimitives.ReadUInt16LittleEndian(nativeEgg);
             var restoredFirst = checked((ushort)(OlderFormEggOffset + block.FirstRow));
-            if (BinaryPrimitives.ReadUInt16LittleEndian(egg) != (normalize ? restoredFirst : nativeFirst))
+            var currentFirst = BinaryPrimitives.ReadUInt16LittleEndian(egg);
+            // Older base egg lists used the species number as their form pointer.
+            var legacyMegaMapping = !normalize && currentFirst == group.Key && group.Any(IsMega);
+            if (currentFirst != (normalize ? restoredFirst : nativeFirst) && !legacyMegaMapping)
                 throw new InvalidDataException("Form egg mapping changed outside the restoration workflow.");
             BinaryPrimitives.WriteUInt16LittleEndian(egg, normalize ? nativeFirst : restoredFirst);
             outputs[eggPath] = egg;
