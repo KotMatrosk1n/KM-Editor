@@ -84,12 +84,14 @@ public static class SwShRestorationComposer
 
     public static SwShRestorationComposition Compose(IReadOnlyList<SwShRestorationContribution> contributions,
         Func<string, byte[]?> readEffective, bool enable, bool allowOwnedCustomizations = false,
-        IReadOnlySet<string>? ownedPaths = null, bool captureOnly = false)
-        => ComposeCore(contributions, readEffective, enable, allowOwnedCustomizations, ownedPaths, captureOnly, null);
+        IReadOnlySet<string>? ownedPaths = null, bool captureOnly = false,
+        IReadOnlySet<(string Path, SwShRestorationWriter Writer, string Key)>? adoption = null)
+        => ComposeCore(contributions, readEffective, enable, allowOwnedCustomizations, ownedPaths, captureOnly, null, adoption);
 
     private static SwShRestorationComposition ComposeCore(IReadOnlyList<SwShRestorationContribution> contributions,
         Func<string, byte[]?> readEffective, bool enable, bool allowOwnedCustomizations,
-        IReadOnlySet<string>? ownedPaths, bool captureOnly, PresenceValidator? presenceValidator)
+        IReadOnlySet<string>? ownedPaths, bool captureOnly, PresenceValidator? presenceValidator,
+        IReadOnlySet<(string Path, SwShRestorationWriter Writer, string Key)>? adoption = null)
     {
         if (contributions.Count is < 1 or > 10000) throw new InvalidDataException("Restoration contribution count is invalid.");
         var outputs = new Dictionary<string, byte[]?>(StringComparer.OrdinalIgnoreCase);
@@ -316,6 +318,16 @@ public static class SwShRestorationComposer
             if (Equal(current, desired)) return desired;
             if (!Equal(current, expected))
             {
+                if (adoption?.Contains((item.Path, item.Writer, item.Key)) == true)
+                {
+                    if (current is not null && item.Before is not null
+                        && item.Writer is SwShRestorationWriter.Personal or SwShRestorationWriter.Learnset)
+                    {
+                        retained.Add(item with { After = current });
+                        return current;
+                    }
+                    return desired;
+                }
                 if (!allowOwnedCustomizations || current is null || ownedPaths is not null && !ownedPaths.Contains(item.Path))
                     throw new InvalidDataException($"Restoration contribution conflicts with the current project: {item.Path} ({item.Key}).");
                 if (enable) return current;

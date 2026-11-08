@@ -13,6 +13,7 @@ export type LoadingProgressProps = {
   completed?: number;
   countLabel?: string;
   detail?: string;
+  detailAsTitle?: boolean;
   elapsedMilliseconds?: number;
   label: string;
   rawLabel?: boolean;
@@ -27,11 +28,46 @@ export type LoadingProgressProps = {
   children?: ReactNode;
 };
 
+const statusIcons = {
+  running: LoaderCircle,
+  complete: Check,
+  error: CircleAlert,
+  canceled: XCircle,
+  paused: Pause,
+  idle: Circle
+};
+
+export function LoadingProgressSteps({ label, steps, status = 'running' }: {
+  label: string;
+  steps: readonly ProgressStep[];
+  status?: ProgressStatus;
+}) {
+  const { t } = useLocalization();
+  return (
+    <ol className="km-loading-progress-steps"
+      aria-label={t('editorText.progress.phases', { operation: label })}>
+      {steps.map((step, index) => {
+        const active = step.state === 'active';
+        const Icon = step.state === 'complete' ? Check : active ? statusIcons[status] : Circle;
+        return (
+          <li key={`${index}-${step.label}`} className={`is-${step.state}`}
+            aria-current={active ? 'step' : undefined}>
+            <Icon aria-hidden="true" className={active && status === 'running' ? 'km-loading-progress-spinner' : undefined}
+              size={16} />
+            <span>{step.label}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 export function LoadingProgress({
   className,
   completed,
   countLabel,
   detail,
+  detailAsTitle = false,
   elapsedMilliseconds,
   label,
   rawLabel = false,
@@ -93,38 +129,30 @@ export function LoadingProgress({
     ? undefined
     : { '--km-loading-progress-value': `${percentage}%` } as CSSProperties;
   const classes = ['km-loading-progress', `is-${status}`, className].filter(Boolean).join(' ');
-  const Icon = running ? LoaderCircle : status === 'complete' ? Check : status === 'error'
-    ? CircleAlert : status === 'canceled' ? XCircle : status === 'paused' ? Pause : Circle;
+  const Icon = statusIcons[status];
   const summary = cancellationRequested && running ? t('progressFeedback.canceling')
     : statusLabel ?? t(`progressFeedback.${status}`);
   const count = countLabel ?? (boundedCompleted !== null && total !== undefined
     ? `${boundedCompleted.toLocaleString(formatLocale)} / ${total.toLocaleString(formatLocale)}` : undefined);
-  const hasSteps = Boolean(steps?.length);
+  const titleDetail = detailAsTitle && !steps?.length ? detail : undefined;
+  const caption = titleDetail ? undefined : detail;
 
   return (
     <section aria-label={label} className={classes}>
-      <div className={hasSteps ? 'km-loading-progress-phases' : 'km-loading-progress-heading'}>
-        {hasSteps ? <>
+      <div className={steps?.length ? 'km-loading-progress-phases' : 'km-loading-progress-heading'}>
+        {steps?.length ? <>
           {rawLabel ? <strong className="km-loading-progress-copy" data-localization-ignore="true">{label}</strong> : null}
-          <ol className="km-loading-progress-steps"
-            aria-label={t('editorText.progress.phases', { operation: label })}>
-            {steps?.map((step, index) => {
-              const active = step.state === 'active';
-              const StepIcon = step.state === 'complete' ? Check : active ? Icon : Circle;
-              return <li key={`${index}-${step.label}`} className={`is-${step.state}`}
-                aria-current={active ? 'step' : undefined}>
-                <StepIcon aria-hidden="true" className={active && running ? 'km-loading-progress-spinner' : undefined}
-                  size={16} /><span>{step.label}</span>
-              </li>;
-            })}
-          </ol>
+          <LoadingProgressSteps label={label} steps={steps} status={status} />
           <p className={running && !cancellationRequested ? 'km-loading-progress-announcement' : 'km-loading-progress-state'}
             role={status === 'error' || status === 'paused' ? 'alert' : 'status'}>{summary}</p>
         </> : <>
           <Icon aria-hidden="true" className={running ? 'km-loading-progress-spinner' : undefined} size={22} />
           <div className="km-loading-progress-title">
-            <strong className="km-loading-progress-copy" data-localization-ignore={rawLabel || undefined}>{label}</strong>
-            <p role={status === 'error' || status === 'paused' ? 'alert' : 'status'}>{summary}</p>
+            <strong className="km-loading-progress-copy" data-localization-ignore={rawLabel || undefined}
+              role={titleDetail ? 'status' : undefined}>{titleDetail ?? label}</strong>
+            {(!titleDetail || !running || cancellationRequested) ? (
+              <p role={status === 'error' || status === 'paused' ? 'alert' : 'status'}>{summary}</p>
+            ) : null}
           </div>
         </>}
         {elapsed !== null ? <span className="km-loading-progress-elapsed">
@@ -135,8 +163,8 @@ export function LoadingProgress({
           {cancelLabel ?? t('progressFeedback.cancel')}
         </button> : null}
       </div>
-      {detail || displayedPercentage !== null ? <div className="km-loading-progress-caption">
-        {detail ? <p role="status" aria-live="polite">{detail}</p> : null}
+      {caption || displayedPercentage !== null ? <div className="km-loading-progress-caption">
+        {caption ? <p role="status" aria-live="polite">{caption}</p> : null}
         {displayedPercentage !== null && boundedCompleted !== null && total !== undefined ? (
           <span className="km-loading-progress-count" data-localization-ignore="true">
             {count} ({displayedPercentage}%)

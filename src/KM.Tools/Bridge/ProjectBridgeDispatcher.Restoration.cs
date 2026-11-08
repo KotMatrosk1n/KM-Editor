@@ -106,7 +106,7 @@ public sealed partial class ProjectBridgeDispatcher
         var paths = ProjectBridgeMapper.ToCore(stage.Payload.Paths);
         var result = new SwShRestorationService().Stage(paths, stage.Payload.DefinitionId, stage.Payload.PreparedHash, stage.Payload.Enabled,
             stage.Payload.Session is null ? null : EditSessionBridgeMapper.ToCore(stage.Payload.Session), stage.Payload.RemoveAssets, preparedAssets: stage.Payload.RemoveAssets ? restorationJobs.ActivePreparedHashes(paths, stage.Payload.DefinitionId) : null,
-            updateAssets: stage.Payload.UpdateAssets);
+            updateAssets: stage.Payload.UpdateAssets, adoptExternal: stage.Payload.AdoptExternal);
         return SerializeSuccess(new StageRestorationResponse(LoadRestoration(paths, result.Session), EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray()), stage.RequestId);
     }
@@ -149,7 +149,9 @@ public sealed partial class ProjectBridgeDispatcher
                         AssetsRemoved = selected?.RemovalId, RemovalStaged = intent?.RemovalId is not null,
                         AvailableForAssignment = e.AvailableForAssignment,
                         UpdateAvailable = intent?.RemovalId is null && e.DefinitionId is { } definitionId
-                            && SwShRestorationDefinitions.Get(definitionId).HasAssetUpdate(selected) };
+                            && (e.Installation == SwShRestorationInstallation.External
+                                ? e.Support != SwShRestorationSupport.NotSupported
+                                : SwShRestorationDefinitions.Get(definitionId).HasAssetUpdate(selected)) };
             }).ToArray(), catalog.UnavailableReason is null ? cleanupDiagnostics : [.. cleanupDiagnostics, ProjectBridgeMapper.ToDto(new ValidationDiagnostic(DiagnosticSeverity.Error, catalog.UnavailableReason,
                 Domain: SwShRestorationDefinitions.Domain) { Code = SwShRestorationService.SourceCode })]);
     }
@@ -227,7 +229,7 @@ public sealed partial class ProjectBridgeDispatcher
                 File.Exists(Path.Combine(paths.OutputRootPath!, p)), "Apply Pokemon restoration and dependent editor changes together.")).ToArray();
             var combined = SwShChangePlanSourceGuard.Capture(paths, new(session.Id, writes, []) { EffectivePendingEdits = session.PendingEdits }, preserveExplicitSourceLayers: true);
             return new(combined, new(files, stored.Hash, initial.PreviousStateHash, finalState, originalSources, initial.RemovedSpecies)
-                { RemovedIdentities = initial.RemovedIdentities });
+                { RemovedIdentities = initial.RemovedIdentities, AdoptedWholeFiles = initial.AdoptedWholeFiles });
         }
         catch (Exception exception) when (exception is InvalidDataException or IOException or UnauthorizedAccessException or ArgumentException or JsonException or OverflowException or KM.Core.Output.OutputCoordinatorException)
         {
@@ -265,7 +267,7 @@ public sealed partial class ProjectBridgeDispatcher
         var batch = PrepareRestorationBatch(paths, session);
         if (!batch.Plan.CanApply || batch.Output is null) return CreateStaleSourceApplyResult(reviewed, batch.Plan.Diagnostics);
         if (!ChangePlanReview.Matches(reviewed, batch.Plan)) return CreateStaleSourceApplyResult(reviewed, [CreateStaleSwShPlanDiagnostic()]);
-        SwShChangePlanSourceGuard.BindRestorationState(paths, batch.Output.PreviousStateHash, batch.Output.StateHash);
+        SwShChangePlanSourceGuard.BindRestorationState(paths, batch.Output.PreviousStateHash, batch.Output.StateHash, batch.Output.AdoptedWholeFiles);
         var written = SwShRestorationService.WritePreview(paths, batch.Output);
         return CreateCombinedApplyResult(Guid.NewGuid().ToString("N"), DateTimeOffset.UtcNow, reviewed, written, []);
     }

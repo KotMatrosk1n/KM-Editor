@@ -27,6 +27,10 @@
 .km-loading-progress-title p { margin-top: 0.25rem; color: var(--color-text-soft); font-size: 0.9em; }
 .km-loading-progress-elapsed { margin-left: auto; color: var(--color-text-soft); font-variant-numeric: tabular-nums; }
 .km-loading-progress-state { margin: 0; color: var(--color-text-soft); font-size: 0.9em; overflow-wrap: anywhere; }
+.km-loading-progress-resource {
+  overflow-wrap: anywhere;
+}
+
 .km-loading-progress-caption { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem 1rem; min-width: 0; }
 .km-loading-progress-caption p { flex: 1 1 12rem; }
 .km-loading-progress-footer { display: grid; gap: 0.5rem; color: var(--color-text-soft); font-size: 0.9em; min-width: 0; }

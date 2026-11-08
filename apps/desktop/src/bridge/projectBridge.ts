@@ -36,7 +36,8 @@ import { type LoadFixAiFlagsRequest, type LoadFixAiFlagsResponse, type StageFixA
   loadFixAiFlagsRequestSchema, loadFixAiFlagsResponseSchema, stageFixAiFlagsRequestSchema, stageFixAiFlagsResponseSchema } from './fixAiFlagsContracts';
 import { type LoadTrainerWhiteoutRequest, type LoadTrainerWhiteoutResponse, type StageTrainerWhiteoutRequest, type StageTrainerWhiteoutResponse,
   loadTrainerWhiteoutRequestSchema, loadTrainerWhiteoutResponseSchema, stageTrainerWhiteoutRequestSchema, stageTrainerWhiteoutResponseSchema } from './trainerWhiteoutContracts';
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
+import { z } from "zod";
 import { createPlaProjectBridge, type PlaProjectBridgeApi } from './plaProjectBridge';
 import {
   type ApplyChangePlanRequest,
@@ -574,9 +575,22 @@ import {
   type RowClipboardProjectBridgeApi,
 } from "./rowClipboardProjectBridge";
 
+const applyOutputProgressSchema = z.strictObject({
+  phase: z.enum(["verifying", "staging", "checking", "writing", "finalizing", "rollingBack"]),
+  completed: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+  currentPath: z.string().max(4096).refine(path =>
+    !/[\\:\x00-\x1f]/u.test(path) &&
+    path.split("/").every(segment => segment && segment !== "." && segment !== ".."),
+  ).nullable(),
+}).refine(progress => progress.completed <= progress.total);
+
+export type ApplyOutputProgress = z.infer<typeof applyOutputProgressSchema>;
+
 export type ProjectBridge = {
   applyChangePlan: (
     request: ApplyChangePlanRequest,
+    onProgress?: (progress: ApplyOutputProgress) => void,
   ) => Promise<ApplyChangePlanResponse>;
   createChangePlan: (
     request: CreateChangePlanRequest,
@@ -1025,14 +1039,14 @@ export type ProjectBridge = {
   ResearchLabProjectBridgeApi &
   RowClipboardProjectBridgeApi;
 
-const tauriProjectBridgeTransport: ProjectBridgeTransport = (requestJson) => {
+const tauriProjectBridgeTransport = (requestJson: string, applyProgress?: Channel<unknown>) => {
   if (!hasTauriRuntime()) {
     return Promise.reject(
       new Error("Project bridge is only available in the desktop app."),
     );
   }
 
-  return invoke<string>("project_bridge", { requestJson });
+  return invoke<string>("project_bridge", { requestJson, applyProgress });
 };
 
 function validateDynamaxAdventureResponseGame<
@@ -1054,13 +1068,31 @@ export function createProjectBridge(
   transport: ProjectBridgeTransport = tauriProjectBridgeTransport,
 ): ProjectBridge {
   return {
-    applyChangePlan: (request) =>
-      sendProjectBridgeRequest(
-        transport,
-        kmCommandNames.applyChangePlan,
-        request,
-        applyChangePlanResponseSchema,
-      ),
+    applyChangePlan: async (request, onProgress) => {
+      if (transport !== tauriProjectBridgeTransport || !onProgress || !hasTauriRuntime()) {
+        return sendProjectBridgeRequest(
+          transport, kmCommandNames.applyChangePlan, request, applyChangePlanResponseSchema,
+        );
+      }
+
+      const channel = new Channel<unknown>();
+      channel.onmessage = (message) => {
+        const progress = applyOutputProgressSchema.safeParse(message);
+        if (progress.success) {
+          onProgress(progress.data);
+        }
+      };
+      try {
+        return await sendProjectBridgeRequest(
+          (requestJson) => tauriProjectBridgeTransport(requestJson, channel),
+          kmCommandNames.applyChangePlan,
+          { ...request, reportProgress: true },
+          applyChangePlanResponseSchema,
+        );
+      } finally {
+        channel.onmessage = () => {};
+      }
+    },
     createChangePlan: (request) =>
       sendProjectBridgeRequest(
         transport,

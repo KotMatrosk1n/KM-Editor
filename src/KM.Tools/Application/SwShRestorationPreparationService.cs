@@ -15,6 +15,7 @@ public sealed record SwShRestorationPreparationProgress(string Phase, int Comple
     public int? Species { get; init; }
     public int CompletedUnits { get; init; }
     public int? TotalUnits { get; init; }
+    public string? CurrentResource { get; init; }
 }
 
 /// <summary>Converts registered Pokemon using the user's donor and target dumps.</summary>
@@ -37,15 +38,15 @@ public sealed partial class SwShRestorationPreparationService
             foreach (var identity in definition.Identities)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                progress?.Report(new("models", unavailableMoves.Count, definition.Identities.Count) { Species = identity.Species, Activity = "reading" });
+                context.ReportPhase("models", unavailableMoves.Count, identity.Species);
                 contributions.AddRange(context.Assets(identity));
-                progress?.Report(new("gameplay", unavailableMoves.Count, definition.Identities.Count) { Species = identity.Species });
+                context.ReportPhase("gameplay", unavailableMoves.Count, identity.Species);
                 var gameplay = context.Gameplay(identity); contributions.AddRange(gameplay.Contributions); unavailableMoves.Add(identity.Species, gameplay.ExcludedMoves);
                 contributions.AddRange(context.Names(identity));
             }
-            progress?.Report(new("voices", definition.Identities.Count, definition.Identities.Count));
+            context.ReportPhase("voices", definition.Identities.Count);
             contributions.AddRange(context.Voices(definition.Identities));
-            progress?.Report(new("validation", definition.Identities.Count, definition.Identities.Count));
+            context.ReportPhase("validation", definition.Identities.Count);
             var prepared = new SwShPreparedRestoration(definition.Id, definition.Version, definition.ConverterVersion, target.SelectedGame.Value,
                 context.Fingerprints.Values.ToArray(), contributions, unavailableMoves) { AssetRevision = definition.AssetRevision };
             // Validate the complete resource closure and every shared writer before
@@ -66,8 +67,28 @@ public sealed partial class SwShRestorationPreparationService
         private readonly int totalSpecies;
         private int currentSpecies;
         private SwShPokemonIdentity currentIdentity;
-        private void Report(string activity, int completed = 0, int? total = null) => progress?.Report(
-            new("models", 0, totalSpecies) { Species = currentSpecies, Activity = activity, CompletedUnits = completed, TotalUnits = total });
+        private SwShRestorationPreparationProgress? currentProgress;
+        internal void ReportPhase(string phase, int completedSpecies, int? species = null) =>
+            Publish(new(phase, completedSpecies, totalSpecies) { Species = species, Activity = phase == "models" ? "reading" : phase });
+
+        private void Report(string activity, int completed = 0, int? total = null, string? resource = null) =>
+            Publish(new("models", currentProgress?.CompletedSpecies ?? 0, totalSpecies)
+            {
+                Species = currentSpecies, Activity = activity, CompletedUnits = completed, TotalUnits = total,
+                CurrentResource = resource ?? (activity == currentProgress?.Activity ? currentProgress?.CurrentResource : null),
+            });
+
+        private void Publish(SwShRestorationPreparationProgress value)
+        {
+            currentProgress = value;
+            progress?.Report(value);
+        }
+
+        private void ReportResource(string path)
+        {
+            if (currentProgress is { } value && value.CurrentResource != path)
+                Publish(value with { CurrentResource = path });
+        }
         private readonly CancellationToken token;
         private readonly Dictionary<string, byte[]> native = new(StringComparer.Ordinal);
         private readonly Dictionary<string, byte[]> donor = new(StringComparer.Ordinal);
@@ -90,6 +111,7 @@ public sealed partial class SwShRestorationPreparationService
         internal byte[] Native(string path)
         {
             path = Canonical(path);
+            if (currentProgress?.Phase is "gameplay" or "voices") ReportResource(path);
             if (native.TryGetValue(path, out var bytes)) return bytes;
             bytes = ReadPhysical(Path.Combine(target.BaseRomFsPath!, path.Replace('/', Path.DirectorySeparatorChar)), 64 * 1024 * 1024);
             Retain(bytes); native.Add(path, bytes); Fingerprint("target", path, bytes); return bytes;
@@ -97,6 +119,8 @@ public sealed partial class SwShRestorationPreparationService
         private byte[] Donor(string path)
         {
             path = Canonical(path);
+            if (currentProgress?.Phase == "gameplay" || currentProgress?.Activity == "textures" && path.EndsWith(".bntx", StringComparison.OrdinalIgnoreCase))
+                ReportResource(path);
             if (donor.TryGetValue(path, out var bytes)) return bytes;
             token.ThrowIfCancellationRequested(); bytes = archive.Read(path);
             Retain(bytes); donor.Add(path, bytes); Fingerprint("donor", path, bytes); return bytes;

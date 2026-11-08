@@ -3,9 +3,11 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { type EditSession, type PokemonRecord, type PokemonWorkflow } from '../../bridge/contracts';
 import { getHeldItemPendingRates, getHeldItemPokemonState, type HeldItemChanceWorkflow } from '../../bridge/heldItemChanceContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { ContextHelp } from '../../components/ContextHelp';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { parseEditableIntegerDraft } from '../../editableFieldHelpers';
 import { useLocalization } from '../../localization';
+import { findSwShPokemonFormRecord } from '../pokemon/speciesFormDrafts';
 import './HeldItemChanceSection.css';
 
 export type WildHeldItemUpdate = { personalId: number; field: string; value: string };
@@ -36,8 +38,11 @@ export function WildHeldItems({ workflow, chances, session, speciesId, form, rec
       && edit.recordId === recordId && edit.field === field) : undefined;
     return edit?.newValue != null && /^\d+$/.test(edit.newValue) ? Number(edit.newValue) : fallback;
   };
-  const row = workflow?.pokemon.find(value => value.speciesId === pendingIdentity('speciesId', speciesId)
-    && value.form === pendingIdentity('form', form));
+  const targetSpecies = pendingIdentity('speciesId', speciesId);
+  const targetForm = pendingIdentity('form', form);
+  const row = workflow && targetSpecies && targetForm !== null
+    ? findSwShPokemonFormRecord(workflow.pokemon, targetSpecies, targetForm)
+    : undefined;
   const options = workflow?.editableFields.find(field => field.field === 'heldItem1')?.options ?? [];
   const chanceRow = chances?.pokemon.find(value => value.personalId === row?.personalId);
   const effectiveChances = chanceRow ? getHeldItemPokemonState(chanceRow, session, chances?.rates) : null;
@@ -77,32 +82,55 @@ export function WildHeldItems({ workflow, chances, session, speciesId, form, rec
   };
   const first = desired[0] === undefined ? null : parse(desired[0]);
   const second = desired[1] === undefined ? null : parse(desired[1]);
-  return <section className="wild-held-items" aria-label={t('heldItemChance.wildTitle')}>
-    <h3>{t('heldItemChance.wildTitle')}</h3>
+  const title = t('heldItemChance.wildTitle');
+
+  return <fieldset className="editable-field-group wild-held-items" aria-label={title}>
+    <legend>
+      <span className="editable-field-group-legend-content">
+        {title}
+        {row ? (
+          <ContextHelp label={title}>
+            <p>{t('heldItemChance.wildDraftScope')}</p>
+            <p>{t('heldItemChance.boostedHelp')}</p>
+          </ContextHelp>
+        ) : null}
+      </span>
+    </legend>
     {row ? <>
-      <p>{t('heldItemChance.wildShared', { pokemon: row.formLabel ? `${row.name} (${row.formLabel})` : row.name })}</p>
-      <p>{t('heldItemChance.wildDraftScope')}</p>
-      <div className="held-item-slot-grid">
-        {fields.map((field, index) => <div key={`${row.personalId}:${field}`} className="held-item-rate-field">
+      <p className="editable-field-status wild-held-items-note">
+        {t('heldItemChance.wildShared', {
+          pokemon: row.formLabel && !row.name.endsWith(` (${row.formLabel})`)
+            ? `${row.name} (${row.formLabel})`
+            : row.name
+        })}
+      </p>
+      <div className="editable-field-grid">
+        {fields.map((field, index) => <div key={`${row.personalId}:${field}`} className="editable-field-control held-item-rate-field">
           <label htmlFor={`wild-held-item-${index}`}>{t('heldItemChance.slot', { number: index + 1 })}</label>
-          <span>{rates ? t('heldItemChance.wildOdds', { normal: rates[index], boosted: rates[index + 3] }) : t('heldItemChance.wildUnknown')}</span>
           <SearchableOptionInput id={`wild-held-item-${index}`} ariaLabel={t('heldItemChance.slot', { number: index + 1 })}
+            ariaDescribedBy={`wild-held-item-odds-${index}`}
             disabled={!canEdit} ariaInvalid={parse(desired[index]) === null} isFiniteCatalog options={options}
             value={desired[index]} onChange={value => {
               const next = [...desired]; next[index] = value;
               setDrafts(previous => ({ ...previous, [row.personalId]: next })); setFailed(false);
             }} />
+          <small id={`wild-held-item-odds-${index}`} className="editable-field-status">
+            {rates ? t('heldItemChance.wildOdds', { normal: rates[index], boosted: rates[index + 3] }) : t('heldItemChance.wildUnknown')}
+          </small>
         </div>)}
       </div>
-      {!effectiveChances?.customRates && first !== null && first === second ? <p role="status">{t(first === 0 ? 'heldItemChance.wildEqualNone' : 'heldItemChance.wildEqualItem')}</p> : null}
-      <p>{t('heldItemChance.boostedHelp')}</p>
-    </> : <p>{t('heldItemChance.wildMissing')}</p>}
-    {session ? <div className="held-item-actions">
+      {!effectiveChances?.customRates && first !== null && first === second ? (
+        <p className="editable-field-status wild-held-items-note" role="status">
+          {t(first === 0 ? 'heldItemChance.wildEqualNone' : 'heldItemChance.wildEqualItem')}
+        </p>
+      ) : null}
+    </> : <p className="editable-field-status wild-held-items-note">{t('heldItemChance.wildMissing')}</p>}
+    {session ? <div className="field-group-action-row draft-action-row">
       <button type="button" className="primary-button" disabled={!canEdit || !dirty || invalid || actions?.isStaging}
         aria-busy={actions?.isStaging || undefined} onClick={() => void stage()}>{t('heldItemChance.wildStage')}</button>
       <button type="button" className="secondary-button" disabled={!dirty || actions?.isStaging}
         onClick={() => { setDrafts({}); setFailed(false); }}>{t('heldItemChance.wildDiscard')}</button>
-      <span>{t(dirty ? 'heldItemChance.draft' : 'heldItemChance.clean')}</span>
+      <span className="editable-field-status">{t(dirty ? 'heldItemChance.draft' : 'heldItemChance.clean')}</span>
     </div> : null}
-  </section>;
+  </fieldset>;
 }

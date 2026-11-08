@@ -29,7 +29,8 @@ public sealed record ApplyChangePlanRequest(
     ProjectPathsDto Paths,
     EditSessionDto Session,
     ChangePlanDto ChangePlan,
-    ChangePlanOutputModeDto? OutputMode = null);
+    ChangePlanOutputModeDto? OutputMode = null,
+    bool ReportProgress = false);
 
 public sealed record ApplyChangePlanResponse(ApplyResultDto ApplyResult);
 

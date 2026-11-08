@@ -1213,6 +1213,19 @@ async fn project_bridge(
     bridge_state: tauri::State<'_, ProjectBridgeState>,
     trace_state: tauri::State<'_, ProjectBridgeTraceState>,
     request_json: String,
+    webview: tauri::Webview,
+    apply_progress: Option<tauri::ipc::JavaScriptChannelId>,
+) -> Result<String, String> {
+    let apply_progress = apply_progress.map(|channel| channel.channel_on(webview));
+    dispatch_project_bridge(app_handle, bridge_state, trace_state, request_json, apply_progress).await
+}
+
+async fn dispatch_project_bridge(
+    app_handle: tauri::AppHandle,
+    bridge_state: tauri::State<'_, ProjectBridgeState>,
+    trace_state: tauri::State<'_, ProjectBridgeTraceState>,
+    request_json: String,
+    apply_progress: Option<tauri::ipc::Channel<serde_json::Value>>,
 ) -> Result<String, String> {
     let trace_request = trace_state.begin_request(&request_json);
     if let Some(trace) = trace_request.as_ref() {
@@ -1325,6 +1338,7 @@ async fn project_bridge(
         let request_app_handle = app_handle.clone();
         let request_json_for_attempt = request_json.clone();
         let trace_for_execution = trace_request.clone();
+        let apply_progress_for_execution = apply_progress.clone();
         let blocking_task = tauri::async_runtime::spawn_blocking(move || {
             let _execution_permit = execution_permit;
             let execution_started_at = Instant::now();
@@ -1376,6 +1390,7 @@ async fn project_bridge(
                         request_policy,
                         trace_for_execution.as_ref(),
                         scheduler_attempt,
+                        apply_progress_for_execution.as_ref(),
                     ),
                 };
                 if request_policy.recycle_read_workers_after_execution {
@@ -1524,6 +1539,7 @@ async fn recycle_project_bridge_after_active_requests(
     .map_err(|error| format!("Project bridge recycle task failed: {error}"))?
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_project_bridge_request(
     app_handle: &tauri::AppHandle,
     bridge_state: &ProjectBridgeState,
@@ -1532,6 +1548,7 @@ fn run_project_bridge_request(
     request_policy: ProjectBridgeRequestPolicy,
     trace_request: Option<&ProjectBridgeTraceRequest>,
     scheduler_attempt: usize,
+    apply_progress: Option<&tauri::ipc::Channel<serde_json::Value>>,
 ) -> Result<String, String> {
     run_project_bridge_request_with(
         bridge_state,
@@ -1543,6 +1560,7 @@ fn run_project_bridge_request(
         trace_request,
         "owner",
         scheduler_attempt,
+        apply_progress,
         || start_project_bridge_process(app_handle, None),
     )
 }
@@ -1572,6 +1590,7 @@ fn run_project_bridge_read_request(
         trace_request,
         &lane,
         scheduler_attempt,
+        None,
         || start_project_bridge_process(app_handle, Some(bridge_state.read_processes.len())),
     )
 }
@@ -1587,6 +1606,7 @@ fn run_project_bridge_request_with<F>(
     trace_request: Option<&ProjectBridgeTraceRequest>,
     lane: &str,
     scheduler_attempt: usize,
+    apply_progress: Option<&tauri::ipc::Channel<serde_json::Value>>,
     mut start_process: F,
 ) -> Result<String, String>
 where
@@ -1621,6 +1641,7 @@ where
             trace_request,
             lane,
             scheduler_attempt,
+            apply_progress,
         );
         if let Ok(mut last_used) = process.last_used.lock() {
             *last_used = Instant::now();
@@ -1738,6 +1759,7 @@ impl ProjectBridgeProcess {
         trace_request: Option<&ProjectBridgeTraceRequest>,
         lane: &str,
         scheduler_attempt: usize,
+        apply_progress: Option<&tauri::ipc::Channel<serde_json::Value>>,
     ) -> Result<String, ProjectBridgeRequestFailure> {
         let request_token = self.allocate_request_token();
         let admission_started_at = Instant::now();
@@ -1898,6 +1920,7 @@ impl ProjectBridgeProcess {
                 stdout,
                 buffered_stdout,
                 &request_cancellation,
+                apply_progress,
             );
             if let Some(trace) = trace_request {
                 trace.record(
@@ -2066,6 +2089,7 @@ fn read_bounded_project_bridge_response(
     stdout: &mut ChildStdout,
     buffered_stdout: &mut Vec<u8>,
     cancellation: &ProjectBridgeRequestCancellation,
+    apply_progress: Option<&tauri::ipc::Channel<serde_json::Value>>,
 ) -> Result<String, ProjectBridgeRequestFailure> {
     let mut response_scan_offset = 0;
     loop {
@@ -2074,6 +2098,14 @@ fn read_bounded_project_bridge_response(
             take_project_bridge_response_frame(buffered_stdout, &mut response_scan_offset)?
         {
             cancellation.ensure_active()?;
+            if let Some(payload) = response.strip_prefix(b"#km-apply-progress ") {
+                if let Some(channel) = apply_progress.filter(|_| payload.len() <= 32 * 1024) {
+                    if let Ok(progress) = serde_json::from_slice::<serde_json::Value>(payload) {
+                        let _ = channel.send(progress);
+                    }
+                }
+                continue;
+            }
             return decode_project_bridge_response(response);
         }
 

@@ -266,6 +266,7 @@ import type { ApplyTrainerDynamaxRequest } from './bridge/trainerDynamaxContract
 import {
   ProjectBridgeError,
   projectBridge as defaultProjectBridge,
+  type ApplyOutputProgress,
   type ProjectBridge
 } from './bridge/projectBridge';
 import {
@@ -439,7 +440,7 @@ import { useEditorCategories } from './features/categories/categoryPreferences';
 import { isCustomCategoryId } from './features/categories/categoryLayout';
 import { AppSidebar } from './components/AppSidebar';
 import { WorkspaceHeader } from './components/WorkspaceHeader';
-import { LoadingProgress } from './components/LoadingProgress';
+import { LoadingProgress, LoadingProgressSteps } from './components/LoadingProgress';
 import { EditorOperationProgress, useEditorOperationProgress, type EditorProgressDetails } from './components/EditorOperationProgress';
 import {
   TrainerPartySlotContextMenu,
@@ -619,7 +620,11 @@ import {
 import { RandomizerSection } from './features/randomizer/RandomizerSection';
 import { formatPokemonEvolutionPendingValue } from './features/pokemon/pokemonPendingEditFormatting';
 import { AlphaSizeDetails, AlphaSizeHelp, alphaSizeDraftState, alphaSizeFields, alphaSizeManualDraft, alphaSizeNumber, alphaSizePrefix } from './features/pokemon/alphaSize';
-import { resolveSpeciesChangeForm } from './features/pokemon/speciesFormDrafts';
+import {
+  findSwShPokemonFormRecord,
+  getSwShPokemonFormPersonalId,
+  resolveSpeciesChangeForm
+} from './features/pokemon/speciesFormDrafts';
 import {
   canonicalTextToEditorText,
   formatCanonicalTextSummary,
@@ -1423,17 +1428,14 @@ const pathStatusLabels = {
   wrongKind: 'Wrong kind'
 } as const;
 
-const applyProgressSteps = [
-  'Reviewing change plan',
-  'Writing output files',
-  'Refreshing loaded editors'
-] as const;
-
-const applyChangesProgressSteps = [
-  'Preparing output plan',
-  'Writing reviewed output',
-  'Refreshing loaded editors'
-] as const;
+const applyProgressStepIndex = {
+  verifying: 1,
+  staging: 2,
+  checking: 3,
+  writing: 4,
+  finalizing: 5,
+  rollingBack: 4
+} as const;
 
 const fpsPatchProgressSteps = [
   'Reading patch state',
@@ -17668,6 +17670,37 @@ export function App({
     }
   };
 
+  const createReviewedApplyProgress = (plan: ChangePlan, label: string, isCurrent: () => boolean) => {
+    const steps = [
+      'Preparing output plan',
+      t('applyProgress.step.verifying'),
+      t('applyProgress.step.staging'),
+      t('applyProgress.step.checking'),
+      'Writing reviewed output',
+      t('applyProgress.step.finalizing'),
+      'Refreshing loaded editors'
+    ];
+    const reviewedFiles = [...new Set(plan.writes.map(write => write.targetRelativePath))];
+    const applying = t('applyProgress.applying', { count: reviewedFiles.length });
+    const setProgress = (step: number, detail: string, fileProgress?: WorkProgressState['fileProgress']) =>
+      setWorkProgress({ ...createIndeterminateWorkProgress(label, detail, steps, step), fileProgress, reviewedFiles });
+
+    setProgress(1, applying);
+    return {
+      report(update: ApplyOutputProgress) {
+        if (!editSessionApplyInFlightRef.current || !isCurrent()) return;
+        const step = applyProgressStepIndex[update.phase];
+        const detail = update.phase === 'rollingBack' ? t('applyProgress.rollingBack') : steps[step];
+        setProgress(step, detail, update.total > 0 ? update : undefined);
+      },
+      refresh(section?: StoredRetainedWorkflowSection) {
+        setProgress(6, section
+          ? t('applyProgress.refreshingEditor', { editor: t(getWorkbenchSectionLabelKey(section)) })
+          : 'Reloading changed editor data');
+      }
+    };
+  };
+
   const handleApplyDynamaxAdventureChangePlan = async () => {
     if (!outputSafety.canApply) {
       return;
@@ -17722,12 +17755,10 @@ export function App({
     setDynamaxAdventurePanelDiagnostics([]);
     setDynamaxAdventureApplyResult(null);
     setApplyResult(null);
-    setWorkProgress(createIndeterminateWorkProgress(
-      'Applying Dynamax Adventure Changes',
-      'Writing reviewed adventure changes',
-      applyProgressSteps,
-      1
-    ));
+    const progress = createReviewedApplyProgress(reviewedPlan, 'Applying Dynamax Adventure Changes', () =>
+      isCurrentProjectOperation() && editSessionRef.current === reviewedSession &&
+      visibleDynamaxAdventureChangePlanRef.current === reviewedPlan
+    );
 
     try {
       const response = await bridge.applyChangePlan({
@@ -17735,7 +17766,7 @@ export function App({
         outputMode: reviewedSession.authoringBinding?.outputMode ?? undefined,
         paths,
         session: reviewedSession
-      });
+      }, progress.report);
       if (!isCurrentReviewedOperation()) {
         if (
           response.applyResult.outputTransaction !== null ||
@@ -17788,14 +17819,9 @@ export function App({
       setDynamaxAdventureApplyResult(completedApplyResult);
 
       if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
-        setWorkProgress(createIndeterminateWorkProgress(
-          'Applying Dynamax Adventure Changes',
-          'Refreshing loaded editor data',
-          applyProgressSteps,
-          2
-        ));
+        progress.refresh();
         try {
-          await refreshLoadedWorkflowsAfterApply(paths, isCurrentProjectOperation);
+          await refreshLoadedWorkflowsAfterApply(paths, isCurrentProjectOperation, progress.refresh);
         } catch (error) {
           if (isCurrentProjectOperation()) {
             setDynamaxAdventureApplyResult(completedApplyResult);
@@ -18753,7 +18779,7 @@ export function App({
           createIndeterminateWorkProgress(
             'Preparing Trinity Output',
             'Creating the selected output package plan',
-            applyChangesProgressSteps,
+            ['Preparing output plan', 'Writing reviewed output', 'Refreshing loaded editors'],
             0
           )
         );
@@ -18776,15 +18802,10 @@ export function App({
         }
       }
 
-      setWorkProgress(
-        createIndeterminateWorkProgress(
-          effectiveOutputMode ? 'Writing Trinity Output' : 'Applying Changes',
-          `Applying ${planToApply.writes.length.toLocaleString(formatLocale)} reviewed output ${
-            planToApply.writes.length === 1 ? 'file' : 'files'
-          }`,
-          applyChangesProgressSteps,
-          1
-        )
+      const applyLabel = effectiveOutputMode ? 'Writing Trinity Output' : 'Applying Changes';
+      const progress = createReviewedApplyProgress(planToApply, applyLabel, () =>
+        isCurrentProjectOperation() && editSessionRef.current === reviewedSession &&
+        visibleChangePlanRef.current === planToApply
       );
 
       const response = await bridge.applyChangePlan({
@@ -18792,7 +18813,7 @@ export function App({
         outputMode: effectiveOutputMode,
         paths,
         session: reviewedSession
-      });
+      }, progress.report);
       if (!isCurrentReviewedOperation()) {
         if (
           response.applyResult.outputTransaction !== null ||
@@ -18862,15 +18883,8 @@ export function App({
       }
 
       if (didWriteFiles) {
-        setWorkProgress(
-          createIndeterminateWorkProgress(
-            'Refreshing Editors',
-            'Reloading changed editor data',
-            applyChangesProgressSteps,
-            2
-          )
-        );
-        await refreshLoadedWorkflowsAfterApply(paths, isCurrentProjectOperation);
+        progress.refresh();
+        await refreshLoadedWorkflowsAfterApply(paths, isCurrentProjectOperation, progress.refresh);
       }
 
       if (didWriteFiles || completedApplyResult.outputTransaction !== null) {
@@ -18906,7 +18920,8 @@ export function App({
 
   const refreshLoadedWorkflowsAfterApply = async (
     paths: ReturnType<typeof toProjectPaths>,
-    canCommitProjectRefresh: () => boolean = () => true
+    canCommitProjectRefresh: () => boolean = () => true,
+    onRefreshing?: (section: StoredRetainedWorkflowSection) => void
   ) => {
     if (!canCommitProjectRefresh()) {
       return;
@@ -19691,6 +19706,7 @@ export function App({
 
         currentRefreshSection = section;
         try {
+          if (canCommitProjectRefresh()) onRefreshing?.(section);
           await reloadTask();
         } catch (error) {
           const token = refreshTokens.get(section);
@@ -19821,12 +19837,10 @@ export function App({
     setBridgeDiagnostics([]);
     setEditValidationDiagnostics([]);
     setApplyResult(null);
-    setWorkProgress(createIndeterminateWorkProgress(
-      'Applying Editor Changes',
-      'Writing reviewed editor changes',
-      applyProgressSteps,
-      1
-    ));
+    const progress = createReviewedApplyProgress(reviewedPlan, 'Applying Editor Changes', () =>
+      isCurrentProjectOperation() && editSessionRef.current === reviewedSession &&
+      scopedEditorPanelStatesRef.current[section]?.changePlan === reviewedPlan
+    );
     setScopedEditorPanelStates((currentStates) => ({
       ...currentStates,
       [section]: {
@@ -19847,7 +19861,7 @@ export function App({
             : (reviewedSession.authoringBinding.outputMode ?? undefined),
         paths,
         session: reviewedSession
-      });
+      }, progress.report);
       if (!isCurrentReviewedOperation()) {
         if (
           response.applyResult.outputTransaction !== null ||
@@ -19927,13 +19941,8 @@ export function App({
       }
 
       if (!hasApplyErrors) {
-        setWorkProgress(createIndeterminateWorkProgress(
-          'Applying Editor Changes',
-          'Refreshing loaded editor data',
-          applyProgressSteps,
-          2
-        ));
-        await refreshLoadedWorkflowsAfterApply(paths, isCurrentProjectOperation);
+        progress.refresh();
+        await refreshLoadedWorkflowsAfterApply(paths, isCurrentProjectOperation, progress.refresh);
       }
       if (
         response.applyResult.outputTransaction !== null ||
@@ -24544,13 +24553,7 @@ function getPokemonSpriteNameForSpecies(
     (record) => record.speciesId === speciesId &&
       (editorFamily === 'swsh' ? record.personalId === speciesId : record.form === 0)
   );
-  // SwSh's stored Form field is not the evolution form index. Alternate rows
-  // are addressed through the base species' personal table form range.
-  const swshPersonalId = form === 0
-    ? speciesId
-    : baseRecord && baseRecord.personal.formStatsIndex > 0 && form > 0 && form < baseRecord.personal.formCount
-      ? baseRecord.personal.formStatsIndex + form - 1
-      : null;
+  const swshPersonalId = getSwShPokemonFormPersonalId(speciesId, form, baseRecord);
   const matchingForm = pokemonRecords.find(
     (record) => record.speciesId === speciesId &&
       (editorFamily === 'swsh' ? record.personalId === swshPersonalId : record.form === form)
@@ -45258,13 +45261,21 @@ function getProjectedEncounterSlot(
     slot.species, slot.speciesId, undefined, editorFamily, undefined, slot.formOptions
   );
   const form = read(encounterFormFieldName, speciesId === slot.speciesId ? slot.form : 0, context);
-  const reference = pokemonWorkflow?.pokemon.find(pokemon =>
-    pokemon.speciesId === speciesId && pokemon.form === form);
+  const pokemon = pokemonWorkflow?.pokemon ?? [];
+  const reference = editorFamily === 'swsh'
+    ? findSwShPokemonFormRecord(pokemon, speciesId, form)
+    : pokemon.find(record => record.speciesId === speciesId && record.form === form);
+  const sameIdentity = speciesId === slot.speciesId && form === slot.form;
+  const speciesName = speciesId === 0 ? 'Empty' : reference?.name ?? (sameIdentity ? slot.species : context.species);
+  const formLabel = context.formOptions?.find(option => option.value === form)?.label;
+  const species = editorFamily === 'swsh' && reference && !isNumberedFormLabel(reference.formLabel)
+    ? speciesName
+    : formatSpeciesFormLabel(speciesName, form, speciesId, editorFamily, formLabel);
   return {
     ...slot,
     speciesId,
-    species: speciesId === 0 ? 'Empty' : reference?.name ?? context.species,
-    spriteName: reference?.spriteName,
+    species,
+    spriteName: getPokemonRecordSpriteName(reference),
     form,
     levelMin: read(encounterLevelMinFieldName, slot.levelMin),
     levelMax: read(encounterLevelMaxFieldName, slot.levelMax),
@@ -45695,24 +45706,33 @@ function SelectedEncounterPanel({
         encounterSlot.canEditAppearanceCounts !== true
       ? t('za.spawnSettings.appearanceCountsUnmaterializedDisabled')
       : undefined;
-  const encounterFormOptionContext = useMemo(
-    () =>
-      encounterSlot
-        ? createDraftSpeciesFormOptionContext(
-            defaultEncounterFields.find(
-              (field) => field.field === encounterSpeciesFieldName
-            ) ?? null,
-            selectedPlacementDrafts[encounterSpeciesFieldName],
-            encounterSlot.species,
-            encounterSlot.speciesId,
-            undefined,
-            editorFamily,
-            undefined,
-            encounterSlot.formOptions
-          )
-        : undefined,
-    [defaultEncounterFields, selectedPlacementDrafts, editorFamily, encounterSlot]
-  );
+  const encounterFormOptionContext = useMemo(() => {
+    if (!encounterSlot) return undefined;
+
+    const context = createDraftSpeciesFormOptionContext(
+      defaultEncounterFields.find(field => field.field === encounterSpeciesFieldName),
+      selectedPlacementDrafts[encounterSpeciesFieldName],
+      encounterSlot.species,
+      encounterSlot.speciesId,
+      undefined,
+      editorFamily,
+      undefined,
+      encounterSlot.formOptions
+    );
+    if (editorFamily !== 'swsh' || !pokemonWorkflow || !context.speciesId) return context;
+
+    const speciesId = context.speciesId;
+    const records = pokemonWorkflow.pokemon.filter(record => record.speciesId === speciesId);
+    const recordsByPersonalId = new Map(records.map(record => [record.personalId, record]));
+    const base = findSwShPokemonFormRecord(records, speciesId, 0);
+    const formLabelOverrides: Record<number, string> = {};
+    for (let form = 0; form < (base?.personal.formCount ?? 0); form += 1) {
+      const personalId = getSwShPokemonFormPersonalId(speciesId, form, base);
+      const label = personalId === null ? undefined : recordsByPersonalId.get(personalId)?.formLabel;
+      if (label && !isNumberedFormLabel(label)) formLabelOverrides[form] = label;
+    }
+    return { ...context, formLabelOverrides };
+  }, [defaultEncounterFields, selectedPlacementDrafts, editorFamily, encounterSlot, pokemonWorkflow]);
   const encounterFields = useMemo(
     () =>
       editableFields
@@ -46742,11 +46762,6 @@ function SelectedEncounterPanel({
             />
           ) : null}
 
-          {editorFamily === 'swsh' ? <WildHeldItems key={editSession?.sessionId ?? 'viewing'}
-            workflow={pokemonWorkflow} chances={heldItemChanceWorkflow} session={editSession}
-            speciesId={encounterSlot?.speciesId ?? null} form={encounterSlot?.form ?? null}
-            recordId={encounterSlot ? `${table.tableId}#${encounterSlot.slot}` : null}
-            onDirtyStateChange={setWildHeldItemsDirty} /> : null}
           <div className="encounter-edit-form">
             {!isSvEncounterTable && !isZaEncounterTable && areaTabs.length > 0 ? (
               <div
@@ -46882,13 +46897,9 @@ function SelectedEncounterPanel({
                 <div className="encounter-slot-tabs" aria-label="Encounter slot list">
                   {displayedEncounterSlots.map((slot) => {
                     const preview = encounterSlotPreviews.get(slot.slot)!;
-                    const slotLabel = formatEncounterSlotSpeciesLabel(preview, editorFamily);
-                    const slotSpriteLabel = formatSpeciesFormLabel(
-                      preview.species,
-                      preview.form,
-                      preview.speciesId,
-                      editorFamily
-                    );
+                    const slotLabel = isZaEncounterTable && preview.isAlpha
+                      ? `${preview.species} Alpha`
+                      : preview.species;
                     const slotBadge = formatEncounterSlotBadge(preview, {
                       isScarletViolet: isSvEncounterTable,
                       isPokemonLegendsZA: isZaEncounterTable
@@ -46992,9 +47003,9 @@ function SelectedEncounterPanel({
                         type="button"
                       >
                         <PokemonSprite className="slot-tab-sprite" editorFamily={editorFamily} form={preview.form}
-                          speciesId={preview.speciesId} spriteName={preview.spriteName} name={slotSpriteLabel} preferStatic />
+                          speciesId={preview.speciesId} spriteName={preview.spriteName} name={preview.species} preferStatic />
                         <strong>{slotBadge}</strong>
-                        <span>{slotLabel}</span>
+                        <span className="encounter-slot-name" title={slotLabel}>{slotLabel}</span>
                         {isZaEncounterTable &&
                         (slot.isAlpha ||
                           typeof slot.contributesToWildZoneCompletion === 'boolean') ? (
@@ -47075,7 +47086,7 @@ function SelectedEncounterPanel({
                     <div>
                       <dt>Species</dt>
                       <dd>
-                        {formatEncounterSlotSpeciesLabel(getEncounterSlotPreview(encounterSlot), editorFamily)}
+                        {getEncounterSlotPreview(encounterSlot).species}
                       </dd>
                     </div>
                   ) : null}
@@ -47216,8 +47227,12 @@ function SelectedEncounterPanel({
                     tableId={table.tableId}
                   />
                 ) : null}
+              </>
+            ) : null}
 
-                <div className="editable-field-groups">
+            <div className="editable-field-groups" hidden={!encounterSlot}>
+              {encounterSlot ? (
+                <>
                   {isZaScriptedBossTable ? (
                     <fieldset className="editable-field-group za-scripted-boss-field-group">
                       <legend>{t('za.encounters.bossActions.heading')}</legend>
@@ -47686,7 +47701,24 @@ function SelectedEncounterPanel({
                       ) : null}
                     </fieldset>
                   ))}
-                </div>
+                </>
+              ) : null}
+              {editorFamily === 'swsh' ? (
+                <WildHeldItems
+                  key={editSession?.sessionId ?? 'viewing'}
+                  workflow={pokemonWorkflow}
+                  chances={heldItemChanceWorkflow}
+                  session={editSession}
+                  speciesId={encounterSlot?.speciesId ?? null}
+                  form={encounterSlot?.form ?? null}
+                  recordId={encounterSlot ? `${table.tableId}#${encounterSlot.slot}` : null}
+                  onDirtyStateChange={setWildHeldItemsDirty}
+                />
+              ) : null}
+            </div>
+
+            {encounterSlot ? (
+              <>
                 {isZaEncounterTable ? (
                   <section
                     aria-label={t('za.encounters.advanced.ariaLabel')}
@@ -58901,18 +58933,58 @@ function ChangesSection({
 }
 
 function WorkProgressModal({ progress }: { progress: WorkProgressState }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const dialogRef = useModalDialog({ canClose: false, onClose: () => undefined });
   const isDeterminate = progress.mode === 'determinate';
+  const { fileProgress, reviewedFiles } = progress;
+  const isReviewedApply = reviewedFiles !== undefined;
+  const label = translateLiteral(progress.label);
+  const steps = progress.steps?.map(step => ({ ...step, label: translateLiteral(step.label) }));
+  const reviewedFileItems = useMemo(() =>
+    reviewedFiles?.map(file => <li key={file}><code>{file}</code></li>),
+    [reviewedFiles]
+  );
+  const loadingProgress = (
+    <LoadingProgress className={isReviewedApply ? 'reviewed-apply-current' : undefined}
+      label={label} detail={translateLiteral(progress.detail)} detailAsTitle={isReviewedApply}
+      completed={fileProgress?.completed ?? (isDeterminate ? progress.percent : undefined)}
+      total={fileProgress?.total ?? (isDeterminate ? 100 : undefined)}
+      countLabel={isDeterminate ? translateLiteral('Progress') : undefined}
+      status={progress.status}
+      steps={isReviewedApply ? undefined : steps}>
+      {fileProgress?.currentPath && (
+        <div className="reviewed-apply-resource">
+          <span>{t('applyProgress.currentFile')}</span>
+          <code className="km-loading-progress-resource" data-localization-ignore="true">{fileProgress.currentPath}</code>
+        </div>
+      )}
+    </LoadingProgress>
+  );
   return (
     <div className="modal-backdrop" role="presentation">
-      <section aria-label={translateLiteral(progress.label)} aria-modal="true"
-        className="modal-panel work-progress-panel" ref={dialogRef} role="dialog" tabIndex={-1}>
-        <LoadingProgress label={translateLiteral(progress.label)} detail={translateLiteral(progress.detail)}
-          completed={isDeterminate ? progress.percent : undefined} total={isDeterminate ? 100 : undefined}
-          countLabel={isDeterminate ? translateLiteral('Progress') : undefined}
-          status={progress.status ?? 'running'}
-          steps={progress.steps?.map(step => ({ ...step, label: translateLiteral(step.label) }))} />
+      <section aria-label={label} aria-modal="true"
+        className={`modal-panel work-progress-panel${isReviewedApply ? ' reviewed-apply-panel' : ''}`}
+        ref={dialogRef} role="dialog" tabIndex={-1}>
+        {reviewedFiles ? (
+          <>
+            <h2 className="reviewed-apply-title">{label}</h2>
+            <div className="reviewed-apply-layout">
+              {loadingProgress}
+              {steps?.length ? (
+                <div className="reviewed-apply-steps">
+                  <h3>{t('applyProgress.steps')}</h3>
+                  <LoadingProgressSteps label={label} steps={steps} status={progress.status} />
+                </div>
+              ) : null}
+              <details className="reviewed-apply-files">
+                <summary tabIndex={0}>{t('applyProgress.reviewedFiles', { count: reviewedFiles.length })}</summary>
+                <ul tabIndex={0} data-localization-ignore="true">
+                  {reviewedFileItems}
+                </ul>
+              </details>
+            </div>
+          </>
+        ) : loadingProgress}
       </section>
     </div>
   );
@@ -64441,6 +64513,8 @@ type WorkProgressState = {
   step?: number;
   steps?: WorkProgressStep[];
   totalSteps?: number;
+  fileProgress?: ApplyOutputProgress;
+  reviewedFiles?: readonly string[];
 };
 
 type TrinityOutputConfirmationState = { mode: ChangePlanOutputMode };
@@ -64981,6 +65055,10 @@ const pokemonSpriteIdOverrides = new Map<string, string>([
   ['lycanroc-dusk-form', 'lycanroc-dusk'],
   ['maushold-family-of-four', 'maushold-four'],
   ['maushold-family-of-three', 'maushold'],
+  ...['red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'violet'].flatMap((color): [string, string][] => [
+    [`minior-${color}-meteor`, 'minior-meteor'],
+    [`minior-${color}-core`, color === 'red' ? 'minior' : `minior-${color}`]
+  ]),
   ['oinkologne-female', 'oinkologne-f'],
   ['oinkologne-male', 'oinkologne'],
   ['ogerpon-cornerstone-mask', 'ogerpon-cornerstone'],
@@ -65172,7 +65250,7 @@ function getContextualFieldOptions(
 
   const contextualOptions = formOptions.map((option) => ({
     ...option,
-    label: formatSpeciesFormOptionLabel(option.value, formOptionContext)
+    label: formatSpeciesFormOptionLabel(option.value, formOptionContext, option.label)
   }));
   const allowedFormValues = formOptionContext.allowedFormValues;
   return allowedFormValues
@@ -65193,8 +65271,8 @@ function useContextualSpeciesFormOptions(
       return undefined;
     }
 
-    const formCount = state.pokemonWorkflow?.pokemon.find(
-      (pokemon) => pokemon.speciesId === formOptionContext.speciesId && pokemon.form === 0
+    const formCount = findSwShPokemonFormRecord(
+      state.pokemonWorkflow?.pokemon ?? [], formOptionContext.speciesId, 0
     )?.personal.formCount;
     return formCount !== undefined && formCount > 0 ? formCount : undefined;
   });
@@ -67277,7 +67355,7 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
     [11, 'Blue Core'],
     [12, 'Indigo Core'],
     [13, 'Violet Core']
-  ], undefined, ['sv', 'za']),
+  ]),
   createFormLabelDefinition(901, ['ursaluna'], [[1, 'Bloodmoon']], 'Standard', 'sv'),
   createFormLabelDefinition(902, ['basculegion'], [
     [0, 'Male'],
@@ -67647,13 +67725,15 @@ export function formatSpeciesFormLabel(
   species: string,
   form: number,
   speciesId?: number,
-  gameFamily?: EditorUiFamily
+  gameFamily?: EditorUiFamily,
+  optionLabel?: string
 ) {
   if (form < 0) {
     return species;
   }
 
-  const formLabel = resolveSpeciesFormLabel(species, form, speciesId, gameFamily);
+  const formLabel = resolveSpeciesFormLabel(species, form, speciesId, gameFamily) ??
+    (optionLabel && optionLabel !== 'Base' && !isNumberedFormLabel(optionLabel) ? optionLabel : undefined);
   if (form > 0 && formLabel === undefined && speciesHasNonGenericFormSuffix(species)) {
     return species;
   }
@@ -67712,11 +67792,17 @@ function stripTrailingKnownSpeciesFormLabels(
   }
 }
 
-function formatSpeciesFormOptionLabel(form: number, context: SpeciesFormOptionContext) {
+function formatSpeciesFormOptionLabel(
+  form: number,
+  context: SpeciesFormOptionContext,
+  optionLabel?: string
+) {
   return (
     context.formLabelOverrides?.[form] ??
     resolveSpeciesFormLabel(context.species, form, context.speciesId, context.gameFamily) ??
-    (form === 0 ? resolveBaseSpeciesFormLabel(context) ?? 'Base' : `Form ${form}`)
+    (form === 0 ? resolveBaseSpeciesFormLabel(context) : undefined) ??
+    (optionLabel && !isNumberedFormLabel(optionLabel) ? optionLabel : undefined) ??
+    (form === 0 ? 'Base' : `Form ${form}`)
   );
 }
 
@@ -67746,13 +67832,17 @@ function resolveSpeciesFormLabel(
 }
 
 function speciesAlreadyIncludesFormLabel(species: string, formLabel: string) {
-  const match = species.trim().match(/\(([^()]*)\)\s*$/);
+  const match = species.trim().match(/\(((?:[^()]|\([^()]*\))*)\)\s*$/);
   return match ? normalizeSpeciesName(match[1] ?? '') === normalizeSpeciesName(formLabel) : false;
 }
 
+function isNumberedFormLabel(label: string) {
+  return /^(?:regional\s+)?form\s+\d+$/i.test(label);
+}
+
 function speciesHasNonGenericFormSuffix(species: string) {
-  const match = species.trim().match(/\(([^()]*)\)\s*$/);
-  return match ? !/^form\s+\d+$/i.test(match[1] ?? '') : false;
+  const match = species.trim().match(/\(((?:[^()]|\([^()]*\))*)\)\s*$/);
+  return match ? !isNumberedFormLabel(match[1] ?? '') : false;
 }
 
 function normalizeSpeciesName(species: string) {

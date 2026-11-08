@@ -342,7 +342,7 @@ pub async fn model_preview_open(
             "paths": paths, "id": id, "transferId": token, "animation": animation, "textureChanges": texture_changes, "assetChanges": asset_changes, "resolution": resolution.unwrap_or(1)
         } })
             .to_string();
-        let response = super::project_bridge(app.clone(), bridge, trace, request).await?;
+        let response = super::dispatch_project_bridge(app.clone(), bridge, trace, request, None).await?;
         let response: serde_json::Value =
             serde_json::from_str(&response).map_err(|_| "KM-MODEL-UNSUPPORTED")?;
         if let Some(code) = response["error"]["code"].as_str() {
