@@ -1,5 +1,8 @@
 {
   "keys": {
+    "pokemon.materialDrops.bulkTitle": "Material Drop Count",
+    "pokemon.materialDrops.bulkDescription": "Set the amount for every Pokémon that currently drops a material. This skips species with no material, a 0% drop rate, or a count of 0. The material and drop rate stay the same.",
+    "pokemon.materialDrops.bulkRange": "Materials per drop ({minimum} to {maximum})",
     "pokemon.materialDrops.title": "Material Drops",
     "pokemon.materialDrops.item": "Material",
     "pokemon.materialDrops.rate": "Drop rate (%)",

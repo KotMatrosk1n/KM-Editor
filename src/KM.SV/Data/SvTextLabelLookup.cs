@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Globalization;
 using KM.Core.Diagnostics;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
@@ -9,10 +10,11 @@ namespace KM.SV.Data;
 
 internal sealed class SvTextLabelLookup
 {
+    private static readonly IReadOnlyDictionary<int, string> EmptyMoveDescriptions = new Dictionary<int, string>();
     private static readonly SvTextLabelLookup Empty = new(
         [],
         [],
-        [],
+        EmptyMoveDescriptions,
         [],
         [],
         [],
@@ -24,7 +26,7 @@ internal sealed class SvTextLabelLookup
 
     private readonly IReadOnlyList<string> itemNames;
     private readonly IReadOnlyList<string> moveNames;
-    private readonly IReadOnlyList<string> moveDescriptions;
+    private readonly IReadOnlyDictionary<int, string> moveDescriptions;
     private readonly IReadOnlyList<string> pokemonNames;
     private readonly IReadOnlyList<string> abilityNames;
     private readonly IReadOnlyList<string> placeNames;
@@ -37,7 +39,7 @@ internal sealed class SvTextLabelLookup
     private SvTextLabelLookup(
         IReadOnlyList<string> itemNames,
         IReadOnlyList<string> moveNames,
-        IReadOnlyList<string> moveDescriptions,
+        IReadOnlyDictionary<int, string> moveDescriptions,
         IReadOnlyList<string> pokemonNames,
         IReadOnlyList<string> abilityNames,
         IReadOnlyList<string> placeNames,
@@ -77,7 +79,7 @@ internal sealed class SvTextLabelLookup
         return new SvTextLabelLookup(
             LoadIndexedTableWithFallback(project, fileSource, language, SvDataPaths.ItemNames, "item names", diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, SvDataPaths.MoveNames, "move names", diagnostics),
-            LoadIndexedTableWithFallback(project, fileSource, language, SvDataPaths.MoveDescriptions, "move descriptions", diagnostics),
+            LoadMoveDescriptions(project, fileSource, language, diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, SvDataPaths.PokemonNames, "Pokemon names", diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, SvDataPaths.AbilityNames, "ability names", diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, SvDataPaths.PlaceNames, "place names", diagnostics),
@@ -105,7 +107,7 @@ internal sealed class SvTextLabelLookup
         return new SvTextLabelLookup(
             [],
             [],
-            [],
+            EmptyMoveDescriptions,
             LoadIndexedTableWithFallback(
                 project,
                 fileSource,
@@ -127,7 +129,7 @@ internal sealed class SvTextLabelLookup
     public static SvTextLabelLookup LoadMoveNames(OpenedProject project, SvWorkflowFileSource fileSource,
         ICollection<ValidationDiagnostic> diagnostics) => new(
             [], LoadIndexedTableWithFallback(project, fileSource, SvGameTextLanguage.Resolve(project.Paths),
-                SvDataPaths.MoveNames, "move names", diagnostics), [], [], [], [],
+                SvDataPaths.MoveNames, "move names", diagnostics), EmptyMoveDescriptions, [], [], [],
             new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase), [],
             new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase), [],
             new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase));
@@ -136,7 +138,7 @@ internal sealed class SvTextLabelLookup
 
     public static SvTextLabelLookup LoadAbilityNames(OpenedProject project, SvWorkflowFileSource fileSource,
         ICollection<ValidationDiagnostic> diagnostics) => new(
-            [], [], [], [], LoadIndexedTableWithFallback(project, fileSource, SvGameTextLanguage.Resolve(project.Paths),
+            [], [], EmptyMoveDescriptions, [], LoadIndexedTableWithFallback(project, fileSource, SvGameTextLanguage.Resolve(project.Paths),
                 SvDataPaths.AbilityNames, "ability names", diagnostics), [],
             new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase), [],
             new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase), [],
@@ -152,7 +154,7 @@ internal sealed class SvTextLabelLookup
 
     public string Move(int moveId) => GetIndexed(moveNames, moveId) ?? SvLabels.Move(moveId);
 
-    public string? MoveDescription(int moveId) => GetIndexed(moveDescriptions, moveId);
+    public string? MoveDescription(int moveId) => moveDescriptions.GetValueOrDefault(moveId);
 
     public string Pokemon(int speciesId) => GetIndexed(pokemonNames, speciesId) ?? SvLabels.Pokemon(speciesId);
 
@@ -182,6 +184,55 @@ internal sealed class SvTextLabelLookup
     {
         return GetKeyed(trainerTypes, trainerTypeIndices, key)
             ?? (string.IsNullOrWhiteSpace(key) ? "Trainer" : SvLabels.FormatRawNameForLookup(key));
+    }
+
+    private static IReadOnlyDictionary<int, string> LoadMoveDescriptions(
+        OpenedProject project,
+        SvWorkflowFileSource fileSource,
+        string language,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var lines = TryLoadIndexedTable(project, fileSource, SvDataPaths.MoveDescriptions(language),
+            "move descriptions", diagnostics);
+        if (lines is null && language != SvGameTextLanguage.English)
+        {
+            language = SvGameTextLanguage.English;
+            lines = TryLoadIndexedTable(project, fileSource, SvDataPaths.MoveDescriptions(language),
+                "move descriptions", diagnostics);
+        }
+
+        if (lines is null) return EmptyMoveDescriptions;
+
+        var descriptions = new Dictionary<int, string>();
+        var indices = TryLoadKeyIndices(project, fileSource, SvDataPaths.MoveDescriptionKeys(language),
+            "move description keys", diagnostics);
+        if (indices is not null)
+        {
+            const string prefix = "WAZAINFO_";
+            // Variant keys such as WAZAINFO_851_01 do not identify separate moves.
+            foreach (var (key, index) in indices)
+            {
+                if (key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                    && int.TryParse(key.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out var moveId)
+                    && GetIndexed(lines, index) is { } description)
+                {
+                    descriptions.TryAdd(moveId, description);
+                }
+            }
+            return descriptions;
+        }
+
+        // Some loose text inputs lack the companion key table. The full DLC layout
+        // contains 920 move rows and the extra Stellar Tera Blast row at index 852.
+        var hasStellarRow = lines.Count == 921;
+        for (var index = 0; index < lines.Count; index++)
+        {
+            if (hasStellarRow && index == 852) continue;
+            var moveId = hasStellarRow && index > 852 ? index - 1 : index;
+            if (GetIndexed(lines, index) is { } description)
+                descriptions.Add(moveId, description);
+        }
+        return descriptions;
     }
 
     private static IReadOnlyList<string> LoadIndexedTableWithFallback(

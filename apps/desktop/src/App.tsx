@@ -540,6 +540,7 @@ import {
 import { scopedEditorPanelSectionIds, useScopedEditorPanelOutput } from './components/scopedEditorPanelOutput';
 import { completeSuccessfulApplyResult } from './applyResultDiagnostics';
 import { PokemonYieldConfirmationModal } from './components/PokemonYieldConfirmationModal';
+import { PokemonMaterialDropCountModal } from './components/PokemonMaterialDropCountModal';
 import { useModalDialog } from './components/useModalDialog';
 import {
   type FairyGymBoostSelection,
@@ -24233,6 +24234,7 @@ function PokemonSection({
   selectedPokemonPersonalId,
   workflow
 }: PokemonSectionProps) {
+  const { t } = useLocalization();
   const pokemon = workflow?.pokemon ?? [];
   const filteredPokemon = useMemo(
     () => filterPokemon(pokemon, searchText, editorFamily),
@@ -24263,12 +24265,23 @@ function PokemonSection({
 
   const canEditPokemon = workflow?.summary.availability === 'available';
   const pendingPokemonIds = useMemo(() => getPendingPokemonIds(editSession), [editSession]);
-  const canBulkUpdatePokemonYield =
+  const canBulkUpdatePokemon =
     workflow !== null &&
     editSession !== null &&
     canEditPokemon &&
     !hasProtectedPokemonDrafts &&
     !isPokemonUpdating;
+  const materialDropCountField = editorFamily === 'sv'
+    ? workflow?.editableFields.find((field) => field.field === 'materialDropCount')
+    : undefined;
+  const hasActiveMaterialDrops = materialDropCountField && pokemon.some(({ materialDrop }) =>
+    materialDrop && materialDrop.itemId > 0 && materialDrop.rate > 0 && materialDrop.count > 0);
+  const [showMaterialDropCount, setShowMaterialDropCount] = useState(false);
+  const handleStageMaterialDropCount = (count: number) => {
+    if (!canBulkUpdatePokemon || !hasActiveMaterialDrops) return;
+    setShowMaterialDropCount(false);
+    void onUpdatePokemonField(0, 'materialDropCountAll', String(count));
+  };
   const [expYieldConfirmation, setExpYieldConfirmation] =
     useState<PokemonYieldConfirmationState>(null);
   const [evYieldConfirmation, setEvYieldConfirmation] =
@@ -24314,9 +24327,20 @@ function PokemonSection({
               />
             </div>
             <div className="pokemon-toolbar-actions">
+              {editorFamily === 'sv' ? (
+                <button
+                  className="primary-button compact-button"
+                  disabled={!canBulkUpdatePokemon || !hasActiveMaterialDrops}
+                  onClick={() => setShowMaterialDropCount(true)}
+                  type="button"
+                >
+                  <Package aria-hidden="true" size={14} />
+                  <span>{t('pokemon.materialDrops.bulkTitle')}</span>
+                </button>
+              ) : null}
               <button
                 className="primary-button compact-button"
-                disabled={!canBulkUpdatePokemonYield}
+                disabled={!canBulkUpdatePokemon}
                 onClick={() => setExpYieldConfirmation('remove')}
                 type="button"
               >
@@ -24325,7 +24349,7 @@ function PokemonSection({
               </button>
               <button
                 className="primary-button compact-button"
-                disabled={!canBulkUpdatePokemonYield}
+                disabled={!canBulkUpdatePokemon}
                 onClick={() => setExpYieldConfirmation('restore')}
                 type="button"
               >
@@ -24334,7 +24358,7 @@ function PokemonSection({
               </button>
               <button
                 className="primary-button compact-button"
-                disabled={!canBulkUpdatePokemonYield}
+                disabled={!canBulkUpdatePokemon}
                 onClick={() => setEvYieldConfirmation('remove')}
                 type="button"
               >
@@ -24343,7 +24367,7 @@ function PokemonSection({
               </button>
               <button
                 className="primary-button compact-button"
-                disabled={!canBulkUpdatePokemonYield}
+                disabled={!canBulkUpdatePokemon}
                 onClick={() => setEvYieldConfirmation('restore')}
                 type="button"
               >
@@ -24404,6 +24428,15 @@ function PokemonSection({
       </section>
 
       {pokemonDiagnostics}
+      {showMaterialDropCount && materialDropCountField?.minimumValue != null
+        && materialDropCountField.maximumValue != null ? (
+        <PokemonMaterialDropCountModal
+          minimum={materialDropCountField.minimumValue}
+          maximum={materialDropCountField.maximumValue}
+          onCancel={() => setShowMaterialDropCount(false)}
+          onStage={handleStageMaterialDropCount}
+        />
+      ) : null}
       {expYieldConfirmation ? (
         <PokemonYieldConfirmationModal
           action={expYieldConfirmation}

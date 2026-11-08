@@ -73,6 +73,8 @@ public static class SvDataPaths
 
     public static string MoveDescriptions(string language) => CommonMessage(language, "wazainfo.dat");
 
+    public static string MoveDescriptionKeys(string language) => CommonMessage(language, "wazainfo.tbl");
+
     public static string PokemonNames(string language) => CommonMessage(language, "monsname.dat");
 
     public static string AbilityNames(string language) => CommonMessage(language, "tokusei.dat");

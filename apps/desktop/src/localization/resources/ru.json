@@ -1,5 +1,8 @@
 {
   "keys": {
+    "pokemon.materialDrops.bulkTitle": "Количество материала",
+    "pokemon.materialDrops.bulkDescription": "Задайте количество для всех покемонов, которые сейчас оставляют материал. Виды без материала, с шансом 0 % или с количеством 0 пропускаются. Материал и шанс выпадения сохраняются.",
+    "pokemon.materialDrops.bulkRange": "Количество за одно выпадение (от {minimum} до {maximum})",
     "pokemon.materialDrops.title": "Выпадающие материалы",
     "pokemon.materialDrops.item": "Материал",
     "pokemon.materialDrops.rate": "Шанс выпадения (%)",
