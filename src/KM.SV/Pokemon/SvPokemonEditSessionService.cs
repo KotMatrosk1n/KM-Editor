@@ -99,6 +99,15 @@ internal sealed partial class SvPokemonEditSessionService
             return new SvPokemonEditResult(workflow, currentSession, diagnostics);
         }
 
+        if (string.Equals(field.Trim(), GlobalMaterialDropCountField, StringComparison.Ordinal))
+        {
+            var materialSession = UpdateMaterialDropCounts(loadedWorkflow, workflow, currentSession, value, diagnostics);
+            return new SvPokemonEditResult(
+                OverlayPendingEdits(loadedWorkflow, materialSession.PendingEdits),
+                materialSession,
+                diagnostics);
+        }
+
         if (IsGlobalYieldField(field))
         {
             var globalPendingEdit = CreateGlobalYieldPendingEdit(field, value, diagnostics);

@@ -1,5 +1,8 @@
 {
   "keys": {
+    "pokemon.materialDrops.bulkTitle": "Materialmenge",
+    "pokemon.materialDrops.bulkDescription": "Lege die Menge für alle Pokémon fest, die derzeit Material fallen lassen. Arten ohne Material, mit einer Fundrate von 0 % oder einer Menge von 0 werden übersprungen. Material und Fundrate bleiben gleich.",
+    "pokemon.materialDrops.bulkRange": "Materialmenge pro Fund ({minimum} bis {maximum})",
     "pokemon.materialDrops.title": "Materialfunde",
     "pokemon.materialDrops.item": "Material",
     "pokemon.materialDrops.rate": "Fundrate (%)",

@@ -1,5 +1,8 @@
 {
   "keys": {
+    "pokemon.materialDrops.bulkTitle": "Quantité de matériau",
+    "pokemon.materialDrops.bulkDescription": "Définissez la quantité pour tous les Pokémon qui donnent actuellement un matériau. Les espèces sans matériau, avec un taux de 0 % ou une quantité de 0 sont ignorées. Le matériau et son taux restent les mêmes.",
+    "pokemon.materialDrops.bulkRange": "Matériaux par obtention (de {minimum} à {maximum})",
     "pokemon.materialDrops.title": "Matériaux obtenus",
     "pokemon.materialDrops.item": "Matériau",
     "pokemon.materialDrops.rate": "Taux d’obtention (%)",

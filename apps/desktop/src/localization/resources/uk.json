@@ -1,5 +1,8 @@
 {
   "keys": {
+    "pokemon.materialDrops.bulkTitle": "Кількість матеріалу",
+    "pokemon.materialDrops.bulkDescription": "Задайте кількість для всіх покемонів, з яких зараз випадає матеріал. Види без матеріалу, з імовірністю 0 % або з кількістю 0 пропускаються. Матеріал та імовірність випадіння залишаються тими самими.",
+    "pokemon.materialDrops.bulkRange": "Кількість за одне випадіння (від {minimum} до {maximum})",
     "pokemon.materialDrops.title": "Матеріали, що випадають",
     "pokemon.materialDrops.item": "Матеріал",
     "pokemon.materialDrops.rate": "Імовірність випадіння (%)",

@@ -225,6 +225,7 @@ public sealed partial class SvCacheManager
             yield return SvDataPaths.ItemNames(language);
             yield return SvDataPaths.MoveNames(language);
             yield return SvDataPaths.MoveDescriptions(language);
+            yield return SvDataPaths.MoveDescriptionKeys(language);
             yield return SvDataPaths.PokemonNames(language);
             yield return SvDataPaths.AbilityNames(language);
             yield return SvDataPaths.PlaceNames(language);

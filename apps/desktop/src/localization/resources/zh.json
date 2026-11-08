@@ -1,5 +1,8 @@
 {
   "keys": {
+    "pokemon.materialDrops.bulkTitle": "材料掉落数量",
+    "pokemon.materialDrops.bulkDescription": "为当前会掉落材料的所有宝可梦设置数量。没有材料、掉落概率为 0% 或数量为 0 的物种会被跳过。材料和掉落概率保持不变。",
+    "pokemon.materialDrops.bulkRange": "每次掉落的材料数量（{minimum} 至 {maximum}）",
     "pokemon.materialDrops.title": "掉落材料",
     "pokemon.materialDrops.item": "材料",
     "pokemon.materialDrops.rate": "掉落概率（%）",

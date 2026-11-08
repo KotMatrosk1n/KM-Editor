@@ -40,6 +40,30 @@ internal sealed partial class SvPokemonWorkflowService
 
 internal sealed partial class SvPokemonEditSessionService
 {
+    private const string GlobalMaterialDropCountField = "materialDropCountAll";
+
+    private static EditSession UpdateMaterialDropCounts(SvPokemonWorkflow loadedWorkflow, SvPokemonWorkflow workflow,
+        EditSession session, string value, ICollection<ValidationDiagnostic> diagnostics)
+    {
+        const string countField = SvPokemonWorkflowService.MaterialDropCountField;
+        var definition = workflow.EditableFields.Single(candidate => candidate.Field == countField);
+        var count = SvEditSessionSupport.TryParseInt(value, definition.MinimumValue, definition.MaximumValue,
+            GlobalMaterialDropCountField, SvEditSessionSupport.PokemonDomain, diagnostics);
+        if (count is null) return session;
+
+        // Take eligibility from the current session before staging any new counts.
+        foreach (var pokemon in workflow.Pokemon.DistinctBy(row => row.SpeciesId))
+        {
+            if (pokemon.MaterialDrop is not { ItemId: > 0, Rate: > 0, Count: > 0 } drop || drop.Count == count.Value)
+                continue;
+
+            var edit = CreateMaterialDropEdit(workflow, pokemon, countField, value, diagnostics);
+            if (edit is not null)
+                session = ReplaceCompatibilityGroupOrRemoveNoOp(loadedWorkflow, session, edit);
+        }
+        return session;
+    }
+
     private static bool IsMaterialDropEdit(PendingEdit edit) =>
         IsMaterialDropField(edit.Field);
 

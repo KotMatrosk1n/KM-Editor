@@ -1,5 +1,8 @@
 {
   "keys": {
+    "pokemon.materialDrops.bulkTitle": "Cantidad de material",
+    "pokemon.materialDrops.bulkDescription": "Establece la cantidad para todos los Pokémon que actualmente sueltan un material. Se omiten las especies sin material, con una probabilidad del 0 % o con una cantidad de 0. El material y la probabilidad se mantienen.",
+    "pokemon.materialDrops.bulkRange": "Materiales por caída ({minimum} a {maximum})",
     "pokemon.materialDrops.title": "Materiales soltados",
     "pokemon.materialDrops.item": "Material",
     "pokemon.materialDrops.rate": "Probabilidad de caída (%)",
