@@ -22,12 +22,12 @@ public sealed partial class SwShRestorationPreparationService
                 && source.U16(at + 4) == species && source.U16(at + 2) == identity.Form).ToArray();
             if (candidates.Length != 1) throw new InvalidDataException("Source Pokemon gameplay identity is missing or ambiguous.");
             var table = candidates[0]; var detail = source.Field(table, 0);
-            int NationalSpecies(int developmentSpecies, int form)
+            int NationalSpecies(int developmentSpecies, int form, int? allowedUnavailableSpecies = null)
             {
                 var matches = source.Tables(source.Root, 0, 4096).Where(t => source.Field(t, 0) is var at && at != 0
                     && source.U16(at) == developmentSpecies && source.U16(at + 2) == form)
                     .Select(t => (int)source.U16(source.Field(t, 0) + 4)).Distinct().ToArray();
-                return matches.Length == 1 && SwShRestorationSpecies.IsSpecies(matches[0]) ? matches[0]
+                return matches.Length == 1 && (SwShRestorationSpecies.IsSpecies(matches[0]) || matches[0] == allowedUnavailableSpecies) ? matches[0]
                     : throw new InvalidDataException("The source development species has no unambiguous National identity.");
             }
             if (profile.SourceSpecies is { } sourceId && source.U16(detail) != sourceId)
@@ -52,9 +52,10 @@ public sealed partial class SwShRestorationPreparationService
             var ev = 0;
             for (var i = 0; i < order.Length; i++) { var value = source.U8(yields + order[i]); if (value > 3) throw new InvalidDataException("Source EV yield is unsupported."); ev |= value << (i * 2); }
             var gender = source.Field(table, 12); var hatch = source.Field(table, 15);
+            var sourceHatchedForm = hatch == 0 ? 0 : source.U16(hatch + 2);
             if (gender == 0 || source.U8(gender) != profile.GenderKind || source.U8(gender + 1) != profile.FemalePercent
-                || hatch == 0 || (source.U16(hatch) == 0 && source.U16(hatch + 2) == 0 ? 0 : NationalSpecies(source.U16(hatch), source.U16(hatch + 2))) != profile.HatchedSpecies
-                || source.U16(hatch + 2) != profile.HatchedForm)
+                || hatch == 0 || (source.U16(hatch) == 0 && sourceHatchedForm == 0 ? 0 : NationalSpecies(source.U16(hatch), sourceHatchedForm)) != profile.HatchedSpecies
+                || (sourceHatchedForm != profile.HatchedForm && sourceHatchedForm != profile.AlternateSourceHatchedForm))
                 throw new InvalidDataException("Source gender or hatch identity needs another conversion profile.");
             Put16(row, 10, ev); row.AsSpan(12, 6).Clear(); row[18] = profile.GenderThreshold; row[19] = checked((byte)Scalar(16)); row[20] = checked((byte)Scalar(17));
             row[21] = checked((byte)Scalar(10)); row[22] = checked((byte)Scalar(13)); row[23] = checked((byte)Scalar(14));
@@ -109,8 +110,10 @@ public sealed partial class SwShRestorationPreparationService
             for (var i = 0; i < evolutionCount; i++)
             {
                 var at = evolutionStart + i * 16; var form = source.U16(at + 14);
-                var destination = NationalSpecies(source.U16(at + 12), form);
-                if (species == 203 && destination == 981 && form == 0 && source.U16(at + 2) == 21 && source.U16(at + 4) == 888) continue;
+                // Resolve the known Farigiraf route so it can be skipped without making it a supported target.
+                var isTwinBeamRoute = species == 203 && form == 0 && source.U16(at + 2) == 21 && source.U16(at + 4) == 888;
+                var destination = NationalSpecies(source.U16(at + 12), form, isTwinBeamRoute ? 981 : null);
+                if (isTwinBeamRoute && destination == 981) continue;
                 if (!TryProfile(new(destination, form), out var evolved) || evolved.HatchedSpecies != profile.HatchedSpecies || evolved.HatchedForm != profile.HatchedForm) throw new InvalidDataException("Evolution needs an undeclared restoration dependency.");
                 var original = new SwShEvolutionRecord(i, source.U16(at + 2), source.U16(at + 4), destination, form, source.U16(at));
                 var converted = SwShRestorationEvolutionPolicy.Convert(identity, original);

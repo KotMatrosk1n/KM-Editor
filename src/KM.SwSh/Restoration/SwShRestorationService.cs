@@ -146,7 +146,7 @@ public sealed partial class SwShRestorationService
         if (paths.SelectedGame is not (ProjectGame.Sword or ProjectGame.Shield) || string.IsNullOrWhiteSpace(paths.OutputRootPath)
             || string.IsNullOrWhiteSpace(paths.BaseRomFsPath)) throw new InvalidDataException("Select a Sword or Shield project with a base dump and output folder.");
         var edits = UpgradeSession(paths, session).PendingEdits.Where(e => e.Domain == Domain).ToArray();
-        if (edits.Length is < 1 or > 234 || edits.Select(e => e.RecordId).Distinct(StringComparer.Ordinal).Count() != edits.Length)
+        if (edits.Length == 0 || edits.Length > SwShRestorationDefinitions.All.Count || edits.Select(e => e.RecordId).Distinct(StringComparer.Ordinal).Count() != edits.Length)
             throw new InvalidDataException("Restoration selections are missing, duplicated, or excessive.");
         var snapshot = SwShRestorationStateStore.Read(paths); var selections = snapshot.State.Selections.ToDictionary(s => s.DefinitionId, StringComparer.Ordinal);
         var owned = SwShRestorationOwnership.ExactFiles(paths);

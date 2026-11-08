@@ -31,6 +31,7 @@ public sealed partial class ZaSwShRestorationPreparationService
         {
             if (settings.Count == 0) return scene;
             var used = new HashSet<string>(StringComparer.Ordinal);
+            var constantUvShapes = new HashSet<string>(StringComparer.Ordinal);
             var modelBytes = Donor(modelPath);
             var model = new ModelBuffer(modelBytes);
             var meshes = model.Tables(model.Root, 1, 16);
@@ -57,11 +58,34 @@ public sealed partial class ZaSwShRestorationPreparationService
                             throw new InvalidDataException("ZA gem requires its authored source normal, tangent and UV attributes.");
                     }
                     Require(1, 0, 51); Require(2, 0, 43); Require(3, 0, 43); Require(6, 0, 48);
-                    if (names.Any(n => settings[n].SecondaryUv)) Require(6, 1, 48);
+                    if (names.Any(n => settings[n].SecondaryUv))
+                    {
+                        var shapeName = mesh.Text(shape, 0)!;
+                        if (!attributes.Any(a => mesh.Value(a, 1) == 6 && mesh.Value(a, 2) == 1)
+                            && names.Length == 1 && names[0] == "body_a_01"
+                            && QualifiesAmpharosUv1Default(modelPath, modelBytes, meshPath, meshBytes, sourceMaterials, shapeName))
+                            constantUvShapes.Add(shapeName);
+                        else Require(6, 1, 48);
+                    }
                     used.UnionWith(names);
                 }
             }
             if (!used.SetEquals(settings.Keys)) throw new InvalidDataException("ZA gem source material has no selected geometry consumer.");
+            if (constantUvShapes.Count > 0)
+            {
+                var consumed = new HashSet<string>(StringComparer.Ordinal);
+                var primitives = scene.Primitives.Select(primitive =>
+                {
+                    if (!constantUvShapes.Contains(primitive.Name)) return primitive;
+                    if (primitive.Material.Name != "body_a_01" || primitive.SecondaryUv is not null
+                        || primitive.Vertices.Length == 0 || primitive.Vertices.Length % 16 != 0)
+                        throw new InvalidDataException("Ampharos source constant UV consumer differs from its qualified geometry.");
+                    consumed.Add(primitive.Name);
+                    return primitive with { SecondaryUv = new float[primitive.Vertices.Length / 8] };
+                }).ToArray();
+                if (!consumed.SetEquals(constantUvShapes)) throw new InvalidDataException("Ampharos source constant UV has no decoded consumer.");
+                scene = scene with { Primitives = primitives };
+            }
             foreach (var primitive in scene.Primitives.Where(p => settings.ContainsKey(p.Material.Name)))
             {
                 var count = primitive.Vertices.Length / 16;
@@ -70,6 +94,28 @@ public sealed partial class ZaSwShRestorationPreparationService
                     throw new InvalidDataException("ZA gem decoded source attributes are incomplete.");
             }
             return scene;
+        }
+
+        // Normal Ampharos requests UV1 without binding it. The source vertex layout and
+        // Maxwell attribute command supply constant zero XY for these exact donor files.
+        private static bool QualifiesAmpharosUv1Default(string modelPath, byte[] model, string meshPath,
+            byte[] mesh, byte[] materials, string shape)
+        {
+            const string root = "ik_pokemon/data/pm0181/pm0181_00_00/pm0181_00_00";
+            if (modelPath != root + ".trmdl"
+                || Convert.ToHexString(SHA256.HashData(model)) != "7EBE46A3A960D049B373A2DED587AA18F7A090DDF2B224D5406886EF517CF43D"
+                || Convert.ToHexString(SHA256.HashData(materials)) is not
+                    ("BA1ED03F77CEBE7B3C00034284CA44359D03BB08723F1F8CE302165FBFCEEC40"
+                    or "5BEC0F64E079564ADADE74FB4BBCEC4B31B61B8A637B56E5B2A5F67EC3222237")) return false;
+            var meshHash = (meshPath, shape) switch
+            {
+                (root + ".trmsh", "pm0181_00_00_body_b_mesh_shape") => "690B18183C852F40523156C071600602298589FA718473BE4CF31E2B10E0AEBE",
+                (root + "_lod1.trmsh", "pm0181_00_00_body_b_mesh_shape_lod1") => "E0E3068E638DBA1A87DECB296C8C6C5E32C7E9AB776DE6F393B79FC6C792C20D",
+                (root + "_lod2.trmsh", "pm0181_00_00_body_b_mesh_shape_lod2") => "4041C35DAFF8263D7FD91B7938986A9564D53054A82123C20EA23EA761FF21E5",
+                (root + "_lod3.trmsh", "pm0181_00_00_body_b_mesh_shape_lod3") => "C486B4B4A777E2DA4CA43CC14E27E97F8D32FDA82651AC476ADB3946A3E0C029",
+                _ => null,
+            };
+            return meshHash is not null && Convert.ToHexString(SHA256.HashData(mesh)) == meshHash;
         }
 
         private FresnelPalette FresnelTextures(byte[] materials, string materialPath, bool rare,

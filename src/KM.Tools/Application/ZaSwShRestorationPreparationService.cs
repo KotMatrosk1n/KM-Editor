@@ -94,6 +94,7 @@ public sealed partial class ZaSwShRestorationPreparationService
             token.ThrowIfCancellationRequested();
             ownsArchive = donorSession is null;
             archive = donorSession ?? new SwShRestorationDonorSession(definition.Donor, donorRoot, support);
+            donorSession?.BeginPreparation();
             this.donorRoot = archive.Root;
         }
         internal byte[] Native(string path)

@@ -23,7 +23,7 @@ public sealed partial class SwShRestorationPreparationService
         bool SourceLayeredAlbedo = false, bool CompactTextureReferences = false, bool LayeredEyeEmission = false,
         IReadOnlyDictionary<string, float>? CornealPrimaryNormalHeights = null, int RemoveDetailLevels = 0, bool SeparateNormalSections = false,
         IReadOnlyDictionary<string, int>? NormalSharingGroups = null,
-        IReadOnlyList<SwShNormalSectionPartition>? NormalSectionPartitions = null);
+        IReadOnlyList<SwShNormalSectionPartition>? NormalSectionPartitions = null, int? AlternateSourceHatchedForm = null);
 
     private static IReadOnlyDictionary<string, System.Numerics.Vector2> DeoxysAtlas(string form) =>
         new Dictionary<string, System.Numerics.Vector2>
@@ -59,20 +59,22 @@ public sealed partial class SwShRestorationPreparationService
         [new(386, 3)] = new(150, 386, 300, 0, 255, 170, 170, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true,
             CornealEyes: true, LayerEmission: true, SourceStem: "pm0386_14_00", SourceVoiceForm: 0, GenderKind: 3, TransparentBody: true,
             EmptyMouth: true, MotionOverrides: new Dictionary<string, string> { ["mouth01"] = "00000" }, StaticUvScales: DeoxysAtlas("14"), CenteredStaticUv: true),
+        // These S/V families can report hatch form zero. The Sword and Shield
+        // personal rows still need the authored regional hatch form.
         [new(58, 1)] = new(58, 58, 70, 25, 63, 80, 80, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true,
-            SourceStem: "pm0058_00_41", HatchedForm: 1, ScalarEyes: true, SourceVoiceForm: 0,
+            SourceStem: "pm0058_00_41", HatchedForm: 1, AlternateSourceHatchedForm: 0, ScalarEyes: true, SourceVoiceForm: 0,
             MotionOverrides: new Dictionary<string, string> { ["eye01"] = "00000" }),
         [new(59, 1)] = new(59, 58, 194, 25, 63, 150, 200, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true,
-            SourceStem: "pm0059_00_41", HatchedForm: 1, CornealEyes: true, SourceVoiceForm: 0),
+            SourceStem: "pm0059_00_41", HatchedForm: 1, AlternateSourceHatchedForm: 0, CornealEyes: true, SourceVoiceForm: 0),
         [new(88, 1)] = new(568, 88, 65, 50, 127, 70, 70, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true,
-            SourceStem: "pm0088_00_11", HatchedForm: 1, CornealEyes: true, BattleIdle: "00000", SourceVoiceForm: 0, SurfaceFlow: true),
+            SourceStem: "pm0088_00_11", HatchedForm: 1, AlternateSourceHatchedForm: 0, CornealEyes: true, BattleIdle: "00000", SourceVoiceForm: 0, SurfaceFlow: true),
         [new(89, 1)] = new(569, 88, 175, 50, 127, 100, 100, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true,
-            SourceStem: "pm0089_00_11", HatchedForm: 1, CornealEyes: true, BattleIdle: "00000", SourceVoiceForm: 0, SurfaceFlow: true, CompactAnimationResources: true),
+            SourceStem: "pm0089_00_11", HatchedForm: 1, AlternateSourceHatchedForm: 0, CornealEyes: true, BattleIdle: "00000", SourceVoiceForm: 0, SurfaceFlow: true, CompactAnimationResources: true),
         [new(100, 1)] = new(109, 100, 66, 0, 255, 50, 50, AuthoredMaterials: true, MeshVisibility: true,
-            SourceStem: "pm0100_00_41", HatchedForm: 1, GenderKind: 3, GiantVerticalOffset: 0, LayerEmission: true, SourceVoiceForm: 0,
+            SourceStem: "pm0100_00_41", HatchedForm: 1, AlternateSourceHatchedForm: 0, GenderKind: 3, GiantVerticalOffset: 0, LayerEmission: true, SourceVoiceForm: 0,
             ScalarEyes: true, EmptyMouth: true, MotionOverrides: new Dictionary<string, string> { ["mouth01"] = "00000" }),
         [new(101, 1)] = new(362, 100, 172, 0, 255, 120, 120, AuthoredMaterials: true, MeshVisibility: true,
-            SourceStem: "pm0101_00_41", HatchedForm: 1, GenderKind: 3, LayerEmission: true, SourceVoiceForm: 0,
+            SourceStem: "pm0101_00_41", HatchedForm: 1, AlternateSourceHatchedForm: 0, GenderKind: 3, LayerEmission: true, SourceVoiceForm: 0,
             ScalarEyes: true, EmptyMouth: true, MotionOverrides: new Dictionary<string, string> { ["mouth01"] = "00000" }),
         [new(157, 1)] = new(467, 155, 240, 12, 31, 160, 160, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true,
             SourceStem: "pm0157_00_41", NativeFlames: true, CornealEyes: true, SourceVoiceForm: 0, FlameColorExposure: .25f),
@@ -81,11 +83,11 @@ public sealed partial class SwShRestorationPreparationService
         [new(571, 1)] = new(571, 570, 179, 12, 31, 150, 160, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true,
             SourceStem: "pm0571_00_41", CornealEyes: true, SourceVoiceForm: 0, SurfaceFlow: true, CompactAnimationResources: true),
         [new(74, 1)] = new(109, 74, 60, 50, 127, 50, 40, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true,
-            AnimationOffset: 20000, CornealEyes: true, GiantVerticalOffset: 0, SourceStem: "pm0074_00_11", HatchedForm: 1, SourceVoiceForm: 0),
+            AnimationOffset: 20000, CornealEyes: true, GiantVerticalOffset: 0, SourceStem: "pm0074_00_11", HatchedForm: 1, AlternateSourceHatchedForm: 0, SourceVoiceForm: 0),
         [new(75, 1)] = new(525, 74, 137, 50, 127, 100, 100, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true,
-            CornealEyes: true, SourceStem: "pm0075_00_11", HatchedForm: 1, SourceVoiceForm: 0, LayerEmission: true),
+            CornealEyes: true, SourceStem: "pm0075_00_11", HatchedForm: 1, AlternateSourceHatchedForm: 0, SourceVoiceForm: 0, LayerEmission: true),
         [new(76, 1)] = new(112, 74, 223, 50, 127, 170, 170, AuthoredMaterials: true, MeshVisibility: true, SharedMaterialTextures: true,
-            CornealEyes: true, SourceStem: "pm0076_00_11", HatchedForm: 1,
+            CornealEyes: true, SourceStem: "pm0076_00_11", HatchedForm: 1, AlternateSourceHatchedForm: 0,
             CornealNormalHeights: new Dictionary<string, float> { ["l_eye"] = .01f, ["r_eye"] = .01f },
             NormalUvScales: new Dictionary<string, System.Numerics.Vector2>
             {

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
-using KM.SwSh.Pokemon;
+using System.Globalization;
+using KM.Core.Pokemon;
 using KM.Core.Projects;
+using KM.SwSh.Pokemon;
 
 namespace KM.SwSh.Restoration;
 
@@ -8,7 +10,7 @@ namespace KM.SwSh.Restoration;
 internal static class SwShRestorationFormCandidates
 {
     private sealed record FormCandidate(int Species, int Form, string Label, SwShRestorationDonor? Donor);
-    private static readonly FormCandidate[] Forms =
+    private static readonly FormCandidate[] PlannedForms =
     [
         Candidate(3, 1, "Mega", SwShRestorationDonor.LegendsZA),
         Candidate(6, 1, "MegaX", SwShRestorationDonor.LegendsZA),
@@ -137,10 +139,29 @@ internal static class SwShRestorationFormCandidates
         Candidate(870, 1, "Mega", SwShRestorationDonor.LegendsZA),
     ];
 
+    private static readonly IReadOnlyDictionary<SwShPokemonIdentity, SwShRestorationDefinition> RegisteredForms =
+        SwShRestorationDefinitions.All.SelectMany(definition => definition.Identities
+            .Where(identity => identity.Form > 0).Select(identity => (identity, definition)))
+            .ToDictionary(row => row.identity, row => row.definition);
+
+    private static readonly IReadOnlyDictionary<SwShPokemonIdentity, FormCandidate> Forms = PlannedForms
+        .Concat(RegisteredForms.Select(pair => RegisteredCandidate(pair.Key, pair.Value.Donor)))
+        .DistinctBy(form => new SwShPokemonIdentity(form.Species, form.Form))
+        .ToDictionary(form => new SwShPokemonIdentity(form.Species, form.Form));
+
     private static FormCandidate Candidate(int species, int form, string label, SwShRestorationDonor? donor = null) =>
         new(species, form, label, donor);
 
-    internal static string? ResolveFormLabel(int species, int form) => Forms.FirstOrDefault(f => f.Species == species && f.Form == form)?.Label switch
+    private static FormCandidate RegisteredCandidate(SwShPokemonIdentity identity, SwShRestorationDonor donor)
+    {
+        var family = donor == SwShRestorationDonor.LegendsZA
+            ? PokemonFormLabelFamily.LegendsZA : PokemonFormLabelFamily.ScarletViolet;
+        var label = PokemonFormLabels.ResolveFormLabel(identity.Species, string.Empty, identity.Form, family)
+            ?? string.Create(CultureInfo.InvariantCulture, $"Form {identity.Form}");
+        return Candidate(identity.Species, identity.Form, label, donor);
+    }
+
+    internal static string? ResolveFormLabel(int species, int form) => Forms.GetValueOrDefault(new(species, form))?.Label switch
     {
         "MegaX" => "Mega X", "MegaY" => "Mega Y", "MegaZ" => "Mega Z",
         "MegaMale" => "Mega (Male)", "MegaFemale" => "Mega (Female)",
@@ -153,10 +174,10 @@ internal static class SwShRestorationFormCandidates
         SwShEffectivePokemonCatalog catalog, IReadOnlyList<string> names, ProjectGame? game, SwShRestorationState state)
     {
         var current = catalog.Entries.ToDictionary(e => e.Identity);
-        var forms = Forms.Where(f => !current.TryGetValue(new(f.Species, f.Form), out var entry) || entry.Origin != SwShPokemonOrigin.Native)
+        var forms = Forms.Values.Where(f => !current.TryGetValue(new(f.Species, f.Form), out var entry) || entry.Origin != SwShPokemonOrigin.Native)
             .Select(f =>
             {
-                var definition = SwShRestorationDefinitions.All.SingleOrDefault(d => d.Identities.Contains(new(f.Species, f.Form)));
+                var definition = RegisteredForms.GetValueOrDefault(new(f.Species, f.Form));
                 var selection = state.Selections.SingleOrDefault(s => s.DefinitionId == definition?.Id);
                 current.TryGetValue(new(f.Species, f.Form), out var entry);
                 var complete = entry?.Capabilities.HasFlag(SwShPokemonCapability.Assignment) == true;

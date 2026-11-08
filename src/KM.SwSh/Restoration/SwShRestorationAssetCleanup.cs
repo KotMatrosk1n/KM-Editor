@@ -22,7 +22,7 @@ public static class SwShRestorationAssetCleanup
                 if (bytes.Length > 1024 * 1024) throw new InvalidDataException("Restoration state exceeds its size limit.");
                 var saved = JsonSerializer.Deserialize<SwShRestorationState>(bytes)
                     ?? throw new InvalidDataException("Restoration state is empty.");
-                if (saved.Schema != 1 || saved.Selections is null || saved.Selections.Count > 234)
+                if (saved.Schema != 1 || saved.Selections is null || saved.Selections.Count > SwShRestorationDefinitions.All.Count)
                     throw new InvalidDataException("Restoration state is invalid.");
                 return saved.Selections.Where(s => s.RemovalId is null)
                     .SelectMany(s => s.CustomizationHash is { } custom ? new[] { s.PreparedHash, custom } : [s.PreparedHash]).ToArray();
