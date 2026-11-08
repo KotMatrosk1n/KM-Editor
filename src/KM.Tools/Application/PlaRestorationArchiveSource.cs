@@ -7,14 +7,25 @@ namespace KM.Tools.Application;
 internal sealed class PlaRestorationArchiveSource(string root, string? support) : IDisposable
 {
     private readonly PlaCompressionRuntime runtime = new(support);
-    private readonly Dictionary<string, (PlaFieldArchive Archive, long Length, long Ticks)> archives = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, PlaFieldArchive> archives = new(StringComparer.Ordinal);
+    // Stamps outlive preparation payloads: every observed pack remains guarded
+    // until this sequential donor session is disposed.
+    private readonly Dictionary<string, (long Length, long Ticks)> observations = new(StringComparer.Ordinal);
     private long retained;
     private long decoded;
     private readonly HashSet<string> members = new(StringComparer.Ordinal);
 
+    // These limits bound one preparation, including all its identities and
+    // genders. A reused donor session must not charge prior preparations here.
+    internal void BeginPreparation()
+    {
+        Verify();
+        archives.Clear(); members.Clear(); retained = 0; decoded = 0;
+    }
+
     internal void Verify()
     {
-        foreach (var (path, entry) in archives)
+        foreach (var (path, entry) in observations)
         {
             var file = new FileInfo(path);
             if (!file.Exists || file.Length != entry.Length || file.LastWriteTimeUtc.Ticks != entry.Ticks)
@@ -41,18 +52,19 @@ internal sealed class PlaRestorationArchiveSource(string root, string? support) 
                 || retained + stream.Length > 128L * 1024 * 1024)
                 throw new InvalidDataException("PLA restoration archives exceed the source budget.");
             var bytes = new byte[checked((int)stream.Length)]; stream.ReadExactly(bytes);
-            entry = (new PlaFieldArchive(bytes), bytes.Length, File.GetLastWriteTimeUtc(physical).Ticks);
+            entry = new PlaFieldArchive(bytes);
+            observations.TryAdd(physical, (bytes.Length, File.GetLastWriteTimeUtc(physical).Ticks));
             retained += bytes.Length; archives.Add(physical, entry);
         }
-        var size = entry.Archive.DecodedSize(path);
+        var size = entry.DecodedSize(path);
         if (size > maximum || !members.Contains(path) && decoded + size > 256L * 1024 * 1024)
             throw new InvalidDataException("The PLA donor members exceed the decoded source budget.");
-        var result = entry.Archive.Read(path, runtime);
+        var result = entry.Read(path, runtime);
         if (members.Add(path)) decoded += result.Length;
         if (result.Length > maximum) throw new InvalidDataException("The PLA donor member exceeds its size limit.");
         Verify();
         return result;
     }
 
-    public void Dispose() { archives.Clear(); members.Clear(); runtime.Dispose(); }
+    public void Dispose() { archives.Clear(); observations.Clear(); members.Clear(); retained = 0; decoded = 0; runtime.Dispose(); }
 }

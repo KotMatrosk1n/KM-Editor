@@ -2329,7 +2329,7 @@ public static class SwShBridgeMapper
         return new PokemonRecordDto(
             pokemon.PersonalId,
             pokemon.SpeciesId,
-            pokemon.Form,
+            pokemon.CanonicalForm,
             pokemon.Name,
             pokemon.FormLabel,
             pokemon.Type1,

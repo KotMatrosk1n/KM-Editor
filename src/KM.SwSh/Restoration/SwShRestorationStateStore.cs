@@ -110,7 +110,7 @@ public static class SwShRestorationStateStore
     { if (hash is null || hash.Length != 64 || hash.Any(c => !char.IsAsciiHexDigitLower(c))) throw new InvalidDataException("Restoration artifact identity is invalid."); }
     private static void Validate(SwShRestorationState state)
     {
-        if (state.Schema != 1 || state.Selections is null || state.Selections.Any(s => s is null) || state.Selections.Count > 234 || state.Selections.Select(s => s.DefinitionId).Distinct(StringComparer.Ordinal).Count() != state.Selections.Count)
+        if (state.Schema != 1 || state.Selections is null || state.Selections.Any(s => s is null) || state.Selections.Count > SwShRestorationDefinitions.All.Count || state.Selections.Select(s => s.DefinitionId).Distinct(StringComparer.Ordinal).Count() != state.Selections.Count)
             throw new InvalidDataException("Restoration state schema or selection count is invalid.");
         foreach (var selection in state.Selections)
         {

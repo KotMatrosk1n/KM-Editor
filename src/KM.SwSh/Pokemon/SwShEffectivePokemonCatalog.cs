@@ -35,7 +35,9 @@ public sealed record SwShEffectivePokemonCatalog(string Revision, IReadOnlyList<
             var catalogBytes = Read(paths, ModelCatalogPath, sources: sources);
             var native = SwShPersonalTable.Parse(nativeBytes, 4096).Records;
             var current = SwShPersonalTable.Parse(currentBytes, 4096).Records;
-            if (native.Count <= MaximumSpecies || current.Count != native.Count)
+            // Restored form blocks can extend the effective table. Identities validates
+            // the ownership and bounds of the rows referenced by either table.
+            if (native.Count <= MaximumSpecies || current.Count < native.Count)
                 throw new InvalidDataException("Native and effective personal tables have incompatible identities.");
             var modelCatalog = new SwShPokemonResourceCatalog(catalogBytes);
             var models = modelCatalog.Identities.Select(i => new SwShPokemonIdentity(i.Species, i.Form)).ToHashSet();

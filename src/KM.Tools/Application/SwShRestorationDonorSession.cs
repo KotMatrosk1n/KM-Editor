@@ -11,6 +11,7 @@ using KM.SwSh.Restoration;
 namespace KM.Tools.Application;
 
 /// <summary>A bounded, process lifetime cache of only the donor files requested by conversion.</summary>
+/// <remarks>Use a session for sequential preparations. It is not thread-safe.</remarks>
 public sealed class SwShRestorationDonorSession : IDisposable
 {
     private readonly Action? verifyAdditionalSource;
@@ -78,6 +79,17 @@ public sealed class SwShRestorationDonorSession : IDisposable
     {
         if (!Matches(game, Root, support)) throw new InvalidDataException("The donor changed during preparation. Select it again and retry.");
         verifyAdditionalSource?.Invoke();
+    }
+
+    internal void BeginPreparation()
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        if (archive is not PlaRestorationArchiveSource source) return;
+        VerifySource();
+        source.BeginPreparation();
+        // A decoded session hit must not bypass the new preparation's archive
+        // observations and member accounting, or return bytes from an old pack.
+        files.Clear(); order.Clear(); retained = 0;
     }
 
     public byte[] Read(string path, int maximumBytes = 32 * 1024 * 1024)

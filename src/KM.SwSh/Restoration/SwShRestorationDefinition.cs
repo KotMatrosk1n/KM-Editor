@@ -148,8 +148,8 @@ public static class SwShRestorationDefinitions
         Species("ariados", 168) with { AssetRevision = 2, Donor = SwShRestorationDonor.LegendsZA },
         Species("meditite", 307) with { AssetRevision = 3, Donor = SwShRestorationDonor.LegendsZA, AdditionalModelVariants = [new(new(307, 0), 1, "pm0307_01")] },
         Species("medicham", 308) with { AssetRevision = 2, Donor = SwShRestorationDonor.LegendsZA, AdditionalModelVariants = [new(new(308, 0), 1, "pm0308_01")] },
-        Species("spoink", 325) with { AssetRevision = 6, Donor = SwShRestorationDonor.LegendsZA },
-        Species("grumpig", 326) with { AssetRevision = 3, Donor = SwShRestorationDonor.LegendsZA },
+        Species("spoink", 325) with { AssetRevision = 7, Donor = SwShRestorationDonor.LegendsZA },
+        Species("grumpig", 326) with { AssetRevision = 4, Donor = SwShRestorationDonor.LegendsZA },
         Species("chimecho", 358) with { AssetRevision = 3, Donor = SwShRestorationDonor.LegendsZA },
         Species("chingling", 433) with { AssetRevision = 3, Donor = SwShRestorationDonor.LegendsZA },
         Species("scatterbug", 664) with { AssetRevision = 4, Donor = SwShRestorationDonor.LegendsZA },
@@ -279,9 +279,9 @@ public static class SwShRestorationDefinitions
         Species("voltorb", 100), Species("electrode", 101),
         Species("hisuian-voltorb", 100, 1), Species("hisuian-electrode", 101, 1),
         Species("hisuian-typhlosion", 157, 1), Species("hisuian-samurott", 503, 1), Species("hisuian-zoroark", 571, 1),
-        Species("mareep", 179) with { Donor = SwShRestorationDonor.LegendsZA },
-        Species("flaaffy", 180) with { Donor = SwShRestorationDonor.LegendsZA },
-        Species("ampharos", 181) with { Donor = SwShRestorationDonor.LegendsZA },
+        Species("mareep", 179) with { Donor = SwShRestorationDonor.LegendsZA, AssetRevision = 2 },
+        Species("flaaffy", 180) with { Donor = SwShRestorationDonor.LegendsZA, AssetRevision = 2 },
+        Species("ampharos", 181) with { Donor = SwShRestorationDonor.LegendsZA, AssetRevision = 2 },
         Species("girafarig", 203) with { AdditionalModelVariants = Array.AsReadOnly(new[] { new SwShRestorationModelVariant(new(203, 0), 1, "pm0203_01") }) },
         Species("pineco", 204),
         Species("forretress", 205),
@@ -447,21 +447,28 @@ public sealed record SwShRestorationCatalog(string Revision, IReadOnlyList<SwShR
         var catalog = SwShEffectivePokemonCatalog.Load(paths);
         if (!catalog.Available) return new(catalog.Revision, [], catalog.UnavailableReason);
         var state = SwShRestorationStateStore.Read(paths);
-        var entries = catalog.Entries.Where(e => e.Identity.Form == 0).GroupBy(e => e.Identity.Species).Where(g => g.All(e => e.Origin != SwShPokemonOrigin.Native))
-            .Select(group =>
+        var baseRows = catalog.Entries.Where(e => e.Identity.Form == 0).ToDictionary(e => e.Identity.Species);
+        var definitions = SwShRestorationDefinitions.All
+            .SelectMany(d => d.Identities.Where(i => i.Form == 0).Select(i => (i.Species, Definition: d)))
+            .ToDictionary(entry => entry.Species, entry => entry.Definition);
+        // Added species can be selected before their personal rows are appended.
+        var entries = baseRows.Keys.Union(definitions.Keys)
+            .Where(species => baseRows.GetValueOrDefault(species)?.Origin != SwShPokemonOrigin.Native)
+            .Select(species =>
             {
-                var definition = SwShRestorationDefinitions.All.SingleOrDefault(d => d.Identities.Contains(new(group.Key, 0)));
+                var row = baseRows.GetValueOrDefault(species);
+                var definition = definitions.GetValueOrDefault(species);
                 var selection = state.State.Selections.SingleOrDefault(s => s.DefinitionId == definition?.Id);
-                var complete = group.Any(e => e.Capabilities.HasFlag(SwShPokemonCapability.Assignment));
-                return new SwShRestorationCatalogEntry(group.Key,
-                    group.Key < names.Count && !string.IsNullOrWhiteSpace(names[group.Key]) ? names[group.Key]
-                        : SwShRestorationSpecies.DisplayName(group.Key) ?? $"Pokemon {group.Key}",
+                var complete = row?.Capabilities.HasFlag(SwShPokemonCapability.Assignment) == true;
+                return new SwShRestorationCatalogEntry(species,
+                    species < names.Count && !string.IsNullOrWhiteSpace(names[species]) ? names[species]
+                        : SwShRestorationSpecies.DisplayName(species) ?? $"Pokemon {species}",
                     definition?.Id, paths.SelectedGame is { } game && definition is not null ? definition.Support.GetValueOrDefault(game) : SwShRestorationSupport.NotSupported,
                     selection?.Enabled == true ? complete ? SwShRestorationInstallation.Enabled : SwShRestorationInstallation.NeedsRepair
-                        : group.Any(e => e.Personal.IsPresentInGame) ? SwShRestorationInstallation.External : SwShRestorationInstallation.Disabled,
-                    definition?.Identities.Select(i => i.Species).Distinct().ToArray() ?? [group.Key])
+                        : row?.Personal.IsPresentInGame == true ? SwShRestorationInstallation.External : SwShRestorationInstallation.Disabled,
+                    definition?.Identities.Select(i => i.Species).Distinct().ToArray() ?? [species])
                     { Donor = definition?.Donor, AvailableForAssignment = complete };
             });
-        return new(catalog.Revision + ":forms-1", SwShRestorationFormCandidates.Include(entries, catalog, names, paths.SelectedGame, state.State), null);
+        return new(catalog.Revision + ":forms-2", SwShRestorationFormCandidates.Include(entries, catalog, names, paths.SelectedGame, state.State), null);
     }
 }
