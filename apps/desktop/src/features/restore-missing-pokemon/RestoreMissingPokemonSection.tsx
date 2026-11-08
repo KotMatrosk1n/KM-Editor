@@ -45,8 +45,12 @@ export function RestoreMissingPokemonSection({ workflow, paths, bridge, session,
   const preparationIntents = useRef(new Map<string, { sessionId: string; version: number; draft: RestorationDraft }>());
   const active = useRef(true); const submittedDrafts = useRef(drafts); submittedDrafts.current = drafts;
   const entries = workflow?.entries ?? [];
-  const entryName = (entry: RestorationWorkflow['entries'][number]) => entry.formLabel
-    ? t(`restoration.form.${entry.formLabel}`, { name: entry.name }) : entry.name;
+  const entryName = (entry: RestorationWorkflow['entries'][number]) => {
+    if (!entry.formLabel) return entry.name;
+    const key = `restoration.form.${entry.formLabel}`;
+    const translated = t(key, { name: entry.name });
+    return translated === key ? `${entry.name} (${entry.formLabel})` : translated;
+  };
   const pendingCount = session?.pendingEdits.filter(e => e.domain === 'workflow.restoreMissingPokemon').length ?? 0;
   const dirty = Object.keys(drafts).length > 0;
   const canEdit = isEditing && session !== null && workflow?.canEdit === true;
