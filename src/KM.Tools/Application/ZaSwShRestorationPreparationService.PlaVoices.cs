@@ -41,6 +41,7 @@ public sealed partial class ZaSwShRestorationPreparationService
                     {
                         if (!packages.TryGetValue(id, out var entry) || entry.Media.Length > 32 * 1024 * 1024)
                             throw new InvalidDataException("PLA cry media is unavailable or oversized.");
+                        ReportResource(string.Create(CultureInfo.InvariantCulture, $"{Path.GetFileName(entry.Path)}/{id}.wem"));
                         using var input = new FileStream(entry.Path, FileMode.Open, FileAccess.Read, FileShare.Read);
                         if (input.Length != entry.Length || System.IO.File.GetLastWriteTimeUtc(entry.Path).Ticks != entry.Ticks)
                             throw new InvalidDataException("PLA cry package changed during preparation.");

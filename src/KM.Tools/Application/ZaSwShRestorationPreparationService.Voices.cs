@@ -89,6 +89,7 @@ public sealed partial class ZaSwShRestorationPreparationService
                         byte[] encoded;
                         if (voice.Embedded)
                         {
+                            ReportResource(string.Create(CultureInfo.InvariantCulture, $"{relative}/{mediaId}.wem"));
                             var embedded = source.Media.Where(m => m.Id == mediaId).ToArray();
                             if (embedded.Length != 1 || embedded[0].Bytes.Length > 32 * 1024 * 1024)
                                 throw new InvalidDataException("Embedded donor cry is missing or oversized.");
@@ -98,6 +99,7 @@ public sealed partial class ZaSwShRestorationPreparationService
                         else
                         {
                             if (!packages.TryGetValue(mediaId, out var entry) || entry.Media.Length > 32 * 1024 * 1024) throw new InvalidDataException("Donor cry media is unavailable or oversized.");
+                            ReportResource(string.Create(CultureInfo.InvariantCulture, $"{Path.GetFileName(entry.Path)}/{mediaId}.wem"));
                             using var input = new FileStream(entry.Path, FileMode.Open, FileAccess.Read, FileShare.Read); input.Position = entry.Media.Offset;
                             encoded = new byte[entry.Media.Length]; input.ReadExactly(encoded);
                             Fingerprint("donor-media", Path.GetRelativePath(donorRoot, entry.Path).Replace('\\', '/') + "/" + mediaId.ToString(CultureInfo.InvariantCulture), encoded);

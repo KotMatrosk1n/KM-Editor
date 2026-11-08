@@ -341,7 +341,7 @@ public static class PokemonFormLabels
             Definition(745, ["Lycanroc"], [(0, "Midday Form"), (1, "Midnight Form"), (2, "Dusk Form")], null, all),
             Definition(746, ["Wishiwashi"], [(0, "Solo Form"), (1, "School Form")], null, all),
             Definition(773, ["Silvally"], CreateSilvallyFormLabels(), null, all),
-            Definition(774, ["Minior"], CreateMiniorFormLabels(), null, svZa),
+            Definition(774, ["Minior"], CreateMiniorFormLabels(), null, all),
             Definition(778, ["Mimikyu"], [(0, "Disguised Form"), (1, "Busted Form")], null, all),
             Definition(800, ["Necrozma"], [
                 (0, "Necrozma"),

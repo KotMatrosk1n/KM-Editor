@@ -4,6 +4,33 @@ import type { PokemonRecord } from '../../bridge/contracts';
 
 export type SpeciesFormGameFamily = 'swsh' | 'sv' | 'za';
 
+// Sword and Shield encounter forms are indices in the base species' personal table range.
+export function getSwShPokemonFormPersonalId(
+  speciesId: number,
+  form: number,
+  baseRecord?: PokemonRecord
+) {
+  if (form === 0) return baseRecord?.personalId ?? speciesId;
+
+  const personal = baseRecord?.personal;
+  return personal && personal.formStatsIndex > 0 && form > 0 && form < personal.formCount
+    ? personal.formStatsIndex + form - 1
+    : null;
+}
+
+export function findSwShPokemonFormRecord(
+  pokemon: readonly PokemonRecord[],
+  speciesId: number,
+  form: number
+) {
+  const baseRecord = pokemon.find(record => record.speciesId === speciesId && record.personalId === speciesId)
+    ?? pokemon.find(record => record.speciesId === speciesId && record.form === 0);
+  if (form === 0) return baseRecord;
+
+  const personalId = getSwShPokemonFormPersonalId(speciesId, form, baseRecord);
+  return pokemon.find(record => record.personalId === personalId && record.speciesId === speciesId);
+}
+
 export type SpeciesFormCatalogOption = {
   formOptions?: readonly SpeciesFormCatalogOption[] | null;
   value: number;
@@ -83,7 +110,7 @@ export function getAvailableSpeciesForms(
     );
 
     if (gameFamily === 'swsh') {
-      const baseRecord = presentRecords.find((record) => record.form === 0);
+      const baseRecord = findSwShPokemonFormRecord(presentRecords, speciesId, 0);
       if (!baseRecord) {
         return null;
       }

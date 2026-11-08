@@ -48,6 +48,7 @@ public sealed partial class SwShRestorationPreparationService
                     token.ThrowIfCancellationRequested();
                     var mediaId = states[state].MediaId;
                     if (!packages.TryGetValue(mediaId, out var entry) || entry.Media.Length > 32 * 1024 * 1024) throw new InvalidDataException("Donor cry media is unavailable or oversized.");
+                    ReportResource(string.Create(CultureInfo.InvariantCulture, $"{Path.GetFileName(entry.Path)}/{mediaId}.wem"));
                     using var input = new FileStream(entry.Path, FileMode.Open, FileAccess.Read, FileShare.Read); input.Position = entry.Media.Offset;
                     var encoded = new byte[entry.Media.Length]; input.ReadExactly(encoded);
                     Fingerprint("donor-media", Path.GetRelativePath(donorRoot, entry.Path).Replace('\\', '/') + "/" + mediaId.ToString(CultureInfo.InvariantCulture), encoded);

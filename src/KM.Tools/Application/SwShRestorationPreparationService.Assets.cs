@@ -459,6 +459,7 @@ public sealed partial class SwShRestorationPreparationService
             foreach (var resource in motions)
             {
                 token.ThrowIfCancellationRequested();
+                Report("animations", clips.Count, motions.Length + NativeClips.Count, resource.Id);
                 detailHierarchy?.RequireUnanimated(resource.Bytes);
                 var clip = PreviewRigReader.Animation(new(resource.Bytes), resource.Id, scene.Rig.Bones);
                 var warnings = new List<string>();
@@ -514,7 +515,7 @@ public sealed partial class SwShRestorationPreparationService
             {
                 var sourceCode = name == "ba10_waitA01" ? profile.BattleIdle : profile.MotionOverrides?.GetValueOrDefault(name, code) ?? code;
                 if (!clips.TryGetValue(sourceCode, out var clip)) throw new InvalidDataException($"Required animation is unavailable: {sourceCode}");
-                Report("animations", motions.Length + nativeClipsDone++, motions.Length + NativeClips.Count);
+                Report("animations", motions.Length + nativeClipsDone++, motions.Length + NativeClips.Count, $"{stem}_{name}.gfbanm");
                 var expression = name == "eye01" ? SwShExpressionCurve.Eyes : name == "mouth01" ? SwShExpressionCurve.Mouth : SwShExpressionCurve.None;
                 members[animationFolder + stem + "_" + name + ".gfbanm"] = ConvertMotion(clip.Skeleton, clip.Decoded, expression == SwShExpressionCurve.None, expression);
             }
@@ -631,7 +632,9 @@ public sealed partial class SwShRestorationPreparationService
                                 selected[modelFolder + stem + suffix + ".gfbmdl"], originalNames, species, pokemon.Form);
                     SwShRestorationResourceBudget.Validate(selected);
                 }
-                result.Add(File($"bin/archive/pokemon/{stem}{suffix}.gfpak", SwShGfPackFile.CreateWithPaths(selected).Write()));
+                var archivePath = $"bin/archive/pokemon/{stem}{suffix}.gfpak";
+                Report("packing", resource: archivePath);
+                result.Add(File(archivePath, SwShGfPackFile.CreateWithPaths(selected).Write()));
             }
             if (profile.CompactResources)
                 shaderNames.IntersectWith(new[] { 3, 5 }.SelectMany(f => ModelNames(new(members[modelFolder + stem + ".gfbmdl"]), f)));
@@ -657,7 +660,9 @@ public sealed partial class SwShRestorationPreparationService
                     ? Member(giantTransparent!, SvSwShTransparentMaterial.NativePrograms[pass] + extension)
                     : giantDonor.TryGetFileByName(name + extension, 32 * 1024 * 1024, out var shader)
                     ? shader : Member(giantFire ?? giantDonor, name + extension);
-            result.Add(File($"bin/archive/gpokemon/{stem}.gfpak", SwShGfPackFile.CreateWithPaths(giantMembers).Write()));
+            var giantPath = $"bin/archive/gpokemon/{stem}.gfpak";
+            Report("packing", resource: giantPath);
+            result.Add(File(giantPath, SwShGfPackFile.CreateWithPaths(giantMembers).Write()));
             foreach (var shiny in new[] { false, true })
             {
                 var identity = new SwShPokemonResourceIdentity(species, pokemon.Form, gender, shiny);

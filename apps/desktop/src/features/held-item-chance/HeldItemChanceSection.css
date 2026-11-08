@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-.held-item-chance, .held-item-rate-groups, .held-item-rate-group, .wild-held-items {
+.held-item-chance, .held-item-rate-groups, .held-item-rate-group {
   min-width: 0;
   width: 100%;
   box-sizing: border-box;
@@ -26,10 +26,15 @@
 .held-item-rate-input { display: flex; align-items: center; gap: .4rem; min-width: 0; }
 .held-item-rate-input input { width: 100%; min-width: 0; }
 .held-item-total { font-weight: 600; }
-.held-item-notes p, .wild-held-items p, .held-item-rate-group p { overflow-wrap: anywhere; }
-.wild-held-items { margin-block: 1rem; }
-.wild-held-items .held-item-slot-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
-.wild-held-items .held-item-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-block: .8rem; }
+.held-item-notes p, .held-item-rate-group p { overflow-wrap: anywhere; }
+.wild-held-items-note {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.wild-held-items-note + .editable-field-grid,
+.wild-held-items .editable-field-grid + .wild-held-items-note {
+  margin-top: .5rem;
+}
 
 .held-item-pokemon-details { min-width: 0; order: 2; }
 .held-item-chance.swsh-pokemon-section .pokemon-toolbar { margin-block-start: 1rem; grid-template-columns: minmax(0, 1fr); }

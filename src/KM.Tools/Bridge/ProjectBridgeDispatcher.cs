@@ -558,7 +558,7 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
     }
 
     internal (string ResponseJson, bool RequiresDispatcherReset) DispatchForLongLivedRunner(
-        string requestJson)
+        string requestJson, Action<OutputApplyProgress>? reportApplyProgress = null)
     {
         if (string.IsNullOrWhiteSpace(requestJson))
         {
@@ -845,7 +845,7 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.StartEditSession => DispatchStartEditSession(requestJson),
                 KmCommandNames.ValidateEditSession => DispatchValidateEditSession(requestJson),
                 KmCommandNames.CreateChangePlan => DispatchCreateChangePlan(requestJson),
-                KmCommandNames.ApplyChangePlan => DispatchApplyChangePlan(requestJson),
+                KmCommandNames.ApplyChangePlan => DispatchApplyChangePlan(requestJson, reportApplyProgress),
                 KmCommandNames.ReadChangeSets => DispatchReadChangeSets(requestJson),
                 KmCommandNames.MutateChangeSets => DispatchMutateChangeSets(requestJson),
                 KmCommandNames.CaptureChangeSetSession => DispatchCaptureChangeSetSession(requestJson),
@@ -6381,9 +6381,12 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
                     Domain: "guidedDesign"))
                 .ToArray());
 
-    private string DispatchApplyChangePlan(string requestJson)
+    private string DispatchApplyChangePlan(string requestJson, Action<OutputApplyProgress>? reportProgress)
     {
         var request = DeserializeRequest<ApplyChangePlanRequest>(requestJson);
+        if (!request.Payload.ReportProgress) reportProgress = null;
+        using var progress = reportProgress is not null ? OutputApplyProgress.Observe(reportProgress) : null;
+        reportProgress?.Invoke(new("verifying", 0, 0, null));
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var changePlan = EditSessionBridgeMapper.ToCore(request.Payload.ChangePlan);

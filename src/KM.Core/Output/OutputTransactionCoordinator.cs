@@ -2079,6 +2079,7 @@ public sealed partial class OutputTransactionCoordinator
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var mutation = plan.Mutations[index];
+                OutputApplyProgress.Report("staging", index, plan.Mutations.Length, mutation.Path.Value);
                 paths.ValidateTarget(mutation.Path);
                 var current = await ComputeTargetStateAsync(mutation.Path, cancellationToken).ConfigureAwait(false);
                 if (current != mutation.ExpectedPreimage)
@@ -2141,9 +2142,12 @@ public sealed partial class OutputTransactionCoordinator
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
+            OutputApplyProgress.Report("checking", 0, plan.Mutations.Length);
             await ValidatePlanDependenciesAsync(plan, CancellationToken.None).ConfigureAwait(false);
-            foreach (var mutation in plan.Mutations)
+            for (var index = 0; index < plan.Mutations.Length; index++)
             {
+                var mutation = plan.Mutations[index];
+                OutputApplyProgress.Report("checking", index, plan.Mutations.Length, mutation.Path.Value);
                 paths.ValidateTarget(mutation.Path);
                 var current = await ComputeTargetStateAsync(
                         mutation.Path,
@@ -2178,6 +2182,7 @@ public sealed partial class OutputTransactionCoordinator
             for (var index = 0; index < journal.Entries.Length; index++)
             {
                 var entry = journal.Entries[index];
+                OutputApplyProgress.Report("writing", index, journal.Entries.Length, entry.Path.Value);
                 paths.ValidateTarget(entry.Path);
                 var current = await ComputeTargetStateAsync(entry.Path, CancellationToken.None).ConfigureAwait(false);
                 if (current != entry.Preimage)
@@ -2231,6 +2236,7 @@ public sealed partial class OutputTransactionCoordinator
         }
         catch (Exception exception) when (!IsFatal(exception))
         {
+            OutputApplyProgress.Report("rollingBack");
             return await RollBackAsync(
                     journal,
                     transactionDirectory,
@@ -2241,6 +2247,7 @@ public sealed partial class OutputTransactionCoordinator
 
         try
         {
+            OutputApplyProgress.Report("finalizing", journal.Entries.Length, journal.Entries.Length);
             return await FinalizeCommittedAsync(journal, transactionDirectory, journalPath).ConfigureAwait(false);
         }
         catch (Exception exception) when (!IsFatal(exception))

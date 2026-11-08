@@ -113,9 +113,11 @@ public static class SwShRestorationMegaItems
     }
 
     public static bool IsItemContribution(SwShRestorationContribution contribution) =>
-        contribution.Writer is SwShRestorationWriter.Items or SwShRestorationWriter.ItemText
-        || contribution.Writer == SwShRestorationWriter.File
-            && All.Any(item => contribution.Path == IconPath(item.ItemId));
+        IsItemContribution(contribution.Path, contribution.Writer);
+
+    internal static bool IsItemContribution(string path, SwShRestorationWriter writer) =>
+        writer is SwShRestorationWriter.Items or SwShRestorationWriter.ItemText
+        || writer == SwShRestorationWriter.File && All.Any(item => path == IconPath(item.ItemId));
 
     public static string IconPath(int itemId) => $"romfs/bin/appli/icon_item/item_{itemId:0000}.bntx";
 

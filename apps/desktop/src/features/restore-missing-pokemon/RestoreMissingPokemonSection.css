@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 .restoration-panel { display: grid; gap: 16px; }
 .restoration-panel h2 { display: flex; align-items: center; gap: 8px; }
+.restoration-guidance { display: grid; gap: .375em; overflow-wrap: anywhere; }
+.restoration-guidance p { margin: 0; }
 .restoration-sources { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .restoration-source { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .restoration-source-controls { display: flex; gap: 6px; }

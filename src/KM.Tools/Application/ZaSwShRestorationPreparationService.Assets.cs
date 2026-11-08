@@ -730,6 +730,7 @@ public sealed partial class ZaSwShRestorationPreparationService
             foreach (var resource in motions)
             {
                 token.ThrowIfCancellationRequested();
+                Report("animations", clips.Count, motions.Length + nativeClips.Length, resource.Id);
                 detailHierarchy?.RequireUnanimated(resource.Bytes);
                 var clip = PreviewRigReader.Animation(new(resource.Bytes), resource.Id, scene.Rig.Bones);
                 var materialPath = Path.ChangeExtension(resource.Id, ".tracm").Replace('\\', '/');
@@ -841,7 +842,7 @@ public sealed partial class ZaSwShRestorationPreparationService
             var nativeClipsDone = 0;
             foreach (var (name, code) in nativeClips)
             {
-                Report("animations", motions.Length + nativeClipsDone++, motions.Length + nativeClips.Length);
+                Report("animations", motions.Length + nativeClipsDone++, motions.Length + nativeClips.Length, $"{stem}_{name}.gfbanm");
                 var expression = name == "eye01" ? SwShExpressionCurve.Eyes : name == "mouth01" ? SwShExpressionCurve.Mouth : SwShExpressionCurve.None;
                 var empty = EmptyExpression(name);
                 // An empty facial layer only needs timing. It writes no bones
@@ -992,7 +993,9 @@ public sealed partial class ZaSwShRestorationPreparationService
                             selected[modelPath], originalNames, species, form);
                     SwShRestorationResourceBudget.Validate(selected);
                 }
-                result.Add(File($"bin/archive/pokemon/{stem}{suffix}.gfpak", SwShGfPackFile.CreateWithPaths(selected).Write()));
+                var archivePath = $"bin/archive/pokemon/{stem}{suffix}.gfpak";
+                Report("packing", resource: archivePath);
+                result.Add(File(archivePath, SwShGfPackFile.CreateWithPaths(selected).Write()));
             }
             shaderNames.IntersectWith(new[] { 3, 5 }.SelectMany(f => ModelNames(new(members[modelFolder + stem + ".gfbmdl"]), f)));
             var giantDonor = SwShGfPackFile.Parse(Native("bin/archive/gpokemon/pm0007_00.gfpak"));
@@ -1083,7 +1086,9 @@ public sealed partial class ZaSwShRestorationPreparationService
                     ? Member(giantTransparent, SvSwShTransparentMaterial.NativePrograms[pass] + extension)
                     : giantDonor.TryGetFileByName(name + extension, 32 * 1024 * 1024, out var shader)
                     ? shader : Member(giantSmoke is not null && smoke!.ShaderNames.Contains(name, StringComparer.Ordinal) ? giantSmoke : giantFire ?? giantDonor, name + extension);
-            result.Add(File($"bin/archive/gpokemon/{stem}.gfpak", SwShGfPackFile.CreateWithPaths(giantMembers).Write()));
+            var giantPath = $"bin/archive/gpokemon/{stem}.gfpak";
+            Report("packing", resource: giantPath);
+            result.Add(File(giantPath, SwShGfPackFile.CreateWithPaths(giantMembers).Write()));
             foreach (var shiny in new[] { false, true })
             {
                 var identity = new SwShPokemonResourceIdentity(species, form, gender, shiny);

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Diagnostics;
 using System.Text;
+using System.Text.Json;
+using KM.Core.Output;
 
 namespace KM.Tools.Bridge;
 
@@ -105,7 +108,7 @@ public sealed class BridgeLineRunner : IDisposable
         {
             while (await lineReader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } request)
             {
-                var responseJson = DispatchRequest(request);
+                var responseJson = DispatchRequest(request, CreateApplyProgressWriter(output));
                 await output.WriteLineAsync(responseJson.AsMemory(), cancellationToken).ConfigureAwait(false);
                 await output.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -129,7 +132,7 @@ public sealed class BridgeLineRunner : IDisposable
         retired?.Dispose();
     }
 
-    private string DispatchRequest(BoundedBridgeLine request)
+    private string DispatchRequest(BoundedBridgeLine request, Action<OutputApplyProgress>? reportApplyProgress = null)
     {
         if (request.IsTooLarge)
         {
@@ -138,13 +141,13 @@ public sealed class BridgeLineRunner : IDisposable
 
         return request.HasInvalidEncoding
             ? ProjectBridgeDispatcher.SerializeInvalidRequestEncodingFailure()
-            : DispatchRequest(request.Text ?? string.Empty);
+            : DispatchRequest(request.Text ?? string.Empty, reportApplyProgress);
     }
 
-    private string DispatchRequest(string requestJson)
+    private string DispatchRequest(string requestJson, Action<OutputApplyProgress>? reportApplyProgress)
     {
         dispatcher ??= dispatcherFactory();
-        var result = dispatcher.DispatchForLongLivedRunner(requestJson);
+        var result = dispatcher.DispatchForLongLivedRunner(requestJson, reportApplyProgress);
         if (result.RequiresDispatcherReset)
         {
             // Unexpected command failures may occur after a mutable workflow or edit session has
@@ -158,6 +161,30 @@ public sealed class BridgeLineRunner : IDisposable
                 <= ProjectBridgeDispatcher.MaximumBridgeResponseBytes
             ? result.ResponseJson
             : ProjectBridgeDispatcher.SerializeResponseTooLargeFailure(requestId: null);
+    }
+
+    private static Action<OutputApplyProgress> CreateApplyProgressWriter(TextWriter output)
+    {
+        string? previousPhase = null;
+        long previousUpdate = 0;
+        var outputAvailable = true;
+        return progress =>
+        {
+            if (!outputAvailable || (previousPhase == progress.Phase
+                && Stopwatch.GetElapsedTime(previousUpdate) < TimeSpan.FromMilliseconds(80))) return;
+            previousPhase = progress.Phase;
+            previousUpdate = Stopwatch.GetTimestamp();
+            try
+            {
+                output.WriteLine("#km-apply-progress " + JsonSerializer.Serialize(progress, JsonSerializerOptions.Web));
+                output.Flush();
+            }
+            catch (Exception exception) when (exception is IOException or ObjectDisposedException)
+            {
+                // The caller may disconnect while the durable transaction still has to finish.
+                outputAvailable = false;
+            }
+        };
     }
 
     private static ProjectBridgeDispatcher CreateDispatcher()

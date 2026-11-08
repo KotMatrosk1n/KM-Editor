@@ -11510,6 +11510,10 @@ h2 {
   border-top: 1px solid var(--color-border);
 }
 
+.encounter-edit-form .editable-field-groups[hidden] {
+  display: none;
+}
+
 .sv-encounter-browser,
 .za-encounter-group-browser,
 .za-placement-object-browser,
@@ -11977,6 +11981,19 @@ h2 {
 
 .slot-tab-button span {
   line-height: 1.25;
+}
+
+.encounter-slot-tabs .slot-tab-button {
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+
+.slot-tab-button .encounter-slot-name {
+  display: -webkit-box;
+  min-height: 2.5em;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .slot-tab-button small {
@@ -14019,6 +14036,174 @@ h2 {
 
 .work-progress-panel {
   width: min(620px, 100%);
+}
+
+.reviewed-apply-panel {
+  container: km-reviewed-apply / inline-size;
+  box-sizing: border-box;
+  width: min(62rem, 100%);
+  padding: clamp(0.875rem, 3vw, 1.5rem);
+}
+
+.reviewed-apply-title {
+  margin: 0;
+  font-size: 1.35rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.reviewed-apply-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "current" "steps" "files";
+  align-items: start;
+  gap: 0.875rem;
+}
+
+@container km-reviewed-apply (min-width: 43rem) {
+  .reviewed-apply-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(16rem, 34%);
+    grid-template-rows: auto 1fr;
+    grid-template-areas: "current steps" "files steps";
+  }
+}
+
+.reviewed-apply-current {
+  grid-area: current;
+  padding: 1rem;
+}
+
+.reviewed-apply-current .km-loading-progress-copy {
+  color: var(--color-text);
+  font-size: 1.125rem;
+}
+
+.reviewed-apply-current .km-loading-progress-elapsed {
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.reviewed-apply-current:has(.km-loading-progress-caption) {
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 0.75rem;
+}
+
+.reviewed-apply-current .km-loading-progress-heading,
+.reviewed-apply-current .km-loading-progress-footer {
+  grid-column: 1 / -1;
+}
+
+.reviewed-apply-current .km-loading-progress-visual {
+  grid-column: 1;
+  align-self: center;
+}
+
+.reviewed-apply-current .km-loading-progress-caption {
+  grid-area: 2 / 2;
+  justify-content: flex-end;
+}
+
+.reviewed-apply-resource {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.reviewed-apply-resource span {
+  color: var(--color-text-muted);
+  font-weight: 700;
+}
+
+.reviewed-apply-resource code,
+.reviewed-apply-files code {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.reviewed-apply-steps,
+.reviewed-apply-files {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-muted);
+}
+
+.reviewed-apply-steps {
+  grid-area: steps;
+  padding: 0.75rem;
+}
+
+.reviewed-apply-steps h3 {
+  margin: 0 0 0.375rem;
+  padding-inline: 0.5rem;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.reviewed-apply-steps .km-loading-progress-steps {
+  display: grid;
+  gap: 0.125rem;
+}
+
+.reviewed-apply-steps li {
+  gap: 0.625rem;
+  padding: 0.375rem 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
+
+.reviewed-apply-steps li.is-active {
+  background: color-mix(in srgb, var(--color-gold) 6%, transparent);
+  border-radius: 6px;
+}
+
+.reviewed-apply-steps li.is-complete {
+  color: var(--color-success);
+}
+
+.reviewed-apply-steps li.is-pending {
+  color: var(--color-text-muted);
+}
+
+.reviewed-apply-files {
+  grid-area: files;
+  overflow-wrap: anywhere;
+}
+
+.reviewed-apply-files summary {
+  padding: 0.625rem 0.875rem;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.reviewed-apply-files summary::marker {
+  color: var(--color-gold);
+}
+
+.reviewed-apply-files ul {
+  max-block-size: min(12rem, 30vh);
+  margin: 0;
+  padding: 0.375rem 0.875rem;
+  overflow: auto;
+  border-top: 1px solid var(--color-border);
+  list-style: none;
+  color: var(--color-text-soft);
+  font-size: 0.875rem;
+}
+
+.reviewed-apply-files:not([open]) ul {
+  display: none;
+}
+
+.reviewed-apply-files li {
+  padding-block: 0.25rem;
+}
+
+.reviewed-apply-files :focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
 }
 
 .work-progress-heading .status-pill {

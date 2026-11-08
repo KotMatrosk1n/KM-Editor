@@ -57,7 +57,7 @@ public static class SwShChangePlanSourceGuard
         throw new InvalidDataException("Verified source scopes are nested too deeply.");
     }
 
-    public static void BindRestorationState(ProjectPaths paths, string? before, string after)
+    public static void BindRestorationState(ProjectPaths paths, string? before, string after, IReadOnlySet<string>? adoptedWholeFiles = null)
     {
         if (!TryGetSnapshot(paths, out var scope)) throw new InvalidOperationException("Restoration state requires a verified output scope.");
         while (TryGetSnapshot(scope.SourcePaths, out var parent)) scope = parent;
@@ -67,6 +67,7 @@ public static class SwShChangePlanSourceGuard
         if (scope.RestorationTransition is not null && scope.RestorationTransition != transition)
             throw new InvalidDataException("Multiple restoration writers proposed different final states.");
         scope.RestorationTransition = transition;
+        if (adoptedWholeFiles is not null) scope.AdoptedRestorationFiles.UnionWith(adoptedWholeFiles);
     }
 
     public static ChangePlan Capture(ProjectPaths paths, ChangePlan plan)
@@ -936,6 +937,7 @@ public static class SwShChangePlanSourceGuard
         public ChangePlan CurrentPlan { get; }
 
         internal SwShRestorationStateTransition? RestorationTransition { get; set; }
+        internal HashSet<string> AdoptedRestorationFiles { get; } = new(StringComparer.Ordinal);
 
         public bool TryPrepareSnapshotPlan(ChangePlan snapshotPlan, out ChangePlan preparedPlan)
         {
@@ -1060,6 +1062,7 @@ public static class SwShChangePlanSourceGuard
                 if (!plannedTargets.Contains(SwShRestorationComposer.PersonalPath) || !reportedTargets.Contains(SwShRestorationComposer.PersonalPath))
                     throw new InvalidDataException("Restoration state has no reviewed personal data anchor.");
                 changedTargets.Add(SwShRestorationComposer.PersonalPath);
+                changedTargets.UnionWith(AdoptedRestorationFiles);
             }
             var undeclaredTarget = changedTargets.FirstOrDefault(target => !reportedTargets.Contains(target));
             var unplannedTarget = changedTargets.FirstOrDefault(target => !plannedTargets.Contains(target));
@@ -1251,19 +1254,27 @@ public static class SwShChangePlanSourceGuard
                     if (File.Exists(snapshotPath))
                     {
                         var content = File.ReadAllBytes(snapshotPath);
-                        var unchangedAnchor = relativePath == SwShRestorationComposer.PersonalPath
+                        var isAnchor = relativePath == SwShRestorationComposer.PersonalPath;
+                        var isAdopted = AdoptedRestorationFiles.Contains(relativePath);
+                        var unchanged = (isAnchor || isAdopted)
                             && expectedPreimage == OutputFileState.Existing(Convert.ToHexStringLower(SHA256.HashData(content)), content.LongLength);
-                        var ownershipChanged = existingOwnership is not null
-                            && !existingOwnership.Claims.ToHashSet().SetEquals(ownershipClaims);
-                        if (unchangedAnchor && existingOwnership is not null && !ownershipChanged)
+                        if (!unchanged)
+                        {
+                            mutations.Add(OutputMutation.Write(path, content, expectedPreimage, ownershipClaims, ownershipActor: ownership.OwnerId));
+                        }
+                        else if (existingOwnership is null && (isAdopted || isAnchor && AdoptedRestorationFiles.Count > 0))
+                        {
+                            // Verified ownership is required even when an external asset already matches the conversion.
+                            var registration = isAnchor ? ownershipClaims.Single(SwShRestorationStateStore.IsStateClaim) : ownership;
+                            mutations.Add(OutputMutation.RegisterVerifiedFile(path, content, expectedPreimage, registration, OutputMode));
+                        }
+                        else if (existingOwnership is not null && existingOwnership.Claims.ToHashSet().SetEquals(ownershipClaims))
                         {
                             retainedNoOpTargets.Add(relativePath);
                         }
                         else
                         {
-                            mutations.Add(unchangedAnchor
-                                ? OutputMutation.RebindOwnership(path, content, expectedPreimage, ownershipClaims, OutputMode, ownership.OwnerId)
-                                : OutputMutation.Write(path, content, expectedPreimage, ownershipClaims, ownershipActor: ownership.OwnerId));
+                            mutations.Add(OutputMutation.RebindOwnership(path, content, expectedPreimage, ownershipClaims, OutputMode, ownership.OwnerId));
                         }
                     }
                     else if (isComposedExeFsMain && existingOwnership is not null)
@@ -1432,6 +1443,9 @@ public static class SwShChangePlanSourceGuard
                         .Select(actor => new OutputApplyOrigin(
                             OutputApplyOriginKind.Workflow,
                             actor!.Value)))
+                    .Concat(AdoptedRestorationFiles.Count > 0
+                        ? [new OutputApplyOrigin(OutputApplyOriginKind.Workflow, OutputOwner)]
+                        : Array.Empty<OutputApplyOrigin>())
                     .Append(new OutputApplyOrigin(OutputApplyOriginKind.Workflow, OutputOrigin))
                     .Distinct()
                     .ToArray();

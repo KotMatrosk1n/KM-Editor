@@ -23,11 +23,29 @@ public sealed class SwShRestorationPreparationJobs : IDisposable
         internal readonly System.Diagnostics.Stopwatch Timer = System.Diagnostics.Stopwatch.StartNew();
         internal RestorationPreparationDto Status = new(Guid.NewGuid().ToString("N"), definition, "preparing", "sources", 0,
             SwShRestorationDefinitions.Get(definition).Identities.Count, null, new Dictionary<int, int[]>(), []) { RemovalId = removalId };
+        private readonly Dictionary<string, Queue<string>> recentByPhase = new(StringComparer.Ordinal);
         internal FileStream? Lease;
         public void Report(SwShRestorationPreparationProgress value)
         {
-            lock (this) Status = Status with { Phase = value.Phase, CompletedSpecies = value.CompletedSpecies, TotalSpecies = value.TotalSpecies,
-                Activity = value.Activity, Species = value.Species ?? Status.Species, CompletedUnits = value.CompletedUnits, TotalUnits = value.TotalUnits };
+            lock (this)
+            {
+                var recent = Status.RecentResources;
+                if (value.CurrentResource is { } path)
+                {
+                    var phase = value.Activity == "textures" ? "textures" : value.Phase;
+                    if (!recentByPhase.TryGetValue(phase, out var resources))
+                        recentByPhase.Add(phase, resources = new Queue<string>());
+                    if (!resources.Contains(path))
+                    {
+                        if (resources.Count == 6) resources.Dequeue();
+                        resources.Enqueue(path);
+                        recent = recentByPhase.Values.SelectMany(group => group).Distinct(StringComparer.Ordinal).TakeLast(24).ToArray();
+                    }
+                }
+                Status = Status with { Phase = value.Phase, CompletedSpecies = value.CompletedSpecies, TotalSpecies = value.TotalSpecies,
+                    Activity = value.Activity, Species = value.Species ?? Status.Species, CompletedUnits = value.CompletedUnits,
+                    TotalUnits = value.TotalUnits, CurrentResource = value.CurrentResource, RecentResources = recent };
+            }
         }
     }
     public RestorationDonorResponse InspectDonor(string donor, string root, string? support)
