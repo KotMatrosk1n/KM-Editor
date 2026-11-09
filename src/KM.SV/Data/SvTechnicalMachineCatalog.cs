@@ -54,20 +54,13 @@ internal static class SvTechnicalMachineCatalog
                 continue;
             }
 
-            var itemName = labels.Item(item.Value.Id);
-            if (!IsTechnicalMachine(item.Value, itemName)
-                || !TryParseMachineSlot(itemName, out var slot))
+            if (!HasTechnicalMachineShape(item.Value)
+                || !TryParseMachineSlot(labels.Item(item.Value.Id), out var slot))
             {
                 continue;
             }
 
-            var moveId = (int)item.Value.MachineWaza;
-            if (moveId <= 0)
-            {
-                continue;
-            }
-
-            machineItems.Add((slot, item.Value.Id, item.Value.GroupID, moveId, item.Value.SortNum));
+            machineItems.Add((slot, item.Value.Id, item.Value.GroupID, (int)item.Value.MachineWaza, item.Value.SortNum));
         }
 
         var records = new List<SvTechnicalMachineMove>();
@@ -97,16 +90,6 @@ internal static class SvTechnicalMachineCatalog
             .ToArray();
     }
 
-    public static bool IsTechnicalMachine(global::ItemData item)
-    {
-        return HasTechnicalMachineShape(item);
-    }
-
-    public static bool IsTechnicalMachine(global::ItemData item, string itemName)
-    {
-        return HasTechnicalMachineShape(item) && TryParseMachineSlot(itemName, out _);
-    }
-
     private static bool HasTechnicalMachineShape(global::ItemData item)
     {
         return item.FieldPocket == global::FieldPocket.FPOCKET_WAZA
@@ -118,11 +101,35 @@ internal static class SvTechnicalMachineCatalog
     private static bool TryParseMachineSlot(string itemName, out int slot)
     {
         slot = 0;
-        var trimmedName = itemName.Trim();
-        return trimmedName.Length == 5
-            && trimmedName.StartsWith("TM", StringComparison.OrdinalIgnoreCase)
-            && int.TryParse(trimmedName[2..], NumberStyles.None, CultureInfo.InvariantCulture, out slot)
-            && slot > 0;
+        var name = itemName.AsSpan().Trim();
+        if (name.Length <= 3)
+        {
+            return false;
+        }
+
+        var prefix = name[..^3];
+        if (!(prefix.Equals("TM", StringComparison.OrdinalIgnoreCase)
+            || prefix.Equals("MT", StringComparison.OrdinalIgnoreCase)
+            || prefix.Equals("CT", StringComparison.OrdinalIgnoreCase)
+            || prefix is "わざマシン" or "기술머신" or "招式学习器" or "招式學習器"))
+        {
+            return false;
+        }
+
+        var number = 0;
+        foreach (var character in name[^3..])
+        {
+            var digit = character is >= '０' and <= '９' ? character - '０' : character - '0';
+            if (digit is < 0 or > 9)
+            {
+                return false;
+            }
+
+            number = number * 10 + digit;
+        }
+
+        slot = number;
+        return slot > 0;
     }
 
     public static string FormatMachineLabel(int slot)
