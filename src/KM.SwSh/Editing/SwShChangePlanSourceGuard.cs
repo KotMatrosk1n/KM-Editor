@@ -1108,10 +1108,7 @@ public static class SwShChangePlanSourceGuard
             }
 
             var projectId = ProjectIdentity.FromPaths(SourcePaths);
-            var outputCoordinator = OutputTransactionCoordinator.ForProject(SourcePaths, new()
-            {
-                MaximumMutationsPerApply = OutputLimits.StandardMaximumMutationsPerApply,
-            });
+            var outputCoordinator = OutputTransactionCoordinator.ForProject(SourcePaths);
             OutputOwnershipInventorySnapshot? ownershipSnapshot = null;
             if (changedTargets.Count > 0)
             {
@@ -1482,6 +1479,18 @@ public static class SwShChangePlanSourceGuard
                     WrittenFiles = Array.Empty<ProjectFileReference>(),
                     Diagnostics = diagnostics,
                     OutputTransaction = outputResult,
+                };
+            }
+            catch (OutputLimitExceededException exception)
+            {
+                diagnostics.Add(new ValidationDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"The reviewed changes could not be saved. {SanitizeDiagnosticText(exception.Message, snapshotRootPath)}",
+                    Domain: DiagnosticDomain));
+                return result with
+                {
+                    WrittenFiles = Array.Empty<ProjectFileReference>(),
+                    Diagnostics = diagnostics,
                 };
             }
             catch (Exception exception) when (exception is

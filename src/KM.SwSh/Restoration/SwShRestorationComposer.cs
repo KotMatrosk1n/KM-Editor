@@ -15,6 +15,7 @@ public sealed record SwShRestorationComposition(IReadOnlyDictionary<string, byte
 /// <summary>Composes semantic contributions once per shared file against the actual effective state.</summary>
 public static class SwShRestorationComposer
 {
+    internal const int MaximumContributions = 10_000;
     public const string PersonalPath = "romfs/bin/pml/personal/personal_total.bin";
     public const string LearnsetPath = "romfs/bin/pml/waza_oboe/wazaoboe_total.bin";
     public const string IconsPath = "romfs/bin/appli/icon_pokemon/pokecaplist.bin";
@@ -93,7 +94,7 @@ public static class SwShRestorationComposer
         IReadOnlySet<string>? ownedPaths, bool captureOnly, PresenceValidator? presenceValidator,
         IReadOnlySet<(string Path, SwShRestorationWriter Writer, string Key)>? adoption = null)
     {
-        if (contributions.Count is < 1 or > 10000) throw new InvalidDataException("Restoration contribution count is invalid.");
+        if (contributions.Count is < 1 or > MaximumContributions) throw new InvalidDataException("Restoration contribution count is invalid.");
         var outputs = new Dictionary<string, byte[]?>(StringComparer.OrdinalIgnoreCase);
         var retained = new List<SwShRestorationContribution>();
         foreach (var group in contributions.GroupBy(c => c.Path, StringComparer.OrdinalIgnoreCase))
@@ -276,6 +277,8 @@ public static class SwShRestorationComposer
                 case SwShRestorationWriter.Voices:
                 {
                     var bank = presenceValidator is null ? new SoundBankDocument(current) : null;
+                    var mediaById = bank?.Media.ToDictionary(media => media.Id);
+                    var objectsByIdentity = bank?.Objects.ToLookup(entry => (entry.Type, entry.Id));
                     presenceValidator?.ReadVoices(current);
                     var addObjects = new List<SoundBankObject>(); var removeObjects = new List<SoundBankObject>();
                     var addMedia = new List<SoundBankMedia>(); var removeMedia = new List<SoundBankMedia>();
@@ -289,13 +292,13 @@ public static class SwShRestorationComposer
                         }
                         if (type is null)
                         {
-                            var existing = bank!.Media.SingleOrDefault(m => m.Id == id); var replacement = Select(item, existing?.Bytes);
+                            var existing = mediaById!.GetValueOrDefault(id); var replacement = Select(item, existing?.Bytes);
                             if (existing is not null) removeMedia.Add(existing); if (replacement is not null) addMedia.Add(new(id, replacement));
                         }
                         else
                         {
-                            var matches = bank!.Objects.Where(o => o.Type == type.Value && o.Id == id).ToArray();
-                            if (matches.Length > 1) throw new InvalidDataException("Owned voice object identity is ambiguous.");
+                            var matches = objectsByIdentity![(type.Value, id)];
+                            if (matches.Count() > 1) throw new InvalidDataException("Owned voice object identity is ambiguous.");
                             var existing = matches.SingleOrDefault(); var replacement = Select(item, existing?.Payload);
                             if (existing is not null) removeObjects.Add(existing); if (replacement is not null) addObjects.Add(new(type.Value, id, replacement));
                         }

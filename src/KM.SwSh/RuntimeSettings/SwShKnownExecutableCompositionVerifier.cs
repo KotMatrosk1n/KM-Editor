@@ -172,7 +172,7 @@ public static class SwShKnownExecutableCompositionVerifier
     {
         var state = KM.SwSh.Restoration.SwShRestorationSoundMemoryPatcher.Read(normalized, game).State;
         if (state == KM.SwSh.Restoration.SwShRestorationSoundMemoryPatcher.Kind.Original) return true;
-        if (state != KM.SwSh.Restoration.SwShRestorationSoundMemoryPatcher.Kind.Installed) return false;
+        if (!KM.SwSh.Restoration.SwShRestorationSoundMemoryPatcher.IsInstalled(state)) return false;
         normalized = KM.SwSh.Restoration.SwShRestorationSoundMemoryPatcher.RestoreFromBase(retail, normalized, game);
         recognizedTransformation = true;
         return true;

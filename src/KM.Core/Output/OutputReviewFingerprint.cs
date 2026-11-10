@@ -14,7 +14,7 @@ namespace KM.Core.Output;
 /// </summary>
 public static class OutputReviewFingerprint
 {
-    private const int MaximumFramedTextBytes = 1_048_576;
+    private const int MaximumFramedTextBytes = 4 * 1024 * 1024;
     private const int MaximumSourcesPerWrite = 4_096;
 
     public static string FromChangePlan(ChangePlan plan)

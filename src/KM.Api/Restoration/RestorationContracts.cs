@@ -40,5 +40,10 @@ public sealed record LoadRestorationResponse(RestorationWorkflowDto Workflow);
 public sealed record PrepareRestorationRequest(ProjectPathsDto Paths, string DefinitionId, string DonorRomFsPath, string? CompressionSupportFolderPath);
 public sealed record RestorationPreparationRequest(ProjectPathsDto Paths, string PreparationId);
 public sealed record RestorationPreparationResponse(RestorationPreparationDto Preparation);
-public sealed record StageRestorationRequest(ProjectPathsDto Paths, string DefinitionId, string PreparedHash, bool Enabled, EditSessionDto? Session, bool RemoveAssets = false, bool UpdateAssets = false, bool AdoptExternal = false);
+public sealed record RestorationSelectionDto(string DefinitionId, string PreparedHash, bool Enabled,
+    bool RemoveAssets = false, bool UpdateAssets = false, bool AdoptExternal = false);
+public sealed record StageRestorationRequest(ProjectPathsDto Paths, EditSessionDto? Session,
+    string? DefinitionId = null, string? PreparedHash = null, bool? Enabled = null,
+    bool RemoveAssets = false, bool UpdateAssets = false, bool AdoptExternal = false,
+    IReadOnlyList<RestorationSelectionDto>? Selections = null);
 public sealed record StageRestorationResponse(RestorationWorkflowDto Workflow, EditSessionDto Session, IReadOnlyList<ApiDiagnostic> Diagnostics);
