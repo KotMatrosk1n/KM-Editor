@@ -558,7 +558,7 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
     }
 
     internal (string ResponseJson, bool RequiresDispatcherReset) DispatchForLongLivedRunner(
-        string requestJson, Action<OutputApplyProgress>? reportApplyProgress = null)
+        string requestJson, Action<object>? reportProgress = null)
     {
         if (string.IsNullOrWhiteSpace(requestJson))
         {
@@ -810,7 +810,7 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.PrepareRestoration => DispatchRestoration(requestJson, command),
                 KmCommandNames.GetRestorationPreparation => DispatchRestoration(requestJson, command),
                 KmCommandNames.CancelRestorationPreparation => DispatchRestoration(requestJson, command),
-                KmCommandNames.StageRestoration => DispatchRestoration(requestJson, command),
+                KmCommandNames.StageRestoration => DispatchRestoration(requestJson, command, reportProgress),
                 KmCommandNames.LoadHeldItemChance => DispatchLoadHeldItemChance(requestJson),
                 KmCommandNames.LoadGameOptions => DispatchLoadGameOptions(requestJson),
                 KmCommandNames.LoadObedience => DispatchLoadObedience(requestJson),
@@ -845,7 +845,7 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.StartEditSession => DispatchStartEditSession(requestJson),
                 KmCommandNames.ValidateEditSession => DispatchValidateEditSession(requestJson),
                 KmCommandNames.CreateChangePlan => DispatchCreateChangePlan(requestJson),
-                KmCommandNames.ApplyChangePlan => DispatchApplyChangePlan(requestJson, reportApplyProgress),
+                KmCommandNames.ApplyChangePlan => DispatchApplyChangePlan(requestJson, reportProgress),
                 KmCommandNames.ReadChangeSets => DispatchReadChangeSets(requestJson),
                 KmCommandNames.MutateChangeSets => DispatchMutateChangeSets(requestJson),
                 KmCommandNames.CaptureChangeSetSession => DispatchCaptureChangeSetSession(requestJson),

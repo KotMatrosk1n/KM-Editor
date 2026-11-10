@@ -2,9 +2,9 @@
 import { z } from 'zod';
 import { kmCommandNames } from './contracts';
 import * as contracts from './restorationContracts';
-import { sendProjectBridgeRequest, type ProjectBridgeTransport } from './projectBridgeRequest';
+import { sendProjectBridgeRequest, type ProjectBridgeProgressTransport, type ProjectBridgeTransport } from './projectBridgeRequest';
 
-export function createRestorationProjectBridge(transport: ProjectBridgeTransport) {
+export function createRestorationProjectBridge(transport: ProjectBridgeTransport, progressTransport?: ProjectBridgeProgressTransport) {
   return {
     inspectRestorationDonor: (request: z.infer<typeof contracts.inspectRestorationDonorRequestSchema>) => sendProjectBridgeRequest(transport,
       kmCommandNames.inspectRestorationDonor, contracts.inspectRestorationDonorRequestSchema.parse(request), contracts.restorationDonorResponseSchema),
@@ -16,8 +16,20 @@ export function createRestorationProjectBridge(transport: ProjectBridgeTransport
       kmCommandNames.getRestorationPreparation, contracts.restorationPreparationRequestSchema.parse(request), contracts.restorationPreparationResponseSchema),
     cancelRestorationPreparation: (request: z.infer<typeof contracts.restorationPreparationRequestSchema>) => sendProjectBridgeRequest(transport,
       kmCommandNames.cancelRestorationPreparation, contracts.restorationPreparationRequestSchema.parse(request), contracts.restorationPreparationResponseSchema),
-    stageRestoration: (request: z.infer<typeof contracts.stageRestorationRequestSchema>) => sendProjectBridgeRequest(transport,
-      kmCommandNames.stageRestoration, contracts.stageRestorationRequestSchema.parse(request), contracts.stageRestorationResponseSchema)
+    stageRestoration: (request: z.infer<typeof contracts.stageRestorationRequestSchema>,
+      onProgress?: (progress: contracts.RestorationStageProgress) => void) => {
+      const payload = contracts.stageRestorationRequestSchema.parse(request);
+      if (!onProgress || !progressTransport) {
+        return sendProjectBridgeRequest(transport, kmCommandNames.stageRestoration, payload, contracts.stageRestorationResponseSchema);
+      }
+      return sendProjectBridgeRequest(
+        requestJson => progressTransport(requestJson, message => {
+          const progress = contracts.restorationStageProgressSchema.safeParse(message);
+          if (progress.success) onProgress(progress.data);
+        }),
+        kmCommandNames.stageRestoration, { ...payload, reportProgress: true }, contracts.stageRestorationResponseSchema
+      );
+    }
   };
 }
 export type RestorationProjectBridgeApi = ReturnType<typeof createRestorationProjectBridge>;

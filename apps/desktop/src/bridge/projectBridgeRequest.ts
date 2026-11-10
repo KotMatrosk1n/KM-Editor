@@ -13,6 +13,7 @@ import { recordBridgePerformanceDiagnostic } from '../performanceDiagnostics';
 import { readRestorationRequestContext, StaleSpeciesCatalogError } from './restorationRequestContext';
 
 export type ProjectBridgeTransport = (requestJson: string) => Promise<string>;
+export type ProjectBridgeProgressTransport = (requestJson: string, onProgress: (progress: unknown) => void) => Promise<string>;
 
 const projectBridgeRequestProvisionMultiplier = 4;
 const projectBridgeRequestHardCeilingMultiplier = 2;

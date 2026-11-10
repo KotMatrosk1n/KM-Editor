@@ -1049,6 +1049,16 @@ const tauriProjectBridgeTransport = (requestJson: string, applyProgress?: Channe
   return invoke<string>("project_bridge", { requestJson, applyProgress });
 };
 
+async function tauriProjectBridgeProgressTransport(requestJson: string, onProgress: (progress: unknown) => void) {
+  const channel = new Channel<unknown>();
+  channel.onmessage = onProgress;
+  try {
+    return await tauriProjectBridgeTransport(requestJson, channel);
+  } finally {
+    channel.onmessage = () => {};
+  }
+}
+
 function validateDynamaxAdventureResponseGame<
   TResponse extends { workflow: { detectedGame: "sword" | "shield" | null } },
 >(selectedGame: string | null, response: TResponse) {
@@ -1075,23 +1085,15 @@ export function createProjectBridge(
         );
       }
 
-      const channel = new Channel<unknown>();
-      channel.onmessage = (message) => {
-        const progress = applyOutputProgressSchema.safeParse(message);
-        if (progress.success) {
-          onProgress(progress.data);
-        }
-      };
-      try {
-        return await sendProjectBridgeRequest(
-          (requestJson) => tauriProjectBridgeTransport(requestJson, channel),
-          kmCommandNames.applyChangePlan,
-          { ...request, reportProgress: true },
-          applyChangePlanResponseSchema,
-        );
-      } finally {
-        channel.onmessage = () => {};
-      }
+      return sendProjectBridgeRequest(
+        (requestJson) => tauriProjectBridgeProgressTransport(requestJson, (message) => {
+          const progress = applyOutputProgressSchema.safeParse(message);
+          if (progress.success) onProgress(progress.data);
+        }),
+        kmCommandNames.applyChangePlan,
+        { ...request, reportProgress: true },
+        applyChangePlanResponseSchema,
+      );
     },
     createChangePlan: (request) =>
       sendProjectBridgeRequest(
@@ -2147,7 +2149,8 @@ export function createProjectBridge(
     ...createZaCacheProjectBridgeApi(transport),
     ...createPlaCacheProjectBridgeApi(transport),
     ...createSwShCacheProjectBridgeApi(transport),
-    ...createRestorationProjectBridge(transport),
+    ...createRestorationProjectBridge(transport, transport === tauriProjectBridgeTransport && hasTauriRuntime()
+      ? tauriProjectBridgeProgressTransport : undefined),
     ...createSwShPlacementProjectBridgeApi(transport),
     ...createWorkspaceDraftProjectBridgeApi(transport),
     ...createProjectSourceRevisionProjectBridgeApi(transport),
