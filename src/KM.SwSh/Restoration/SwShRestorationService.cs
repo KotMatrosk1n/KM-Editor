@@ -23,6 +23,9 @@ public sealed record SwShRestorationIntent(string DefinitionId, string PreparedH
     public IReadOnlyList<string> AdditionalPreparedHashes { get; init; } = [];
 }
 public sealed record SwShRestorationStageResult(EditSession Session, IReadOnlyList<ValidationDiagnostic> Diagnostics);
+public sealed record SwShRestorationStageSelection(string DefinitionId, string PreparedHash, bool Enabled,
+    bool RemoveAssets = false, string? RemovalId = null, IReadOnlyCollection<string>? PreparedAssets = null,
+    bool UpdateAssets = false, bool AdoptExternal = false);
 public sealed record SwShRestorationPreview(IReadOnlyDictionary<string, byte[]?> Files, string StateHash, string? PreviousStateHash,
     SwShRestorationState State, IReadOnlyList<ProjectFileReference> Sources, IReadOnlyList<int> RemovedSpecies)
 {
@@ -40,45 +43,60 @@ public sealed partial class SwShRestorationService
     public const string StaleCode = "KM-SWSH-RESTORATION-PREPARED-STALE";
 
     public SwShRestorationStageResult Stage(ProjectPaths paths, string definitionId, string preparedHash, bool enabled, EditSession? session, bool removeAssets = false, string? removalId = null, IReadOnlyCollection<string>? preparedAssets = null, bool updateAssets = false, bool adoptExternal = false)
+        => StageBatch(paths, [new(definitionId, preparedHash, enabled, removeAssets, removalId, preparedAssets, updateAssets, adoptExternal)], session);
+
+    public SwShRestorationStageResult StageBatch(ProjectPaths paths, IReadOnlyList<SwShRestorationStageSelection> selections, EditSession? session)
     {
         var current = session ?? EditSession.Start();
         try
         {
-            if (enabled && removeAssets) throw new InvalidDataException("Asset removal cannot enable a restoration.");
-            if (updateAssets && removeAssets) throw new InvalidDataException("Asset updates cannot remove a restoration.");
-            if (adoptExternal && (!enabled || updateAssets || removeAssets || definitionId == SwShRestorationDefinitions.Piplup.Id))
-                throw new InvalidDataException("An external installation must be staged as a supported restoration.");
+            if (selections.Count == 0 || selections.Count > SwShRestorationDefinitions.All.Count
+                || selections.Any(s => s is null) || selections.Select(s => s.DefinitionId).Distinct(StringComparer.Ordinal).Count() != selections.Count)
+                throw new InvalidDataException("Restoration selections are missing, duplicated, or excessive.");
             current = UpgradeSession(paths, current);
-            if (definitionId == SwShRestorationDefinitions.Piplup.Id)
-            {
-                foreach (var definition in SwShRestorationDefinitions.PiplupSpecies)
-                {
-                    var result = Stage(paths, definition.Id, SwShRestorationCompatibility.Split(paths, preparedHash, definition.Id), enabled, current, removeAssets, updateAssets: updateAssets);
-                    if (result.Diagnostics.Count > 0) return new(session ?? EditSession.Start(), result.Diagnostics);
-                    current = result.Session;
-                }
-                return new(current, []);
-            }
-            var snapshot = SwShRestorationStateStore.Read(paths);
-            var intent = new SwShRestorationIntent(definitionId, preparedHash, enabled, snapshot.Hash) { UpdateAssets = updateAssets, AdoptExternal = adoptExternal, RemovalId = removeAssets ? removalId ?? Guid.NewGuid().ToString("N") : null,
-                AdditionalPreparedHashes = removeAssets ? (preparedAssets ?? []).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray() : [] };
-            var edit = CreateEdit(paths, intent);
-            var removalStems = removeAssets ? SwShRestorationCustomizations.ModelStems(
-                SwShRestorationStateStore.ReadPrepared(paths, preparedHash)).ToArray() : [];
-            bool Keep(PendingEdit pending)
-            {
-                if (pending.Domain == Domain && pending.RecordId == definitionId) return false;
-                if (!removeAssets || pending.Domain != ModelTextureIntent.Domain) return true;
-                var model = ModelTextureIntent.Parse(pending.NewValue);
-                return model.Game != paths.SelectedGame.ToString() || !removalStems.Any(stem =>
-                    model.Model.StartsWith($"bin/pokemon/{stem}/", StringComparison.Ordinal));
-            }
-            var pending = current.PendingEdits.Where(Keep).Append(edit).ToArray();
-            var next = current with { PendingEdits = pending };
+            var stateHash = SwShRestorationStateStore.Read(paths).Hash;
+            var next = current;
+            foreach (var selection in selections)
+                next = StageSelection(paths, selection, next, stateHash);
             _ = Preview(paths, next);
             return new(next, []);
         }
         catch (Exception exception) when (SourceError(exception)) { return new(current, [Error(SessionCode, exception.Message)]); }
+    }
+
+    private static EditSession StageSelection(ProjectPaths paths, SwShRestorationStageSelection selection, EditSession session, string? stateHash)
+    {
+        var (definitionId, preparedHash, enabled, removeAssets, removalId, preparedAssets, updateAssets, adoptExternal) = selection;
+        if (enabled && removeAssets) throw new InvalidDataException("Asset removal cannot enable a restoration.");
+        if (updateAssets && removeAssets) throw new InvalidDataException("Asset updates cannot remove a restoration.");
+        if (adoptExternal && (!enabled || updateAssets || removeAssets || definitionId == SwShRestorationDefinitions.Piplup.Id))
+            throw new InvalidDataException("An external installation must be staged as a supported restoration.");
+        if (definitionId == SwShRestorationDefinitions.Piplup.Id)
+        {
+            foreach (var definition in SwShRestorationDefinitions.PiplupSpecies)
+                session = StageSelection(paths, new(definition.Id, SwShRestorationCompatibility.Split(paths, preparedHash, definition.Id),
+                    enabled, removeAssets, UpdateAssets: updateAssets), session, stateHash);
+            return session;
+        }
+        var intent = new SwShRestorationIntent(definitionId, preparedHash, enabled, stateHash)
+        {
+            UpdateAssets = updateAssets,
+            AdoptExternal = adoptExternal,
+            RemovalId = removeAssets ? removalId ?? Guid.NewGuid().ToString("N") : null,
+            AdditionalPreparedHashes = removeAssets ? (preparedAssets ?? []).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray() : [],
+        };
+        var edit = CreateEdit(paths, intent);
+        var removalStems = removeAssets ? SwShRestorationCustomizations.ModelStems(
+            SwShRestorationStateStore.ReadPrepared(paths, preparedHash)).ToArray() : [];
+        bool Keep(PendingEdit pending)
+        {
+            if (pending.Domain == Domain && pending.RecordId == definitionId) return false;
+            if (!removeAssets || pending.Domain != ModelTextureIntent.Domain) return true;
+            var model = ModelTextureIntent.Parse(pending.NewValue);
+            return model.Game != paths.SelectedGame.ToString() || !removalStems.Any(stem =>
+                model.Model.StartsWith($"bin/pokemon/{stem}/", StringComparison.Ordinal));
+        }
+        return session with { PendingEdits = session.PendingEdits.Where(Keep).Append(edit).ToArray() };
     }
 
     public SwShEditSessionValidation Validate(ProjectPaths paths, EditSession session)
@@ -152,6 +170,7 @@ public sealed partial class SwShRestorationService
         var snapshot = SwShRestorationStateStore.Read(paths); var selections = snapshot.State.Selections.ToDictionary(s => s.DefinitionId, StringComparer.Ordinal);
         var owned = SwShRestorationOwnership.ExactFiles(paths);
         var outputs = new Dictionary<string, byte[]?>(StringComparer.Ordinal); var sources = new HashSet<ProjectFileReference>(); var removed = new HashSet<SwShPokemonIdentity>();
+        var targetFingerprints = new Dictionary<string, SwShRestorationSourceFingerprint>(StringComparer.Ordinal);
         // Only retain resource identities here. Payloads remain under the existing
         // artifact read limits, and each selection still uses its current hash.
         var includeAllKeys = edits.Any(e => Parse(e).AdoptExternal);
@@ -179,6 +198,16 @@ public sealed partial class SwShRestorationService
         {
             if (outputs.TryGetValue(path, out var value)) return value;
             return ReadEffective(paths, path, sources);
+        }
+        var pendingVoices = new List<SwShRestorationContribution>();
+        var pendingVoiceKeys = new HashSet<string>(StringComparer.Ordinal);
+        void FlushVoices()
+        {
+            if (pendingVoices.Count == 0) return;
+            foreach (var file in SwShRestorationComposer.Compose(pendingVoices, Current, true).Files)
+                outputs[file.Key] = file.Value;
+            pendingVoices.Clear();
+            pendingVoiceKeys.Clear();
         }
         var assetsOnly = edits.All(e => Parse(e).UpdateAssets);
         var hasForms = !assetsOnly && (SwShRestorationForms.EnabledForms(snapshot.State).Any()
@@ -208,6 +237,8 @@ public sealed partial class SwShRestorationService
             needsSoundMemory |= intent.Enabled && bundle.Contributions.Any(c => c.Writer == SwShRestorationWriter.Voices);
             selections.TryGetValue(intent.DefinitionId, out var installed);
             if (installed?.RemovalId is not null && intent.Enabled) installed = null;
+            var freshInstall = intent.Enabled && installed is null && !intent.AdoptExternal && !intent.UpdateAssets;
+            if (!freshInstall) FlushVoices();
             if (intent.AdoptExternal && (installed?.Enabled == true || !externalDefinitions.Value.Contains(intent.DefinitionId)))
                 throw new InvalidDataException("This Pokemon is no longer an external installation. Reload the restoration list and stage again.");
             if (intent.AdoptExternal) installed = null;
@@ -219,7 +250,7 @@ public sealed partial class SwShRestorationService
                 continue;
             }
             if (!intent.Enabled && !intent.UpdateAssets && (installed is null || !installed.Enabled)) throw new InvalidDataException("Only an installed, owned restoration can be removed.");
-            VerifyTargetSources(paths, bundle, intent.UpdateAssets);
+            VerifyTargetSources(paths, bundle, targetFingerprints, intent.UpdateAssets);
             var effective = installed?.CustomizationHash is { } customHash ? SwShRestorationStateStore.ReadPrepared(paths, customHash) : bundle;
             SwShRestorationContribution[] defaultUpdates = [];
             var customization = installed?.CustomizationHash;
@@ -302,7 +333,18 @@ public sealed partial class SwShRestorationService
             if (adoption is not null)
                 foreach (var (path, writer, _) in adoption)
                     if (writer == SwShRestorationWriter.File) adoptedWholeFiles.Add(path);
-            var composition = SwShRestorationComposer.Compose(contributions, Current, intent.Enabled,
+            if (freshInstall)
+            {
+                var addedVoices = contributions.Where(c => c.Writer == SwShRestorationWriter.Voices).ToArray();
+                if (pendingVoices.Count + addedVoices.Length > SwShRestorationComposer.MaximumContributions
+                    || addedVoices.Any(c => pendingVoiceKeys.Contains(c.Key)))
+                    FlushVoices();
+                pendingVoices.AddRange(addedVoices);
+                pendingVoiceKeys.UnionWith(addedVoices.Select(c => c.Key));
+                contributions = contributions.Where(c => c.Writer != SwShRestorationWriter.Voices).ToArray();
+            }
+            var composition = contributions.Count == 0 ? new SwShRestorationComposition(new Dictionary<string, byte[]?>(), [])
+                : SwShRestorationComposer.Compose(contributions, Current, intent.Enabled,
                 allowOwnedCustomizations: installed?.Enabled == true, ownedPaths: owned, adoption: adoption);
             if (intent.AdoptExternal && composition.RetainedCustomizations.Count > 0)
             {
@@ -333,6 +375,14 @@ public sealed partial class SwShRestorationService
                 { AssetRevision = installed?.AssetRevision ?? bundle.AssetRevision,
                     AssetHashes = (installed?.AssetHashes ?? []).Concat(new[] { preparedHash, intent.PreparedHash, installed?.PreparedHash, installed?.CustomizationHash, customization }.OfType<string>()).Distinct(StringComparer.Ordinal).ToArray() };
         }
+        FlushVoices();
+        if (outputs.TryGetValue(SwShRestorationComposer.VoicesPath, out var voices)
+            && voices is not null && voices.Length > SwShRestorationSourceBudget.MaximumVoiceBankBytes)
+        {
+            throw new InvalidDataException(
+                $"The shared sound bank Common.bnk would be {voices.Length:N0} bytes. The editor can save up to {SwShRestorationSourceBudget.MaximumVoiceBankBytes:N0} bytes in that file.");
+        }
+
         var state = new SwShRestorationState(1, selections.Values.OrderBy(s => s.DefinitionId, StringComparer.Ordinal).ToArray());
         if (!assetsOnly)
             foreach (var file in SwShRestorationDependencies.Reconcile(paths, snapshot.State, state, Current)) outputs[file.Key] = file.Value;
@@ -349,7 +399,7 @@ public sealed partial class SwShRestorationService
                 if (!aligned.Learnset.AsSpan().SequenceEqual(learnset)) outputs[SwShRestorationComposer.LearnsetPath] = aligned.Learnset;
             }
         }
-        if (needsSoundMemory) AddSoundMemory(paths, outputs, sources);
+        if (needsSoundMemory) AddSoundMemory(paths, outputs, sources, voices?.Length ?? 0);
         if (!assetsOnly)
         {
             AddMegaItemProtection(paths, state, outputs, sources);
@@ -454,7 +504,7 @@ public sealed partial class SwShRestorationService
         if (!patched.AsSpan().SequenceEqual(current)) outputs[relative] = patched;
     }
 
-    private static void AddSoundMemory(ProjectPaths paths, IDictionary<string, byte[]?> outputs, ISet<ProjectFileReference> sources)
+    private static void AddSoundMemory(ProjectPaths paths, IDictionary<string, byte[]?> outputs, ISet<ProjectFileReference> sources, int bankBytes)
     {
         if (string.IsNullOrWhiteSpace(paths.BaseExeFsPath))
             throw new InvalidDataException("Select the game's Base ExeFS folder to apply the sound memory required by restored Pokemon.");
@@ -464,7 +514,7 @@ public sealed partial class SwShRestorationService
         var output = Output(paths, relative, includeExecutable: true);
         var current = baseline;
         if (System.IO.File.Exists(output)) { current = BoundedRead(output); sources.Add(new(ProjectFileLayer.Layered, relative)); }
-        var patched = SwShRestorationSoundMemoryPatcher.Apply(baseline, current, paths.SelectedGame!.Value);
+        var patched = SwShRestorationSoundMemoryPatcher.Apply(baseline, current, paths.SelectedGame!.Value, bankBytes);
         if (!patched.AsSpan().SequenceEqual(current)) outputs[relative] = patched;
     }
 
@@ -544,7 +594,7 @@ public sealed partial class SwShRestorationService
         }
         foreach (var path in contributions.Select(c => c.Path).Distinct(StringComparer.Ordinal))
         {
-            _ = ReadEffective(paths, path, sources);
+            _ = FindEffectiveFile(paths, path, sources);
             // Retired assets can restore native bytes hidden beneath owned output.
             // Bind that base input as well as the effective overlay before review.
             if (intent.UpdateAssets && SwShRestorationAssetUpdate.IsAssetPath(path)
@@ -585,24 +635,35 @@ public sealed partial class SwShRestorationService
             throw new InvalidDataException("Staged external asset update is invalid.");
         _ = SwShRestorationDefinitions.Get(intent.DefinitionId); return intent;
     }
-    private static void VerifyTargetSources(ProjectPaths paths, SwShPreparedRestoration prepared, bool assetsOnly = false)
+    private static void VerifyTargetSources(ProjectPaths paths, SwShPreparedRestoration prepared,
+        Dictionary<string, SwShRestorationSourceFingerprint> fingerprints, bool assetsOnly)
     {
         foreach (var source in prepared.Sources.Where(s => s.Role == "target"
             && (!assetsOnly || SwShRestorationAssetUpdate.IsAssetPath("romfs/" + s.RelativePath))))
         {
-            _ = new KM.Core.Semantics.RelativeOutputPath(source.RelativePath);
-            var path = Path.Combine(paths.BaseRomFsPath!, source.RelativePath.Replace('/', Path.DirectorySeparatorChar));
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            if (stream.Length != source.Length || Convert.ToHexStringLower(SHA256.HashData(stream)) != source.Sha256)
+            if (!fingerprints.TryGetValue(source.RelativePath, out var fingerprint))
+            {
+                _ = new KM.Core.Semantics.RelativeOutputPath(source.RelativePath);
+                var path = Path.Combine(paths.BaseRomFsPath!, source.RelativePath.Replace('/', Path.DirectorySeparatorChar));
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+                fingerprint = source with { Length = stream.Length, Sha256 = Convert.ToHexStringLower(SHA256.HashData(stream)) };
+                fingerprints.Add(source.RelativePath, fingerprint);
+            }
+            if (fingerprint.Length != source.Length || fingerprint.Sha256 != source.Sha256)
                 throw new InvalidDataException("The target dump changed since restoration preparation. Prepare the Pokemon again.");
         }
     }
     private static byte[]? ReadEffective(ProjectPaths paths, string relative, ISet<ProjectFileReference> sources)
     {
+        var path = FindEffectiveFile(paths, relative, sources);
+        return path is null ? null : BoundedRead(path, SwShRestorationSourceBudget.MaximumBytes(relative));
+    }
+    private static string? FindEffectiveFile(ProjectPaths paths, string relative, ISet<ProjectFileReference> sources)
+    {
         var output = Output(paths, relative);
         var native = Path.Combine(paths.BaseRomFsPath!, relative[6..].Replace('/', Path.DirectorySeparatorChar));
-        if (System.IO.File.Exists(output)) { sources.Add(new(ProjectFileLayer.Layered, relative)); return BoundedRead(output, SwShRestorationSourceBudget.MaximumBytes(relative)); }
-        if (System.IO.File.Exists(native)) { sources.Add(new(ProjectFileLayer.Base, relative)); return BoundedRead(native, SwShRestorationSourceBudget.MaximumBytes(relative)); }
+        if (System.IO.File.Exists(output)) { sources.Add(new(ProjectFileLayer.Layered, relative)); return output; }
+        if (System.IO.File.Exists(native)) { sources.Add(new(ProjectFileLayer.Base, relative)); return native; }
         return null;
     }
     private static byte[] BoundedRead(string path, int maximumBytes = 64 * 1024 * 1024)

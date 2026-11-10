@@ -27,8 +27,13 @@ export const prepareRestorationRequestSchema = z.strictObject({ paths: projectPa
   donorRomFsPath: z.string().min(1), compressionSupportFolderPath: z.string().nullable() });
 export const restorationPreparationRequestSchema = z.strictObject({ paths: projectPathsSchema, preparationId: z.string() });
 export const restorationPreparationResponseSchema = z.strictObject({ preparation: restorationPreparationSchema });
-export const stageRestorationRequestSchema = z.strictObject({ paths: projectPathsSchema, definitionId: z.string(), preparedHash: z.string(),
-  enabled: z.boolean(), removeAssets: z.boolean().optional(), updateAssets: z.boolean().optional(), adoptExternal: z.boolean().optional(), session: editSessionSchema.nullable() });
+const restorationSelectionFields = { definitionId: z.string(), preparedHash: z.string(), enabled: z.boolean(),
+  removeAssets: z.boolean().optional(), updateAssets: z.boolean().optional(), adoptExternal: z.boolean().optional() };
+const restorationStageFields = { paths: projectPathsSchema, session: editSessionSchema.nullable() };
+export const stageRestorationRequestSchema = z.union([
+  z.strictObject({ ...restorationStageFields, ...restorationSelectionFields }),
+  z.strictObject({ ...restorationStageFields, selections: z.array(z.strictObject(restorationSelectionFields)).min(1).max(1020) }),
+]);
 export const stageRestorationResponseSchema = z.strictObject({ workflow: restorationWorkflowSchema, session: editSessionSchema,
   diagnostics: z.array(apiDiagnosticSchema) });
 export type RestorationWorkflow = z.infer<typeof restorationWorkflowSchema>;

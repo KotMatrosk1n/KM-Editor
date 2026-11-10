@@ -104,9 +104,20 @@ public sealed partial class ProjectBridgeDispatcher
         }
         var stage = DeserializeRequest<StageRestorationRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(stage.Payload.Paths);
-        var result = new SwShRestorationService().Stage(paths, stage.Payload.DefinitionId, stage.Payload.PreparedHash, stage.Payload.Enabled,
-            stage.Payload.Session is null ? null : EditSessionBridgeMapper.ToCore(stage.Payload.Session), stage.Payload.RemoveAssets, preparedAssets: stage.Payload.RemoveAssets ? restorationJobs.ActivePreparedHashes(paths, stage.Payload.DefinitionId) : null,
-            updateAssets: stage.Payload.UpdateAssets, adoptExternal: stage.Payload.AdoptExternal);
+        var payload = stage.Payload;
+        var selections = payload.Selections;
+        if (selections is null && payload.DefinitionId is { } id && payload.PreparedHash is { } hash && payload.Enabled is { } enabled)
+            selections = [new(id, hash, enabled, payload.RemoveAssets, payload.UpdateAssets, payload.AdoptExternal)];
+        else if (selections is null || selections.Any(s => s is null)
+            || payload.DefinitionId is not null || payload.PreparedHash is not null || payload.Enabled is not null
+            || payload.RemoveAssets || payload.UpdateAssets || payload.AdoptExternal)
+            return SerializeFailure(SwShRestorationService.SessionCode, "Provide one restoration selection or a list of selections.", stage.RequestId);
+
+        var result = new SwShRestorationService().StageBatch(paths, selections.Select(selection =>
+            new SwShRestorationStageSelection(selection.DefinitionId, selection.PreparedHash, selection.Enabled, selection.RemoveAssets,
+                PreparedAssets: selection.RemoveAssets ? restorationJobs.ActivePreparedHashes(paths, selection.DefinitionId) : null,
+                UpdateAssets: selection.UpdateAssets, AdoptExternal: selection.AdoptExternal)).ToArray(),
+            payload.Session is null ? null : EditSessionBridgeMapper.ToCore(payload.Session));
         return SerializeSuccess(new StageRestorationResponse(LoadRestoration(paths, result.Session), EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray()), stage.RequestId);
     }
@@ -173,11 +184,14 @@ public sealed partial class ProjectBridgeDispatcher
                 throw new InvalidDataException("This editor cannot be combined with a Pokemon restoration. Apply its changes separately.");
             OrderDomainsBySourceDependencies(domains);
             var initial = service.Preview(paths, restoration);
+            var enable = restoration with { PendingEdits = restoration.PendingEdits.Where(IsEnable).ToArray() };
+            if (domains.Count == 0 && enable.PendingEdits.Count == restoration.PendingEdits.Count)
+                return CapturePlan(initial);
+
             var selections = initial.State.Selections.ToDictionary(s => s.DefinitionId, StringComparer.Ordinal);
             var sources = initial.Sources.ToHashSet();
             var targets = initial.Files.Keys.ToHashSet(StringComparer.Ordinal);
             using var view = new SwShRestorationView(paths);
-            var enable = restoration with { PendingEdits = restoration.PendingEdits.Where(IsEnable).ToArray() };
             var remove = restoration with { PendingEdits = restoration.PendingEdits.Where(e => !IsEnable(e)).ToArray() };
             if (enable.PendingEdits.Count > 0)
             {
@@ -223,13 +237,17 @@ public sealed partial class ProjectBridgeDispatcher
             var finalState = new SwShRestorationState(1, selections.Values.OrderBy(s => s.DefinitionId, StringComparer.Ordinal).ToArray());
             var stored = SwShRestorationStateStore.Store(paths, finalState); using (stored.Lease) { }
             var files = targets.ToDictionary(p => p, p => File.Exists(view.Output(p)) ? File.ReadAllBytes(view.Output(p)) : null, StringComparer.Ordinal);
-            var originalSources = RebaseRestorationSources(paths, sources);
-            var writes = files.Keys.Order(StringComparer.Ordinal).Select(p => new PlannedFileWrite(p,
-                p == SwShRestorationComposer.PersonalPath ? originalSources : [],
-                File.Exists(Path.Combine(paths.OutputRootPath!, p)), "Apply Pokemon restoration and dependent editor changes together.")).ToArray();
-            var combined = SwShChangePlanSourceGuard.Capture(paths, new(session.Id, writes, []) { EffectivePendingEdits = session.PendingEdits }, preserveExplicitSourceLayers: true);
-            return new(combined, new(files, stored.Hash, initial.PreviousStateHash, finalState, originalSources, initial.RemovedSpecies)
-                { RemovedIdentities = initial.RemovedIdentities, AdoptedWholeFiles = initial.AdoptedWholeFiles });
+            return CapturePlan(initial with { Files = files, StateHash = stored.Hash, State = finalState, Sources = sources.ToArray() });
+
+            RestorationBatch CapturePlan(SwShRestorationPreview preview)
+            {
+                var originalSources = RebaseRestorationSources(paths, preview.Sources);
+                var writes = preview.Files.Keys.Order(StringComparer.Ordinal).Select(p => new PlannedFileWrite(p,
+                    p == SwShRestorationComposer.PersonalPath ? originalSources : [],
+                    File.Exists(Path.Combine(paths.OutputRootPath!, p)), "Apply Pokemon restoration and dependent editor changes together.")).ToArray();
+                var combined = SwShChangePlanSourceGuard.Capture(paths, new(session.Id, writes, []) { EffectivePendingEdits = session.PendingEdits }, preserveExplicitSourceLayers: true);
+                return new(combined, preview with { Sources = originalSources });
+            }
         }
         catch (Exception exception) when (exception is InvalidDataException or IOException or UnauthorizedAccessException or ArgumentException or JsonException or OverflowException or KM.Core.Output.OutputCoordinatorException)
         {

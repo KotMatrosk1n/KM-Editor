@@ -80,9 +80,10 @@ public sealed class SoundBankDocument
                 throw new InvalidDataException("Sound media selected for removal has changed.");
             media.Remove(item.Id);
         }
+        var objectIds = objects.Select(item => item.Id).ToHashSet();
         foreach (var item in addedObjects)
         {
-            if (objects.Any(current => current.Id == item.Id)) throw new InvalidDataException("A new sound object identifier collides with existing content.");
+            if (!objectIds.Add(item.Id)) throw new InvalidDataException("A new sound object identifier collides with existing content.");
             objects.Add(item);
         }
         foreach (var item in addedMedia)

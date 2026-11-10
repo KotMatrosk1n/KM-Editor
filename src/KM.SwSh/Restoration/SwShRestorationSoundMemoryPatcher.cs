@@ -21,7 +21,14 @@ public static class SwShRestorationSoundMemoryPatcher
     private const uint ExpandedParent = 0x6044CCCC;
     private const uint OriginalSound = 65 * 1024 * 1024;
     private const uint ExpandedSound = 256 * 1024 * 1024;
-    internal enum Kind { Original, Legacy81, Legacy256, Installed }
+    // The large bank tier moves another 32 MiB from DebugHeap to GlobalHeap and
+    // grows both the sound pool and its parent by 128 MiB.
+    private const int LargeBankThreshold = 208 * 1024 * 1024;
+    private const uint LargeSplit = 0x52B99209;
+    private const uint LargeParent = 0x6844CCCC;
+    private const uint LargeSound = 384 * 1024 * 1024;
+
+    internal enum Kind { Original, Legacy81, Legacy256, Installed, InstalledLarge }
 
     internal static (NsoFile Main, Kind State) Read(byte[] bytes, ProjectGame game)
     {
@@ -42,6 +49,7 @@ public static class SwShRestorationSoundMemoryPatcher
             (OriginalSplit, OriginalParent, 81 * 1024 * 1024) => Kind.Legacy81,
             (OriginalSplit, OriginalParent, ExpandedSound) => Kind.Legacy256,
             (ExpandedSplit, ExpandedParent, ExpandedSound) => Kind.Installed,
+            (LargeSplit, LargeParent, LargeSound) => Kind.InstalledLarge,
             _ => throw new InvalidDataException("The sound memory budgets contain incompatible changes. Restore a supported executable before adding restored sounds."),
         };
         var startup = text.AsSpan(0xD50, 0x750).ToArray();
@@ -57,22 +65,32 @@ public static class SwShRestorationSoundMemoryPatcher
         return (main, state);
     }
 
-    public static byte[] Apply(byte[] baseline, byte[] source, ProjectGame game) => Rewrite(baseline, source, game, true);
-    internal static byte[] RestoreFromBase(byte[] baseline, byte[] source, ProjectGame game) => Rewrite(baseline, source, game, false);
+    public static byte[] Apply(byte[] baseline, byte[] source, ProjectGame game) => Apply(baseline, source, game, 0);
 
-    private static byte[] Rewrite(byte[] baseline, byte[] source, ProjectGame game, bool expanded)
+    internal static byte[] Apply(byte[] baseline, byte[] source, ProjectGame game, int bankBytes) =>
+        Rewrite(baseline, source, game, bankBytes >= LargeBankThreshold ? Kind.InstalledLarge : Kind.Installed);
+    internal static byte[] RestoreFromBase(byte[] baseline, byte[] source, ProjectGame game) => Rewrite(baseline, source, game, Kind.Original);
+
+    private static byte[] Rewrite(byte[] baseline, byte[] source, ProjectGame game, Kind target)
     {
         var original = Read(baseline, game); var current = Read(source, game);
         if (original.State != Kind.Original) throw new InvalidDataException("Base ExeFS must contain the original sound memory budgets.");
         SwShExeFsMainComparison.EnsureCompatibleBaseLayout(original.Main, current.Main, Owner);
-        if (current.State == (expanded ? Kind.Installed : Kind.Original)) return source;
+        if (current.State == target || (current.State == Kind.InstalledLarge && target == Kind.Installed))
+            return source;
+        var (split, parent, sound) = target switch
+        {
+            Kind.InstalledLarge => (LargeSplit, LargeParent, LargeSound),
+            Kind.Installed => (ExpandedSplit, ExpandedParent, ExpandedSound),
+            _ => (OriginalSplit, OriginalParent, OriginalSound),
+        };
         var text = current.Main.Text.DecompressedData.ToArray(); var data = current.Main.Data.DecompressedData.ToArray();
-        Put(text, SplitOffset, expanded ? ExpandedSplit : OriginalSplit);
-        Put(data, ParentOffset, expanded ? ExpandedParent : OriginalParent);
-        Put(data, SoundOffset, expanded ? ExpandedSound : OriginalSound);
+        Put(text, SplitOffset, split);
+        Put(data, ParentOffset, parent);
+        Put(data, SoundOffset, sound);
         var output = current.Main.Write(textDecompressedData: text, dataDecompressedData: data);
         var after = Read(output, game);
-        if (after.State != (expanded ? Kind.Installed : Kind.Original)
+        if (after.State != target
             || !after.Main.Text.DecompressedData.SequenceEqual(text) || !after.Main.Data.DecompressedData.SequenceEqual(data)
             || !after.Main.Ro.DecompressedData.SequenceEqual(current.Main.Ro.DecompressedData)
             || !SwShExeFsMainComparison.StableHeaderBytesMatch(current.Main.RawHeader, after.Main.RawHeader))
@@ -85,10 +103,12 @@ public static class SwShRestorationSoundMemoryPatcher
         try
         {
             var game = SwShExecutableMergeSupport.GameForBuild(Convert.ToHexString(NsoFile.Parse(bytes).BuildId));
-            return game is not null && Read(bytes, game.Value).State == Kind.Installed;
+            return game is not null && IsInstalled(Read(bytes, game.Value).State);
         }
         catch (Exception exception) when (exception is InvalidDataException or ArgumentException or OverflowException) { return false; }
     }
+
+    internal static bool IsInstalled(Kind state) => state is Kind.Installed or Kind.InstalledLarge;
 
     internal static IReadOnlyList<SwShExeFsReservedRegion> Reservations() =>
     [

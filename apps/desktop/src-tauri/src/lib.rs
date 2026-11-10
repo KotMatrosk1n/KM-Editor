@@ -97,6 +97,7 @@ const PROJECT_BRIDGE_WORKFLOW_CEILING_MULTIPLIER: u64 = 2;
 const PROJECT_BRIDGE_EDITOR_OPERATION_TIMEOUT: Duration = Duration::from_secs(
     PROJECT_BRIDGE_WORKFLOW_EXPECTED_TIMEOUT_SECONDS * PROJECT_BRIDGE_WORKFLOW_PROVISION_MULTIPLIER,
 );
+const PROJECT_BRIDGE_RESTORATION_BATCH_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 const PROJECT_BRIDGE_TERMINATION_WAIT_TIMEOUT: Duration = Duration::from_secs(2);
 const PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT: Duration = Duration::from_secs(
     PROJECT_BRIDGE_WORKFLOW_EXPECTED_TIMEOUT_SECONDS
@@ -2541,10 +2542,22 @@ fn project_bridge_request_policy(request_json: &str) -> Option<ProjectBridgeRequ
             concurrency,
             ProjectBridgeCommandConcurrency::AffinityExclusive(_)
         );
+    let reviews_restoration = matches!(command, "changePlan.create" | "editSession.validate")
+        && request
+            .pointer("/payload/session/pendingEdits")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|edits| {
+                edits.iter().any(|edit| {
+                    edit.get("domain").and_then(serde_json::Value::as_str)
+                        == Some("workflow.restoreMissingPokemon")
+                })
+            });
 
     let (bounded_execution_timeout, bounded_retry_after_transport_failure) =
         if command == "models.prepare" {
             (PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT, false)
+        } else if command == "restoreMissingPokemon.stage" || reviews_restoration {
+            (PROJECT_BRIDGE_RESTORATION_BATCH_TIMEOUT, true)
         } else if is_replay_safe_edit_session_command(command) {
             (PROJECT_BRIDGE_EDITOR_OPERATION_TIMEOUT, true)
         } else if matches!(

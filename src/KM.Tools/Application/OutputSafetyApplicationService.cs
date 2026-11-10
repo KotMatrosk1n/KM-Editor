@@ -28,7 +28,6 @@ public sealed class OutputSafetyApplicationService
     private const int MaximumCachedPlans = 16;
     private const long MaximumBaselineHashBytes = 2L * 1024L * 1024L * 1024L;
     private static readonly TimeSpan ReviewLifetime = TimeSpan.FromMinutes(10);
-    private static readonly OutputTransactionCoordinatorOptions CoordinatorOptions = new();
     private static readonly ProjectFileGraphBuilder BaselineGraphBuilder = new(
         new ProjectFileGraphBuilderOptions
         {
@@ -601,7 +600,7 @@ public sealed class OutputSafetyApplicationService
                 continue;
             }
 
-            if (baseline.Count == CoordinatorOptions.MaximumIntegrityEntries)
+            if (baseline.Count == OutputLimits.MaximumIntegrityEntries)
             {
                 unknownPathKeys.Add(outputPath.CanonicalKey);
                 continue;
@@ -627,7 +626,7 @@ public sealed class OutputSafetyApplicationService
             var state = await TryFingerprintBaselineFileAsync(
                     sourceRoot,
                     sourcePath,
-                    Math.Min(CoordinatorOptions.MaximumFingerprintFileBytes, remainingBytes),
+                    Math.Min(OutputLimits.MaximumFingerprintFileBytes, remainingBytes),
                     buffer,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -889,7 +888,7 @@ public sealed class OutputSafetyApplicationService
             projectId,
             selectedGame.ToGameFamily(),
             paths,
-            OutputTransactionCoordinator.ForProject(paths, CoordinatorOptions));
+            OutputTransactionCoordinator.ForProject(paths));
     }
 
     private static bool HasBoundedProjectPathStrings(ProjectPaths paths)

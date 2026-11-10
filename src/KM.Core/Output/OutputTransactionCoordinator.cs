@@ -42,6 +42,19 @@ public sealed partial class OutputTransactionCoordinator
     public static OutputTransactionCoordinator ForProject(ProjectPaths paths, OutputTransactionCoordinatorOptions? options = null)
     {
         var workspace = new OutputWorkspaceStorage(paths);
+        if (options is null && paths.SelectedGame is ProjectGame.Sword or ProjectGame.Shield)
+        {
+            // A full restoration roster can have thousands of files and a large shared sound bank.
+            // Keep normal saves, checkpoints and checkpoint restores on the same budget.
+            options = new()
+            {
+                MaximumMutationsPerApply = OutputLimits.MaximumMutationsPerApply,
+                MaximumWriteBytesPerMutation = OutputLimits.MaximumWriteBytesPerMutation,
+                MaximumWriteBytesPerApply = OutputLimits.MaximumWriteBytesPerApply,
+                MaximumBackupBytesPerApply = OutputLimits.MaximumWriteBytesPerApply,
+                MaximumCheckpointBytes = OutputLimits.MaximumCheckpointBytes,
+            };
+        }
         return new OutputTransactionCoordinator(workspace.OutputRoot, options, workspace);
     }
 
@@ -4921,14 +4934,16 @@ public sealed partial class OutputTransactionCoordinator
     private void ValidatePlanLimits(OutputApplyPlan plan)
     {
         plan.HistoryDetails?.Validate();
-        if (plan.Mutations.Length > options.MaximumMutationsPerApply
-            || plan.ReadDependencies.Length > options.MaximumIntegrityEntries
-            || plan.DirectoryMembershipDependencies.Length > options.MaximumIntegrityEntries
-            || plan.Mutations.Any(mutation =>
-                mutation.OwnershipClaims.Length > options.MaximumOwnershipClaimsPerMutation
-                || mutation.Postimage.Length > options.MaximumWriteBytesPerMutation))
+        if (plan.Mutations.Length > options.MaximumMutationsPerApply)
         {
-            throw new OutputLimitExceededException("The output apply exceeds the configured mutation limits.");
+            throw new OutputLimitExceededException(
+                $"Apply would change {plan.Mutations.Length:N0} files. The limit is {options.MaximumMutationsPerApply:N0} files per Apply.");
+        }
+        if (plan.ReadDependencies.Length > options.MaximumIntegrityEntries
+            || plan.DirectoryMembershipDependencies.Length > options.MaximumIntegrityEntries)
+        {
+            throw new OutputLimitExceededException(
+                $"Apply exceeds the limit of {options.MaximumIntegrityEntries:N0} source checks of each kind.");
         }
 
         var total = plan.Mutations.Sum(mutation => (long)mutation.Postimage.Length);
@@ -4940,6 +4955,16 @@ public sealed partial class OutputTransactionCoordinator
         long backupBytes = 0;
         foreach (var mutation in plan.Mutations)
         {
+            if (mutation.Postimage.Length > options.MaximumWriteBytesPerMutation)
+            {
+                throw new OutputLimitExceededException(
+                    $"'{mutation.Path.Value}' would be {mutation.Postimage.Length:N0} bytes. The limit is {options.MaximumWriteBytesPerMutation:N0} bytes per file.");
+            }
+            if (mutation.OwnershipClaims.Length > options.MaximumOwnershipClaimsPerMutation)
+            {
+                throw new OutputLimitExceededException(
+                    $"'{mutation.Path.Value}' has {mutation.OwnershipClaims.Length:N0} ownership claims. The limit is {options.MaximumOwnershipClaimsPerMutation:N0} claims per file.");
+            }
             if (mutation.ExpectedPreimage.LengthBytes > options.MaximumBackupBytesPerApply - backupBytes)
             {
                 throw new OutputLimitExceededException("The output apply exceeds the configured aggregate backup limit.");

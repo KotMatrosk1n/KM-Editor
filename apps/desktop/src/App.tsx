@@ -10332,24 +10332,18 @@ export function App({
     prepareScopedEditorPanelAction('restoreMissingPokemon');
     try {
       await runEditSessionMutation(async (session, reportProgress) => {
-        let next = session;
-        let response: Awaited<ReturnType<typeof bridge.stageRestoration>> | null = null;
-        let completed = 0;
-        for (const selection of selections) {
-          const entry = restoreMissingPokemonWorkflow?.entries.find(entry => entry.definitionId === selection.definitionId);
-          const subject = entry?.formLabel ? t(`restoration.form.${entry.formLabel}`, { name: entry.name }) : entry?.name;
-          reportProgress({ subject, completed, total: selections.length });
-          response = await bridge.stageRestoration({ paths: createProjectPaths(draftPaths), session: next, ...selection });
-          if (response.diagnostics.some(d => d.severity === 'error')) break;
-          reportProgress({ completed: ++completed });
-          next = response.session;
-        }
-        if (!response) throw new Error(t('restoration.failed'));
+        const entry = selections.length === 1
+          ? restoreMissingPokemonWorkflow?.entries.find(entry => entry.definitionId === selections[0].definitionId)
+          : undefined;
+        const subject = entry?.formLabel ? t(`restoration.form.${entry.formLabel}`, { name: entry.name }) : entry?.name;
+        reportProgress({ subject, completed: 0, total: selections.length });
+        const response = await bridge.stageRestoration({ paths: createProjectPaths(draftPaths), session, selections });
         const diagnostics = [...response.diagnostics, ...response.workflow.diagnostics];
         const matches = response.session.sessionId === activeSession.sessionId && selections.every(selection =>
-          response!.workflow.entries.some(entry => entry.definitionId === selection.definitionId && entry.staged
+          response.workflow.entries.some(entry => entry.definitionId === selection.definitionId && entry.staged
             && entry.selected === selection.enabled && (selection.removeAssets ? entry.removalStaged : !entry.removalStaged && entry.preparedHash === selection.preparedHash)));
         const didSucceed = matches && !diagnostics.some(d => d.severity === 'error');
+        if (didSucceed) reportProgress({ completed: selections.length });
         return { ...response, diagnostics, didSucceed, session: didSucceed ? response.session : session };
       }, response => {
         setScopedEditorPanelDiagnostics('restoreMissingPokemon', response.diagnostics);

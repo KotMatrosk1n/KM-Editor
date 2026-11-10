@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
+using KM.Core.Output;
+
 namespace KM.SwSh.Restoration;
 
 internal static class SwShRestorationSourceBudget
 {
-    // Common.bnk aggregates every installed voice, unlike an individual model
-    // resource. Keep it within the coordinator's default per-file write limit.
-    // All other sources retain their existing 64 MiB read ceiling.
+    // Use the same limit to read an installed Common.bnk and to save a new one.
+    internal const int MaximumVoiceBankBytes = OutputLimits.MaximumWriteBytesPerMutation;
+
     internal static int MaximumBytes(string relativePath) => relativePath == SwShRestorationComposer.VoicesPath
-        ? 128 * 1024 * 1024 : 64 * 1024 * 1024;
+        ? MaximumVoiceBankBytes : 64 * 1024 * 1024;
 }
