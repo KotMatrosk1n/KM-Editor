@@ -51,6 +51,8 @@ public sealed partial class ZaSwShRestorationPreparationService
         private readonly ProjectPaths target;
         private readonly string donorRoot;
         private readonly string definitionId;
+        private readonly bool legacyModelLayout;
+        private readonly SwShRestorationModelVariant[] modelVariants;
         private readonly SwShRestorationDonorSession archive;
         private readonly bool ownsArchive;
         private readonly IProgress<SwShRestorationPreparationProgress>? progress;
@@ -90,6 +92,8 @@ public sealed partial class ZaSwShRestorationPreparationService
         {
             this.target = target; this.token = token; this.progress = progress; totalSpecies = definition.Identities.Count;
             definitionId = definition.Id;
+            legacyModelLayout = SwShRestorationModelResources.UseLegacyLayout(target, definition);
+            modelVariants = SwShRestorationModelResources.Variants(definition, legacyModelLayout).ToArray();
             progress?.Report(new("sources", 0, definition.Identities.Count));
             token.ThrowIfCancellationRequested();
             ownsArchive = donorSession is null;

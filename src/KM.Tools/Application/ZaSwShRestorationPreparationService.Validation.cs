@@ -36,7 +36,7 @@ public sealed partial class ZaSwShRestorationPreparationService
                 var profile = Profile(identity); var personalId = SwShRestorationForms.PersonalRow(identity);
                 foreach (var gender in profile.SeparateFemale ? new[] { 0, 1 } : new[] { 0 })
                 {
-                var stem = SwShRestorationModelResources.Variants(SwShRestorationDefinitions.Get(prepared.DefinitionId))
+                var stem = modelVariants
                     .Single(v => v.Identity == identity && v.Gender == gender).ResourceStem;
                 if (!personal.Records[personalId].IsPresentInGame || personal.Records[personalId].HatchedSpecies != profile.HatchedSpecies || personal.Records[personalId].CanNotDynamax)
                     throw new InvalidDataException("Converted personal data does not support the declared contexts.");

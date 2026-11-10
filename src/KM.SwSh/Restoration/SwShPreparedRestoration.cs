@@ -87,17 +87,18 @@ public sealed record SwShPreparedRestoration(string DefinitionId, int Definition
             read.Add(hash, payload); return payload;
         }
         var contributions = manifest.Items.Select(i => new SwShRestorationContribution(i.Path, i.Writer, i.Key, i.Before is null ? null : Blob(i.Before), Blob(i.After))).ToArray();
-        ValidateContributions(definition, contributions);
-        return new(manifest.DefinitionId, manifest.DefinitionVersion, manifest.ConverterVersion, manifest.Game, manifest.Sources, contributions, manifest.UnavailableSourceMoves)
+        var prepared = new SwShPreparedRestoration(manifest.DefinitionId, manifest.DefinitionVersion, manifest.ConverterVersion, manifest.Game, manifest.Sources, contributions, manifest.UnavailableSourceMoves)
             { AssetRevision = manifest.AssetRevision };
+        ValidateContributions(definition, prepared);
+        return prepared;
     }
 
-    private static void ValidateContributions(SwShRestorationDefinition definition, IReadOnlyList<SwShRestorationContribution> items)
+    private static void ValidateContributions(SwShRestorationDefinition definition, SwShPreparedRestoration prepared)
     {
         var rows = definition.Identities.Select(SwShRestorationForms.PersonalRow).ToHashSet();
         var stones = definition.Identities.Select(SwShRestorationMegaItems.For).OfType<SwShRestorationMegaItem>().ToArray();
-        var variants = SwShRestorationModelResources.Variants(definition).ToArray();
-        foreach (var item in items)
+        var variants = SwShRestorationModelResources.Variants(prepared).ToArray();
+        foreach (var item in prepared.Contributions)
         {
             SwShRestorationComposer.ValidatePath(item.Path, item.Writer);
             var valid = item.Writer switch

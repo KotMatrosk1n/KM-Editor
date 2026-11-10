@@ -44,7 +44,8 @@ internal static class SwShRestorationDependencies
     internal static SwShRestorationContribution Retain(SwShRestorationContribution original,
         SwShRestorationContribution captured, SwShRestorationState state)
     {
-        if (!IsDependency(original) || captured.After.Length != original.After.Length) return captured;
+        if (!IsDependency(original)) return SwShRestorationForms.NormalizeRetainedEgg(captured);
+        if (captured.After.Length != original.After.Length) return captured;
         var expected = Resolve(original, Enabled(state)); var result = captured.After.ToArray();
         if (original.Writer == SwShRestorationWriter.Personal
             && int.TryParse(original.Key, out var row)

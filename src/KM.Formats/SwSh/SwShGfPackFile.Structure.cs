@@ -6,6 +6,41 @@ public sealed partial class SwShGfPackFile
     public static SwShGfPackFile CreateWithPaths(IReadOnlyDictionary<string, byte[]> members) =>
         new SwShGfPackFile(0x1000, 0, [], [], []).WithMembers(members);
 
+    /// <summary>Repaths a complete named archive without changing its member data or order.</summary>
+    public SwShGfPackFile WithRenamedMembers(IReadOnlyDictionary<string, string> paths)
+    {
+        var byHash = paths.ToDictionary(pair => HashMemberPath(pair.Key));
+        if (byHash.Count != FileCount || AbsoluteHashes.Any(entry => !byHash.ContainsKey(entry.HashFnv1aPathFull)))
+            throw new InvalidDataException("Archive member paths do not match the archive.");
+        var names = AbsoluteHashes.Select(entry => byHash[entry.HashFnv1aPathFull]).ToArray();
+        var hashes = names.Select(pair => new FileHashAbsoluteEntry(HashMemberPath(pair.Value))).ToList();
+        if (hashes.Distinct().Count() != FileCount)
+            throw new InvalidDataException("Renamed archive member paths overlap.");
+
+        static ulong FolderHash(string path) => HashFnv1a64(path.AsSpan(0, path.LastIndexOf('/') + 1));
+        static ulong NameHash(string path) => HashFnv1a64(path.AsSpan(path.LastIndexOf('/') + 1));
+        var nextFolders = new List<FolderEntry>(folders.Count);
+        foreach (var folder in folders)
+        {
+            var files = new List<FileHashIndexEntry>(folder.Files.Count);
+            var newFolderHashes = new HashSet<ulong>();
+            foreach (var file in folder.Files)
+            {
+                var (before, after) = names[file.Index];
+                if (FolderHash(before) != folder.HashFnv1aPathFolderName || NameHash(before) != file.HashFnv1aPathFileName)
+                    throw new InvalidDataException("Archive member folder or filename does not match.");
+                files.Add(file with { HashFnv1aPathFileName = NameHash(after) });
+                newFolderHashes.Add(FolderHash(after));
+            }
+            if (newFolderHashes.Count > 1 || files.Select(file => file.HashFnv1aPathFileName).Distinct().Count() != files.Count)
+                throw new InvalidDataException("Renamed archive members must retain their folder grouping.");
+            nextFolders.Add(folder with { HashFnv1aPathFolderName = newFolderHashes.SingleOrDefault(folder.HashFnv1aPathFolderName), Files = files });
+        }
+        if (nextFolders.Select(folder => folder.HashFnv1aPathFolderName).Distinct().Count() != nextFolders.Count)
+            throw new InvalidDataException("Renamed archive folders overlap.");
+        return new(Version, IsRelocated, hashes, nextFolders, new(entries));
+    }
+
     /// <summary>Changes named members while preserving the metadata and compressed bytes of other members.</summary>
     public SwShGfPackFile WithMembers(IReadOnlyDictionary<string, byte[]> replacements,
         IReadOnlyCollection<string>? removedPaths = null)
