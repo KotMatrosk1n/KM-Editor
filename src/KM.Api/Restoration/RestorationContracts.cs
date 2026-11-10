@@ -45,5 +45,5 @@ public sealed record RestorationSelectionDto(string DefinitionId, string Prepare
 public sealed record StageRestorationRequest(ProjectPathsDto Paths, EditSessionDto? Session,
     string? DefinitionId = null, string? PreparedHash = null, bool? Enabled = null,
     bool RemoveAssets = false, bool UpdateAssets = false, bool AdoptExternal = false,
-    IReadOnlyList<RestorationSelectionDto>? Selections = null);
+    IReadOnlyList<RestorationSelectionDto>? Selections = null, bool ReportProgress = false);
 public sealed record StageRestorationResponse(RestorationWorkflowDto Workflow, EditSessionDto Session, IReadOnlyList<ApiDiagnostic> Diagnostics);

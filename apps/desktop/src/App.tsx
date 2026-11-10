@@ -10336,14 +10336,19 @@ export function App({
           ? restoreMissingPokemonWorkflow?.entries.find(entry => entry.definitionId === selections[0].definitionId)
           : undefined;
         const subject = entry?.formLabel ? t(`restoration.form.${entry.formLabel}`, { name: entry.name }) : entry?.name;
-        reportProgress({ subject, completed: 0, total: selections.length });
-        const response = await bridge.stageRestoration({ paths: createProjectPaths(draftPaths), session, selections });
+        reportProgress({ subject });
+        const response = await bridge.stageRestoration({ paths: createProjectPaths(draftPaths), session, selections }, progress => {
+          if (progress.phase === 'staging') {
+            reportProgress({ completed: progress.completed, total: progress.total });
+          } else {
+            reportProgress({ phase: progress.phase, completed: undefined, total: undefined });
+          }
+        });
         const diagnostics = [...response.diagnostics, ...response.workflow.diagnostics];
         const matches = response.session.sessionId === activeSession.sessionId && selections.every(selection =>
           response.workflow.entries.some(entry => entry.definitionId === selection.definitionId && entry.staged
             && entry.selected === selection.enabled && (selection.removeAssets ? entry.removalStaged : !entry.removalStaged && entry.preparedHash === selection.preparedHash)));
         const didSucceed = matches && !diagnostics.some(d => d.severity === 'error');
-        if (didSucceed) reportProgress({ completed: selections.length });
         return { ...response, diagnostics, didSucceed, session: didSucceed ? response.session : session };
       }, response => {
         setScopedEditorPanelDiagnostics('restoreMissingPokemon', response.diagnostics);

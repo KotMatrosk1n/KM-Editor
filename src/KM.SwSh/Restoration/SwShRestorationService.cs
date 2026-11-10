@@ -23,6 +23,7 @@ public sealed record SwShRestorationIntent(string DefinitionId, string PreparedH
     public IReadOnlyList<string> AdditionalPreparedHashes { get; init; } = [];
 }
 public sealed record SwShRestorationStageResult(EditSession Session, IReadOnlyList<ValidationDiagnostic> Diagnostics);
+public sealed record SwShRestorationStageProgress(string Phase, int? Completed = null, int? Total = null);
 public sealed record SwShRestorationStageSelection(string DefinitionId, string PreparedHash, bool Enabled,
     bool RemoveAssets = false, string? RemovalId = null, IReadOnlyCollection<string>? PreparedAssets = null,
     bool UpdateAssets = false, bool AdoptExternal = false);
@@ -45,7 +46,8 @@ public sealed partial class SwShRestorationService
     public SwShRestorationStageResult Stage(ProjectPaths paths, string definitionId, string preparedHash, bool enabled, EditSession? session, bool removeAssets = false, string? removalId = null, IReadOnlyCollection<string>? preparedAssets = null, bool updateAssets = false, bool adoptExternal = false)
         => StageBatch(paths, [new(definitionId, preparedHash, enabled, removeAssets, removalId, preparedAssets, updateAssets, adoptExternal)], session);
 
-    public SwShRestorationStageResult StageBatch(ProjectPaths paths, IReadOnlyList<SwShRestorationStageSelection> selections, EditSession? session)
+    public SwShRestorationStageResult StageBatch(ProjectPaths paths, IReadOnlyList<SwShRestorationStageSelection> selections, EditSession? session,
+        Action<SwShRestorationStageProgress>? reportProgress = null)
     {
         var current = session ?? EditSession.Start();
         try
@@ -58,7 +60,7 @@ public sealed partial class SwShRestorationService
             var next = current;
             foreach (var selection in selections)
                 next = StageSelection(paths, selection, next, stateHash);
-            _ = Preview(paths, next);
+            _ = Preview(paths, next, reportProgress);
             return new(next, []);
         }
         catch (Exception exception) when (SourceError(exception)) { return new(current, [Error(SessionCode, exception.Message)]); }
@@ -160,13 +162,19 @@ public sealed partial class SwShRestorationService
         catch (Exception exception) when (SourceError(exception)) { return Result(reviewed, [], [Error(ConflictCode, exception.Message)]); }
     }
 
-    public SwShRestorationPreview Preview(ProjectPaths paths, EditSession session)
+    public SwShRestorationPreview Preview(ProjectPaths paths, EditSession session) => Preview(paths, session, null);
+
+    private SwShRestorationPreview Preview(ProjectPaths paths, EditSession session, Action<SwShRestorationStageProgress>? reportProgress)
     {
         if (paths.SelectedGame is not (ProjectGame.Sword or ProjectGame.Shield) || string.IsNullOrWhiteSpace(paths.OutputRootPath)
             || string.IsNullOrWhiteSpace(paths.BaseRomFsPath)) throw new InvalidDataException("Select a Sword or Shield project with a base dump and output folder.");
         var edits = UpgradeSession(paths, session).PendingEdits.Where(e => e.Domain == Domain).ToArray();
         if (edits.Length == 0 || edits.Length > SwShRestorationDefinitions.All.Count || edits.Select(e => e.RecordId).Distinct(StringComparer.Ordinal).Count() != edits.Length)
             throw new InvalidDataException("Restoration selections are missing, duplicated, or excessive.");
+        var completed = 0;
+        reportProgress?.Invoke(new("staging", completed, edits.Length));
+        void ReportSelection() => reportProgress?.Invoke(new("staging", ++completed, edits.Length));
+
         var snapshot = SwShRestorationStateStore.Read(paths); var selections = snapshot.State.Selections.ToDictionary(s => s.DefinitionId, StringComparer.Ordinal);
         var owned = SwShRestorationOwnership.ExactFiles(paths);
         var outputs = new Dictionary<string, byte[]?>(StringComparer.Ordinal); var sources = new HashSet<ProjectFileReference>(); var removed = new HashSet<SwShPokemonIdentity>();
@@ -247,6 +255,7 @@ public sealed partial class SwShRestorationService
             if (intent.RemovalId is not null && installed?.Enabled != true)
             {
                 selections[intent.DefinitionId] = RemovedSelection(intent, installed);
+                ReportSelection();
                 continue;
             }
             if (!intent.Enabled && !intent.UpdateAssets && (installed is null || !installed.Enabled)) throw new InvalidDataException("Only an installed, owned restoration can be removed.");
@@ -267,6 +276,7 @@ public sealed partial class SwShRestorationService
                 selections[intent.DefinitionId] = installed with { PreparedHash = intent.PreparedHash, CustomizationHash = customization, AssetRevision = bundle.AssetRevision,
                     AssetHashes = installed.AssetHashes.Concat(new[] { intent.PreparedHash, installed.PreparedHash, installed.CustomizationHash, customization }
                         .OfType<string>()).Distinct(StringComparer.Ordinal).ToArray() };
+                ReportSelection();
                 continue;
             }
             if (installed is not null && installed.PreparedHash != intent.PreparedHash)
@@ -374,7 +384,9 @@ public sealed partial class SwShRestorationService
                 : new(intent.DefinitionId, preparedHash, intent.Enabled, customization)
                 { AssetRevision = installed?.AssetRevision ?? bundle.AssetRevision,
                     AssetHashes = (installed?.AssetHashes ?? []).Concat(new[] { preparedHash, intent.PreparedHash, installed?.PreparedHash, installed?.CustomizationHash, customization }.OfType<string>()).Distinct(StringComparer.Ordinal).ToArray() };
+            ReportSelection();
         }
+        reportProgress?.Invoke(new("validating"));
         FlushVoices();
         if (outputs.TryGetValue(SwShRestorationComposer.VoicesPath, out var voices)
             && voices is not null && voices.Length > SwShRestorationSourceBudget.MaximumVoiceBankBytes)

@@ -69,7 +69,7 @@ public sealed partial class ProjectBridgeDispatcher
         public void Dispose() { mapping.Dispose(); clear(); view.Dispose(); }
     }
 
-    private string DispatchRestoration(string requestJson, string command)
+    private string DispatchRestoration(string requestJson, string command, Action<SwShRestorationStageProgress>? reportProgress = null)
     {
         if (command == KmCommandNames.InspectRestorationDonor)
         {
@@ -113,11 +113,13 @@ public sealed partial class ProjectBridgeDispatcher
             || payload.RemoveAssets || payload.UpdateAssets || payload.AdoptExternal)
             return SerializeFailure(SwShRestorationService.SessionCode, "Provide one restoration selection or a list of selections.", stage.RequestId);
 
+        if (!payload.ReportProgress) reportProgress = null;
         var result = new SwShRestorationService().StageBatch(paths, selections.Select(selection =>
             new SwShRestorationStageSelection(selection.DefinitionId, selection.PreparedHash, selection.Enabled, selection.RemoveAssets,
                 PreparedAssets: selection.RemoveAssets ? restorationJobs.ActivePreparedHashes(paths, selection.DefinitionId) : null,
                 UpdateAssets: selection.UpdateAssets, AdoptExternal: selection.AdoptExternal)).ToArray(),
-            payload.Session is null ? null : EditSessionBridgeMapper.ToCore(payload.Session));
+            payload.Session is null ? null : EditSessionBridgeMapper.ToCore(payload.Session), reportProgress);
+        reportProgress?.Invoke(new("refreshing"));
         return SerializeSuccess(new StageRestorationResponse(LoadRestoration(paths, result.Session), EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray()), stage.RequestId);
     }

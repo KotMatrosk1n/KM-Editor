@@ -36,6 +36,12 @@ export const stageRestorationRequestSchema = z.union([
 ]);
 export const stageRestorationResponseSchema = z.strictObject({ workflow: restorationWorkflowSchema, session: editSessionSchema,
   diagnostics: z.array(apiDiagnosticSchema) });
+export const restorationStageProgressSchema = z.discriminatedUnion('phase', [
+  z.strictObject({ phase: z.literal('staging'), completed: z.number().int().nonnegative(),
+    total: z.number().int().positive().max(1020) }),
+  z.strictObject({ phase: z.enum(['validating', 'refreshing']), completed: z.null(), total: z.null() }),
+]).refine(progress => progress.phase !== 'staging' || progress.completed <= progress.total);
+export type RestorationStageProgress = z.infer<typeof restorationStageProgressSchema>;
 export type RestorationWorkflow = z.infer<typeof restorationWorkflowSchema>;
 export type RestorationPreparation = z.infer<typeof restorationPreparationSchema>;
 export type RestorationSelection = { definitionId: string; preparedHash: string; enabled: boolean; removeAssets?: boolean; updateAssets?: boolean; adoptExternal?: boolean };

@@ -108,7 +108,7 @@ public sealed class BridgeLineRunner : IDisposable
         {
             while (await lineReader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } request)
             {
-                var responseJson = DispatchRequest(request, CreateApplyProgressWriter(output));
+                var responseJson = DispatchRequest(request, CreateProgressWriter(output));
                 await output.WriteLineAsync(responseJson.AsMemory(), cancellationToken).ConfigureAwait(false);
                 await output.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -132,7 +132,7 @@ public sealed class BridgeLineRunner : IDisposable
         retired?.Dispose();
     }
 
-    private string DispatchRequest(BoundedBridgeLine request, Action<OutputApplyProgress>? reportApplyProgress = null)
+    private string DispatchRequest(BoundedBridgeLine request, Action<object>? reportProgress = null)
     {
         if (request.IsTooLarge)
         {
@@ -141,13 +141,13 @@ public sealed class BridgeLineRunner : IDisposable
 
         return request.HasInvalidEncoding
             ? ProjectBridgeDispatcher.SerializeInvalidRequestEncodingFailure()
-            : DispatchRequest(request.Text ?? string.Empty, reportApplyProgress);
+            : DispatchRequest(request.Text ?? string.Empty, reportProgress);
     }
 
-    private string DispatchRequest(string requestJson, Action<OutputApplyProgress>? reportApplyProgress)
+    private string DispatchRequest(string requestJson, Action<object>? reportProgress)
     {
         dispatcher ??= dispatcherFactory();
-        var result = dispatcher.DispatchForLongLivedRunner(requestJson, reportApplyProgress);
+        var result = dispatcher.DispatchForLongLivedRunner(requestJson, reportProgress);
         if (result.RequiresDispatcherReset)
         {
             // Unexpected command failures may occur after a mutable workflow or edit session has
@@ -163,19 +163,23 @@ public sealed class BridgeLineRunner : IDisposable
             : ProjectBridgeDispatcher.SerializeResponseTooLargeFailure(requestId: null);
     }
 
-    private static Action<OutputApplyProgress> CreateApplyProgressWriter(TextWriter output)
+    private static Action<object> CreateProgressWriter(TextWriter output)
     {
         string? previousPhase = null;
         long previousUpdate = 0;
         var outputAvailable = true;
         return progress =>
         {
-            if (!outputAvailable || (previousPhase == progress.Phase
-                && Stopwatch.GetElapsedTime(previousUpdate) < TimeSpan.FromMilliseconds(80))) return;
-            previousPhase = progress.Phase;
-            previousUpdate = Stopwatch.GetTimestamp();
+            if (!outputAvailable) return;
+            if (progress is OutputApplyProgress apply)
+            {
+                if (previousPhase == apply.Phase && Stopwatch.GetElapsedTime(previousUpdate) < TimeSpan.FromMilliseconds(80)) return;
+                previousPhase = apply.Phase;
+                previousUpdate = Stopwatch.GetTimestamp();
+            }
             try
             {
+                // Keep the existing progress framing for both request-scoped streams.
                 output.WriteLine("#km-apply-progress " + JsonSerializer.Serialize(progress, JsonSerializerOptions.Web));
                 output.Flush();
             }
