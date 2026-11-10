@@ -9404,7 +9404,7 @@ export function App({
     []
   );
 
-  const handleCheckForUpdates = useCallback(async () => {
+  const handleCheckForUpdates = useCallback(async (source: 'startup' | 'manual') => {
     if (updateCheckOperationRef.current !== null) return;
     const updateCheckOperation = {};
     updateCheckOperationRef.current = updateCheckOperation;
@@ -9421,22 +9421,20 @@ export function App({
     });
 
     try {
+      let nativeCheckFailure: { error: unknown } | undefined;
       if (desktopServices.isAvailable) {
+        let nativeUpdate: NativeUpdate | null = null;
         try {
-          const nativeUpdate = await desktopServices.checkForNativeUpdate();
-          if (updateCheckRunRef.current !== runId) {
-            void nativeUpdate?.close().catch(() => undefined);
-            return;
-          }
+          nativeUpdate = await desktopServices.checkForNativeUpdate();
+        } catch (error) {
+          nativeCheckFailure = { error };
+        }
+        if (updateCheckRunRef.current !== runId) {
+          void nativeUpdate?.close().catch(() => undefined);
+          return;
+        }
 
-          if (!nativeUpdate) {
-            setUpdateCheckStatus({
-              kind: 'upToDate',
-              message: `KM Editor v${appVersion} is up to date.`
-            });
-            return;
-          }
-
+        if (nativeUpdate) {
           availableNativeUpdateRef.current = nativeUpdate;
           setAvailableUpdate({
             body: nativeUpdate.body,
@@ -9449,38 +9447,28 @@ export function App({
             message: `KM Editor v${nativeUpdate.version} is ready to install.`
           });
           return;
-        } catch (nativeError) {
-          const fallbackUpdate = await fetchAvailableUpdate(appVersion);
-          if (updateCheckRunRef.current !== runId) {
-            return;
-          }
-
-          if (!fallbackUpdate) {
-            throw nativeError;
-          }
-
-          setAvailableUpdate({
-            ...fallbackUpdate,
-            fallbackReason: toErrorMessage(nativeError, {
-              code: desktopErrorCodes.updateCheckFailed,
-              domain: 'desktop',
-              message: 'Could not check for native updates.'
-            })
-          });
-          setUpdateCheckStatus({
-            kind: 'available',
-            message: `KM Editor v${fallbackUpdate.version} is available on GitHub.`
-          });
-          return;
         }
       }
 
-      const update = await fetchAvailableUpdate(appVersion);
+      let update: ReleasePageUpdate | null = null;
+      // A newly published release can be visible before the latest updater manifest catches up.
+      if (source === 'manual' || !desktopServices.isAvailable || nativeCheckFailure) {
+        try {
+          update = await fetchAvailableUpdate(appVersion);
+        } catch (error) {
+          if (!desktopServices.isAvailable || nativeCheckFailure) {
+            throw error;
+          }
+        }
+      }
       if (updateCheckRunRef.current !== runId) {
         return;
       }
 
       if (!update) {
+        if (nativeCheckFailure) {
+          throw nativeCheckFailure.error;
+        }
         setUpdateCheckStatus({
           kind: 'upToDate',
           message: `KM Editor v${appVersion} is up to date.`
@@ -9488,7 +9476,18 @@ export function App({
         return;
       }
 
-      setAvailableUpdate(update);
+      setAvailableUpdate(
+        nativeCheckFailure
+          ? {
+              ...update,
+              fallbackReason: toErrorMessage(nativeCheckFailure.error, {
+                code: desktopErrorCodes.updateCheckFailed,
+                domain: 'desktop',
+                message: 'Could not check for native updates.'
+              })
+            }
+          : update
+      );
       setUpdateCheckStatus({
         kind: 'available',
         message: `KM Editor v${update.version} is available on GitHub.`
@@ -9512,6 +9511,7 @@ export function App({
       }
     }
   }, [
+    appVersion,
     closeNativeUpdate,
     desktopServices.checkForNativeUpdate,
     desktopServices.isAvailable
@@ -9523,7 +9523,7 @@ export function App({
     }
 
     const timeoutId = window.setTimeout(() => {
-      void handleCheckForUpdates();
+      void handleCheckForUpdates('startup');
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
@@ -20141,7 +20141,7 @@ export function App({
       onChangeLanguage={handleInterfaceLanguageChange}
       onChangeSvCacheLimit={showingWelcome ? welcomeCache.changeLimit : handleChangeSvCacheLimit}
       onChangeSvCacheMode={showingWelcome ? welcomeCache.changeMode : handleChangeSvCacheMode}
-      onCheckForUpdates={handleCheckForUpdates}
+      onCheckForUpdates={() => void handleCheckForUpdates('manual')}
       onOpenAvailableUpdate={handleOpenAvailableUpdate}
       onRestartAfterUpdate={handleRestartAfterUpdate}
       onClearSvCache={() => setIsSvCacheClearConfirmOpen(true)}
@@ -68059,6 +68059,7 @@ async function fetchAvailableUpdate(currentVersion: string): Promise<ReleasePage
 
   try {
     response = await fetch(githubReleasesApiUrl, {
+      cache: 'no-store',
       headers: {
         Accept: 'application/vnd.github+json'
       },

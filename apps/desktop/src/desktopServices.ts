@@ -65,7 +65,10 @@ export const desktopServices: DesktopServices = {
         ensureTauriRuntime();
 
         const { check } = await import('@tauri-apps/plugin-updater');
-        const update = await check({ timeout: nativeUpdateCheckTimeoutMs });
+        const update = await check({
+          headers: { 'Cache-Control': 'no-cache' },
+          timeout: nativeUpdateCheckTimeoutMs
+        });
 
         if (!update) {
           return null;
