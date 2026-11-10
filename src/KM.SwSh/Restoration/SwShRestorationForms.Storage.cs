@@ -25,6 +25,25 @@ public static partial class SwShRestorationForms
         }
     }
 
+    internal static SwShRestorationContribution NormalizeRetainedEgg(SwShRestorationContribution item)
+    {
+        if (item.Writer != SwShRestorationWriter.File || item.Before is null
+            || !item.Path.StartsWith("romfs/bin/pml/tamagowaza/", StringComparison.Ordinal)) return item;
+        var block = SwShRestorationFormSlots.Blocks.SingleOrDefault(b => EggPath(b.Species) == item.Path);
+        if (block is null || !Enumerable.Range(1, block.AlternateCount).Any(form => HasSeparateEggFiles(new(block.Species, form))))
+            return item;
+
+        ValidateEgg(item.Before); ValidateEgg(item.After);
+        var nativeFirst = BinaryPrimitives.ReadUInt16LittleEndian(item.Before);
+        var restoredFirst = checked((ushort)(OlderFormEggOffset + block.FirstRow));
+        if (nativeFirst == restoredFirst || BinaryPrimitives.ReadUInt16LittleEndian(item.After) != restoredFirst) return item;
+
+        // The alternate form owns this derived pointer. Keep any edits to the move list.
+        var egg = item.After.ToArray();
+        BinaryPrimitives.WriteUInt16LittleEndian(egg, nativeFirst);
+        return item with { After = egg };
+    }
+
     /// <summary>Remove or derive shared form mappings around ordinary contribution composition.</summary>
     internal static IReadOnlyDictionary<string, byte[]?> Storage(Func<string, byte[]?> native,
         Func<string, byte[]?> current, SwShRestorationState state, bool normalize)

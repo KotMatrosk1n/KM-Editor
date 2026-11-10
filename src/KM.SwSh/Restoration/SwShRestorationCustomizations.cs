@@ -23,7 +23,7 @@ internal static class SwShRestorationCustomizations
             var prepared = SwShRestorationStateStore.ReadPrepared(paths, selection.PreparedHash);
             foreach (var contribution in prepared.Contributions) resourcePaths.Add(contribution.Path);
             needsAnchor |= prepared.Contributions.Any(c => targets.Contains(c.Path))
-                || targets.Any(p => IsLooseModel(p, SwShRestorationDefinitions.Get(prepared.DefinitionId)));
+                || targets.Any(p => IsLooseModel(p, prepared));
         }
         // Species validation runs again in a verified snapshot. Bind the complete
         // installed resource closure so that snapshot sees the same capabilities.
@@ -78,13 +78,13 @@ internal static class SwShRestorationCustomizations
             if (touched.Length > 0)
                 foreach (var item in SwShRestorationComposer.Compose(touched, readOutput, false, captureOnly: true).RetainedCustomizations)
                     items[(item.Path, item.Key)] = SwShRestorationDependencies.Retain(items[(item.Path, item.Key)], item, state.State);
-            var definition = SwShRestorationDefinitions.Get(selection.DefinitionId);
-            foreach (var path in changed.Where(p => IsLooseModel(p, definition)))
+            var looseChanges = changed.Where(p => IsLooseModel(p, previous)).ToArray();
+            foreach (var path in looseChanges)
             {
                 if (readOutput(path) is { } bytes) items[(path, "")] = new(path, SwShRestorationWriter.File, "", items.GetValueOrDefault((path, ""))?.Before, bytes);
                 else items.Remove((path, ""));
             }
-            if (touched.Length == 0 && !changed.Any(p => IsLooseModel(p, definition))) { selections.Add(selection); continue; }
+            if (touched.Length == 0 && looseChanges.Length == 0) { selections.Add(selection); continue; }
             if (items.Count == previous.Contributions.Count && previous.Contributions.All(before =>
                 items.TryGetValue((before.Path, before.Key), out var after) && before.Writer == after.Writer
                 && ((before.Before is null && after.Before is null) || (before.Before is not null && after.Before is not null
@@ -108,10 +108,9 @@ internal static class SwShRestorationCustomizations
 
     internal static SwShPreparedRestoration IncludeLooseModels(ProjectPaths paths, SwShPreparedRestoration prepared, IReadOnlySet<string> owned)
     {
-        var definition = SwShRestorationDefinitions.Get(prepared.DefinitionId);
         var items = prepared.Contributions.ToDictionary(c => (c.Path, c.Key));
         long total = 0; var count = 0;
-        foreach (var stem in ModelStems(definition))
+        foreach (var stem in ModelStems(prepared))
         {
             var relative = $"romfs/bin/pokemon/{stem}";
             var directory = Path.Combine(paths.OutputRootPath!, relative);
@@ -138,9 +137,8 @@ internal static class SwShRestorationCustomizations
         }
         return prepared with { Contributions = items.Values.ToArray() };
     }
-    internal static IEnumerable<string> ModelStems(SwShRestorationDefinition definition) => definition.Identities
-        .Select(SwShRestorationModelResources.PrimaryStem)
-        .Concat(definition.AdditionalModelVariants.Select(variant => variant.ResourceStem)).Distinct(StringComparer.Ordinal);
-    private static bool IsLooseModel(string path, SwShRestorationDefinition definition) => ModelStems(definition).Any(stem =>
+    internal static IEnumerable<string> ModelStems(SwShPreparedRestoration prepared) => SwShRestorationModelResources.Variants(prepared)
+        .Select(variant => variant.ResourceStem).Distinct(StringComparer.Ordinal);
+    private static bool IsLooseModel(string path, SwShPreparedRestoration prepared) => ModelStems(prepared).Any(stem =>
         path.StartsWith($"romfs/bin/pokemon/{stem}/", StringComparison.Ordinal));
 }

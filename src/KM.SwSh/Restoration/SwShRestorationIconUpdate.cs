@@ -29,8 +29,8 @@ internal static class SwShRestorationIconUpdate
         var old = previous.Contributions.ToDictionary(c => (c.Path, c.Key));
         var replacements = next.Contributions.ToDictionary(c => (c.Path, c.Key));
         if (old.Keys.Any(key => !replacements.ContainsKey(key))) throw new InvalidDataException("Restoration update removes resource ownership.");
-        var models = SwShRestorationDefinitions.Get(next.DefinitionId).Identities.Select(i =>
-            $"romfs/bin/archive/pokemon/pm{i.Species:0000}_{i.Form:00}").ToArray();
+        var models = SwShRestorationModelResources.Variants(next).Select(v =>
+            $"romfs/bin/archive/pokemon/{v.ResourceStem}").ToArray();
         bool Archive(string path) => models.Any(stem => path == stem + ".gfpak" || path == stem + "_rare.gfpak");
         bool Giant(string path) => models.Any(stem => path == stem.Replace("/pokemon/", "/gpokemon/", StringComparison.Ordinal) + ".gfpak");
         bool Model(SwShRestorationContribution item) => item.Writer == SwShRestorationWriter.ModelCatalog

@@ -15,7 +15,7 @@ public sealed partial class SwShRestorationService
     {
         const int maximumModelBytes = 16 * 1024 * 1024;
         const int maximumArchiveEntries = 16384;
-        var variants = SwShRestorationModelResources.Variants(SwShRestorationDefinitions.Get(prepared.DefinitionId))
+        var variants = SwShRestorationModelResources.Variants(prepared)
             .Select(v => v.ResourceStem).Distinct(StringComparer.Ordinal).ToArray();
         bool required = false;
         foreach (var contribution in prepared.Contributions.Where(c => c.Writer == SwShRestorationWriter.File))

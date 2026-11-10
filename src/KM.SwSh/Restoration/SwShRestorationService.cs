@@ -63,13 +63,14 @@ public sealed partial class SwShRestorationService
             var intent = new SwShRestorationIntent(definitionId, preparedHash, enabled, snapshot.Hash) { UpdateAssets = updateAssets, AdoptExternal = adoptExternal, RemovalId = removeAssets ? removalId ?? Guid.NewGuid().ToString("N") : null,
                 AdditionalPreparedHashes = removeAssets ? (preparedAssets ?? []).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray() : [] };
             var edit = CreateEdit(paths, intent);
-            var removalDefinition = SwShRestorationDefinitions.Get(definitionId);
+            var removalStems = removeAssets ? SwShRestorationCustomizations.ModelStems(
+                SwShRestorationStateStore.ReadPrepared(paths, preparedHash)).ToArray() : [];
             bool Keep(PendingEdit pending)
             {
                 if (pending.Domain == Domain && pending.RecordId == definitionId) return false;
                 if (!removeAssets || pending.Domain != ModelTextureIntent.Domain) return true;
                 var model = ModelTextureIntent.Parse(pending.NewValue);
-                return model.Game != paths.SelectedGame.ToString() || !SwShRestorationCustomizations.ModelStems(removalDefinition).Any(stem =>
+                return model.Game != paths.SelectedGame.ToString() || !removalStems.Any(stem =>
                     model.Model.StartsWith($"bin/pokemon/{stem}/", StringComparison.Ordinal));
             }
             var pending = current.PendingEdits.Where(Keep).Append(edit).ToArray();
@@ -189,8 +190,11 @@ public sealed partial class SwShRestorationService
             sources.Add(new(ProjectFileLayer.Base, path));
             return BoundedRead(physical);
         }
-        if (hasForms)
-            foreach (var file in SwShRestorationForms.Storage(NativeFormFile, Current, snapshot.State, normalize: true)) outputs[file.Key] = file.Value;
+        var normalizedFormStorage = hasForms
+            ? SwShRestorationForms.Storage(NativeFormFile, Current, snapshot.State, normalize: true)
+            : null;
+        if (normalizedFormStorage is not null)
+            foreach (var file in normalizedFormStorage) outputs[file.Key] = file.Value;
         foreach (var edit in edits.OrderBy(e => e.RecordId, StringComparer.Ordinal))
         {
             var intent = Parse(edit);
@@ -207,6 +211,8 @@ public sealed partial class SwShRestorationService
             if (intent.AdoptExternal && (installed?.Enabled == true || !externalDefinitions.Value.Contains(intent.DefinitionId)))
                 throw new InvalidDataException("This Pokemon is no longer an external installation. Reload the restoration list and stage again.");
             if (intent.AdoptExternal) installed = null;
+            if (intent.Enabled && installed is null && !intent.AdoptExternal && SwShRestorationModelResources.UsesLegacyLayout(bundle))
+                throw new InvalidDataException("Prepare this restoration again to use its separate model files.");
             if (intent.RemovalId is not null && installed?.Enabled != true)
             {
                 selections[intent.DefinitionId] = RemovedSelection(intent, installed);
@@ -244,6 +250,23 @@ public sealed partial class SwShRestorationService
                 }
             }
             if (effective.DefinitionId != bundle.DefinitionId) throw new InvalidDataException("Retained customizations belong to another definition.");
+            var preparedHash = intent.PreparedHash;
+            if (intent.Enabled && installed is { Enabled: false } && SwShRestorationModelResources.UsesLegacyLayout(bundle))
+            {
+                var migration = SwShRestorationLegacyModels.For(bundle);
+                var relocated = migration.Move(bundle, bundle);
+                effective = customization is null ? relocated : migration.Move(effective, bundle, relocated);
+                foreach (var item in effective.Contributions.Where(c => c.Writer == SwShRestorationWriter.File && migration.IsDestination(c.Path)))
+                    if (Current(item.Path) is not null)
+                        throw new InvalidDataException($"Restoration cannot replace an existing file while relocating a retained model: {item.Path}.");
+                var stored = SwShRestorationStateStore.Store(paths, relocated);
+                using (stored.Lease) preparedHash = stored.Hash;
+                if (customization is not null)
+                {
+                    var retained = SwShRestorationStateStore.Store(paths, effective);
+                    using (retained.Lease) customization = retained.Hash == preparedHash ? null : retained.Hash;
+                }
+            }
             if (!intent.Enabled) effective = SwShRestorationCustomizations.IncludeLooseModels(paths, effective, owned);
             if (!intent.Enabled) VerifyVoiceRemoval(paths, effective, Current(SwShRestorationComposer.VoicesPath)!);
             var peerKeys = selections.Values.Where(s => s.Enabled && s.DefinitionId != intent.DefinitionId)
@@ -252,7 +275,11 @@ public sealed partial class SwShRestorationService
             foreach (var item in effective.Contributions.Where(c => c.Writer == SwShRestorationWriter.File))
             {
                 if (!System.IO.File.Exists(Output(paths, item.Path))) continue;
-                var nativeFallback = intent.Enabled && item.Before is not null && BoundedRead(Output(paths, item.Path)).AsSpan().SequenceEqual(item.Before);
+                var nativeFallback = intent.Enabled && item.Before is not null
+                    && (BoundedRead(Output(paths, item.Path)).AsSpan().SequenceEqual(item.Before)
+                        || (owned.Contains(item.Path) && normalizedFormStorage is not null
+                            && normalizedFormStorage.TryGetValue(item.Path, out var normalized)
+                            && normalized is not null && normalized.AsSpan().SequenceEqual(item.Before)));
                 var sharedOwned = owned.Contains(item.Path) && shared.Contains((item.Path, item.Writer, item.Key));
                 if (!nativeFallback && !sharedOwned && !intent.AdoptExternal && (installed is null || !owned.Contains(item.Path)))
                     throw new InvalidDataException($"Restoration cannot replace or remove an externally supplied file: {item.Path}.");
@@ -263,7 +290,12 @@ public sealed partial class SwShRestorationService
             {
                 contributions = contributions.Where(c => !shared.Contains((c.Path, c.Writer, c.Key))).ToArray();
             }
-            else contributions = RetainSharedAbilityText(contributions, shared, owned, Current);
+            else
+            {
+                if (installed is { Enabled: false } && customization is not null)
+                    contributions = contributions.Select(SwShRestorationForms.NormalizeRetainedEgg).ToArray();
+                contributions = RetainSharedAbilityText(contributions, shared, owned, Current);
+            }
             var adoption = intent.AdoptExternal
                 ? contributions.Select(c => (c.Path, c.Writer, c.Key)).Except(peerKeys).ToHashSet()
                 : null;
@@ -297,9 +329,9 @@ public sealed partial class SwShRestorationService
                 foreach (var identity in SwShRestorationDefinitions.Get(intent.DefinitionId).Identities) removed.Add(identity);
             }
             selections[intent.DefinitionId] = intent.RemovalId is not null ? RemovedSelection(intent, installed)
-                : new(intent.DefinitionId, intent.PreparedHash, intent.Enabled, customization)
+                : new(intent.DefinitionId, preparedHash, intent.Enabled, customization)
                 { AssetRevision = installed?.AssetRevision ?? bundle.AssetRevision,
-                    AssetHashes = (installed?.AssetHashes ?? []).Concat(new[] { intent.PreparedHash, installed?.PreparedHash, installed?.CustomizationHash, customization }.OfType<string>()).Distinct(StringComparer.Ordinal).ToArray() };
+                    AssetHashes = (installed?.AssetHashes ?? []).Concat(new[] { preparedHash, intent.PreparedHash, installed?.PreparedHash, installed?.CustomizationHash, customization }.OfType<string>()).Distinct(StringComparer.Ordinal).ToArray() };
         }
         var state = new SwShRestorationState(1, selections.Values.OrderBy(s => s.DefinitionId, StringComparer.Ordinal).ToArray());
         if (!assetsOnly)

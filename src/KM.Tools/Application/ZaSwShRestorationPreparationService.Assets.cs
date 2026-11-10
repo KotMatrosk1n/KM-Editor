@@ -27,7 +27,8 @@ public sealed partial class ZaSwShRestorationPreparationService
         internal IReadOnlyList<SwShRestorationContribution> Assets(KM.SwSh.Pokemon.SwShPokemonIdentity identity)
         {
             var species = identity.Species; var profile = Profile(identity);
-            SwShRestorationModelResources.RequireUnowned(Native("bin/pokemon/table/poke_resource_table.gfbpmcatalog"), SwShRestorationDefinitions.Get(definitionId));
+            SwShRestorationModelResources.RequireUnowned(Native("bin/pokemon/table/poke_resource_table.gfbpmcatalog"),
+                SwShRestorationDefinitions.Get(definitionId), legacyModelLayout);
             currentSpecies = species; Report("reading");
             var genders = profile.SeparateFemale ? new[] { 0, 1 } : new[] { 0 };
             string ModelPath(int gender)
@@ -55,7 +56,7 @@ public sealed partial class ZaSwShRestorationPreparationService
             var groups = new[] { "battle", "camp", "field" };
             var nativeClips = (profile.PlaAssets ? PlaMotions(species) : NativeClips).ToArray();
             var flames = profile.PairedFlames ? profile.FlameMaterials ?? ["fire"] : Array.Empty<string>();
-            var stem = SwShRestorationModelResources.Variants(SwShRestorationDefinitions.Get(definitionId))
+            var stem = modelVariants
                 .Single(v => v.Identity == new KM.SwSh.Pokemon.SwShPokemonIdentity(species, form) && v.Gender == gender).ResourceStem;
             var sourceStem = SourceStem(species, gender, profile);
             var sourceRoot = profile.PlaAssets ? $"bin/pokemon/{sourceStem[..6]}/{sourceStem}/" : $"ik_pokemon/data/{sourceStem[..6]}/{sourceStem}/";
