@@ -191,8 +191,7 @@ export function RestoreMissingPokemonSection({ workflow, paths, bridge, session,
       setSources(next); if (!rememberRestorationSources(projectKey, next)) setError(t('restoration.sourcesSaveFailed'));
     }} />
     {preparationVisible ? <RestorationPreparationProgress preparation={preparation}
-      name={entries.find(entry => entry.definitionId === preparation.definitionId)?.name
-        ?? entries.find(entry => entry.speciesId === preparation.species && entry.form === 0)?.name ?? t('restoration.title')}
+      name={preparationEntry ? entryName(preparationEntry) : t('restoration.title')}
       onCancel={() => void cancelPreparation()} /> : null}
     <label className="restoration-search">{t('restoration.search')}<input type="search" value={search} onChange={e => setSearch(e.target.value)} /></label>
     <div className="restoration-list" tabIndex={0} role="region" aria-label={t('restoration.pokemon')}><table><thead><tr><th scope="col">{t('restoration.enabled')}</th><th scope="col">{t('restoration.pokemon')}</th>
