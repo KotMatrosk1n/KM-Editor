@@ -72,7 +72,8 @@ internal sealed class OutputPathSafety
 
     internal static void CreatePrivateStorageDirectory(string path)
     {
-        if (!FileSystemPathBoundary.HasSafeExistingAncestorChain(path)) throw new OutputPathSecurityException();
+        if (!FileSystemPathBoundary.HasSafeExistingAncestorChain(path))
+            throw new OutputMetadataSecurityException(OutputMetadataSecurityFailure.WorkspaceStorageUnsafe);
         if (!Directory.Exists(path))
         {
             var parent = Path.GetDirectoryName(path)!;
@@ -1268,11 +1269,11 @@ internal sealed class OutputPathSafety
         try
         {
             using var identity = WindowsIdentity.GetCurrent();
-            return identity.User ?? throw new OutputPathSecurityException();
+            return identity.User ?? throw new OutputMetadataSecurityException(OutputMetadataSecurityFailure.CurrentWindowsAccountUnavailable);
         }
         catch (Exception exception) when (IsAclFailure(exception))
         {
-            throw new OutputPathSecurityException();
+            throw new OutputMetadataSecurityException(OutputMetadataSecurityFailure.CurrentWindowsAccountUnavailable, exception);
         }
     }
 
@@ -1292,7 +1293,7 @@ internal sealed class OutputPathSafety
         }
         catch (Exception exception) when (IsAclFailure(exception))
         {
-            throw new OutputPathSecurityException();
+            throw new OutputMetadataSecurityException(OutputMetadataSecurityFailure.DirectoryPermissionsUnavailable, exception);
         }
     }
 
@@ -1309,7 +1310,7 @@ internal sealed class OutputPathSafety
         }
         catch (Exception exception) when (IsAclFailure(exception))
         {
-            throw new OutputPathSecurityException();
+            throw new OutputMetadataSecurityException(OutputMetadataSecurityFailure.DirectoryCreationUnavailable, exception);
         }
     }
 
@@ -1348,7 +1349,7 @@ internal sealed class OutputPathSafety
         }
         catch (Exception exception) when (IsAclFailure(exception))
         {
-            throw new OutputPathSecurityException();
+            throw new OutputMetadataSecurityException(OutputMetadataSecurityFailure.FilePermissionsUnavailable, exception);
         }
     }
 
@@ -1376,7 +1377,7 @@ internal sealed class OutputPathSafety
         var owner = security.GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
         if (owner != currentUserSid)
         {
-            throw new OutputPathSecurityException();
+            throw new OutputMetadataSecurityException(OutputMetadataSecurityFailure.OwnerMismatch);
         }
     }
 
@@ -1390,14 +1391,15 @@ internal sealed class OutputPathSafety
                 typeof(SecurityIdentifier))
             .Cast<FileSystemAccessRule>()
             .ToArray();
+        if (owner != currentUserSid)
+            throw new OutputMetadataSecurityException(OutputMetadataSecurityFailure.OwnerMismatch);
         if (!security.AreAccessRulesProtected
-            || owner != currentUserSid
             || rules.Length != 1
             || rules[0].IdentityReference != currentUserSid
             || rules[0].AccessControlType != AccessControlType.Allow
             || (rules[0].FileSystemRights & FileSystemRights.FullControl) != FileSystemRights.FullControl)
         {
-            throw new OutputPathSecurityException();
+            throw new OutputMetadataSecurityException(OutputMetadataSecurityFailure.PermissionsMismatch);
         }
     }
 

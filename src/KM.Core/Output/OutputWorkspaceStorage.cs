@@ -89,9 +89,9 @@ public sealed class OutputWorkspaceStorage
         {
             cancellationToken.ThrowIfCancellationRequested();
             try { gate = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); break; }
-            catch (IOException) when (Stopwatch.GetElapsedTime(started) < options.WriterLockTimeout)
+            catch (IOException exception) when (IsLockContention(exception) && Stopwatch.GetElapsedTime(started) < options.WriterLockTimeout)
             { await Task.Delay(options.WriterLockRetryDelay, cancellationToken).ConfigureAwait(false); }
-            catch (IOException) { throw new OutputRootLockTimeoutException(options.WriterLockTimeout); }
+            catch (IOException exception) when (IsLockContention(exception)) { throw new OutputRootLockTimeoutException(options.WriterLockTimeout); }
         }
         FileStream? legacyGate = null;
         try
@@ -100,7 +100,7 @@ public sealed class OutputWorkspaceStorage
             // Legacy journals on a volume without ownership cannot establish write authority.
             // Preserve them for resolution instead of importing them as trusted workspace state.
             if (legacySafety.HasPortableMetadata && Directory.Exists(legacyRoot) && HasLegacyData())
-                throw new OutputWorkspaceMigrationException();
+                throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.PortableLegacyOwnership);
             legacySafety.EnsureMetadataLayout();
             legacyGate = new FileStream(Path.Combine(legacyRoot, "output.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Delete);
             OutputPathSafety.CreatePrivateStorageDirectory(gameRoot);
@@ -111,7 +111,7 @@ public sealed class OutputWorkspaceStorage
             }
             MigrateLegacy(cancellationToken);
             if (File.Exists(Path.Combine(root, "migration.blocked")))
-                throw new OutputWorkspaceMigrationException();
+                throw new OutputWorkspaceMigrationException(ReadMigrationFailure());
             if (File.Exists(MetadataRoot) || File.Exists(WorkingRoot)) throw new OutputPathSecurityException();
             if (Directory.Exists(MetadataRoot))
                 new OutputPathSafety(OutputRoot, MetadataRoot, WorkingRoot).EnsureMetadataLayout();
@@ -121,11 +121,11 @@ public sealed class OutputWorkspaceStorage
                 var transactions = Path.Combine(other.MetadataRoot, "transactions");
                 RequireSafe(transactions);
                 if (Directory.Exists(transactions) && Directory.EnumerateFileSystemEntries(transactions).Any())
-                    throw new OutputWorkspaceMigrationException();
+                    throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.OtherGameTransactions);
                 var journals = Path.Combine(other.MetadataRoot, "transaction-journals");
                 RequireSafe(journals);
                 if (Directory.Exists(journals) && Directory.EnumerateFileSystemEntries(journals).Any())
-                    throw new OutputWorkspaceMigrationException();
+                    throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.OtherGameTransactions);
             }
             PrepareWorkingTransactions(cancellationToken);
             return new Lease(this, gate, legacyGate);
@@ -162,7 +162,9 @@ public sealed class OutputWorkspaceStorage
         var imported = Archive(legacyRoot, cancellationToken);
         var existing = Directory.Exists(MetadataRoot) ? Archive(MetadataRoot, cancellationToken) : null;
         var incoming = InspectCandidate(imported);
-        var accepted = IsCompatible(imported) && incoming.Valid;
+        var compatibilityFailure = GetCompatibilityFailure(imported);
+        var accepted = compatibilityFailure is null && incoming.Valid;
+        var failure = incoming.Failure ?? compatibilityFailure ?? OutputWorkspaceMigrationFailure.OutputStateMismatch;
         string? winner = null;
         if (accepted && existing is null) winner = imported;
         else if (accepted && existing is not null)
@@ -171,8 +173,11 @@ public sealed class OutputWorkspaceStorage
             else
             {
                 var current = InspectCandidate(existing);
-                if (!current.Valid || !IsCompatible(existing)) winner = null;
-                else if (incoming.Pending && current.Pending) winner = null;
+                var currentCompatibilityFailure = current.Valid ? GetCompatibilityFailure(existing) : null;
+                if (!current.Valid || currentCompatibilityFailure is not null)
+                    failure = current.Failure ?? currentCompatibilityFailure ?? OutputWorkspaceMigrationFailure.InvalidMetadata;
+                else if (incoming.Pending && current.Pending)
+                    failure = OutputWorkspaceMigrationFailure.ConflictingTransactions;
                 else if (incoming.Pending) winner = imported;
                 else if (current.Pending) winner = existing;
                 else if (incoming.Matches && !current.Matches) winner = imported;
@@ -182,7 +187,7 @@ public sealed class OutputWorkspaceStorage
             }
         }
         if (winner is null)
-            WriteDurable(Path.Combine(root, "migration.blocked"), "Preserved conflicting output metadata requires resolution.\n");
+            WriteDurable(Path.Combine(root, "migration.blocked"), failure + "\n");
         else if (winner != existing)
         {
             var pending = Path.Combine(gameRoot, "store.pending");
@@ -198,6 +203,21 @@ public sealed class OutputWorkspaceStorage
         File.Delete(Path.Combine(gameRoot, "legacy.retiring"));
     }
 
+    private OutputWorkspaceMigrationFailure ReadMigrationFailure()
+    {
+        var marker = Path.Combine(root, "migration.blocked");
+        RequireSafe(marker);
+        using var stream = new FileStream(marker, FileMode.Open, FileAccess.Read, FileShare.Read);
+        // Older markers contain prose. Never display untrusted marker contents.
+        if (stream.Length > 128) return OutputWorkspaceMigrationFailure.PreviousFailureUnavailable;
+        using var reader = new StreamReader(stream);
+        return Enum.TryParse<OutputWorkspaceMigrationFailure>(reader.ReadToEnd().Trim(), out var failure) && Enum.IsDefined(failure)
+            ? failure : OutputWorkspaceMigrationFailure.PreviousFailureUnavailable;
+    }
+
+    private static bool IsLockContention(IOException exception) => !OperatingSystem.IsWindows()
+        || exception.HResult is unchecked((int)0x80070020) or unchecked((int)0x80070021);
+
     private void ResumePublication()
     {
         var retiring = Path.Combine(gameRoot, "legacy.retiring");
@@ -207,7 +227,7 @@ public sealed class OutputWorkspaceStorage
             if (id.Length != 64 || id.Any(c => !char.IsAsciiHexDigit(c))) throw new OutputPathSecurityException();
             var preserved = Path.Combine(gameRoot, "imports", id);
             RequireSafe(preserved);
-            if (!Directory.Exists(preserved)) throw new OutputWorkspaceMigrationException();
+            if (!Directory.Exists(preserved)) throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.PreservedCopyMissing);
             if (Directory.Exists(legacyRoot))
             {
                 VerifySubset(legacyRoot, preserved);
@@ -231,7 +251,7 @@ public sealed class OutputWorkspaceStorage
             }
             OutputFileSystemDurability.MoveDirectory(pending, MetadataRoot);
         }
-        if (!Directory.Exists(MetadataRoot)) throw new OutputWorkspaceMigrationException();
+        if (!Directory.Exists(MetadataRoot)) throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.PublishedStoreMissing);
         File.Delete(ready);
     }
 
@@ -249,7 +269,7 @@ public sealed class OutputWorkspaceStorage
             {
                 CopyTree(source, pending, cancellationToken);
                 if (Signature(Inventory(pending)) != signature || Signature(Inventory(source)) != signature)
-                    throw new OutputWorkspaceMigrationException();
+                    throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.MetadataChanged);
                 OutputFileSystemDurability.MoveDirectory(pending, archive);
             }
             catch
@@ -261,7 +281,7 @@ public sealed class OutputWorkspaceStorage
                 throw;
             }
         }
-        else if (Signature(Inventory(archive)) != signature) throw new OutputWorkspaceMigrationException();
+        else if (Signature(Inventory(archive)) != signature) throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.PreservedCopyMismatch);
         return archive;
     }
 
@@ -289,16 +309,16 @@ public sealed class OutputWorkspaceStorage
         return found.Count == 1 ? found.Single() : null;
     }
 
-    private bool IsCompatible(string store)
+    private OutputWorkspaceMigrationFailure? GetCompatibilityFailure(string store)
     {
         if ((File.Exists(Path.Combine(store, "sv-mod-merger-manifest.json")) && projectPaths.SelectedGame is not (ProjectGame.Scarlet or ProjectGame.Violet))
-            || (File.Exists(Path.Combine(store, "za-mod-merger-manifest.json")) && projectPaths.SelectedGame != ProjectGame.ZA)) return false;
+            || (File.Exists(Path.Combine(store, "za-mod-merger-manifest.json")) && projectPaths.SelectedGame != ProjectGame.ZA)) return OutputWorkspaceMigrationFailure.IncompatibleGame;
         var opposite = Enum.GetValues<ProjectGame>().Where(game => game != projectPaths.SelectedGame)
             .Select(game => ProjectIdentity.FromPaths(projectPaths with { SelectedGame = game }).Value).ToHashSet(StringComparer.Ordinal);
         foreach (var file in Inventory(store).Keys.Where(name => name.EndsWith(".json", StringComparison.OrdinalIgnoreCase)))
         {
             var path = Path.Combine(store, file);
-            if (new FileInfo(path).Length > OutputLimits.MaximumMetadataDocumentBytes) return false;
+            if (new FileInfo(path).Length > OutputLimits.MaximumMetadataDocumentBytes) return OutputWorkspaceMigrationFailure.MetadataDocumentTooLarge;
             try
             {
                 using var doc = JsonDocument.Parse(File.ReadAllBytes(path));
@@ -309,18 +329,21 @@ public sealed class OutputWorkspaceStorage
                         var id = property.Value.GetString();
                         // Older configurations can have different project ids even for
                         // the same output. Preserve their metadata when importing it.
-                        if (opposite.Contains(id!)) return false;
+                        if (opposite.Contains(id!)) return OutputWorkspaceMigrationFailure.IncompatibleGame;
                     }
-                    if (property.NameEquals("gameFamily") && property.Value.ValueKind == JsonValueKind.Number
-                        && property.Value.GetInt32() != (int)projectPaths.SelectedGame!.Value.ToGameFamily()) return false;
+                    if (property.NameEquals("gameFamily") && property.Value.ValueKind == JsonValueKind.Number)
+                    {
+                        if (!property.Value.TryGetInt32(out var family)) return OutputWorkspaceMigrationFailure.InvalidMetadata;
+                        if (family != (int)projectPaths.SelectedGame!.Value.ToGameFamily()) return OutputWorkspaceMigrationFailure.IncompatibleGame;
+                    }
                 }
             }
-            catch (JsonException) { return false; }
+            catch (JsonException) { return OutputWorkspaceMigrationFailure.InvalidJson; }
         }
-        return true;
+        return null;
     }
 
-    private (bool Valid, bool Matches, bool Pending, DateTimeOffset Latest) InspectCandidate(string store)
+    private (bool Valid, bool Matches, bool Pending, DateTimeOffset Latest, OutputWorkspaceMigrationFailure? Failure) InspectCandidate(string store)
     {
         var pending = Path.Combine(store, "transactions");
         var hasPending = Directory.Exists(pending) && Directory.EnumerateFileSystemEntries(pending).Any();
@@ -328,6 +351,7 @@ public sealed class OutputWorkspaceStorage
         hasPending |= Directory.Exists(privateJournals) && Directory.EnumerateFileSystemEntries(privateJournals).Any();
         var matches = true;
         var valid = true;
+        OutputWorkspaceMigrationFailure? failure = null;
         var latest = DateTimeOffset.MinValue;
         var safety = new OutputPathSafety(OutputRoot, store);
         var metadata = new OutputMetadataStore(safety);
@@ -350,7 +374,7 @@ public sealed class OutputWorkspaceStorage
                     || history.Receipts.IsDefault || history.Receipts.Length > OutputLimits.MaximumHistoryReceipts
                     || history.Receipts.Any(receipt => receipt is null)
                     || history.Receipts.Select(receipt => receipt.TransactionId).Distinct().Count() != history.Receipts.Length)
-                    throw new OutputWorkspaceMigrationException();
+                    throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.InvalidHistory);
                 foreach (var receipt in history.Receipts)
                 {
                     receipt.HistoryDetails?.Validate();
@@ -367,8 +391,18 @@ public sealed class OutputWorkspaceStorage
                 }
         }
         catch (Exception exception) when (exception is JsonException or ArgumentException or OutputCoordinatorException)
-        { matches = false; valid = false; }
-        return (valid, matches, hasPending, latest);
+        {
+            matches = false;
+            valid = false;
+            failure = exception switch
+            {
+                OutputWorkspaceMigrationException migration => migration.Failure,
+                JsonException => OutputWorkspaceMigrationFailure.InvalidJson,
+                OutputLimitExceededException => OutputWorkspaceMigrationFailure.MetadataDocumentTooLarge,
+                _ => OutputWorkspaceMigrationFailure.InvalidMetadata,
+            };
+        }
+        return (valid, matches, hasPending, latest, failure);
     }
 
     private void PrepareWorkingTransactions(CancellationToken cancellationToken)
@@ -383,13 +417,13 @@ public sealed class OutputWorkspaceStorage
                 new OutputPathSafety(OutputRoot, WorkingRoot, allowPortableMetadata: true).EnsureMetadataLayout();
                 var unbound = Inventory(WorkingRoot);
                 if (unbound.Keys.Any(name => name is not ("output-store.marker" or "transactions" or "checkpoints")))
-                    throw new OutputWorkspaceMigrationException();
+                    throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.UnboundWorkingMetadata);
                 WriteDurable(binding, workspaceKey);
             }
             if (File.ReadAllText(binding) != workspaceKey)
             {
                 CleanupWorkingLayout();
-                if (Directory.Exists(WorkingRoot)) throw new OutputWorkspaceMigrationException();
+                if (Directory.Exists(WorkingRoot)) throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.WorkingBindingMismatch);
             }
         }
         var storedTransactions = Path.Combine(MetadataRoot, "transactions");
@@ -422,28 +456,28 @@ public sealed class OutputWorkspaceStorage
                     using (var input = new FileStream(sourceJournal, FileMode.Open, FileAccess.Read, FileShare.Read))
                     using (var output = new OutputMetadataStore(safety).OpenPrivateFile(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, FileOptions.WriteThrough))
                     {
-                        if (input.Length > OutputLimits.MaximumMetadataDocumentBytes) throw new OutputWorkspaceMigrationException();
+                        if (input.Length > OutputLimits.MaximumMetadataDocumentBytes) throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.MetadataDocumentTooLarge);
                         input.CopyTo(output);
                         output.Flush(true);
                     }
                     OutputFileSystemDurability.Move(temporary, journal, overwrite: false);
                 }
-                if (HashFile(sourceJournal) != HashFile(journal)) throw new OutputWorkspaceMigrationException();
+                if (HashFile(sourceJournal) != HashFile(journal)) throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.TransactionMismatch);
                 var workingJournal = Path.Combine(target, "journal.json");
                 RequireSafe(workingJournal);
                 if (File.Exists(workingJournal))
                 {
-                    if (HashFile(sourceJournal) != HashFile(workingJournal)) throw new OutputWorkspaceMigrationException();
+                    if (HashFile(sourceJournal) != HashFile(workingJournal)) throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.TransactionMismatch);
                     File.Delete(workingJournal);
                     OutputFileSystemDurability.FlushParent(workingJournal);
                 }
                 var expected = Inventory(entry);
                 expected.Remove("journal.json");
-                if (Signature(expected) != Signature(Inventory(target))) throw new OutputWorkspaceMigrationException();
+                if (Signature(expected) != Signature(Inventory(target))) throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.TransactionMismatch);
             }
-            else if (Signature(Inventory(entry)) != Signature(Inventory(target))) throw new OutputWorkspaceMigrationException();
+            else if (Signature(Inventory(entry)) != Signature(Inventory(target))) throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.TransactionMismatch);
         }
-        if (Directory.EnumerateFiles(storedTransactions).Any()) throw new OutputWorkspaceMigrationException();
+        if (Directory.EnumerateFiles(storedTransactions).Any()) throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.UnexpectedTransactionFiles);
         var transferred = Path.Combine(MetadataRoot, "transactions.transferred");
         if (Directory.Exists(transferred)) DeleteTree(transferred);
         OutputFileSystemDurability.MoveDirectory(storedTransactions, transferred);
@@ -456,7 +490,7 @@ public sealed class OutputWorkspaceStorage
         safety.EnsureMetadataLayout();
         var binding = Path.Combine(WorkingRoot, "workspace.id");
         if (!File.Exists(binding)) WriteDurable(binding, workspaceKey);
-        else if (File.ReadAllText(binding) != workspaceKey) throw new OutputWorkspaceMigrationException();
+        else if (File.ReadAllText(binding) != workspaceKey) throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.WorkingBindingMismatch);
     }
 
     private bool HasLegacyData() => Inventory(legacyRoot).Keys.Any(name =>
@@ -515,18 +549,18 @@ public sealed class OutputWorkspaceStorage
         long total = 0;
         while (pending.TryPop(out var current))
         {
-            if (current.Depth > 32) throw new OutputWorkspaceMigrationException();
+            if (current.Depth > 32) throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.MetadataDepthLimit);
             foreach (var path in Directory.EnumerateFileSystemEntries(current.Path))
             {
                 RequireSafe(path);
                 var relative = Path.GetRelativePath(root, path);
                 if (relative == "output.lock") continue;
-                if (result.Count >= MaximumEntries) throw new OutputWorkspaceMigrationException();
+                if (result.Count >= MaximumEntries) throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.MetadataEntryLimit);
                 if (Directory.Exists(path)) { result.Add(relative, "directory"); pending.Push((path, current.Depth + 1)); }
                 else
                 {
                     total = checked(total + new FileInfo(path).Length);
-                    if (total > MaximumBytes) throw new OutputWorkspaceMigrationException();
+                    if (total > MaximumBytes) throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.MetadataSizeLimit);
                     result.Add(relative, HashFile(path));
                 }
             }
@@ -548,7 +582,7 @@ public sealed class OutputWorkspaceStorage
     {
         var inventory = Inventory(source);
         RequireSafe(destination);
-        if (Directory.Exists(destination) || File.Exists(destination)) throw new OutputWorkspaceMigrationException();
+        if (Directory.Exists(destination) || File.Exists(destination)) throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.DestinationExists);
         void CreateDestinationDirectory(string path)
         {
             if (portableDestination) { RequireSafe(path); Directory.CreateDirectory(path); RequireSafe(path); }
@@ -566,17 +600,17 @@ public sealed class OutputWorkspaceStorage
             using (var input = new FileStream(original, FileMode.Open, FileAccess.Read, FileShare.Read))
             using (var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             { input.CopyTo(output); output.Flush(true); }
-            if (HashFile(target) != fingerprint) throw new OutputWorkspaceMigrationException();
+            if (HashFile(target) != fingerprint) throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.CopyVerificationFailed);
         }
         if (Signature(Inventory(destination)) != Signature(inventory) || Signature(Inventory(source)) != Signature(inventory))
-            throw new OutputWorkspaceMigrationException();
+            throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.MetadataChanged);
     }
 
     private static void VerifySubset(string source, string archive)
     {
         var saved = Inventory(archive);
         foreach (var (path, hash) in Inventory(source))
-            if (!saved.TryGetValue(path, out var expected) || expected != hash) throw new OutputWorkspaceMigrationException();
+            if (!saved.TryGetValue(path, out var expected) || expected != hash) throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.MetadataChanged);
     }
 
     private static void DeleteTree(string path)
@@ -624,9 +658,4 @@ public sealed class OutputWorkspaceStorage
             return ValueTask.CompletedTask;
         }
     }
-}
-
-public sealed class OutputWorkspaceMigrationException : OutputCoordinatorException
-{
-    public OutputWorkspaceMigrationException() : base("Output metadata migration needs attention. Preserved copies are available in the output workspace; no game files were changed.") { }
 }
