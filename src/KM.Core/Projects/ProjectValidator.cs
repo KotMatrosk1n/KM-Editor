@@ -100,8 +100,9 @@ public sealed class ProjectValidator
             catch (Exception exception) when (exception is OutputCoordinatorException or IOException or UnauthorizedAccessException)
             {
                 outputRoot.AddDiagnostic(DiagnosticSeverity.Error,
-                    "Output metadata could not be migrated safely. Close other KM Editor versions and validate again. Preserved workspace copies must be resolved if the conflict remains.",
+                    $"{OutputFailureDiagnostics.MigrationSummary} {OutputFailureDiagnostics.Describe(exception)}",
                     expected: "Available workspace storage and consistent output metadata",
+                    field: OutputFailureDiagnostics.TechnicalDetail(exception),
                     code: OutputWorkspaceStorage.MigrationDiagnosticCode);
             }
         }

@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { type ProjectHealth, type WorkflowSummary } from '../../bridge/contracts';
 import { ContextHelp } from '../../components/ContextHelp';
 import { useCoalescedTextInputState } from '../../components/useCoalescedTextInputState';
+import { formatDiagnosticSummary } from '../../diagnostics';
 import { useLocalization } from '../../localization';
 import { readOnlyViewerSectionIds } from '../../workflowGameSupport';
 import { workflowDefinitions } from './workflowDefinitions';
@@ -446,14 +447,14 @@ export function WorkflowsSection({
           const workflowAction = actions[definition.id];
           const isInvalid =
             workflow?.diagnostics.some((diagnostic) => diagnostic.severity === 'error') ?? false;
+          const blockedDiagnostic = workflow?.diagnostics.find((diagnostic) => diagnostic.severity === 'error')
+            ?? workflow?.diagnostics.find((diagnostic) => diagnostic.severity === 'warning')
+            ?? workflow?.diagnostics[0];
           const blockedReason =
             workflowState.availability === 'disabled'
-              ? workflow?.diagnostics.find((diagnostic) => diagnostic.severity === 'error')
-                  ?.message ??
-                workflow?.diagnostics.find((diagnostic) => diagnostic.severity === 'warning')
-                  ?.message ??
-                workflow?.diagnostics[0]?.message ??
-                (!isReadOnlyViewer && !health.canOpenEditableWorkflows
+              ? blockedDiagnostic
+                ? formatDiagnosticSummary(blockedDiagnostic, translateLiteral, t)
+                : (!isReadOnlyViewer && !health.canOpenEditableWorkflows
                   ? translateLiteral(
                       'Validate Base RomFS, Base ExeFS, and Output Root before opening editors.'
                     )

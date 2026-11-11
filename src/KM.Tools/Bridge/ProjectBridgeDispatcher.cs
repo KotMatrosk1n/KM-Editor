@@ -2180,19 +2180,21 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
         catch (Exception exception) when (exception is
             OutputCoordinatorException or
             OutputScopeMismatchException or
+            JsonException or
             IOException or
             UnauthorizedAccessException)
         {
             var diagnostic = new ApiDiagnostic(
                 ApiDiagnosticSeverity.Error,
-                "Output recovery status could not be verified. Applying changes remains blocked until it can be checked.",
-                Domain: "output.recovery")
+                $"{OutputFailureDiagnostics.RecoverySummary} {(exception is OutputScopeMismatchException ? exception.Message : OutputFailureDiagnostics.Describe(exception))}",
+                Domain: "output.recovery",
+                Field: OutputFailureDiagnostics.TechnicalDetail(exception))
             {
                 Code = "KM-OUTPUT-RECOVERY-STATUS-UNAVAILABLE",
             };
             return health with
             {
-                Diagnostics = health.Diagnostics.Append(diagnostic).ToArray(),
+                Diagnostics = health.Diagnostics.Append(BridgeDiagnosticSanitizer.Sanitize(diagnostic)).ToArray(),
             };
         }
     }

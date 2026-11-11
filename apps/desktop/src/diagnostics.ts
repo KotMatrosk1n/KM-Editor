@@ -350,6 +350,20 @@ export function formatDiagnosticSummary(
     localizedDiagnosticCodeMessage(diagnostic, translateKey) ??
       translateLiteral(diagnostic.message)
   );
+  if (diagnostic.code === 'KM-PROJECT-OUTPUT-MIGRATION-BLOCKED' ||
+      diagnostic.code === 'KM-OUTPUT-RECOVERY-STATUS-UNAVAILABLE') {
+    const prefix = diagnostic.code === 'KM-PROJECT-OUTPUT-MIGRATION-BLOCKED'
+      ? 'Output metadata could not be migrated safely.'
+      : 'Output recovery status could not be verified. Applying changes remains blocked until it can be checked.';
+    const reason = diagnostic.message.startsWith(prefix)
+      ? diagnostic.message.slice(prefix.length).trim()
+      : diagnostic.message;
+    // These failures must retain their specific cause in Setup, Workbench, and
+    // Diagnostics. Translate the controlled reason separately from its category.
+    const detail = reason ? normalizeSentence(translateLiteral(reason)) : '';
+    const summary = translateKey ? message : normalizeSentence(translateLiteral(prefix));
+    return !detail || summary === detail ? summary : `${summary} ${detail}`;
+  }
   if (diagnostic.code?.startsWith('KM-SWSH-RESTORATION-')) {
     const reason = normalizeSentence(translateLiteral(diagnostic.message));
     return message === reason ? message : `${message} ${reason}`;

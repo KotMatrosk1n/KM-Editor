@@ -499,6 +499,11 @@ public class OutputPathSecurityException : OutputCoordinatorException
     {
     }
 
+    protected OutputPathSecurityException(string message)
+        : base(message)
+    {
+    }
+
     protected OutputPathSecurityException(string message, Exception innerException)
         : base(message, innerException)
     {
