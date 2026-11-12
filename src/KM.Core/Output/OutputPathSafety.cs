@@ -307,6 +307,17 @@ internal sealed class OutputPathSafety
         }
     }
 
+    internal void ValidateSupportMetadataFile(FileStream stream)
+    {
+        ValidateMetadataFile(stream.Name);
+        // Support collection must validate existing permissions without repairing
+        // them. In particular, it must work without changing evidence of failure.
+        if (OperatingSystem.IsWindows())
+            ValidatePrivateWindowsAcl(stream.GetAccessControl());
+        else if (File.GetUnixFileMode(stream.SafeFileHandle) != PrivateFileUnixMode)
+            throw new OutputMetadataSecurityException(OutputMetadataSecurityFailure.PermissionsMismatch);
+    }
+
     private void EnsurePrivateMetadataFile(string path)
     {
         if (IsWorkingPath(path)) { workingPaths!.EnsurePrivateMetadataFile(path); return; }

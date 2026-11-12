@@ -6,7 +6,7 @@ using KM.Core.Projects;
 
 namespace KM.Core.Output;
 
-internal sealed class OutputMetadataStore
+internal sealed partial class OutputMetadataStore
 {
     private const UnixFileMode PrivateFileUnixMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
     private readonly OutputPathSafety paths;

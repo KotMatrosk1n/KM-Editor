@@ -231,7 +231,7 @@ public sealed record DeleteOutputCheckpointRequest(
 
 public sealed record DeleteOutputCheckpointResponse(bool Deleted, string Revision);
 
-public sealed record BuildSupportReportRequest(OutputScopeDto Scope);
+public sealed record BuildSupportReportRequest(OutputScopeDto Scope, bool IncludeChanges = false);
 
 public sealed record OutputIntegrityCountDto(OutputIntegrityClassificationDto Classification, int Count);
 
@@ -247,7 +247,21 @@ public sealed record OutputSupportReportDto(
     int? CheckpointCount,
     int? HistoryReceiptCount,
     DateTimeOffset CreatedAtUtc,
-    string InventoryStatus = "collected");
+    string InventoryStatus = "collected",
+    SupportChangeInventoryDto? Changes = null);
+
+public sealed record SupportInventoryGroupDto(string Id, int Files, int Claims, int Records);
+public sealed record SupportHistoryGroupDto(string Id, int Applies, int Changes, int? LatestWriterFiles);
+public sealed record SupportRestorationDto(int Species, int Form, bool Enabled, int AssetRevision,
+    int CurrentAssetRevision, bool Customized, int AssetCount, int RemovedAssetCount);
+public sealed record SupportChangeInventoryDto(
+    int SchemaVersion, string Source, string Verification,
+    string OwnershipStatus, int? Files, long? Bytes, int? RuntimeMutableFiles, int? OtherScopeFiles,
+    IReadOnlyList<SupportInventoryGroupDto> Owners, IReadOnlyList<SupportInventoryGroupDto> Domains,
+    string HistoryStatus, int? RetainedReceipts, int HistoryLimit, int? ReceiptsWithoutDetails, long? OmittedHistoryChanges,
+    IReadOnlyList<SupportHistoryGroupDto> History,
+    string RestorationStatus, int? RestorationSelections, int? RemovedSelections, int OmittedRestorations,
+    IReadOnlyList<SupportRestorationDto> Restorations);
 
 public sealed record BuildSupportReportResponse(OutputSupportReportDto Report);
 

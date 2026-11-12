@@ -504,12 +504,12 @@ public sealed class OutputSafetyApplicationService
         return new DeleteOutputCheckpointResponse(result.Deleted, result.Revision.Value);
     }
 
-    public Task<BuildSupportReportResponse> BuildSupportReportAsync(
+    public async Task<BuildSupportReportResponse> BuildSupportReportAsync(
         BuildSupportReportRequest request,
         CancellationToken cancellationToken = default)
     {
-        // Reporting must not resolve a coordinator, acquire output locks, migrate,
-        // or read inventory. Unobserved counts are unknown rather than zero.
+        // Optional inventory reads never acquire locks, recover, migrate or scan
+        // installed game files. The default remains a metadata-free fallback.
         cancellationToken.ThrowIfCancellationRequested();
         var family = request?.Scope?.Paths?.SelectedGame switch
         {
@@ -519,10 +519,13 @@ public sealed class OutputSafetyApplicationService
             ProjectGameDto.PLA => "pokemonLegendsArceus",
             _ => "unknown",
         };
-        return Task.FromResult(new BuildSupportReportResponse(new OutputSupportReportDto(
+        var changes = request is { IncludeChanges: true, Scope.Paths: not null }
+            ? await SupportChangeInventory.ReadAsync(ProjectBridgeMapper.ToCore(request.Scope.Paths), cancellationToken).ConfigureAwait(false)
+            : null;
+        return new BuildSupportReportResponse(new OutputSupportReportDto(
             2, GetApplicationVersion(), family, "not-recorded",
             ["KM-OUTPUT-SUPPORT-REPORT-REDACTED"], [], [], null, null, null,
-            DateTimeOffset.UtcNow, "not-collected")));
+            DateTimeOffset.UtcNow, "not-collected", changes));
     }
 
     private static async Task<(

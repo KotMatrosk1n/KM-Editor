@@ -6,6 +6,7 @@ import { supportDiagnosticSnapshotSchema } from './bridge/supportDiagnosticContr
 import * as errorCodes from './errorCodes';
 import { localizedDiagnosticCodes } from './diagnostics';
 import tauriConfig from '../src-tauri/tauri.conf.json';
+import { collectSupportInventory, observeInventoryScope } from './supportInventory';
 
 type Observation = { id: number; requestId: string; command: KmCommandName; game: string | null; started: number; elapsedMs: number | null; outcome: 'pending' | 'success' | 'failure'; codes: string[] };
 const requests: Observation[] = [];
@@ -16,6 +17,7 @@ let backend: { version: string; commit: string | null } | null = null;
 let backendStatus = 'not-observed';
 const codes = new Set<string>();
 const cacheSnapshots = new Map<string, Record<string, unknown>>();
+const sessionCommands = new Map<KmCommandName, { success: number; failure: number }>();
 const safeCount = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
 // Only shipped codes may leave the process. A KM shaped string can still contain a name.
 const knownCodes = new Set([...localizedDiagnosticCodes, ...Object.entries(errorCodes)
@@ -25,6 +27,7 @@ const knownCodes = new Set([...localizedDiagnosticCodes, ...Object.entries(error
 export function observeBridgeStart(command: KmCommandName, requestId: string, payload?: unknown): number {
   const id = ++nextId;
   if (!kmCommandNameValues.includes(command)) return id;
+  observeInventoryScope(payload);
   if (requests.length === 64) {
     const completed = requests.findIndex((entry) => entry.outcome !== 'pending');
     if (completed < 0) { omittedRequests++; return id; }
@@ -43,6 +46,9 @@ export function observeBridgeStart(command: KmCommandName, requestId: string, pa
 export function observeBridgeFinish(id: number, failed: boolean, value: unknown): void {
   const observation = requests.find((entry) => entry.id === id);
   if (observation) {
+    const counts = sessionCommands.get(observation.command) ?? { success: 0, failure: 0 };
+    if (observation.outcome === 'pending') counts[failed ? 'failure' : 'success']++;
+    sessionCommands.set(observation.command, counts);
     observation.elapsedMs = Math.max(0, Math.round(performance.now() - observation.started));
     observation.outcome = failed ? 'failure' : 'success';
     observation.codes = collectCodes(value);
@@ -120,6 +126,7 @@ export async function createBugReport(): Promise<string> {
   // The local report remains usable if the native layer is absent or unresponsive.
   let timer: ReturnType<typeof setTimeout> | undefined;
   let native = null;
+  const inventoryPromise = collectSupportInventory();
   try {
     native = safeNative(await Promise.race([
       invoke<unknown>('get_support_diagnostics'),
@@ -127,14 +134,16 @@ export async function createBugReport(): Promise<string> {
     ]));
   } catch { /* Explicitly unavailable below. Never include exception text. */ }
   finally { clearTimeout(timer); }
+  const inventory = await inventoryPromise;
   const report = {
-    schemaVersion: 1, privacy: 'allowlisted-session-data',
+    schemaVersion: 2, privacy: 'allowlisted-session-data',
     frontend: { version: tauriConfig.version, commit: __KM_BUILD_COMMIT__, modified: __KM_BUILD_MODIFIED__ },
     native: native ?? { status: 'unavailable' },
     backend: { status: backendStatus, ...backend },
     diagnosticCodes: [...codes], outputAttempts: attempts,
     caches: Object.fromEntries(cacheSnapshots),
-    inventory: 'not-collected', omittedRequests,
+    inventory, omittedRequests,
+    sessionCommands: [...sessionCommands].sort(([a], [b]) => a.localeCompare(b)).map(([command, counts]) => ({ command, ...counts })),
     requests: requests.map(({ id, command, game, started, elapsedMs, outcome, codes: requestCodes }) => ({
       request: id, command, game, elapsedMs: elapsedMs ?? Math.max(0, Math.round(performance.now() - started)), outcome, codes: requestCodes
     }))

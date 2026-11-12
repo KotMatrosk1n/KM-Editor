@@ -28,6 +28,11 @@ public static class SwShRestorationStateStore
     private const string ClaimPrefix = "pokemon-restoration-state.";
     private const string Owner = "sword-shield-verified-editor";
 
+    // Read-only diagnostics use the committed selection identity without loading
+    // prepared assets or normalizing state through the live editor workflow.
+    public static string? StateHashForSupport(IEnumerable<OwnedTarget> claims) => StateHash(claims);
+    public static void ValidateForSupport(SwShRestorationState state) => Validate(state);
+
     public static SwShRestorationStateSnapshot Read(ProjectPaths project)
     {
         if (SwShChangePlanSourceGuard.RestorationView(project)?.State is { } prospective) return prospective;
