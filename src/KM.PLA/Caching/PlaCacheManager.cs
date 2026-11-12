@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Buffers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -665,8 +666,8 @@ public sealed partial class PlaCacheManager
 
     private static string GetIdentityKey(PlaCacheSourceIdentity source)
     {
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream))
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
             writer.WriteNumber("schema", source.CacheSchemaVersion);
@@ -689,13 +690,13 @@ public sealed partial class PlaCacheManager
             writer.WriteEndObject();
         }
 
-        return ComputeSha256(stream.ToArray());
+        return ComputeSha256(buffer.WrittenSpan);
     }
 
     private static string GetStableSourceKey(PlaCacheSourceIdentity source)
     {
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream))
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
             writer.WriteNumber("game", (int)source.SelectedGame);
@@ -714,7 +715,7 @@ public sealed partial class PlaCacheManager
             writer.WriteEndObject();
         }
 
-        return ComputeSha256(stream.ToArray());
+        return ComputeSha256(buffer.WrittenSpan);
     }
 
     private static string GetArtifactKey(PlaCacheArtifactDescriptor artifact)
@@ -1766,13 +1767,7 @@ public sealed partial class PlaCacheManager
 
     private static string ResolveDefaultCacheRoot()
     {
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        if (string.IsNullOrWhiteSpace(localAppData))
-        {
-            throw new InvalidOperationException("Local application data is unavailable for the PLA cache.");
-        }
-
-        return Path.Combine(localAppData, "KM Editor", "LegendsArceusCache");
+        return Path.Combine(KM.Core.Workspace.KmEditorAppData.Resolve(), "LegendsArceusCache");
     }
 
     private void EnsurePathUnderProjects(string path)

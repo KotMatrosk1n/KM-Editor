@@ -43,7 +43,7 @@ public sealed partial record SwShStaticEncounterArchive
             var newVtableOffset = output.Count; output.AddRange(newVtable);
             // Preserve the original table residue so copied 64 bit scalars keep their alignment.
             while (output.Count % 8 != table % 8) output.Add(0);
-            var newTable = output.Count; output.AddRange(source.AsSpan(table, objectLength).ToArray());
+            var newTable = output.Count; output.AddRange(source.AsSpan(table, objectLength));
             if (missing) output.Add(0);
             var bytes = CollectionsMarshal.AsSpan(output);
             BinaryPrimitives.WriteInt32LittleEndian(bytes.Slice(newTable, 4), checked(newTable - newVtableOffset));

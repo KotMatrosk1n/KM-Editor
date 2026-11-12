@@ -23,7 +23,7 @@
     <KmDefaultShortcutPreference Condition="'$(KmDefaultShortcutPreference)' == ''">1</KmDefaultShortcutPreference>
 
     <KmMsiPath Condition="'$(KmMsiPath)' == ''">$(MSBuildProjectDirectory)\..\KM.Setup.Package\bin\$(Configuration)\KM.Editor.msi</KmMsiPath>
-    <KmBootstrapperApplicationSourceDir Condition="'$(KmBootstrapperApplicationSourceDir)' == ''">$(MSBuildProjectDirectory)\..\KM.Setup.UI\bin\$(Configuration)\net10.0-windows\win-x64\publish</KmBootstrapperApplicationSourceDir>
+    <KmBootstrapperApplicationSourceDir Condition="'$(KmBootstrapperApplicationSourceDir)' == ''">$(MSBuildProjectDirectory)\..\KM.Setup.UI\bin\$(Configuration)\net11.0-windows\win-x64\publish</KmBootstrapperApplicationSourceDir>
     <KmBootstrapperApplicationExe Condition="'$(KmBootstrapperApplicationExe)' == ''">KM.Setup.UI.exe</KmBootstrapperApplicationExe>
     <KmBundleIconPath Condition="'$(KmBundleIconPath)' == ''">$(MSBuildProjectDirectory)\..\..\..\apps\desktop\src-tauri\icons\icon.ico</KmBundleIconPath>
 

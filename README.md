@@ -3,7 +3,7 @@
 [![Latest release](https://img.shields.io/github/v/release/KotMatrosk1n/KM-Editor?label=release)](https://github.com/KotMatrosk1n/KM-Editor/releases/latest)
 [![License](https://img.shields.io/badge/license-GPL--3.0--only-lightgrey)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D6)
-![Built with](https://img.shields.io/badge/built%20with-.NET%2010%20%2B%20Tauri%202-512BD4)
+![Built with](https://img.shields.io/badge/built%20with-.NET%2011%20%2B%20Tauri%202-512BD4)
 ![Supported games](https://img.shields.io/badge/supports-SwSh%20%7C%20SV%20%7C%20Z--A%20%7C%20PLA-red)
 ![Localization](https://img.shields.io/badge/localized-EN%20%7C%20ES%20%7C%20FR%20%7C%20DE%20%7C%20RU%20%7C%20UKR%20%7C%20ZH-orange)
 

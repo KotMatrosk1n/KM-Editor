@@ -1020,7 +1020,7 @@ public sealed class SwShPlacementWorkflowService
             AppendFingerprint(hash, fingerprint.ContentSha256);
         }
 
-        var revision = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+        var revision = Convert.ToHexStringLower(hash.GetHashAndReset());
         return new CatalogSourceSnapshot(
             revision,
             CreateCatalogCacheSourceIdentity(project, language, fingerprints),

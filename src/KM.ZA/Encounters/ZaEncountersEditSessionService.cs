@@ -1471,7 +1471,7 @@ internal sealed class ZaEncountersEditSessionService
             }
         }
 
-        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
     }
 
     private static string CreatePlanSourceFingerprint(
@@ -1513,7 +1513,7 @@ internal sealed class ZaEncountersEditSessionService
             AppendFingerprintValue(hash, "TargetMissing");
         }
 
-        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
     }
 
     private static bool CapturedSourcesMatchPlan(

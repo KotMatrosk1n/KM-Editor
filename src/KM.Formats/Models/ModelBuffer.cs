@@ -65,7 +65,9 @@ public sealed class ModelBuffer
     public int[] Tables(int table, int index, int maximum = 4096)
     {
         var (start, count) = Vector(table, index, 4, maximum);
-        return Enumerable.Range(0, count).Select(i => Offset(checked(start + i * 4))).ToArray();
+        var tables = new int[count];
+        for (var i = 0; i < tables.Length; i++) tables[i] = Offset(checked(start + i * 4));
+        return tables;
     }
     public byte[] Blob(int table, int index, int maximum = 32 * 1024 * 1024)
     {

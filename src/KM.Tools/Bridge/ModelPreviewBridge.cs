@@ -100,9 +100,14 @@ internal static class ModelPreviewBridge
             ModelTextureDocument? document = null;
             try { document = new ModelTextureDocument(resource.Bytes); } catch (InvalidDataException) { }
             var preview = PreviewTexture.Read(resource.Bytes);
-            var pixels = document?.Pixels() ?? ModelTextureDocument.PixelBytes(new BCnEncoder.Decoder.BcDecoder().DecodeRaw(preview.Blocks, preview.Width, preview.Height,
+            var pixels = document?.Pixels() ?? (preview.Format is 0x0b01 or 0x0b06 ? preview.Blocks.ToArray()
+                : ModelTextureDocument.PixelBytes(new BCnEncoder.Decoder.BcDecoder().DecodeRaw(preview.Blocks, preview.Width, preview.Height,
                 preview.Format switch { 0x1d01 => BCnEncoder.Shared.CompressionFormat.Bc4, 0x1e01 => BCnEncoder.Shared.CompressionFormat.Bc5,
-                    _ => throw new InvalidDataException("Texture layout is unsupported for color editing.") }));
+                    0x1a01 or 0x1a06 => BCnEncoder.Shared.CompressionFormat.Bc1WithAlpha,
+                    0x1b01 or 0x1b06 => BCnEncoder.Shared.CompressionFormat.Bc2,
+                    0x1c01 or 0x1c06 => BCnEncoder.Shared.CompressionFormat.Bc3,
+                    0x2001 or 0x2006 => BCnEncoder.Shared.CompressionFormat.Bc7,
+                    _ => throw new InvalidDataException("Texture layout is unsupported for color editing.") })));
             var width = Math.Min(256, preview.Width); var height = Math.Max(1, preview.Height * width / preview.Width);
             if (height > 256) { width = Math.Max(1, width * 256 / height); height = 256; }
             var thumbnail = new byte[width * height * 4];

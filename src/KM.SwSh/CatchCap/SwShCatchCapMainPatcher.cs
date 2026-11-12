@@ -402,7 +402,7 @@ internal static class SwShCatchCapMainPatcher
     {
         var hex = string.Join(' ', caps.Select(cap => cap.ToString("X2", CultureInfo.InvariantCulture)));
         var canonical = $"SWSH-CATCH-CAP-HOOK|v1|u8|9|{hex}";
-        return Convert.ToHexString(SHA256.HashData(Encoding.ASCII.GetBytes(canonical))).ToLowerInvariant();
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.ASCII.GetBytes(canonical)));
     }
 
     private static string CreateInstalledMessage(IReadOnlyList<byte> rawCaps, bool hasRuntimeHook)

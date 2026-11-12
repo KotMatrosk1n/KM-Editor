@@ -68,7 +68,7 @@ public sealed class ChangeSetApplicationService
         WorkspacePersonalStateApplicationService? workspacePersonalStateService = null)
     {
         this.store = store ?? new VersionedWorkspaceDocumentStore(
-            GetDefaultAppDataRoot(),
+            KM.Core.Workspace.KmEditorAppData.Resolve(),
             serializerOptions: SerializerOptions);
         this.workspacePersonalStateService = workspacePersonalStateService
             ?? new WorkspacePersonalStateApplicationService();
@@ -4878,21 +4878,6 @@ public sealed class ChangeSetApplicationService
                 && aggregate.InnerExceptions.Any(IsFatal)
             || exception.InnerException is not null
                 && IsFatal(exception.InnerException);
-    }
-
-    private static string GetDefaultAppDataRoot()
-    {
-        var localApplicationData = Environment.GetFolderPath(
-            Environment.SpecialFolder.LocalApplicationData,
-            Environment.SpecialFolderOption.DoNotVerify);
-        if (string.IsNullOrWhiteSpace(localApplicationData)
-            || !Path.IsPathFullyQualified(localApplicationData))
-        {
-            throw new InvalidOperationException(
-                "A private local application-data location is unavailable.");
-        }
-
-        return Path.Combine(localApplicationData, "KM Editor");
     }
 
     private sealed record ValidatedScope(

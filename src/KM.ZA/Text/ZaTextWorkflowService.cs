@@ -13,6 +13,8 @@ namespace KM.ZA.Text;
 
 public sealed class ZaTextWorkflowService
 {
+    private static readonly System.Buffers.SearchValues<char> HexCharacters = System.Buffers.SearchValues.Create("0123456789abcdefABCDEF");
+
     public const string MessageRootPath = ZaMessagePathResolver.MessageRootPath;
     public const string WorkflowLabel = "Text and Dialogue Map";
     public const string WorkflowDescription = "Text entries, dialogue references, and source provenance.";
@@ -1015,7 +1017,7 @@ public sealed class ZaTextWorkflowService
             return false;
         }
 
-        return messageKey.AsSpan(prefix.Length).IndexOfAnyExcept("0123456789abcdefABCDEF") < 0;
+        return messageKey.AsSpan(prefix.Length).IndexOfAnyExcept(HexCharacters) < 0;
     }
 
     private static string CreateDialogueId(string context, int lineIndex)

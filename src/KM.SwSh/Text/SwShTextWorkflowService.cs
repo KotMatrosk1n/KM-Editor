@@ -12,6 +12,8 @@ namespace KM.SwSh.Text;
 
 public sealed class SwShTextWorkflowService
 {
+    private static readonly System.Buffers.SearchValues<char> HexCharacters = System.Buffers.SearchValues.Create("0123456789abcdefABCDEF");
+
     public const string MessageRootPath = "romfs/bin/message";
     public const string PreferredLanguage = SwShGameTextLanguage.English;
     public const string TextValueField = "value";
@@ -1259,7 +1261,7 @@ public sealed class SwShTextWorkflowService
         const string prefix = "msg_";
         return messageKey.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
             && messageKey.Length == prefix.Length + 32
-            && messageKey.AsSpan(prefix.Length).IndexOfAnyExcept("0123456789abcdefABCDEF") < 0;
+            && messageKey.AsSpan(prefix.Length).IndexOfAnyExcept(HexCharacters) < 0;
     }
 
     private static string GetLanguageLabel(string language)

@@ -10,26 +10,28 @@ namespace KM.Tools.Bridge;
 // without retaining data between requests or changing freshness and editing rules.
 internal sealed class CompactPokemonWorkflowJson : JsonConverter<PokemonWorkflowDto>
 {
-    private static readonly AsyncLocal<bool> Enabled = new();
-    private static readonly JsonSerializerOptions CompactOptions = CreateOptions();
-    internal static JsonSerializerOptions ResponseOptions => Enabled.Value ? CompactOptions : BridgeJson.SerializerOptions;
+    private static readonly AsyncLocal<int> Enabled = new();
+    private static readonly JsonSerializerOptions[] ResponseFormats = [BridgeJson.SerializerOptions,
+        CreateOptions(true, false), CreateOptions(false, true), CreateOptions(true, true)];
+    internal static JsonSerializerOptions ResponseOptions => ResponseFormats[Enabled.Value];
 
-    internal static IDisposable Begin(bool enabled)
+    internal static IDisposable Begin(bool enabled, bool compactPlacement = false)
     {
         var previous = Enabled.Value;
-        Enabled.Value = enabled;
+        Enabled.Value = (enabled ? 1 : 0) | (compactPlacement ? 2 : 0);
         return new Scope(previous);
     }
 
-    private sealed class Scope(bool previous) : IDisposable
+    private sealed class Scope(int previous) : IDisposable
     {
         public void Dispose() => Enabled.Value = previous;
     }
 
-    private static JsonSerializerOptions CreateOptions()
+    private static JsonSerializerOptions CreateOptions(bool pokemon, bool placement)
     {
         var options = new JsonSerializerOptions(BridgeJson.SerializerOptions);
-        options.Converters.Add(new CompactPokemonWorkflowJson());
+        if (pokemon) options.Converters.Add(new CompactPokemonWorkflowJson());
+        if (placement) options.Converters.Add(new CompactPlacementWorkflowJson());
         return options;
     }
 

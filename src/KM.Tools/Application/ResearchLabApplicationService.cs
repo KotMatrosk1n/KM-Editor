@@ -43,6 +43,8 @@ public sealed class ResearchLabValidationException : Exception
 
 public sealed class ResearchLabApplicationService : IDisposable
 {
+    private static readonly System.Buffers.SearchValues<char> HexCharacters = System.Buffers.SearchValues.Create("0123456789abcdef");
+
     private const uint FileShareRead = 0x00000001;
     private const uint FileShareWrite = 0x00000002;
     private const uint FileShareDelete = 0x00000004;
@@ -682,7 +684,7 @@ public sealed class ResearchLabApplicationService : IDisposable
             || scope.ProjectId is null
             || scope.ProjectId.Length != ProjectIdPrefix.Length + 64
             || !scope.ProjectId.StartsWith(ProjectIdPrefix, StringComparison.Ordinal)
-            || scope.ProjectId.AsSpan(ProjectIdPrefix.Length).ContainsAnyExcept("0123456789abcdef")
+            || scope.ProjectId.AsSpan(ProjectIdPrefix.Length).ContainsAnyExcept(HexCharacters)
             || !string.Equals(scope.ProjectId, revision.ProjectId, StringComparison.Ordinal)
             || !Enum.IsDefined(revision.GameFamily)
             || scopeGameFamily != revision.GameFamily
@@ -1606,20 +1608,7 @@ public sealed class ResearchLabApplicationService : IDisposable
             yield return paths.PokemonLegendsZASupportFolderPath;
         if (!string.IsNullOrWhiteSpace(paths.PokemonLegendsArceusSupportFolderPath))
             yield return paths.PokemonLegendsArceusSupportFolderPath;
-        yield return GetPrivateAppDataRoot();
-    }
-
-    private static string GetPrivateAppDataRoot()
-    {
-        var root = Environment.GetFolderPath(
-            Environment.SpecialFolder.LocalApplicationData,
-            Environment.SpecialFolderOption.DoNotVerify);
-        if (string.IsNullOrWhiteSpace(root) || !Path.IsPathFullyQualified(root))
-        {
-            throw ExternalRejected("The private application-data root could not be verified.");
-        }
-
-        return Path.Combine(root, "KM Editor");
+        yield return KM.Core.Workspace.KmEditorAppData.Resolve();
     }
 
     private static void EnsureRootIdentity(ValidatedRoot root)
@@ -1980,10 +1969,10 @@ public sealed class ResearchLabApplicationService : IDisposable
     private static bool IsOpaqueId(string value, string prefix) => value is not null
         && value.Length == prefix.Length + 24
         && value.StartsWith(prefix, StringComparison.Ordinal)
-        && !value.AsSpan(prefix.Length).ContainsAnyExcept("0123456789abcdef");
+        && !value.AsSpan(prefix.Length).ContainsAnyExcept(HexCharacters);
 
     private static bool IsSha256(string value) => value is { Length: 64 }
-        && !value.AsSpan().ContainsAnyExcept("0123456789abcdef");
+        && !value.AsSpan().ContainsAnyExcept(HexCharacters);
 
     private static bool ContainsReservedMetadataSegment(string path) => path.Split(
             [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],

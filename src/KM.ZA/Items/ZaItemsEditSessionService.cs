@@ -1644,7 +1644,7 @@ internal sealed partial class ZaItemsEditSessionService
             AppendFingerprintValue(hash, "TargetMissing");
         }
 
-        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
     }
 
     private static bool CapturedSourcesMatchPlan(
@@ -1704,7 +1704,7 @@ internal sealed partial class ZaItemsEditSessionService
             }
         }
 
-        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
     }
 
     private sealed record PlanFingerprintSource(

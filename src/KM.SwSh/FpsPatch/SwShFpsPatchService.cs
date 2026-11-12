@@ -2682,7 +2682,7 @@ public sealed class SwShFpsPatchService
 
     private static string ComputeSha256(byte[] data)
     {
-        return Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
+        return Convert.ToHexStringLower(SHA256.HashData(data));
     }
 
     private static bool IsPreservedExternalOutput(ProjectPaths paths, string relativePath, byte[] contents)

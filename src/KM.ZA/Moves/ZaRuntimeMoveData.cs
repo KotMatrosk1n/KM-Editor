@@ -105,7 +105,7 @@ internal static class ZaRuntimeMoveData
                 },
             ],
         };
-        return Convert.ToHexString(SHA256.HashData(table.SerializeToBinary())).ToLowerInvariant();
+        return Convert.ToHexStringLower(SHA256.HashData(table.SerializeToBinary()));
     }
 
     public static string CreateTimingRowsFingerprint(IEnumerable<ZaMoveTimingParameterT> rows)
@@ -120,7 +120,7 @@ internal static class ZaRuntimeMoveData
                 },
             ],
         };
-        return Convert.ToHexString(SHA256.HashData(table.SerializeToBinary())).ToLowerInvariant();
+        return Convert.ToHexStringLower(SHA256.HashData(table.SerializeToBinary()));
     }
 
     public static ZaBattleMoveParameterT Clone(ZaBattleMoveParameterT row)

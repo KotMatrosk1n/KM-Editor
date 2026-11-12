@@ -44,6 +44,8 @@ public sealed class SemanticMergeValidationException : Exception
 
 public sealed class SemanticMergeApplicationService : IDisposable
 {
+    private static readonly System.Buffers.SearchValues<char> HexCharacters = System.Buffers.SearchValues.Create("0123456789abcdef");
+
     private const string ProviderSchema = "km.semantic-scalar.swsh.v1";
     private const string ProviderId = "swsh.semantic-merge.scalar.v1";
     private const string RecipeProviderId = "swsh.recipe.scalar.v1";
@@ -2848,16 +2850,16 @@ public sealed class SemanticMergeApplicationService : IDisposable
     private static bool IsMergeSourceId(string? value) =>
         value is { Length: 42 }
         && value.StartsWith("merge-src-", StringComparison.Ordinal)
-        && value.AsSpan(10).ContainsAnyExcept("0123456789abcdef") is false;
+        && value.AsSpan(10).ContainsAnyExcept(HexCharacters) is false;
 
     private static bool IsRecipeInstanceId(string? value) =>
         value is { Length: 39 }
         && value.StartsWith("recipe-", StringComparison.Ordinal)
-        && value.AsSpan(7).ContainsAnyExcept("0123456789abcdef") is false;
+        && value.AsSpan(7).ContainsAnyExcept(HexCharacters) is false;
 
     private static bool IsSha256(string? value) =>
         value is { Length: 64 }
-        && value.AsSpan().ContainsAnyExcept("0123456789abcdef") is false;
+        && value.AsSpan().ContainsAnyExcept(HexCharacters) is false;
 
     private static string SuggestedRecipeFileName(string name)
     {

@@ -13,6 +13,8 @@ namespace KM.SV.Text;
 
 public sealed class SvTextWorkflowService
 {
+    private static readonly System.Buffers.SearchValues<char> HexCharacters = System.Buffers.SearchValues.Create("0123456789abcdefABCDEF");
+
     public const string MessageRootPath = SvMessagePathResolver.MessageRootPath;
     public const string WorkflowLabel = "Text and Dialogue Map";
     public const string WorkflowDescription = "Text entries, dialogue references, and source provenance.";
@@ -1349,7 +1351,7 @@ public sealed class SvTextWorkflowService
         const string prefix = "msg_";
         return messageKey.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
             && messageKey.Length == prefix.Length + 32
-            && messageKey.AsSpan(prefix.Length).IndexOfAnyExcept("0123456789abcdefABCDEF") < 0;
+            && messageKey.AsSpan(prefix.Length).IndexOfAnyExcept(HexCharacters) < 0;
     }
 
     private static string GetLanguageLabel(string language)

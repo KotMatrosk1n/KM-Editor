@@ -1942,7 +1942,7 @@ internal sealed class ZaShopsEditSessionService
             }
         }
 
-        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
     }
 
     private static string CreateDescriptorPlanFingerprint(
@@ -1957,7 +1957,7 @@ internal sealed class ZaShopsEditSessionService
             paths,
             ZaWorkflowFileSource.DescriptorVirtualPath,
             ZaOutputMode.Standalone);
-        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
     }
 
     private static void AppendFingerprintSource(

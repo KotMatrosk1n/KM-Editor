@@ -32,7 +32,7 @@ public sealed class WorkspaceDraftApplicationService
 
     public WorkspaceDraftApplicationService(VersionedWorkspaceDocumentStore? store = null)
     {
-        this.store = store ?? new VersionedWorkspaceDocumentStore(GetDefaultAppDataRoot());
+        this.store = store ?? new VersionedWorkspaceDocumentStore(KM.Core.Workspace.KmEditorAppData.Resolve());
     }
 
     public async Task<ReadWorkspaceDraftsResponse> ReadAsync(
@@ -284,21 +284,6 @@ public sealed class WorkspaceDraftApplicationService
             throw new WorkspaceDraftValidationException(
                 "The expected workspace document ETag is invalid.");
         }
-    }
-
-    private static string GetDefaultAppDataRoot()
-    {
-        var localApplicationData = Environment.GetFolderPath(
-            Environment.SpecialFolder.LocalApplicationData,
-            Environment.SpecialFolderOption.DoNotVerify);
-        if (string.IsNullOrWhiteSpace(localApplicationData)
-            || !Path.IsPathFullyQualified(localApplicationData))
-        {
-            throw new InvalidOperationException(
-                "A private local application-data location is unavailable.");
-        }
-
-        return Path.Combine(localApplicationData, "KM Editor");
     }
 }
 

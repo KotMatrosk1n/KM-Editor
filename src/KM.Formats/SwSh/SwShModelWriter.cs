@@ -329,6 +329,9 @@ public static class SwShModelWriter
         }
         using var stream = new MemoryStream(count * (secondaryUv ? 60 : 52)); using var output = new BinaryWriter(stream);
         void Half(float value) => output.Write(BitConverter.HalfToUInt16Bits((Half)value));
+        Span<double> normalized = stackalloc double[4];
+        Span<int> quantized = stackalloc int[4];
+        Span<int> weightOrder = stackalloc int[4];
         for (var i = 0; i < count; i++)
         {
             if ((i & 1023) == 0) token.ThrowIfCancellationRequested();
@@ -358,20 +361,49 @@ public static class SwShModelWriter
             output.Write(v[at + 6]); output.Write(v[at + 7]);
             if (secondaryUv) { output.Write(primitive.SecondaryUv![i * 2]); output.Write(primitive.SecondaryUv[i * 2 + 1]); }
             if (sourceColor0)
-                output.Write(primitive.Color0 is { } color ? Enumerable.Range(0, 4).Select(c => (byte)MathF.Round(color[i * 4 + c] * 255)).ToArray() : new byte[] { 0, 0, 0, 255 });
-            else output.Write(new byte[] { 127, 127, 255, 255 });
-            output.Write(new[] { (byte)Math.Clamp((normal.X + 1) * 127.5f, 0, 255), (byte)Math.Clamp((normal.Y + 1) * 127.5f, 0, 255), (byte)Math.Clamp((normal.Z + 1) * 127.5f, 0, 255), (byte)255 });
-            var weights = v.AsSpan(at + 12, 4).ToArray(); var sum = weights.Sum();
-            if (sum <= 0 || weights.Any(w => w < 0)) throw new InvalidDataException("Skin weights are invalid.");
-            var normalized = weights.Select(w => (double)w / sum * 255).ToArray(); var quantized = normalized.Select(w => (int)Math.Floor(w)).ToArray();
-            foreach (var j in Enumerable.Range(0, 4).OrderByDescending(j => normalized[j] - quantized[j]).Take(255 - quantized.Sum())) quantized[j]++;
+            {
+                for (var channel = 0; channel < 4; channel++)
+                    output.Write(primitive.Color0 is { } color ? (byte)MathF.Round(color[i * 4 + channel] * 255) : channel == 3 ? (byte)255 : (byte)0);
+            }
+            else { output.Write((byte)127); output.Write((byte)127); output.Write((byte)255); output.Write((byte)255); }
+            output.Write((byte)Math.Clamp((normal.X + 1) * 127.5f, 0, 255));
+            output.Write((byte)Math.Clamp((normal.Y + 1) * 127.5f, 0, 255));
+            output.Write((byte)Math.Clamp((normal.Z + 1) * 127.5f, 0, 255));
+            output.Write((byte)255);
+            var weights = v.AsSpan(at + 12, 4);
+            // Enumerable.Sum(float) accumulates in double precision before rounding to float.
+            var sum = (float)((double)weights[0] + weights[1] + weights[2] + weights[3]);
+            if (sum <= 0 || weights[0] < 0 || weights[1] < 0 || weights[2] < 0 || weights[3] < 0)
+                throw new InvalidDataException("Skin weights are invalid.");
+            var quantizedSum = 0;
+            for (var j = 0; j < 4; j++)
+            {
+                normalized[j] = (double)weights[j] / sum * 255;
+                quantized[j] = (int)Math.Floor(normalized[j]);
+                quantizedSum = checked(quantizedSum + quantized[j]);
+                weightOrder[j] = j;
+            }
+            // Preserve the stable largest-remainder ordering, including ties between joints.
+            for (var j = 1; j < 4; j++)
+            {
+                var index = weightOrder[j];
+                var remainder = normalized[index] - quantized[index];
+                var atOrder = j;
+                while (atOrder > 0 && remainder.CompareTo(normalized[weightOrder[atOrder - 1]] - quantized[weightOrder[atOrder - 1]]) > 0)
+                {
+                    weightOrder[atOrder] = weightOrder[atOrder - 1];
+                    atOrder--;
+                }
+                weightOrder[atOrder] = index;
+            }
+            for (var j = 0; j < Math.Min(4, unchecked(255 - quantizedSum)); j++) quantized[weightOrder[j]]++;
             for (var j = 0; j < 4; j++)
             {
                 var joint = v[at + 8 + j];
                 if (quantized[j] != 0 && (joint != (int)joint || !joints.ContainsKey((int)joint))) throw new InvalidDataException("Skin joint does not exist.");
                 output.Write(quantized[j] == 0 ? (byte)0 : checked((byte)joints[(int)joint]));
             }
-            output.Write(quantized.Select(w => checked((byte)w)).ToArray());
+            for (var j = 0; j < 4; j++) output.Write(checked((byte)quantized[j]));
         }
         return stream.ToArray();
     }

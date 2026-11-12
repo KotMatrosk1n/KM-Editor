@@ -11,6 +11,8 @@ namespace KM.Tools.Application;
 
 public sealed class ResearchAnnotationApplicationService
 {
+    private static readonly System.Buffers.SearchValues<char> HexCharacters = System.Buffers.SearchValues.Create("0123456789abcdef");
+
     private const int MaximumTagLength = 128;
     private static readonly WorkspaceDocumentDefinition<ResearchAnnotationDocumentDto>
         DocumentDefinition = new(
@@ -25,7 +27,7 @@ public sealed class ResearchAnnotationApplicationService
 
     public ResearchAnnotationApplicationService(VersionedWorkspaceDocumentStore? store = null)
     {
-        this.store = store ?? new VersionedWorkspaceDocumentStore(GetDefaultAppDataRoot());
+        this.store = store ?? new VersionedWorkspaceDocumentStore(KM.Core.Workspace.KmEditorAppData.Resolve());
     }
 
     public async Task<ReadResearchAnnotationsResponse> ReadAsync(
@@ -407,7 +409,7 @@ public sealed class ResearchAnnotationApplicationService
     {
         if (value is null || value.Length != prefix.Length + 24
             || !value.StartsWith(prefix, StringComparison.Ordinal)
-            || value.AsSpan(prefix.Length).ContainsAnyExcept("0123456789abcdef"))
+            || value.AsSpan(prefix.Length).ContainsAnyExcept(HexCharacters))
         {
             throw Invalid($"The {name} is invalid.");
         }
@@ -615,19 +617,6 @@ public sealed class ResearchAnnotationApplicationService
                     : character;
             }
         });
-
-    private static string GetDefaultAppDataRoot()
-    {
-        var root = Environment.GetFolderPath(
-            Environment.SpecialFolder.LocalApplicationData,
-            Environment.SpecialFolderOption.DoNotVerify);
-        if (string.IsNullOrWhiteSpace(root) || !Path.IsPathFullyQualified(root))
-        {
-            throw new InvalidOperationException("A private application-data location is unavailable.");
-        }
-
-        return Path.Combine(root, "KM Editor");
-    }
 
     private static SemanticExploreValidationException Invalid(string message) =>
         new(message, SemanticExploreFailureKind.InvalidData);

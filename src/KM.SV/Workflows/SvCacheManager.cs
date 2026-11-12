@@ -1275,7 +1275,7 @@ public sealed partial class SvCacheManager
             }
 
             payload = ReadAllBytesShared(payloadPath, maximumPayloadSize);
-            var payloadHash = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
+            var payloadHash = Convert.ToHexStringLower(SHA256.HashData(payload));
             if (!string.Equals(payloadHash, metadata.PayloadSha256, StringComparison.Ordinal))
             {
                 if (!isReadWorker)
@@ -1321,7 +1321,7 @@ public sealed partial class SvCacheManager
             descriptor.ArtifactParserVersion,
             descriptor.BaseVirtualPaths,
             payload.LongLength,
-            Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant(),
+            Convert.ToHexStringLower(SHA256.HashData(payload)),
             DateTimeOffset.UtcNow);
 
         WriteBytesAtomic(GetTextArtifactPayloadPath(context, descriptor), payload);
@@ -1352,8 +1352,9 @@ public sealed partial class SvCacheManager
             return Array.Empty<string>();
         }
 
-        var batch = new List<string>(WarmupCandidateBatchSize);
-        var selectedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var capacity = Math.Min(WarmupCandidateBatchSize, warmupVirtualPaths.Count);
+        List<string> batch = [with(capacity: capacity)];
+        HashSet<string> selectedPaths = [with(capacity: capacity, comparer: StringComparer.OrdinalIgnoreCase)];
         for (var offset = 0;
              offset < warmupVirtualPaths.Count && batch.Count < WarmupCandidateBatchSize;
              offset++)
@@ -2131,9 +2132,9 @@ public sealed partial class SvCacheManager
 
     private static string CreateProjectKey(SvCacheSourceFingerprint source)
     {
-        var json = JsonSerializer.Serialize(source, JsonOptions);
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(json));
-        return Convert.ToHexString(hash).ToLowerInvariant();
+        var json = JsonSerializer.SerializeToUtf8Bytes(source, JsonOptions);
+        var hash = SHA256.HashData(json);
+        return Convert.ToHexStringLower(hash);
     }
 
     private static SvCacheFileStamp CreateFileStamp(string filePath)
@@ -2152,13 +2153,7 @@ public sealed partial class SvCacheManager
 
     private static string ResolveDefaultCacheRoot()
     {
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        if (string.IsNullOrWhiteSpace(localAppData))
-        {
-            localAppData = Path.GetTempPath();
-        }
-
-        return Path.Combine(localAppData, "KM Editor", "ScarletVioletCache");
+        return Path.Combine(KM.Core.Workspace.KmEditorAppData.Resolve(), "ScarletVioletCache");
     }
 
     private static string ResolveRomFsRoot(string path)
@@ -2399,7 +2394,7 @@ public sealed partial class SvCacheManager
 
     private static string GetVirtualPathKey(string virtualPath)
     {
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(virtualPath))).ToLowerInvariant();
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(virtualPath)));
     }
 
     private static string GetPayloadDirectory(SvCacheProjectContext context)
@@ -2433,7 +2428,7 @@ public sealed partial class SvCacheManager
             descriptor.ArtifactParserVersion,
             descriptor.ArtifactKey,
             string.Join('\n', descriptor.BaseVirtualPaths));
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity))).ToLowerInvariant();
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(identity)));
     }
 
     private static string GetPayloadPath(SvCacheProjectContext context, string virtualPath)

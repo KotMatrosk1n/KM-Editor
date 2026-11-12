@@ -65,6 +65,28 @@ internal static partial class SwShHeldItemChancePatcher
 
     public static IReadOnlyList<SwShHeldItemChanceOverride> Overrides(NsoFile main, ProjectGame? game) => ReadOverrides(main.Text.DecompressedData, game);
 
+    internal static byte[] OriginalTextRegion(NsoFile main, ProjectGame game, int offset, int length)
+    {
+        var text = main.Text.DecompressedData;
+        // Validate the complete installed patch, including hooks outside this region
+        // and every table link, before discounting any of its owned bytes.
+        _ = ReadOverrides(text, game);
+        var original = text.AsSpan(offset, length).ToArray();
+        var layout = Layouts.Single(value => value.Game == game);
+        foreach (var span in layout.Spans) Restore(span.Offset, span.Before);
+        ReadOnlySpan<byte> empty = new byte[12];
+        foreach (var slot in layout.Data) Restore(slot, empty);
+        return original;
+
+        void Restore(int start, ReadOnlySpan<byte> before)
+        {
+            var first = Math.Max(offset, start);
+            var end = Math.Min((long)offset + length, (long)start + before.Length);
+            if (first < end)
+                before.Slice(first - start, (int)(end - first)).CopyTo(original.AsSpan(first - offset));
+        }
+    }
+
     private static byte[] OriginalPicker(byte[] text, ProjectGame? game, int picker)
     {
         _ = ReadOverrides(text, game);

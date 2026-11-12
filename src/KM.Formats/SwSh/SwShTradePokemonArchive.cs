@@ -672,7 +672,7 @@ public sealed record SwShTradePokemonArchive(IReadOnlyList<SwShTradePokemonRecor
 
         AlignBuffer(output, sizeof(ushort));
         var expandedVtableOffset = output.Count;
-        output.AddRange(source.Slice(layout.VtableOffset, layout.VtableLength).ToArray());
+        output.AddRange(source.Slice(layout.VtableOffset, layout.VtableLength));
         GrowBuffer(output, expandedVtableLength - layout.VtableLength);
         WriteUInt16At(output, expandedVtableOffset, checked((ushort)expandedVtableLength));
 
@@ -680,7 +680,7 @@ public sealed record SwShTradePokemonArchive(IReadOnlyList<SwShTradePokemonRecor
         // Preserve absolute scalar alignment when retaining relative field offsets.
         GrowBuffer(output, tableOffset % sizeof(ulong));
         var expandedTableOffset = output.Count;
-        output.AddRange(source.Slice(tableOffset, layout.ObjectSize).ToArray());
+        output.AddRange(source.Slice(tableOffset, layout.ObjectSize));
         WriteInt32At(
             output,
             expandedTableOffset,

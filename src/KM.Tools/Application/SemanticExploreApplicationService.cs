@@ -109,6 +109,8 @@ internal sealed record SemanticWorkflowDtoLoaders(
 
 public sealed class SemanticExploreApplicationService
 {
+    private static readonly System.Buffers.SearchValues<char> HexCharacters = System.Buffers.SearchValues.Create("0123456789abcdef");
+
     private const int MaximumDomainFilters = 16;
     private const int MaximumPendingSourcesPerEdit = 64;
     private const int MaximumPendingDomainLength = 128;
@@ -2995,7 +2997,7 @@ public sealed class SemanticExploreApplicationService
     {
         return value.Length == 28
             && value.StartsWith("mod-", StringComparison.Ordinal)
-            && value.AsSpan(4).ContainsAnyExcept("0123456789abcdef") is false;
+            && value.AsSpan(4).ContainsAnyExcept(HexCharacters) is false;
     }
 
     private static bool ContainsInvalidDataException(Exception exception)

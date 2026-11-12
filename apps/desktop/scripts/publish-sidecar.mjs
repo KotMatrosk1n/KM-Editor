@@ -53,7 +53,7 @@ try {
       'true',
       '-p:PublishSingleFile=true',
       '-p:EnableCompressionInSingleFile=true',
-      '-p:IncludeAllContentForSelfExtract=true',
+      '-p:IncludeNativeLibrariesForSelfExtract=true',
       '-p:PublishTrimmed=false',
       `-p:Version=${applicationVersion}`,
       `-p:AssemblyVersion=${applicationVersion}.0`,

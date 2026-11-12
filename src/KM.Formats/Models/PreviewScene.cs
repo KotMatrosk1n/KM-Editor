@@ -32,6 +32,11 @@ public sealed record PreviewPrimitive(float[] Vertices, uint[] Indices, PreviewM
 }
 public sealed record PreviewScene(IReadOnlyList<PreviewPrimitive> Primitives, IReadOnlyList<PreviewTexture> Textures)
 {
+    private static readonly System.Text.Json.JsonSerializerOptions MetadataOptions = new()
+    {
+        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+    };
+
     public PreviewRig Rig { get; init; } = new([], [], null, []);
     public void Write(Stream stream, int resolution = 1)
     {
@@ -58,8 +63,8 @@ public sealed record PreviewScene(IReadOnlyList<PreviewPrimitive> Primitives, IR
             Color(primitive.Material.Uv);
             Color(primitive.Material.Wrap);
             writer.Write(primitive.Material.Alpha == "Add" ? 2 : primitive.Material.Alpha.Contains("Blend", StringComparison.Ordinal) ? 1 : 0);
-            foreach (var value in primitive.Vertices) writer.Write(value);
-            foreach (var value in primitive.Indices) writer.Write(value);
+            ModelBinaryWriter.Write(writer, primitive.Vertices);
+            ModelBinaryWriter.Write(writer, primitive.Indices);
         }
         var metadata = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new
         {
@@ -86,7 +91,7 @@ public sealed record PreviewScene(IReadOnlyList<PreviewPrimitive> Primitives, IR
                 HighlightWrap = new[] { p.Material.HighlightWrap.X, p.Material.HighlightWrap.Y, p.Material.HighlightWrap.Z, p.Material.HighlightWrap.W },
                 HighlightUv = new[] { p.Material.HighlightUv.X, p.Material.HighlightUv.Y, p.Material.HighlightUv.Z, p.Material.HighlightUv.W }
             }).ToArray()
-        }, new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+        }, MetadataOptions);
         if (metadata.Length > 16 * 1024 * 1024) throw new InvalidDataException("Animation exceeds the preview budget.");
         writer.Write(metadata.Length); writer.Write(metadata);
     }

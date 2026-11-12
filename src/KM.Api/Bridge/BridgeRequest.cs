@@ -11,4 +11,5 @@ public sealed record BridgeRequest<TPayload>(
     TPayload Payload,
     string? RequestId = null,
     KM.Api.Editing.EditSessionDto? SpeciesSession = null,
-    bool CompactPokemonWorkflows = false);
+    bool CompactPokemonWorkflows = false,
+    bool CompactPlacementWorkflows = false);

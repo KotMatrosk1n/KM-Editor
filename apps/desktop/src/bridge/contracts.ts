@@ -5089,7 +5089,7 @@ export const placementWorkflowStatsSchema = z.strictObject({
   totalObjectCount: z.number().int().nonnegative(),
 });
 
-export const placementWorkflowSchema = z.strictObject({
+const fullPlacementWorkflowSchema = z.strictObject({
   categories: z.array(placementCategorySchema).nullish(),
   diagnostics: z.array(apiDiagnosticSchema),
   editableFields: z.array(placementEditableFieldSchema),
@@ -5097,6 +5097,32 @@ export const placementWorkflowSchema = z.strictObject({
   stats: placementWorkflowStatsSchema,
   summary: workflowSummarySchema,
 });
+
+const compactPlacementWorkflowSchema = fullPlacementWorkflowSchema.extend({
+  fieldDefinitions: z.array(placementFieldValueSchema.omit({ value: true, displayValue: true })),
+  objects: z.array(placedObjectRecordSchema.extend({
+    fields: z.array(z.strictObject({
+      fieldId: z.number().int().nonnegative(),
+      value: z.string(),
+      displayValue: z.string(),
+    })).nullish(),
+  })),
+}).transform(({ fieldDefinitions, objects, ...workflow }, context) => ({
+  ...workflow,
+  objects: objects.map((object, objectIndex) => ({
+    ...object,
+    fields: object.fields == null ? object.fields : object.fields.map(({ fieldId, ...value }, fieldIndex) => {
+      const definition = fieldDefinitions[fieldId];
+      if (!definition) context.addIssue({
+        code: "custom", message: "Unknown placement field definition.",
+        path: ["objects", objectIndex, "fields", fieldIndex, "fieldId"],
+      });
+      return { ...definition!, ...value };
+    }),
+  })),
+}));
+
+export const placementWorkflowSchema = z.union([compactPlacementWorkflowSchema, fullPlacementWorkflowSchema]);
 
 export const loadPlacementWorkflowResponseSchema = z.strictObject({
   workflow: placementWorkflowSchema,

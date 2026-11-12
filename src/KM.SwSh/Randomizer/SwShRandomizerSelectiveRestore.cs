@@ -7,6 +7,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.SwSh.Editing;
 using KM.SwSh.Encounters;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Trainers;
 
 namespace KM.SwSh.Randomizer;
@@ -116,8 +117,15 @@ public sealed partial class SwShRandomizerService
 
             // Reuse the ordinary editors in a private overlay, then publish all resulting
             // files and ownership cleanup in one transaction against the original preimages.
+            var pokemonCatalog = SwShEffectivePokemonCatalog.Load(paths);
+            if (!pokemonCatalog.Available)
+                throw new InvalidDataException(pokemonCatalog.UnavailableReason);
             var dependencies = reviewed.SelectMany(item => item.Plan.Writes)
                 .SelectMany(write => write.Sources.Select(source => source.RelativePath).Append(write.TargetRelativePath))
+                // Availability checks also read personal data, model catalogs and restored
+                // assets. Preserve those layered inputs even when Randomizer did not edit
+                // them, and verify their preimages with the other restore dependencies.
+                .Concat(pokemonCatalog.Sources.Select(source => source.RelativePath))
                 .Concat(targets).Where(IsLayeredFsRelativePath).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             var outputPreimages = new Dictionary<string, RestoreFilePreimage>(StringComparer.OrdinalIgnoreCase);
             var inputPreimages = new Dictionary<string, RestoreFilePreimage>(trainerSourcePreimages, StringComparer.OrdinalIgnoreCase);
@@ -148,6 +156,10 @@ public sealed partial class SwShRandomizerService
             }
 
             var stagedPaths = paths with { OutputRootPath = stagingRoot };
+            var stagedCatalog = SwShEffectivePokemonCatalog.Load(stagedPaths);
+            if (!stagedCatalog.Available || !pokemonCatalog.Entries.Select(entry => (entry.Identity, entry.Capabilities))
+                    .SequenceEqual(stagedCatalog.Entries.Select(entry => (entry.Identity, entry.Capabilities))))
+                throw new InvalidDataException("Randomizer restore overlay changed Pokemon availability.");
             var written = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var group in groups)
             {

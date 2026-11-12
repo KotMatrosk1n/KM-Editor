@@ -1764,7 +1764,7 @@ public sealed partial class SwShPlacementEditSessionService
         if (hexIndex >= 0)
         {
             var hex = trimmed[(hexIndex + 2)..];
-            var separatorIndex = hex.IndexOfAny(new[] { ' ', ')', ']' });
+            var separatorIndex = hex.AsSpan().IndexOfAny(' ', ')', ']');
             if (separatorIndex >= 0)
             {
                 hex = hex[..separatorIndex];

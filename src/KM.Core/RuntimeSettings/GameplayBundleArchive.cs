@@ -117,15 +117,15 @@ public static class GameplayBundleArchive
             throw new InvalidDataException("The gameplay bundle archive is empty or exceeds its bounded size.");
         }
 
-        using var input = new MemoryStream(archiveBytes.ToArray(), writable: false);
+        using var input = new ReadOnlyMemoryStream(archiveBytes);
         using var archive = new ZipArchive(input, ZipArchiveMode.Read, leaveOpen: false);
         if (archive.Entries.Count is < 3 or > MaximumEntryCount)
         {
             throw new InvalidDataException("The gameplay bundle archive entry count is invalid or out of bounds.");
         }
 
-        var entries = new Dictionary<string, byte[]>(StringComparer.Ordinal);
-        var foldedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, byte[]> entries = [with(capacity: archive.Entries.Count, comparer: StringComparer.Ordinal)];
+        HashSet<string> foldedPaths = [with(capacity: archive.Entries.Count, comparer: StringComparer.OrdinalIgnoreCase)];
         long totalBytes = 0;
         foreach (var entry in archive.Entries)
         {
@@ -162,9 +162,10 @@ public static class GameplayBundleArchive
             }
 
             using var stream = entry.Open();
-            using var bytes = new MemoryStream(checked((int)entry.Length));
-            stream.CopyTo(bytes);
-            if (bytes.Length != entry.Length || !entries.TryAdd(entry.FullName, bytes.ToArray()))
+            var bytes = new byte[checked((int)entry.Length)];
+            if (stream.ReadAtLeast(bytes, bytes.Length, throwOnEndOfStream: false) != bytes.Length
+                || stream.ReadByte() != -1
+                || !entries.TryAdd(entry.FullName, bytes))
             {
                 throw new InvalidDataException("A gameplay bundle archive entry is truncated or duplicated.");
             }

@@ -65,7 +65,7 @@ public static class ModelTextureEncodingCache
         {
             while (bytes + result.Bytes.Length > 64L * 1024 * 1024 && Order.TryDequeue(out var oldest))
                 if (Entries.Remove(oldest, out var removed)) bytes -= removed.Bytes.Length;
-            if (!Entries.ContainsKey(key)) { Entries.Add(key, result); Order.Enqueue(key); bytes += result.Bytes.Length; }
+            if (Entries.TryAdd(key, result)) { Order.Enqueue(key); bytes += result.Bytes.Length; }
         }
         return Check(result);
         ModelTextureEncoding Check(ModelTextureEncoding encoding)
