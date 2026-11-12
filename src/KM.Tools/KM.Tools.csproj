@@ -12,6 +12,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="../../apps/desktop/src/bridge/supportInventoryCatalog.json"
+                      LogicalName="KM.Tools.SupportInventoryCatalog.json" />
     <EmbeddedResource Include="Resources\km-native-settings.nso"
                       LogicalName="KM.Tools.Resources.km-native-settings.nso" />
     <EmbeddedResource Include="Resources/PartySprites/*.png"
