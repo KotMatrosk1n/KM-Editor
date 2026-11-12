@@ -182,11 +182,12 @@ internal static class SwShRestorationFormCandidates
                 current.TryGetValue(new(f.Species, f.Form), out var entry);
                 var complete = entry?.Capabilities.HasFlag(SwShPokemonCapability.Assignment) == true;
                 return new SwShRestorationCatalogEntry(f.Species,
-                f.Species < names.Count && !string.IsNullOrWhiteSpace(names[f.Species]) ? names[f.Species] : $"Pokemon {f.Species}",
+                f.Species < names.Count && !string.IsNullOrWhiteSpace(names[f.Species]) ? names[f.Species]
+                    : SwShRestorationSpecies.DisplayName(f.Species) ?? $"Pokemon {f.Species}",
                 definition?.Id, game is { } edition && definition is not null ? definition.Support.GetValueOrDefault(edition) : SwShRestorationSupport.NotSupported,
                 selection?.Enabled == true ? complete ? SwShRestorationInstallation.Enabled : SwShRestorationInstallation.NeedsRepair
                     : entry?.Personal.IsPresentInGame == true ? SwShRestorationInstallation.External : SwShRestorationInstallation.Disabled, [f.Species])
-                { Form = f.Form, FormLabel = f.Label, Donor = f.Donor, AvailableForAssignment = complete,
+                { Form = f.Form, FormLabel = f.Label, Donor = definition?.Donor ?? f.Donor, AvailableForAssignment = complete,
                     PlannedPersonalId = SwShRestorationFormSlots.PlannedPersonalRow(f.Species, f.Form) };
             });
         return SwShRestorationFamilyOrder.Sort(speciesEntries.Concat(forms));
