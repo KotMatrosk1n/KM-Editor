@@ -1,5 +1,17 @@
 {
   "keys": {
+    "bugReport.title": "错误报告",
+    "bugReport.description": "即使项目初始化失败，也能生成经过脱敏的诊断报告。包含故障类别、系统错误代码、构建版本和请求耗时。不包含目录、账户名称、个人标识、消息或文件内容。",
+    "bugReport.generate": "生成错误报告",
+    "bugReport.generating": "正在生成报告...",
+    "bugReport.preview": "报告预览",
+    "bugReport.copy": "复制报告",
+    "bugReport.copied": "已复制",
+    "bugReport.save": "保存报告",
+    "bugReport.share": "在 Discord 中附加保存的 JSON 文件，或粘贴复制的报告。分享前请检查预览。",
+    "bugReport.generateFailed": "无法生成报告。",
+    "bugReport.copyFailed": "无法复制报告。请选中并复制预览内容，或保存报告。",
+    "bugReport.saveFailed": "无法保存报告。请改为复制报告。",
     "pokemon.materialDrops.bulkTitle": "材料掉落数量",
     "pokemon.materialDrops.bulkDescription": "为当前会掉落材料的所有宝可梦设置数量。没有材料、掉落概率为 0% 或数量为 0 的物种会被跳过。材料和掉落概率保持不变。",
     "pokemon.materialDrops.bulkRange": "每次掉落的材料数量（{minimum} 至 {maximum}）",

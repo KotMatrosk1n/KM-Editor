@@ -959,6 +959,7 @@ internal sealed class OutputPathSafety
                     File.Delete(pendingPath);
                 }
 
+                OutputDiagnosticJournal.Object(OutputDiagnosticObject.MarkerTemporaryFile);
                 var streamOptions = new FileStreamOptions
                 {
                     Mode = FileMode.CreateNew,
@@ -1336,6 +1337,8 @@ internal sealed class OutputPathSafety
     [SupportedOSPlatform("windows")]
     private void EnsurePrivateWindowsFile(string path)
     {
+        OutputDiagnosticJournal.Object(Path.GetFileName(path) == ".output-store.marker.pending.tmp"
+            ? OutputDiagnosticObject.MarkerTemporaryFile : OutputDiagnosticObject.MetadataFile);
         if (portableMetadata) { ValidateMetadataFile(path); return; }
         try
         {
@@ -1375,6 +1378,7 @@ internal sealed class OutputPathSafety
     private void ValidateCurrentWindowsOwner(FileSystemSecurity security)
     {
         var owner = security.GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+        OutputDiagnosticJournal.ObserveOwner(owner, currentUserSid);
         if (owner != currentUserSid)
         {
             throw new OutputMetadataSecurityException(OutputMetadataSecurityFailure.OwnerMismatch);
@@ -1391,6 +1395,7 @@ internal sealed class OutputPathSafety
                 typeof(SecurityIdentifier))
             .Cast<FileSystemAccessRule>()
             .ToArray();
+        OutputDiagnosticJournal.ObserveOwner(owner, currentUserSid, security.AreAccessRulesProtected, rules.Length);
         if (owner != currentUserSid)
             throw new OutputMetadataSecurityException(OutputMetadataSecurityFailure.OwnerMismatch);
         if (!security.AreAccessRulesProtected

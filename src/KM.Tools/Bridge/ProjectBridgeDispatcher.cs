@@ -9273,7 +9273,8 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
     {
         var response = BridgeResponse<TPayload>.Success(payload, requestId);
 
-        return JsonSerializer.Serialize(response, CompactPokemonWorkflowJson.ResponseOptions);
+        return JsonSerializer.Serialize(new { response.Payload, response.Error, response.RequestId,
+            SupportDiagnostics = OutputDiagnosticJournal.Snapshot() }, CompactPokemonWorkflowJson.ResponseOptions);
     }
 
     private static string SerializeOutputFileFailure(
@@ -9309,7 +9310,8 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
             ApiError.Create(code, safeMessage, safeDiagnostics),
             requestId);
 
-        return JsonSerializer.Serialize(response, BridgeJson.SerializerOptions);
+        return JsonSerializer.Serialize(new { response.Payload, response.Error, response.RequestId,
+            SupportDiagnostics = OutputDiagnosticJournal.Snapshot() }, BridgeJson.SerializerOptions);
     }
 
     private sealed class BridgeRequestException : Exception

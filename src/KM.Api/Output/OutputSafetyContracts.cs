@@ -243,10 +243,11 @@ public sealed record OutputSupportReportDto(
     IReadOnlyList<string> DiagnosticCodes,
     IReadOnlyList<OutputTransactionPhaseDto> TransactionPhases,
     IReadOnlyList<OutputIntegrityCountDto> IntegrityCounts,
-    int OwnershipFileCount,
-    int CheckpointCount,
-    int HistoryReceiptCount,
-    DateTimeOffset CreatedAtUtc);
+    int? OwnershipFileCount,
+    int? CheckpointCount,
+    int? HistoryReceiptCount,
+    DateTimeOffset CreatedAtUtc,
+    string InventoryStatus = "collected");
 
 public sealed record BuildSupportReportResponse(OutputSupportReportDto Report);
 

@@ -72,6 +72,19 @@ public sealed class OutputWorkspaceStorage
     public async Task<IAsyncDisposable> AcquireAsync(OutputTransactionCoordinatorOptions options,
         CancellationToken cancellationToken = default)
     {
+        using var diagnostic = OutputDiagnosticJournal.Begin();
+        try
+        {
+            diagnostic.Storage(OutputRoot, appDataRoot);
+            return await AcquireCoreAsync(options, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) { diagnostic.Failed(exception); throw; }
+    }
+
+    private async Task<IAsyncDisposable> AcquireCoreAsync(OutputTransactionCoordinatorOptions options,
+        CancellationToken cancellationToken)
+    {
+        OutputDiagnosticJournal.Step(OutputDiagnosticStage.ValidatePaths, OutputDiagnosticObject.OutputRoot);
         options.Validate();
         RequireSafe(OutputRoot);
         // This parent is also the default per-user installation directory. A
@@ -80,41 +93,50 @@ public sealed class OutputWorkspaceStorage
         RequireSafe(appDataRoot);
         Directory.CreateDirectory(appDataRoot);
         RequireSafe(appDataRoot);
+        OutputDiagnosticJournal.Step(OutputDiagnosticStage.CreateWorkspace, OutputDiagnosticObject.WorkspaceDirectory);
         OutputPathSafety.CreatePrivateStorageDirectory(root);
         var lockPath = Path.Combine(root, "workspace.lock");
         RequireSafe(lockPath);
         var started = Stopwatch.GetTimestamp();
         FileStream gate;
+        OutputDiagnosticJournal.Step(OutputDiagnosticStage.AcquireWorkspaceLock, OutputDiagnosticObject.WorkspaceLock);
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
             try { gate = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); break; }
             catch (IOException exception) when (IsLockContention(exception) && Stopwatch.GetElapsedTime(started) < options.WriterLockTimeout)
-            { await Task.Delay(options.WriterLockRetryDelay, cancellationToken).ConfigureAwait(false); }
+            { OutputDiagnosticJournal.RetryLock(); await Task.Delay(options.WriterLockRetryDelay, cancellationToken).ConfigureAwait(false); }
             catch (IOException exception) when (IsLockContention(exception)) { throw new OutputRootLockTimeoutException(options.WriterLockTimeout); }
         }
         FileStream? legacyGate = null;
         try
         {
+            OutputDiagnosticJournal.Step(OutputDiagnosticStage.ClaimLegacyMetadata, OutputDiagnosticObject.LegacyMetadataDirectory);
             var legacySafety = new OutputPathSafety(OutputRoot, allowPortableMetadata: true);
             // Legacy journals on a volume without ownership cannot establish write authority.
             // Preserve them for resolution instead of importing them as trusted workspace state.
             if (legacySafety.HasPortableMetadata && Directory.Exists(legacyRoot) && HasLegacyData())
                 throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.PortableLegacyOwnership);
             legacySafety.EnsureMetadataLayout();
+            OutputDiagnosticJournal.Step(OutputDiagnosticStage.AcquireLegacyLock, OutputDiagnosticObject.LegacyLock);
             legacyGate = new FileStream(Path.Combine(legacyRoot, "output.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Delete);
+            OutputDiagnosticJournal.Step(OutputDiagnosticStage.CreateGameWorkspace, OutputDiagnosticObject.GameWorkspaceDirectory);
             OutputPathSafety.CreatePrivateStorageDirectory(gameRoot);
+            OutputDiagnosticJournal.Step(OutputDiagnosticStage.ResumePublication, OutputDiagnosticObject.MetadataStore);
             foreach (var game in Enum.GetValues<ProjectGame>())
             {
                 var storage = new OutputWorkspaceStorage(projectPaths with { SelectedGame = game }, appDataRoot);
                 if (Directory.Exists(storage.gameRoot)) storage.ResumePublication();
             }
+            OutputDiagnosticJournal.Step(OutputDiagnosticStage.MigrateLegacy, OutputDiagnosticObject.MetadataStore);
             MigrateLegacy(cancellationToken);
             if (File.Exists(Path.Combine(root, "migration.blocked")))
                 throw new OutputWorkspaceMigrationException(ReadMigrationFailure());
+            OutputDiagnosticJournal.Step(OutputDiagnosticStage.ValidateStore, OutputDiagnosticObject.MetadataStore);
             if (File.Exists(MetadataRoot) || File.Exists(WorkingRoot)) throw new OutputPathSecurityException();
             if (Directory.Exists(MetadataRoot))
                 new OutputPathSafety(OutputRoot, MetadataRoot, WorkingRoot).EnsureMetadataLayout();
+            OutputDiagnosticJournal.Step(OutputDiagnosticStage.CheckOtherGames, OutputDiagnosticObject.MetadataStore);
             foreach (var game in Enum.GetValues<ProjectGame>().Where(game => game != projectPaths.SelectedGame))
             {
                 var other = new OutputWorkspaceStorage(projectPaths with { SelectedGame = game }, appDataRoot);
@@ -127,11 +149,14 @@ public sealed class OutputWorkspaceStorage
                 if (Directory.Exists(journals) && Directory.EnumerateFileSystemEntries(journals).Any())
                     throw new OutputWorkspaceMigrationException(OutputWorkspaceMigrationFailure.OtherGameTransactions);
             }
+            OutputDiagnosticJournal.Step(OutputDiagnosticStage.PrepareWorkingTransactions, OutputDiagnosticObject.WorkingTransactions);
             PrepareWorkingTransactions(cancellationToken);
+            OutputDiagnosticJournal.Step(OutputDiagnosticStage.Ready, OutputDiagnosticObject.WorkingTransactions);
             return new Lease(this, gate, legacyGate);
         }
-        catch
+        catch (Exception exception)
         {
+            OutputDiagnosticJournal.Failed(exception);
             try { if (legacyGate is not null) CleanupLegacyLockDirectory(); }
             finally { legacyGate?.Dispose(); gate.Dispose(); }
             throw;

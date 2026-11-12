@@ -7000,6 +7000,7 @@ export function createBridgeResponseSchema<TPayloadSchema extends ZodTypeAny>(
       error: apiErrorSchema.nullable().optional(),
       payload: payloadSchema.nullable().optional(),
       requestId: z.string().nullable().optional(),
+      supportDiagnostics: z.unknown().optional(),
     })
     .superRefine((response, context) => {
       const hasPayload =

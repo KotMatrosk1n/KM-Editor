@@ -36,7 +36,10 @@ public static class OutputFailureDiagnostics
                 detail = $"{cause.GetType().Name} (0x{cause.HResult:X8}{nativeError})";
             }
         }
-        return securityCheck is null ? detail : detail is null ? securityCheck : $"{securityCheck}: {detail}";
+        var description = securityCheck is null ? detail : detail is null ? securityCheck : $"{securityCheck}: {detail}";
+        if (OutputDiagnosticJournal.FindFailure(exception) is { } context)
+            description = $"{(description is null ? "" : description + "; ")}Stage={context.Stage}; Object={context.ObjectRole}; Owner={context.ObjectOwner}; TokenOwner={context.TokenOwner}; Elevated={context.Elevated}";
+        return description;
     }
 }
 

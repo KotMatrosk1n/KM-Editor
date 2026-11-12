@@ -1,5 +1,17 @@
 {
   "keys": {
+    "bugReport.title": "Fehlerbericht",
+    "bugReport.description": "Erstellt einen bereinigten Diagnosebericht, auch wenn die Projektinitialisierung fehlschlägt. Enthält Fehlerkategorien, Fehlercodes des Betriebssystems, Buildversionen und Anfragezeiten. Verzeichnisse, Kontonamen, persönliche Kennungen, Meldungen und Dateiinhalte werden ausgeschlossen.",
+    "bugReport.generate": "Fehlerbericht erstellen",
+    "bugReport.generating": "Bericht wird erstellt...",
+    "bugReport.preview": "Berichtsvorschau",
+    "bugReport.copy": "Bericht kopieren",
+    "bugReport.copied": "Kopiert",
+    "bugReport.save": "Bericht speichern",
+    "bugReport.share": "Die gespeicherte JSON Datei in Discord anhängen oder den kopierten Bericht einfügen. Vor dem Teilen die Vorschau prüfen.",
+    "bugReport.generateFailed": "Der Bericht konnte nicht erstellt werden.",
+    "bugReport.copyFailed": "Der Bericht konnte nicht kopiert werden. Die Vorschau auswählen und kopieren oder den Bericht speichern.",
+    "bugReport.saveFailed": "Der Bericht konnte nicht gespeichert werden. Stattdessen den Bericht kopieren.",
     "pokemon.materialDrops.bulkTitle": "Materialmenge",
     "pokemon.materialDrops.bulkDescription": "Lege die Menge für alle Pokémon fest, die derzeit Material fallen lassen. Arten ohne Material, mit einer Fundrate von 0 % oder einer Menge von 0 werden übersprungen. Material und Fundrate bleiben gleich.",
     "pokemon.materialDrops.bulkRange": "Materialmenge pro Fund ({minimum} bis {maximum})",

@@ -2,12 +2,52 @@
 
 using System.Runtime.InteropServices;
 using System.Text;
+using Microsoft.Win32.SafeHandles;
 
 namespace KM.Core.Output;
 
 internal static class OutputVolumeCapabilities
 {
     private const uint PersistentAcls = 0x00000008;
+
+    internal static bool? ReadElevation(SafeAccessTokenHandle token)
+    {
+        return GetTokenInformation(token, 20, out var value, sizeof(int), out _) ? value != 0 : null;
+    }
+
+    internal static OutputStorageDiagnostic Describe(string path, string role)
+    {
+        if (!OperatingSystem.IsWindows()) return new(role, "unsupported", "unknown", null, null, null);
+        if (!SetThreadErrorMode(GetThreadErrorMode() | 1, out var previous))
+            return new(role, "unavailable", "unknown", null, null, Marshal.GetLastWin32Error());
+        try
+        {
+            var volume = new StringBuilder(32_768);
+            var format = new StringBuilder(261);
+            if (!GetVolumePathName(path, volume, volume.Capacity)
+                || !GetVolumeInformation(volume.ToString(), null, 0, out _, out _, out var flags, format, format.Capacity))
+                return new(role, "unavailable", "unknown", null, null, Marshal.GetLastWin32Error());
+            var fileSystem = format.ToString().ToUpperInvariant() switch
+            {
+                "NTFS" => "ntfs", "REFS" => "refs", "FAT" => "fat", "FAT32" => "fat32", "EXFAT" => "exfat", _ => "other",
+            };
+            var freeOk = GetDiskFreeSpaceEx(volume.ToString(), out var available, out _, out _);
+            return new(role, freeOk ? "available" : "partial", fileSystem, (flags & PersistentAcls) != 0,
+                freeOk ? (long)Math.Min(available, long.MaxValue) : null, freeOk ? null : Marshal.GetLastWin32Error());
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        { return new(role, "unavailable", "unknown", null, null, null); }
+        finally { SetThreadErrorMode(previous, out _); }
+    }
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetTokenInformation(SafeAccessTokenHandle token, int informationClass,
+        out int information, int length, out int returnLength);
+
+    [DllImport("kernel32.dll", EntryPoint = "GetDiskFreeSpaceExW", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetDiskFreeSpaceEx(string path, out ulong available, out ulong total, out ulong free);
 
     public static bool RequiresPrivateWorkspaceJournal(string path)
     {

@@ -1,5 +1,17 @@
 {
   "keys": {
+    "bugReport.title": "Informe de errores",
+    "bugReport.description": "Crea un informe de diagnóstico depurado, incluso si falla la inicialización del proyecto. Incluye categorías de errores, códigos de error del sistema operativo, versiones de compilación y tiempos de solicitudes. Excluye directorios, nombres de cuentas, identificadores personales, mensajes y contenido de archivos.",
+    "bugReport.generate": "Generar informe de errores",
+    "bugReport.generating": "Generando informe...",
+    "bugReport.preview": "Vista previa del informe",
+    "bugReport.copy": "Copiar informe",
+    "bugReport.copied": "Copiado",
+    "bugReport.save": "Guardar informe",
+    "bugReport.share": "Adjunta el archivo JSON guardado en Discord o pega el informe copiado. Revisa la vista previa antes de compartirlo.",
+    "bugReport.generateFailed": "No se pudo generar el informe.",
+    "bugReport.copyFailed": "No se pudo copiar el informe. Selecciona y copia la vista previa o guarda el informe.",
+    "bugReport.saveFailed": "No se pudo guardar el informe. Copia el informe en su lugar.",
     "pokemon.materialDrops.bulkTitle": "Cantidad de material",
     "pokemon.materialDrops.bulkDescription": "Establece la cantidad para todos los Pokémon que actualmente sueltan un material. Se omiten las especies sin material, con una probabilidad del 0 % o con una cantidad de 0. El material y la probabilidad se mantienen.",
     "pokemon.materialDrops.bulkRange": "Materiales por caída ({minimum} a {maximum})",
