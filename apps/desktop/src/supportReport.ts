@@ -142,10 +142,9 @@ export async function createBugReport(): Promise<string> {
   return JSON.stringify(report, null, 2);
 }
 
-export async function saveBugReport(report: string): Promise<void> {
+export async function saveBugReport(report: string): Promise<string | null> {
   if (isTauri()) {
-    await invoke('save_support_report', { report });
-    return;
+    return await invoke<string>('save_support_report', { report });
   }
   const url = URL.createObjectURL(new Blob([report], { type: 'application/json' }));
   try {
@@ -154,4 +153,9 @@ export async function saveBugReport(report: string): Promise<void> {
     link.download = 'KMEditor-bug-report.json';
     link.click();
   } finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
+  return null;
+}
+
+export async function openBugReport(fileName: string): Promise<void> {
+  await invoke('open_support_report', { fileName });
 }

@@ -18703,15 +18703,16 @@ select.km-select-control:dir(rtl) {
 .hyper-training-payment-items { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; }
 .hyper-training-payment-items .table-cell-control { min-width: 0; }
 
-.bug-report-panel { min-width: 0; }
-.bug-report-panel .km-settings-group-body { display: grid; gap: 12px; }
-.bug-report-panel label { display: grid; gap: 8px; min-width: 0; }
-.bug-report-panel button { justify-self: start; white-space: normal; }
-.bug-report-preview {
-  box-sizing: border-box;
-  width: 100%;
+.bug-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
-  resize: vertical;
-  font-family: monospace;
+  margin-top: 8px;
+}
+.bug-report-actions button {
+  max-width: 100%;
+  white-space: normal;
   overflow-wrap: anywhere;
 }

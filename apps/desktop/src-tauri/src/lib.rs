@@ -27,6 +27,7 @@ mod windows_app_identity;
 
 mod model_preview;
 mod emulator_folders;
+mod support_reports;
 #[cfg(windows)]
 mod process_gpu_memory;
 mod process_memory;
@@ -515,21 +516,6 @@ fn get_support_diagnostics(state: tauri::State<'_, ProjectBridgeTraceState>) -> 
     let requests = state.support.try_lock().ok().map(|entries| entries.iter().cloned().collect::<Vec<_>>());
     serde_json::json!({ "version": env!("CARGO_PKG_VERSION"), "commit": env!("KM_BUILD_COMMIT"),
         "modified": env!("KM_BUILD_MODIFIED"), "requests": requests })
-}
-
-#[tauri::command]
-async fn save_support_report(app: tauri::AppHandle, report: String) -> Result<bool, String> {
-    if report.len() > 1_048_576 || serde_json::from_str::<serde_json::Value>(&report).is_err() {
-        return Err("The support report is invalid.".to_owned());
-    }
-    tauri::async_runtime::spawn_blocking(move || {
-        use tauri_plugin_dialog::DialogExt;
-        let Some(file) = app.dialog().file().add_filter("JSON", &["json"])
-            .set_file_name("KMEditor-bug-report.json").blocking_save_file() else { return Ok(false); };
-        let path = file.into_path().map_err(|_| "The report could not be saved.".to_owned())?;
-        std::fs::write(path, report).map_err(|_| "The report could not be saved.".to_owned())?;
-        Ok(true)
-    }).await.map_err(|_| "The report could not be saved.".to_owned())?
 }
 
 #[derive(Clone)]
@@ -3981,7 +3967,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_support_diagnostics,
-            save_support_report,
+            support_reports::save_support_report,
+            support_reports::open_support_report,
             get_app_memory,
             model_preview_activate,
             model_preview_open,

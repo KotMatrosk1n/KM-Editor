@@ -14,7 +14,6 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { type OutputCheckpoint } from '../../bridge/outputSafetyContracts';
 import { DiagnosticsSection } from '../../components/workflowPanels';
-import { BugReportPanel } from '../../components/BugReportPanel';
 import { LoadingProgress } from '../../components/LoadingProgress';
 import { useLocalization } from '../../localization';
 import { type OutputSafetyController } from './useOutputSafetyController';
@@ -393,7 +392,6 @@ export function OutputSafetyPanel({ controller }: { controller: OutputSafetyCont
             ) : null}
           </section>
 
-          <BugReportPanel />
 
           <DiagnosticsSection diagnostics={allDiagnostics} />
         </div>
