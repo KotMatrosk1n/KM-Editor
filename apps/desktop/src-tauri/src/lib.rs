@@ -495,6 +495,41 @@ impl SupportSearchState {
 struct ProjectBridgeTraceState {
     sink: Option<Arc<Mutex<File>>>,
     next_sequence: Arc<AtomicUsize>,
+    support: Arc<Mutex<VecDeque<ProjectBridgeSupportRequest>>>,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectBridgeSupportRequest {
+    sequence: usize,
+    request_id: Option<String>,
+    phase: String,
+    elapsed_ms: u64,
+    queue_ms: Option<u64>,
+    execution_ms: Option<u64>,
+    attempt: u64,
+}
+
+#[tauri::command]
+fn get_support_diagnostics(state: tauri::State<'_, ProjectBridgeTraceState>) -> serde_json::Value {
+    let requests = state.support.try_lock().ok().map(|entries| entries.iter().cloned().collect::<Vec<_>>());
+    serde_json::json!({ "version": env!("CARGO_PKG_VERSION"), "commit": env!("KM_BUILD_COMMIT"),
+        "modified": env!("KM_BUILD_MODIFIED"), "requests": requests })
+}
+
+#[tauri::command]
+async fn save_support_report(app: tauri::AppHandle, report: String) -> Result<bool, String> {
+    if report.len() > 1_048_576 || serde_json::from_str::<serde_json::Value>(&report).is_err() {
+        return Err("The support report is invalid.".to_owned());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        use tauri_plugin_dialog::DialogExt;
+        let Some(file) = app.dialog().file().add_filter("JSON", &["json"])
+            .set_file_name("KMEditor-bug-report.json").blocking_save_file() else { return Ok(false); };
+        let path = file.into_path().map_err(|_| "The report could not be saved.".to_owned())?;
+        std::fs::write(path, report).map_err(|_| "The report could not be saved.".to_owned())?;
+        Ok(true)
+    }).await.map_err(|_| "The report could not be saved.".to_owned())?
 }
 
 #[derive(Clone)]
@@ -545,6 +580,7 @@ impl ProjectBridgeTraceState {
         let state = Self {
             sink: Some(Arc::new(Mutex::new(file))),
             next_sequence: Arc::new(AtomicUsize::new(1)),
+            support: Arc::default(),
         };
         state.write_value(&serde_json::json!({
             "event": "trace-started",
@@ -556,18 +592,19 @@ impl ProjectBridgeTraceState {
     }
 
     fn begin_request(&self, request_json: &str) -> Option<ProjectBridgeTraceRequest> {
-        self.sink.as_ref()?;
         let request = serde_json::from_str::<serde_json::Value>(request_json).ok();
         let command = request
             .as_ref()
             .and_then(|value| value.get("command"))
             .and_then(serde_json::Value::as_str)
+            .filter(|value| value.len() <= 256)
             .unwrap_or("(unparsed)")
             .to_owned();
         let request_id = request
             .as_ref()
             .and_then(|value| value.get("requestId"))
             .and_then(serde_json::Value::as_str)
+            .filter(|value| value.len() <= 256)
             .map(str::to_owned);
         let sequence = self.next_sequence.fetch_add(1, Ordering::Relaxed);
         Some(ProjectBridgeTraceRequest {
@@ -596,6 +633,32 @@ impl ProjectBridgeTraceState {
 
 impl ProjectBridgeTraceRequest {
     fn record(&self, event: &str, details: serde_json::Value) {
+        // Keep only transport phases and numbers. Trace details can contain paths,
+        // so the support snapshot must never retain or serialize those details.
+        if let Ok(mut entries) = self.state.support.lock() {
+            if !entries.iter().any(|entry| entry.sequence == self.sequence) {
+                entries.push_back(ProjectBridgeSupportRequest {
+                    sequence: self.sequence, request_id: self.request_id.clone(), phase: "request-started".into(),
+                    elapsed_ms: 0, queue_ms: None, execution_ms: None, attempt: 0,
+                });
+            }
+            if let Some(entry) = entries.iter_mut().find(|entry| entry.sequence == self.sequence) {
+                entry.phase = match event {
+                    "request-scheduled" | "permit-wait-started" | "permit-acquired" | "execution-started"
+                    | "process-admission-wait-started" | "process-admission-acquired" | "process-io-wait-started"
+                    | "process-io-acquired" | "response-read-finished" | "execution-finished" | "request-finished"
+                    | "response-restarted" => event, _ => "transport-step",
+                }.into();
+                entry.elapsed_ms = self.started_at.elapsed().as_millis().min(u64::MAX as u128) as u64;
+                if event == "permit-acquired" { entry.queue_ms = details.get("waitMs").and_then(serde_json::Value::as_u64); }
+                if event == "execution-finished" { entry.execution_ms = details.get("durationMs").and_then(serde_json::Value::as_u64); }
+                if let Some(attempt) = details.get("attempt").and_then(serde_json::Value::as_u64) { entry.attempt = attempt; }
+            }
+            while entries.len() > 64 {
+                let completed = entries.iter().position(|entry| entry.phase == "request-finished");
+                entries.remove(completed.unwrap_or(0));
+            }
+        }
         self.state.write_value(&serde_json::json!({
             "command": self.command,
             "details": details,
@@ -3917,6 +3980,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            get_support_diagnostics,
+            save_support_report,
             get_app_memory,
             model_preview_activate,
             model_preview_open,

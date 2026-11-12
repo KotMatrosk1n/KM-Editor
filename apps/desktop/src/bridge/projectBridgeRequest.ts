@@ -11,6 +11,7 @@ import { ProjectBridgeError } from './projectBridgeError';
 import { isExpectedProjectBridgeRejection } from './projectBridgeErrorClassification';
 import { recordBridgePerformanceDiagnostic } from '../performanceDiagnostics';
 import { readRestorationRequestContext, StaleSpeciesCatalogError } from './restorationRequestContext';
+import { observeBridgeStart, observeBridgeFinish, observeBridgeResponse } from '../supportReport';
 
 export type ProjectBridgeTransport = (requestJson: string) => Promise<string>;
 export type ProjectBridgeProgressTransport = (requestJson: string, onProgress: (progress: unknown) => void) => Promise<string>;
@@ -43,8 +44,11 @@ export async function sendProjectBridgeRequest<TPayloadSchema extends ZodTypeAny
   payloadSchema: TPayloadSchema
 ): Promise<z.infer<TPayloadSchema>> {
   const startedAt = performance.now();
+  const requestId = createRequestId(command);
+  const observation = observeBridgeStart(command, requestId, payload);
   try {
-    const response = await sendProjectBridgeRequestInner(transport, command, payload, payloadSchema);
+    const response = await sendProjectBridgeRequestInner(transport, command, payload, payloadSchema, requestId);
+    observeBridgeFinish(observation, false, response);
     recordBridgePerformanceDiagnostic(
       command,
       performance.now() - startedAt,
@@ -53,6 +57,7 @@ export async function sendProjectBridgeRequest<TPayloadSchema extends ZodTypeAny
     );
     return response;
   } catch (error) {
+    observeBridgeFinish(observation, true, error);
     recordBridgePerformanceDiagnostic(
       command,
       performance.now() - startedAt,
@@ -67,9 +72,9 @@ async function sendProjectBridgeRequestInner<TPayloadSchema extends ZodTypeAny>(
   transport: ProjectBridgeTransport,
   command: KmCommandName,
   payload: unknown,
-  payloadSchema: TPayloadSchema
+  payloadSchema: TPayloadSchema,
+  requestId: string
 ): Promise<z.infer<TPayloadSchema>> {
-  const requestId = createRequestId(command);
   const speciesContext = readRestorationRequestContext(payload);
   const requestJson = JSON.stringify({ command, payload, requestId, speciesSession: speciesContext?.session ?? null, compactPokemonWorkflows: true });
   if (
@@ -120,6 +125,7 @@ async function sendProjectBridgeRequestInner<TPayloadSchema extends ZodTypeAny>(
     );
   }
 
+  observeBridgeResponse(responseValue);
   const responseResult = createBridgeResponseSchema(payloadSchema).safeParse(responseValue);
   if (!responseResult.success) {
     throw createProjectBridgeProtocolError(

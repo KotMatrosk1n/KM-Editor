@@ -301,6 +301,10 @@ const diagnosticLocalizationKeys: Readonly<Record<string, string>> = {
   'KM-SV-HABITAT-OUTPUT-ROLLBACK-FAILED': 'habitatCoordinates.diagnostic.outputRollbackFailed'
 };
 
+export const localizedDiagnosticCodes: ReadonlySet<string> = new Set([
+  ...Object.keys(reviewDiagnosticLocalizationKeys), ...Object.keys(diagnosticLocalizationKeys)
+]);
+
 export function formatDiagnosticMessage(
   diagnostic: ApiDiagnostic,
   translateLiteral: DiagnosticTranslator = identityTranslator,

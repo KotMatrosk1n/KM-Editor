@@ -6,7 +6,6 @@ import {
   CheckCircle,
   ChevronDown,
   ChevronUp,
-  Clipboard,
   History,
   RefreshCw,
   ShieldCheck,
@@ -15,26 +14,16 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { type OutputCheckpoint } from '../../bridge/outputSafetyContracts';
 import { DiagnosticsSection } from '../../components/workflowPanels';
-import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { BugReportPanel } from '../../components/BugReportPanel';
 import { LoadingProgress } from '../../components/LoadingProgress';
 import { useLocalization } from '../../localization';
 import { type OutputSafetyController } from './useOutputSafetyController';
 
 export function OutputSafetyPanel({ controller }: { controller: OutputSafetyController }) {
-  const { formatLocale, t, translateLiteral } = useLocalization();
+  const { formatLocale, t } = useLocalization();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [checkpointLabel, setCheckpointLabel] = useState('');
   const [checkpointPendingDelete, setCheckpointPendingDelete] = useState<string | null>(null);
-  const [supportReportCopyState, setSupportReportCopyState] = useState<
-    'idle' | 'copied' | 'failed'
-  >('idle');
-  usePublishCommonEditorError({
-    domain: 'outputSafety',
-    field: 'supportReportClipboard',
-    message: supportReportCopyState === 'failed'
-      ? translateLiteral('The support report could not be copied.')
-      : null
-  });
   const forceOpen = controller.readiness === 'blocked' || controller.readiness === 'error';
   const bodyOpen = detailsOpen || forceOpen;
   const status = getStatusPresentation(controller.readiness);
@@ -63,8 +52,7 @@ export function OutputSafetyPanel({ controller }: { controller: OutputSafetyCont
 
   useEffect(() => {
     setCheckpointPendingDelete(null);
-    setSupportReportCopyState('idle');
-  }, [controller.checkpoints, controller.supportReport]);
+  }, [controller.checkpoints]);
 
   if (!controller.isAvailable) {
     return null;
@@ -405,53 +393,7 @@ export function OutputSafetyPanel({ controller }: { controller: OutputSafetyCont
             ) : null}
           </section>
 
-          <section className="output-safety-group" aria-labelledby="output-support-heading">
-            <div className="output-safety-group-heading">
-              <div>
-                <h3 id="output-support-heading">{t('outputSafety.support.title')}</h3>
-                <p>{t('outputSafety.support.description')}</p>
-              </div>
-              <button
-                className="secondary-button compact-button"
-                disabled={controller.busyAction !== null}
-                onClick={() => void controller.buildSupportReport()}
-                type="button"
-              >
-                <Clipboard aria-hidden="true" size={15} />
-                <span>{t('outputSafety.support.build')}</span>
-              </button>
-            </div>
-            {controller.supportReport ? (
-              <div className="output-support-report">
-                <pre data-localization-ignore="true">{JSON.stringify(controller.supportReport.report, null, 2)}</pre>
-                <button
-                  className="secondary-button compact-button"
-                  onClick={() => {
-                    if (!navigator.clipboard) {
-                      setSupportReportCopyState('failed');
-                      return;
-                    }
-                    void navigator.clipboard
-                      .writeText(JSON.stringify(controller.supportReport!.report, null, 2))
-                      .then(() => setSupportReportCopyState('copied'))
-                      .catch(() => setSupportReportCopyState('failed'));
-                  }}
-                  type="button"
-                >
-                  <Clipboard aria-hidden="true" size={15} />
-                  <span>
-                    {supportReportCopyState === 'failed'
-                      ? translateLiteral('The support report could not be copied.')
-                      : t(
-                          supportReportCopyState === 'copied'
-                            ? 'outputSafety.support.copied'
-                            : 'outputSafety.support.copy'
-                        )}
-                  </span>
-                </button>
-              </div>
-            ) : null}
-          </section>
+          <BugReportPanel />
 
           <DiagnosticsSection diagnostics={allDiagnostics} />
         </div>

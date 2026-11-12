@@ -9,6 +9,7 @@ using System.Text;
 using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Output;
+using KM.Api.Projects;
 using KM.Core.Files;
 using KM.Core.Output;
 using KM.Core.Projects;
@@ -503,37 +504,25 @@ public sealed class OutputSafetyApplicationService
         return new DeleteOutputCheckpointResponse(result.Deleted, result.Revision.Value);
     }
 
-    public async Task<BuildSupportReportResponse> BuildSupportReportAsync(
+    public Task<BuildSupportReportResponse> BuildSupportReportAsync(
         BuildSupportReportRequest request,
         CancellationToken cancellationToken = default)
     {
-        var context = ResolveScope(request?.Scope);
-        var outputMode = await GetCurrentOutputModeAsync(
-                context,
-                cancellationToken,
-                fallback: "not-recorded")
-            .ConfigureAwait(false);
-        var report = await context.Coordinator.CreateSupportReportAsync(
-            context.ProjectId,
-            GetApplicationVersion(),
-            context.GameFamily,
-            outputMode,
-            ["KM-OUTPUT-SUPPORT-REPORT-REDACTED"],
-            cancellationToken).ConfigureAwait(false);
-        return new BuildSupportReportResponse(new OutputSupportReportDto(
-            SchemaVersion: 1,
-            report.ApplicationVersion,
-            ToGameFamilyKey(report.GameFamily),
-            report.OutputMode,
-            report.DiagnosticCodes,
-            report.TransactionPhases.Select(ToDto).ToArray(),
-            report.IntegrityCounts.Select(count => new OutputIntegrityCountDto(
-                ToDto(count.Classification),
-                count.Count)).ToArray(),
-            report.OwnershipFileCount,
-            report.CheckpointCount,
-            report.HistoryReceiptCount,
-            report.CreatedAtUtc));
+        // Reporting must not resolve a coordinator, acquire output locks, migrate,
+        // or read inventory. Unobserved counts are unknown rather than zero.
+        cancellationToken.ThrowIfCancellationRequested();
+        var family = request?.Scope?.Paths?.SelectedGame switch
+        {
+            ProjectGameDto.Sword or ProjectGameDto.Shield => "swordShield",
+            ProjectGameDto.Scarlet or ProjectGameDto.Violet => "scarletViolet",
+            ProjectGameDto.ZA => "pokemonLegendsZA",
+            ProjectGameDto.PLA => "pokemonLegendsArceus",
+            _ => "unknown",
+        };
+        return Task.FromResult(new BuildSupportReportResponse(new OutputSupportReportDto(
+            2, GetApplicationVersion(), family, "not-recorded",
+            ["KM-OUTPUT-SUPPORT-REPORT-REDACTED"], [], [], null, null, null,
+            DateTimeOffset.UtcNow, "not-collected")));
     }
 
     private static async Task<(
