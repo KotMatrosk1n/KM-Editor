@@ -44,6 +44,13 @@ KM Editor uses .NET 11, C# 15, React, TypeScript, pnpm, Rust, and Tauri. The sup
 
 .NET 11 builds require an x64 CPU with SSE3, SSSE3, SSE4.1, SSE4.2, POPCNT, and CX16 support. See the [.NET 11 hardware requirements](https://learn.microsoft.com/en-us/dotnet/core/compatibility/jit/11/minimum-hardware-requirements). The Windows installer checks this CPU support before starting its managed interface. Packaged builds include their .NET runtime; building from source requires the SDK.
 
+Install Node.js 26.13.1 or newer. Node.js 26 does not bundle Corepack, so install it separately to use the pnpm version pinned in `package.json`:
+
+```powershell
+npm install --global corepack
+corepack enable pnpm
+```
+
 After cloning the repository, install the locked dependencies and restore the .NET solution:
 
 ```powershell
