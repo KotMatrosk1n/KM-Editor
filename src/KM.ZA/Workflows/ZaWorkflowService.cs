@@ -2681,7 +2681,7 @@ public sealed class ZaWorkflowService
             .Select(write => write.SourceFingerprint ?? "<none>")
             .Order(StringComparer.Ordinal);
         var payload = Encoding.UTF8.GetBytes(string.Join('\n', components));
-        return Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
+        return Convert.ToHexStringLower(SHA256.HashData(payload));
     }
 
     private static string? CombineSourceBindingFingerprints(

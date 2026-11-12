@@ -76,7 +76,7 @@ async function sendProjectBridgeRequestInner<TPayloadSchema extends ZodTypeAny>(
   requestId: string
 ): Promise<z.infer<TPayloadSchema>> {
   const speciesContext = readRestorationRequestContext(payload);
-  const requestJson = JSON.stringify({ command, payload, requestId, speciesSession: speciesContext?.session ?? null, compactPokemonWorkflows: true });
+  const requestJson = JSON.stringify({ command, payload, requestId, speciesSession: speciesContext?.session ?? null, compactPokemonWorkflows: true, compactPlacementWorkflows: true });
   if (
     requestJson.length > maximumProjectBridgeRequestBytes ||
     new TextEncoder().encode(requestJson).byteLength > maximumProjectBridgeRequestBytes

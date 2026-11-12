@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Buffers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -660,8 +661,8 @@ public sealed partial class SwShCacheManager
 
     private static string GetIdentityKey(SwShCacheSourceIdentity source)
     {
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream))
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
             writer.WriteNumber("schema", source.CacheSchemaVersion);
@@ -684,13 +685,13 @@ public sealed partial class SwShCacheManager
             writer.WriteEndObject();
         }
 
-        return ComputeSha256(stream.ToArray());
+        return ComputeSha256(buffer.WrittenSpan);
     }
 
     private static string GetStableSourceKey(SwShCacheSourceIdentity source)
     {
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream))
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
             writer.WriteNumber("game", (int)source.SelectedGame);
@@ -709,7 +710,7 @@ public sealed partial class SwShCacheManager
             writer.WriteEndObject();
         }
 
-        return ComputeSha256(stream.ToArray());
+        return ComputeSha256(buffer.WrittenSpan);
     }
 
     private static string GetArtifactKey(SwShCacheArtifactDescriptor artifact)
@@ -1762,13 +1763,7 @@ public sealed partial class SwShCacheManager
 
     private static string ResolveDefaultCacheRoot()
     {
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        if (string.IsNullOrWhiteSpace(localAppData))
-        {
-            throw new InvalidOperationException("Local application data is unavailable for the Sword/Shield cache.");
-        }
-
-        return Path.Combine(localAppData, "KM Editor", "SwordShieldCache");
+        return Path.Combine(KM.Core.Workspace.KmEditorAppData.Resolve(), "SwordShieldCache");
     }
 
     private void EnsurePathUnderProjects(string path)

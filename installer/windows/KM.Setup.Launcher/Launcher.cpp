@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <bcrypt.h>
+#include <intrin.h>
 #include <shellapi.h>
 #include <softpub.h>
 #include <wincrypt.h>
@@ -167,6 +168,7 @@ enum class AuthenticodeState : std::uint8_t {
 enum class PreBootstrapFailure {
     None,
     InvalidArguments,
+    UnsupportedProcessor,
     PayloadPreparation,
     Launch,
     Internal,
@@ -1046,6 +1048,16 @@ private:
     return ERROR_SUCCESS;
 }
 
+[[nodiscard]] bool SupportsDotNetRuntime() noexcept {
+    // .NET 11 adds SSE3, SSSE3, CMPXCHG16B, SSE4.1, SSE4.2, and POPCNT
+    // to the instructions already guaranteed by the x64 Windows baseline.
+    constexpr unsigned int requiredFeatures =
+        (1U << 0) | (1U << 9) | (1U << 13) | (1U << 19) | (1U << 20) | (1U << 23);
+    int registers[4]{};
+    __cpuid(registers, 1);
+    return (static_cast<unsigned int>(registers[2]) & requiredFeatures) == requiredFeatures;
+}
+
 [[nodiscard]] LauncherOutcome RunLauncher() {
     LocalArgv commandLine;
     if (!commandLine.IsValid()) {
@@ -1059,6 +1071,10 @@ private:
     DWORD result = ParseInvocation(commandLine.Count(), commandLine.Values(), invocation);
     if (result != ERROR_SUCCESS) {
         return {result, PreBootstrapFailure::InvalidArguments};
+    }
+
+    if (!SupportsDotNetRuntime()) {
+        return {ERROR_NOT_SUPPORTED, PreBootstrapFailure::UnsupportedProcessor};
     }
 
     std::vector<std::wstring> burnArguments;
@@ -1110,6 +1126,10 @@ void ShowPreBootstrapFailure(PreBootstrapFailure failure, DWORD exitCode) noexce
             explanation =
                 L"KM Editor Setup could not understand its update arguments.\n\n"
                 L"Please download the latest KM Editor installer and try again.";
+            break;
+        case PreBootstrapFailure::UnsupportedProcessor:
+            explanation =
+                L"This processor does not support the instructions required by KM Editor's .NET 11 runtime.";
             break;
         case PreBootstrapFailure::PayloadPreparation:
             explanation =

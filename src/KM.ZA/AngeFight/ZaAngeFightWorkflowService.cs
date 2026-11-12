@@ -220,7 +220,7 @@ internal sealed class ZaAngeFightWorkflowService
 
     internal static string Hash(byte[] bytes)
     {
-        return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        return Convert.ToHexStringLower(SHA256.HashData(bytes));
     }
 
     internal static ValidationDiagnostic CreateDiagnostic(

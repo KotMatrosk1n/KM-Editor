@@ -114,7 +114,7 @@ public static partial class SwShAnimationWriter
                         for (var i = 0; i < count; i++)
                         {
                             var frame = kind == 1 ? 0 : kind == 2 ? i : kind == 3 ? source.U16(keys + i * 2) : source.U8(keys + i);
-                            indices.Add(checked((ushort)(offset + frame))); values.AddRange(source.Slice(start + i * stride, stride).ToArray());
+                            indices.Add(checked((ushort)(offset + frame))); values.AddRange(source.Slice(start + i * stride, stride));
                         }
                     }
                     var end = offset + clips[segment].Frames - 1;

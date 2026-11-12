@@ -78,9 +78,7 @@ public sealed class PlaFieldArchive
     {
         if (string.IsNullOrEmpty(path) || path.Length > 1024 || path.Contains('\\') || path.Contains(':') || path.Any(char.IsControl)
             || path.Split('/').Any(part => part is "" or "." or "..")) throw new InvalidDataException("The PLA archive member path is invalid.");
-        var hash = 0xCBF29CE484222645UL;
-        foreach (var value in Encoding.UTF8.GetBytes(path)) hash = unchecked((hash ^ value) * 0x100000001B3UL);
-        return hash;
+        return Utf8PathHash.Compute(path);
     }
     public bool Contains(string path) => entries.ContainsKey(HashPath(path));
     public int DecodedSize(string path) => entries.TryGetValue(HashPath(path), out var entry) ? entry.DecodedSize

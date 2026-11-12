@@ -74,9 +74,8 @@ public sealed partial class PlaWorkflowService
             || record.Metadata.Any(pair => pair.Key is "area" or "areaName" or "move" or "moveType" or "contents"
                 && pair.Value.Contains(query, StringComparison.OrdinalIgnoreCase))
             || record.RelatedRecords.Any(related => related.Label.Contains(query, StringComparison.OrdinalIgnoreCase));
-        var matching = records.Where(Matches).ToArray();
-        var total = matching.Length;
-        var visible = matching.Skip(offset).Take(100).ToArray();
+        var total = 0;
+        PlaRecord[] visible;
         PlaGroup[] groupChoices = [];
         if (kind == "trainers")
         {
@@ -85,14 +84,14 @@ public sealed partial class PlaWorkflowService
             total = parties.Length;
             visible = parties.Skip(offset).Take(16).SelectMany(party => party).ToArray();
         }
-        if (kind == "shops")
+        else if (kind == "shops")
         {
             var inventories = records.GroupBy(record => record.Metadata["inventory"]).Where(group => group.Any(Matches)).ToArray();
             if (inventories.Any(group => group.Count() > 32)) throw new InvalidDataException("The PLA shop inventory exceeds the supported size.");
             total = inventories.Length;
             visible = inventories.Skip(offset).Take(3).SelectMany(group => group).ToArray();
         }
-        if (PlaWildCatalog.IsEncounter(kind))
+        else if (PlaWildCatalog.IsEncounter(kind))
         {
             var groups = records.GroupBy(record => record.Metadata["area"] + "/" + record.Metadata["table"]).Where(group => group.Any(Matches)).ToArray();
             groupChoices = groups.Select((group, index) => new PlaGroup(index.ToString(CultureInfo.InvariantCulture),
@@ -100,6 +99,17 @@ public sealed partial class PlaWorkflowService
                 group.First().Metadata["area"], group.First().Metadata["table"])).ToArray();
             total = groups.Length;
             visible = groups.Skip(offset).Take(1).SelectMany(group => group).ToArray();
+        }
+        else
+        {
+            List<PlaRecord> page = [with(capacity: Math.Min(100, records.Count))];
+            foreach (var record in records)
+            {
+                if (!Matches(record)) continue;
+                if (total >= offset && page.Count < 100) page.Add(record);
+                total++;
+            }
+            visible = page.ToArray();
         }
         return listing with { Records = visible, Total = total, Groups = groupChoices };
     }

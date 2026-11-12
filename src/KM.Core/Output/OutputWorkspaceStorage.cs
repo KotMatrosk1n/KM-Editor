@@ -35,7 +35,7 @@ public sealed class OutputWorkspaceStorage
         RequireSafe(OutputRoot);
         var normalized = OperatingSystem.IsWindows() ? OutputRoot.ToUpperInvariant() : OutputRoot;
         var rootKey = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)));
-        appDataRoot ??= Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "KM Editor");
+        appDataRoot ??= KM.Core.Workspace.KmEditorAppData.Resolve();
         if (!Path.IsPathFullyQualified(appDataRoot)) throw new OutputPathSecurityException();
         this.appDataRoot = appDataRoot;
         root = Path.Combine(appDataRoot, "Workspaces", "Output", rootKey);

@@ -35,6 +35,7 @@ public sealed partial class SwShGfPackFile
     private const ulong FnvPrime64 = 0x00000100000001B3;
     private const ulong FnvOffsetBasis64 = 0xCBF29CE484222645;
 
+    private readonly List<FileHashAbsoluteEntry> absoluteHashes;
     private readonly List<FileEntry> entries;
     private readonly List<FolderEntry> folders;
     private readonly byte[]? sourceData;
@@ -51,7 +52,7 @@ public sealed partial class SwShGfPackFile
     {
         Version = version;
         IsRelocated = isRelocated;
-        AbsoluteHashes = absoluteHashes;
+        this.absoluteHashes = absoluteHashes;
         this.folders = folders;
         this.entries = entries;
         this.sourceData = sourceData;
@@ -62,20 +63,33 @@ public sealed partial class SwShGfPackFile
 
     public uint IsRelocated { get; }
 
-    public IReadOnlyList<FileHashAbsoluteEntry> AbsoluteHashes { get; }
+    public IReadOnlyList<FileHashAbsoluteEntry> AbsoluteHashes => absoluteHashes;
 
     public int FileCount => entries.Count;
 
     public bool TryGetUniqueFileHash(string fileName, out ulong absoluteHash)
     {
         var nameHash = HashFnv1a64(Path.GetFileName(fileName));
-        var matches = folders.SelectMany(folder => folder.Files).Where(file => file.HashFnv1aPathFileName == nameHash).ToArray();
-        if (matches.Length != 1 || matches[0].Index < 0 || matches[0].Index >= AbsoluteHashes.Count)
+        var matchedIndex = -1;
+        var found = false;
+        foreach (var folder in folders)
+        foreach (var file in folder.Files)
+        {
+            if (file.HashFnv1aPathFileName != nameHash) continue;
+            if (found)
+            {
+                absoluteHash = 0;
+                return false;
+            }
+            found = true;
+            matchedIndex = file.Index;
+        }
+        if (matchedIndex < 0 || matchedIndex >= AbsoluteHashes.Count)
         {
             absoluteHash = 0;
             return false;
         }
-        absoluteHash = AbsoluteHashes[matches[0].Index].HashFnv1aPathFull;
+        absoluteHash = AbsoluteHashes[matchedIndex].HashFnv1aPathFull;
         return true;
     }
 
@@ -113,9 +127,15 @@ public sealed partial class SwShGfPackFile
 
     private int FindHashIndex(ulong hash)
     {
-        var matches = AbsoluteHashes.Select((entry, index) => (entry, index)).Where(pair => pair.entry.HashFnv1aPathFull == hash).ToArray();
-        if (matches.Length != 1) throw new InvalidDataException("GFPAK member hash is absent or ambiguous.");
-        return matches[0].index;
+        var match = -1;
+        for (var index = 0; index < absoluteHashes.Count; index++)
+        {
+            if (absoluteHashes[index].HashFnv1aPathFull != hash) continue;
+            if (match >= 0) throw new InvalidDataException("GFPAK member hash is absent or ambiguous.");
+            match = index;
+        }
+        if (match < 0) throw new InvalidDataException("GFPAK member hash is absent or ambiguous.");
+        return match;
     }
 
     public static SwShGfPackFile Parse(ReadOnlySpan<byte> data)
@@ -246,9 +266,9 @@ public sealed partial class SwShGfPackFile
     {
         ArgumentNullException.ThrowIfNull(files);
 
-        var absoluteHashes = new List<FileHashAbsoluteEntry>(files.Count);
-        var folder = new FolderEntry(HashFnv1a64(""), []);
-        var entries = new List<FileEntry>(files.Count);
+        List<FileHashAbsoluteEntry> absoluteHashes = [with(capacity: files.Count)];
+        var folder = new FolderEntry(HashFnv1a64(""), [with(capacity: files.Count)]);
+        List<FileEntry> entries = [with(capacity: files.Count)];
 
         for (var index = 0; index < files.Count; index++)
         {
@@ -619,7 +639,7 @@ public sealed partial class SwShGfPackFile
                 allowExactAlias: false);
             var folder = new FolderEntry(
                 BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(folderOffset, sizeof(ulong))),
-                [])
+                [with(capacity: fileCountInFolder)])
             {
                 Padding = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(folderOffset + 0x0C, sizeof(uint))),
             };

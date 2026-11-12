@@ -13,7 +13,7 @@ public sealed class ModelTableBuilder
     public ModelTableBuilder(byte[]? original = null)
     {
         if (original is { Length: > MaximumBytes }) throw new InvalidDataException("Native table input exceeds its size limit.");
-        data = original is null ? new(new byte[8]) : new(original);
+        data = original is null ? [with(capacity: 8), 0, 0, 0, 0, 0, 0, 0, 0] : [.. original];
     }
     public int Length => data.Count;
     public int Append(ReadOnlySpan<byte> bytes, int alignment = 4)
@@ -23,7 +23,7 @@ public sealed class ModelTableBuilder
         if ((long)data.Count + padding + bytes.Length > MaximumBytes) throw new InvalidDataException("Native table output exceeds its size limit.");
         for (var i = 0; i < padding; i++) data.Add(0);
         var at = data.Count;
-        data.AddRange(bytes.ToArray());
+        data.AddRange(bytes);
         return at;
     }
     public int Table(int count, IReadOnlyDictionary<int, byte[]>? values = null,
@@ -47,11 +47,14 @@ public sealed class ModelTableBuilder
         var vt = Append(vtable);
         var table = Append(new byte[size]);
         Int32(table, table - vt);
-        foreach (var (index, bytes) in values ?? new Dictionary<int, byte[]>())
+        if (values is not null)
         {
-            if ((uint)index >= count || offsets[index] == 0 || bytes.Length > (sizes?.GetValueOrDefault(index, 4) ?? 4))
-                throw new InvalidDataException("Native table value does not fit its field.");
-            Write(table + offsets[index], bytes);
+            foreach (var (index, bytes) in values)
+            {
+                if ((uint)index >= count || offsets[index] == 0 || bytes.Length > (sizes?.GetValueOrDefault(index, 4) ?? 4))
+                    throw new InvalidDataException("Native table value does not fit its field.");
+                Write(table + offsets[index], bytes);
+            }
         }
         return table;
     }
@@ -101,7 +104,9 @@ public sealed class ModelTableBuilder
         if (count is < 0 or > 200000) throw new InvalidDataException("Native vector count is invalid.");
         var bytes = new byte[checked(4 + count * 4)]; BinaryPrimitives.WriteInt32LittleEndian(bytes, count);
         var at = Append(bytes); Reference(table, field, at);
-        return Enumerable.Range(0, count).Select(i => at + 4 + i * 4).ToArray();
+        var elements = new int[count];
+        for (var i = 0; i < elements.Length; i++) elements[i] = at + 4 + i * 4;
+        return elements;
     }
     public void Blob(int table, int field, ReadOnlySpan<byte> bytes, int? count = null)
     {
@@ -118,6 +123,6 @@ public sealed class ModelTableBuilder
     public static byte[] Floats(params float[] values)
     {
         if (values.Any(v => !float.IsFinite(v))) throw new InvalidDataException("Native values must be finite.");
-        return values.SelectMany(BitConverter.GetBytes).ToArray();
+        return MemoryMarshal.AsBytes(values.AsSpan()).ToArray();
     }
 }

@@ -588,7 +588,7 @@ public sealed record SwShGiftPokemonArchive(IReadOnlyList<SwShGiftPokemonRecord>
 
         AlignBuffer(output, sizeof(ushort));
         var expandedVtableOffset = output.Count;
-        output.AddRange(source.Slice(layout.VtableOffset, layout.VtableLength).ToArray());
+        output.AddRange(source.Slice(layout.VtableOffset, layout.VtableLength));
         GrowBuffer(output, expandedVtableLength - layout.VtableLength);
         WriteUInt16At(output, expandedVtableOffset, checked((ushort)expandedVtableLength));
 
@@ -597,7 +597,7 @@ public sealed record SwShGiftPokemonArchive(IReadOnlyList<SwShGiftPokemonRecord>
         // The table header itself can start four bytes before an aligned ulong.
         GrowBuffer(output, tableOffset % sizeof(ulong));
         var expandedTableOffset = output.Count;
-        output.AddRange(source.Slice(tableOffset, layout.ObjectSize).ToArray());
+        output.AddRange(source.Slice(tableOffset, layout.ObjectSize));
         WriteInt32At(
             output,
             expandedTableOffset,

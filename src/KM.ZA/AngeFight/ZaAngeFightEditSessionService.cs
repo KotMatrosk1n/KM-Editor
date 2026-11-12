@@ -959,7 +959,7 @@ internal sealed class ZaAngeFightEditSessionService
             AppendFingerprintValue(hash, "TargetMissing");
         }
 
-        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
     }
 
     private static string NormalizeFingerprintPath(string path)

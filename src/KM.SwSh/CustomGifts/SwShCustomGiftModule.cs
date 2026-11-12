@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using KM.Core.Projects;
 using KM.Formats.Executable;
+using KM.SwSh.HeldItemChance;
 
 namespace KM.SwSh.CustomGifts;
 
@@ -86,8 +87,14 @@ internal static class SwShCustomGiftModule
             (Offset: sword ? 0x16CC140 : 0x16CC1D0, Size: 8, Hash: 0xF2B7C489F0A3701AUL),
         })
         {
-            if (guard.Offset > nso.Text.DecompressedData.Length - guard.Size
-                || Fnv(nso.Text.DecompressedData.AsSpan(guard.Offset, guard.Size)) != guard.Hash)
+            if (guard.Offset > nso.Text.DecompressedData.Length - guard.Size)
+                throw new InvalidDataException("The custom gift receiving flow contains incompatible executable changes.");
+            if (Fnv(nso.Text.DecompressedData.AsSpan(guard.Offset, guard.Size)) != guard.Hash
+                // Held Item Chance uses verified padding within this broad guard.
+                // Normalize only its owned bytes in a validation copy; executable
+                // bytes and all gift callback checks remain unchanged.
+                && (guard.Offset != 0xFE0000
+                    || Fnv(SwShHeldItemChancePatcher.OriginalTextRegion(nso, game, guard.Offset, guard.Size)) != guard.Hash))
                 throw new InvalidDataException("The custom gift receiving flow contains incompatible executable changes.");
         }
         VerifyCallbackRelocations(nso, sword);

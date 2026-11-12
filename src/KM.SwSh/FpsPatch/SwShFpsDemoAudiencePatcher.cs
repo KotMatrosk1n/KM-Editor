@@ -597,14 +597,14 @@ internal static class SwShFpsDemoAudiencePatcher
         {
             Span<byte> scratch = stackalloc byte[sizeof(uint)];
             BinaryPrimitives.WriteUInt32LittleEndian(scratch, value);
-            bytes.AddRange(scratch.ToArray());
+            bytes.AddRange(scratch);
         }
 
         private static void AppendF32(List<byte> bytes, float value)
         {
             Span<byte> scratch = stackalloc byte[sizeof(float)];
             BinaryPrimitives.WriteSingleLittleEndian(scratch, value);
-            bytes.AddRange(scratch.ToArray());
+            bytes.AddRange(scratch);
         }
     }
 

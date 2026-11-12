@@ -29,12 +29,22 @@ public sealed class SwShModelPreviewService
     public ModelTextureResource[] Textures(OpenedProject project, string id) => ModelTextureResources.Capture(observe => Prepare(project, id, "rest", observe));
 
     public ModelTextureResource[] Assets(OpenedProject project, string id, bool vanilla = false)
+        => Assets(project, id, vanilla, allowMissing: false);
+
+    private ModelTextureResource[] Assets(OpenedProject project, string id, bool vanilla, bool allowMissing)
     {
         var selected = vanilla ? project with { Paths = project.Paths with { OutputRootPath = null } } : project;
         var source = new SwShModelSource(selected, 512L * 1024 * 1024, 16384,
             vanilla ? Restoration.SwShRestorationBaseline.Models(project.Paths) : null);
-        var resource = Resources(selected, source).SingleOrDefault(r => r.Entry.Id == id)
-            ?? throw new InvalidDataException("Select a model from the selected catalog.");
+        var resource = Resources(selected, source).SingleOrDefault(r => r.Entry.Id == id);
+        if (resource is null)
+        {
+            if (!allowMissing) throw new InvalidDataException("Select a model from the selected catalog.");
+            // Older external restorations have no pinned converted defaults.
+            // Their current assets remain editable, but cannot be restored here.
+            source.Verify();
+            return [];
+        }
         var roots = resource.Animations.Select(a => (a.Path, a.Archive)).Prepend((id, resource.Archive));
         var graph = ModelAssetGraph.Read(roots, source.Read);
         source.Verify();
@@ -43,7 +53,7 @@ public sealed class SwShModelPreviewService
 
     public ModelTextureResource[] RestorationAssets(OpenedProject project, string id)
     {
-        var graph = Assets(project, id, true);
+        var graph = Assets(project, id, vanilla: true, allowMissing: true);
         var layered = new SwShModelSource(project, 512L * 1024 * 1024, 16384);
         var result = graph.Select(asset =>
         {

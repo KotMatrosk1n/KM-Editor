@@ -238,10 +238,10 @@ public sealed class ZaSwShNormalAtlas
             foreach (var primitive in primitives)
             {
                 writer.Write(primitive.Name); writer.Write(primitive.Material.Name);
-                writer.Write(primitive.Vertices.Length); foreach (var value in primitive.Vertices) writer.Write(value);
-                writer.Write(primitive.Indices.Length); foreach (var index in primitive.Indices) writer.Write(index);
+                writer.Write(primitive.Vertices.Length); ModelBinaryWriter.Write(writer, primitive.Vertices);
+                writer.Write(primitive.Indices.Length); ModelBinaryWriter.Write(writer, primitive.Indices);
             }
         }
-        return Hash(buffer.ToArray());
+        return Convert.ToHexString(SHA256.HashData(buffer.GetBuffer().AsSpan(0, checked((int)buffer.Length))));
     }
 }

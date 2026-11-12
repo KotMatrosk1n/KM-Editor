@@ -15,6 +15,8 @@ namespace KM.Tools.Application;
 /// </summary>
 public sealed class WorkspacePersonalStateApplicationService
 {
+    private static readonly System.Buffers.SearchValues<char> HexCharacters = System.Buffers.SearchValues.Create("0123456789abcdef");
+
     private const int MaximumIdentifierLength = 128;
     private const int MaximumStableIdLength = 1_024;
     private const int MaximumDisplayNameLength = 256;
@@ -73,7 +75,7 @@ public sealed class WorkspacePersonalStateApplicationService
         VersionedWorkspaceDocumentStore? store = null)
     {
         this.store = store ?? new VersionedWorkspaceDocumentStore(
-            GetDefaultAppDataRoot(),
+            KM.Core.Workspace.KmEditorAppData.Resolve(),
             serializerOptions: SizeSerializerOptions);
     }
 
@@ -970,7 +972,7 @@ public sealed class WorkspacePersonalStateApplicationService
         if (string.IsNullOrEmpty(projectId)
             || projectId.Length != ProjectIdPrefix.Length + 64
             || !projectId.StartsWith(ProjectIdPrefix, StringComparison.Ordinal)
-            || projectId.AsSpan(ProjectIdPrefix.Length).ContainsAnyExcept("0123456789abcdef"))
+            || projectId.AsSpan(ProjectIdPrefix.Length).ContainsAnyExcept(HexCharacters))
         {
             throw Invalid("The project id is invalid.");
         }
@@ -1201,21 +1203,6 @@ public sealed class WorkspacePersonalStateApplicationService
         {
             throw Invalid($"{label} exceeds the supported size limit.");
         }
-    }
-
-    private static string GetDefaultAppDataRoot()
-    {
-        var localApplicationData = Environment.GetFolderPath(
-            Environment.SpecialFolder.LocalApplicationData,
-            Environment.SpecialFolderOption.DoNotVerify);
-        if (string.IsNullOrWhiteSpace(localApplicationData)
-            || !Path.IsPathFullyQualified(localApplicationData))
-        {
-            throw new InvalidOperationException(
-                "A private local application-data location is unavailable.");
-        }
-
-        return Path.Combine(localApplicationData, "KM Editor");
     }
 
     private static WorkspacePersonalStateValidationException Invalid(

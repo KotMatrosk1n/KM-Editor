@@ -187,7 +187,7 @@ internal static partial class SwShFpsStadiumAudiencePatcher
         var start = output.Count;
         Span<byte> bytes = stackalloc byte[4];
         BinaryPrimitives.WriteInt32LittleEndian(bytes, count);
-        output.AddRange(bytes.ToArray());
+        output.AddRange(bytes);
         return start;
     }
 

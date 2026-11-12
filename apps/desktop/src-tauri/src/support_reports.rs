@@ -10,10 +10,24 @@ const SAVE_FAILED: &str = "The report could not be saved.";
 const OPEN_FAILED: &str = "The report folder could not be opened.";
 
 fn report_directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    if let Some(directory) = report_directory_override(std::env::var_os("KM_EDITOR_APP_DATA_ROOT"))? {
+        return Ok(directory);
+    }
     app.path()
         .local_data_dir()
         .map(|root| root.join("KM Editor").join("Bug Reports"))
         .map_err(|_| SAVE_FAILED.to_owned())
+}
+
+fn report_directory_override(root: Option<std::ffi::OsString>) -> Result<Option<PathBuf>, String> {
+    let Some(root) = root.filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let root = PathBuf::from(root);
+    if !root.is_absolute() {
+        return Err(SAVE_FAILED.to_owned());
+    }
+    Ok(Some(root.join("Bug Reports")))
 }
 
 #[tauri::command]

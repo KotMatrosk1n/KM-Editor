@@ -585,7 +585,8 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
         {
             // Read the minimal envelope first so the payload can be deserialized into the command-specific DTO.
             var envelope = DeserializeEnvelope(requestJson);
-            using var responseEncoding = CompactPokemonWorkflowJson.Begin(envelope?.CompactPokemonWorkflows == true);
+            using var responseEncoding = CompactPokemonWorkflowJson.Begin(envelope?.CompactPokemonWorkflows == true,
+                envelope?.CompactPlacementWorkflows == true);
             requestId = envelope?.RequestId;
             command = envelope?.Command;
             if (command is not null
@@ -9328,7 +9329,8 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
         public string? Code { get; }
     }
 
-    private sealed record BridgeCommandEnvelope(string? Command, string? RequestId, bool CompactPokemonWorkflows = false);
+    private sealed record BridgeCommandEnvelope(string? Command, string? RequestId, bool CompactPokemonWorkflows = false,
+        bool CompactPlacementWorkflows = false);
 
     private enum EditSessionDomain
     {

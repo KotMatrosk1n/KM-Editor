@@ -25,6 +25,12 @@ internal static class MergePackages
 {
     private const int MaximumPackages = 64;
     private const string ManifestName = "km-mod.json";
+    private static readonly JsonSerializerOptions ManifestOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+        MaxDepth = 16,
+    };
     private sealed record Manifest(int Version, PackageDeclaration[] Packages, GroupDeclaration[]? Groups = null);
     private sealed record PackageDeclaration(string Id, string Path, string? Name = null, string? Description = null,
         string? Game = null, string? Layout = null, bool Required = false, bool Recommended = false,
@@ -80,12 +86,7 @@ internal static class MergePackages
                 if (file.Bytes.Length > 256 * 1024) throw new JsonException();
                 using (var document = JsonDocument.Parse(file.Bytes, new JsonDocumentOptions { MaxDepth = 16 }))
                     RejectDuplicateProperties(document.RootElement);
-                var manifest = JsonSerializer.Deserialize<Manifest>(file.Bytes, new JsonSerializerOptions
-                {
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                    UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
-                    MaxDepth = 16,
-                });
+                var manifest = JsonSerializer.Deserialize<Manifest>(file.Bytes, ManifestOptions);
                 if (manifest is null || manifest.Version != 1 || manifest.Packages is not { Length: > 0 and <= MaximumPackages }
                     || manifest.Packages.Any(package => package is null) || manifest.Groups?.Any(group => group is null) == true)
                     throw new JsonException();

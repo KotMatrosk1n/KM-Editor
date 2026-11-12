@@ -999,8 +999,9 @@ public sealed partial class ZaCacheManager
             return Array.Empty<string>();
         }
 
-        var batch = new List<string>(WarmupCandidateBatchSize);
-        var selectedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var capacity = Math.Min(WarmupCandidateBatchSize, warmupVirtualPaths.Count);
+        List<string> batch = [with(capacity: capacity)];
+        HashSet<string> selectedPaths = [with(capacity: capacity, comparer: StringComparer.OrdinalIgnoreCase)];
         for (var offset = 0;
              offset < warmupVirtualPaths.Count && batch.Count < WarmupCandidateBatchSize;
              offset++)
@@ -1738,9 +1739,9 @@ public sealed partial class ZaCacheManager
 
     private static string CreateProjectKey(ZaCacheSourceFingerprint source)
     {
-        var json = JsonSerializer.Serialize(source, JsonOptions);
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(json));
-        return Convert.ToHexString(hash).ToLowerInvariant();
+        var json = JsonSerializer.SerializeToUtf8Bytes(source, JsonOptions);
+        var hash = SHA256.HashData(json);
+        return Convert.ToHexStringLower(hash);
     }
 
     private static ZaCacheFileStamp CreateFileStamp(string filePath)
@@ -1759,13 +1760,7 @@ public sealed partial class ZaCacheManager
 
     private static string ResolveDefaultCacheRoot()
     {
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        if (string.IsNullOrWhiteSpace(localAppData))
-        {
-            localAppData = Path.GetTempPath();
-        }
-
-        return Path.Combine(localAppData, "KM Editor", "PokemonLegendsZACache");
+        return Path.Combine(KM.Core.Workspace.KmEditorAppData.Resolve(), "PokemonLegendsZACache");
     }
 
     private static string ResolveRomFsRoot(string path)
@@ -1885,7 +1880,7 @@ public sealed partial class ZaCacheManager
 
     private static string GetVirtualPathKey(string virtualPath)
     {
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(virtualPath))).ToLowerInvariant();
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(virtualPath)));
     }
 
     private static string GetPayloadDirectory(ZaCacheProjectContext context)

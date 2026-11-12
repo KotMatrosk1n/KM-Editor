@@ -40,7 +40,9 @@ Known file names, fields, small byte patterns, public technical references, and 
 
 ## Development setup
 
-KM Editor uses .NET, React, TypeScript, pnpm, Rust, and Tauri. The supported .NET SDK is defined in [`global.json`](global.json), Node.js and pnpm requirements are defined in [`package.json`](package.json), and the Rust requirement is defined in [`Cargo.toml`](apps/desktop/src-tauri/Cargo.toml). Windows desktop development also requires Visual Studio 2022 Build Tools with Desktop development with C++, a Windows 10 or 11 SDK, and Microsoft Edge WebView2 Runtime.
+KM Editor uses .NET 11, C# 15, React, TypeScript, pnpm, Rust, and Tauri. The supported .NET SDK is defined in [`global.json`](global.json), Node.js and pnpm requirements are defined in [`package.json`](package.json), and the Rust requirement is defined in [`Cargo.toml`](apps/desktop/src-tauri/Cargo.toml). Windows desktop development also requires Visual Studio 2022 Build Tools with Desktop development with C++, a Windows 10 or 11 SDK, and Microsoft Edge WebView2 Runtime.
+
+.NET 11 builds require an x64 CPU with SSE3, SSSE3, SSE4.1, SSE4.2, POPCNT, and CX16 support. See the [.NET 11 hardware requirements](https://learn.microsoft.com/en-us/dotnet/core/compatibility/jit/11/minimum-hardware-requirements). The Windows installer checks this CPU support before starting its managed interface. Packaged builds include their .NET runtime; building from source requires the SDK.
 
 After cloning the repository, install the locked dependencies and restore the .NET solution:
 

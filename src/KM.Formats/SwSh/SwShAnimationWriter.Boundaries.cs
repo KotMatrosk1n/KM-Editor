@@ -94,7 +94,7 @@ public static partial class SwShAnimationWriter
                     var (start, count) = kind == 1 ? (source.Field(curve, 0), 1) : source.Vector(curve, kind == 2 ? 0 : 1, stride, 18000);
                     var (keys, keyCount) = kind >= 3 ? source.Vector(curve, 0, kind == 3 ? 2 : 1, 18000) : (0, count);
                     if (count < 1 || keyCount != count) throw new InvalidDataException("Battle entry keys are incomplete.");
-                    values.AddRange(source.Slice(start, count * stride).ToArray());
+                    values.AddRange(source.Slice(start, count * stride));
                     for (var i = 0; i < count; i++) indices.Add(checked((ushort)(kind == 1 ? 0 : kind == 2 ? i : kind == 3 ? source.U16(keys + i * 2) : source.U8(keys + i))));
                 }
                 // Retain a held final source value before adding any new motion.

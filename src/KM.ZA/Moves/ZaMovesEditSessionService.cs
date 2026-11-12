@@ -1564,7 +1564,7 @@ internal sealed partial class ZaMovesEditSessionService
             hash.AppendData(File.ReadAllBytes(targetPath));
         }
 
-        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
 
         void Append(string? value)
         {
