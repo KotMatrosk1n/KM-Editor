@@ -66,7 +66,8 @@ internal static class SwShRestorationDependencies
         IsDependency(item) ? item with { After = Resolve(item, Enabled(state)) } : item;
 
     private static bool IsDependency(SwShRestorationContribution item) => item.Writer == SwShRestorationWriter.Personal
-        || item.Writer == SwShRestorationWriter.File && item.Path.StartsWith("romfs/bin/pml/evolution/evo_", StringComparison.Ordinal);
+        || item.Writer == SwShRestorationWriter.File && item.Path.StartsWith("romfs/bin/pml/evolution/evo_", StringComparison.Ordinal)
+            && SwShRestorationEvolutionPolicy.NativeParentTarget(item) is null;
     private static IEnumerable<(int At, int Size)> Fields(SwShRestorationContribution item)
     {
         if (item.Writer == SwShRestorationWriter.Personal) { yield return (22, 2); yield return (86, 2); }

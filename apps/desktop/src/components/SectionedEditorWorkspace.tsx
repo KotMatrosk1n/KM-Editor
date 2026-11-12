@@ -20,12 +20,12 @@ export function EditorWorkspaceSection({ children }: SectionProps) { return <>{c
 type HeaderProps = { children: ReactNode; afterBrowser?: boolean };
 export function EditorWorkspaceHeader({ children }: HeaderProps) { return <>{children}</>; }
 
-type Session = { active: string | null; tableHeight: number | null; scroll: Record<string, number> };
+type Session = { active: string | null; tableHeight: number | null };
 const sessions = new Map<string, Session>();
 function sessionFor(key: string, initial: string): Session {
   const remembered = sessions.get(key);
   if (remembered) return remembered;
-  const session = { active: initial, tableHeight: null, scroll: {} };
+  const session = { active: initial, tableHeight: null };
   sessions.set(key, session);
   if (sessions.size > 128) sessions.delete(sessions.keys().next().value!);
   return session;
@@ -76,8 +76,8 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
   const root = useRef<HTMLDivElement>(null);
   const chrome = useRef<HTMLDivElement>(null);
   const table = useRef<HTMLDivElement>(null);
-  const slot = useRef<HTMLDivElement>(null);
   const surface = useRef<HTMLDivElement>(null);
+  const settledHeight = useRef(0);
   const panels = useRef(new Map<string, HTMLDivElement>());
   const selectors = useRef(new Map<string, HTMLButtonElement>());
   const animations = useRef<Animation[]>([]);
@@ -101,8 +101,7 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
     const measure = () => {
       if (!root.current || !chrome.current) return;
       const viewportBottom = (window.visualViewport?.height ?? window.innerHeight) + (window.visualViewport?.offsetTop ?? 0);
-      const available = Math.max(160, viewportBottom - root.current.getBoundingClientRect().top - 18);
-      if (root.current.style.height !== `${available}px`) root.current.style.height = `${available}px`;
+      const available = Math.max(160, viewportBottom - Math.max(0, root.current.getBoundingClientRect().top) - 18);
       const fixed = chrome.current.scrollHeight - (table.current?.getBoundingClientRect().height ?? 0);
       const browserTable = table.current?.querySelector<HTMLElement>('[role="table"]');
       let minimumTableHeight = 80;
@@ -121,7 +120,6 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
     };
     const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); };
     const observer = new ResizeObserver(schedule);
-    if (root.current) observer.observe(root.current);
     if (chrome.current) observer.observe(chrome.current);
     window.addEventListener('resize', schedule);
     window.visualViewport?.addEventListener('resize', schedule);
@@ -142,7 +140,7 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
     const container = surface.current;
     if (!container) return;
     // Capture the interrupted visual height before cancelling. The latest selection owns the transition.
-    const from = container.getBoundingClientRect().height;
+    const from = animations.current.length ? container.getBoundingClientRect().height : settledHeight.current;
     const oldPanel = old ? panels.current.get(old) : undefined;
     const nextPanel = active ? panels.current.get(active) : undefined;
     const interruptedStyle = (panel: HTMLElement | undefined) => panel && animations.current.some(animation =>
@@ -155,13 +153,14 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
     if (oldPanel && old !== active && oldPanel.contains(document.activeElement)) {
       selectors.current.get(old!)?.focus({ preventScroll: true });
     }
-    if (nextPanel) nextPanel.scrollTop = session.scroll[active!] ?? 0;
-    const destination = nextPanel ? Math.min(nextPanel.firstElementChild?.getBoundingClientRect().height ?? 0, slot.current?.clientHeight ?? 0) : 0;
-    container.style.height = `${destination}px`;
+    const destination = nextPanel?.firstElementChild?.getBoundingClientRect().height ?? 0;
+    settledHeight.current = destination;
     if (reduced || old === active || typeof container.animate !== 'function') {
+      container.style.height = 'auto';
       setOutgoing(null);
       return;
     }
+    container.style.height = `${destination}px`;
     setOutgoing(old);
     const duration = old && active ? 180 : active ? 200 : 160;
     animations.current.push(container.animate([{ height: `${from}px` }, { height: `${destination}px` }], {
@@ -178,24 +177,23 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
         setOutgoing(null);
         animations.current.forEach(animation => animation.cancel());
         animations.current = [];
-        container.style.height = nextPanel ? `${Math.min(nextPanel.firstElementChild?.getBoundingClientRect().height ?? 0, slot.current?.clientHeight ?? 0)}px` : '0px';
+        container.style.height = 'auto';
+        settledHeight.current = container.getBoundingClientRect().height;
       }
     });
   }, [active, reduced, session]);
 
   useLayoutEffect(() => {
-    const panel = active ? panels.current.get(active) : undefined;
     const update = () => {
       if (surface.current && animations.current.length === 0) {
-        surface.current.style.height = panel ? `${Math.min(panel.firstElementChild?.getBoundingClientRect().height ?? 0, slot.current?.clientHeight ?? 0)}px` : '0px';
+        settledHeight.current = surface.current.getBoundingClientRect().height;
       }
     };
     const observer = new ResizeObserver(update);
-    if (slot.current) observer.observe(slot.current);
-    if (panel?.firstElementChild) observer.observe(panel.firstElementChild);
+    if (surface.current) observer.observe(surface.current);
     update();
     return () => observer.disconnect();
-  });
+  }, []);
 
   useEffect(() => () => {
     ++generation.current;
@@ -259,7 +257,7 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
       </div>
       {sections.length === 0 ? empty.map((content, index) => <Fragment key={index}>{content}</Fragment>) : null}
     </div>
-    <div className="editor-workspace-slot" ref={slot}>
+    <div className="editor-workspace-slot">
       <div className="editor-workspace-surface" ref={surface}>
         {sections.map(({ props: section }) => {
           const visible = active === section.id;
@@ -269,8 +267,7 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
             tabIndex={visible ? 0 : -1}
             hidden={!visible && !leaving} inert={!visible} className="editor-workspace-section"
             data-outgoing={leaving || undefined}
-            ref={element => { if (element) panels.current.set(section.id, element); else panels.current.delete(section.id); }}
-            onScroll={event => { if (visible) session.scroll[section.id] = event.currentTarget.scrollTop; }}>
+            ref={element => { if (element) panels.current.set(section.id, element); else panels.current.delete(section.id); }}>
             <div className="editor-workspace-section-content">{section.children}</div>
           </div>;
         })}

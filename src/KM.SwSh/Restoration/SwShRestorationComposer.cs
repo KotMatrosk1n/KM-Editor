@@ -107,6 +107,16 @@ public static class SwShRestorationComposer
             if (kind == SwShRestorationWriter.File)
             {
                 if (items.Length != 1 || items[0].Key.Length != 0) throw new InvalidDataException("Whole file contribution is ambiguous.");
+                if (SwShRestorationEvolutionPolicy.NativeParentTarget(items[0]) is { } target)
+                {
+                    if (captureOnly && current is null) { outputs.Add(group.Key, null); continue; }
+                    var composition = SwShRestorationNativeEvolution.Compose(items[0], target, current, enable,
+                        allowOwnedCustomizations && (ownedPaths is null || ownedPaths.Contains(group.Key)),
+                        adoption?.Contains((group.Key, kind, items[0].Key)) == true, captureOnly);
+                    outputs.Add(group.Key, composition.Bytes);
+                    if (composition.Retained is { } customization) retained.Add(customization);
+                    continue;
+                }
                 outputs.Add(group.Key, Select(items[0], current)); continue;
             }
             if (current is null) throw new InvalidDataException($"Shared restoration source is missing: {group.Key}");

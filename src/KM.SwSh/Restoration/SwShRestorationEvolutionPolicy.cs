@@ -8,6 +8,8 @@ namespace KM.SwSh.Restoration;
 public static class SwShRestorationEvolutionPolicy
 {
     public const int DuskStone = 108;
+    private static readonly (int Parent, SwShPokemonIdentity Target)[] NativeBranches =
+        [(704, new(705, 1)), (723, new(724, 1))];
 
     public static SwShEvolutionRecord Convert(SwShPokemonIdentity parent, SwShEvolutionRecord source) =>
         (parent.Species, parent.Form, source.Species, source.Form) switch
@@ -20,12 +22,14 @@ public static class SwShRestorationEvolutionPolicy
             _ => source,
         };
 
-    public static int? NativeParent(SwShPokemonIdentity identity) => (identity.Species, identity.Form) switch
-    {
-        (705, 1) => 704,
-        (724, 1) => 723,
-        _ => null,
-    };
+    public static int? NativeParent(SwShPokemonIdentity identity) => NativeBranches
+        .Where(branch => branch.Target == identity).Select(branch => (int?)branch.Parent).SingleOrDefault();
+
+    internal static SwShPokemonIdentity? NativeParentTarget(SwShRestorationContribution contribution) =>
+        contribution.Writer == SwShRestorationWriter.File && contribution.Key.Length == 0
+            ? NativeBranches.Where(branch => contribution.Path == $"romfs/bin/pml/evolution/evo_{branch.Parent:000}.bin")
+                .Select(branch => (SwShPokemonIdentity?)branch.Target).SingleOrDefault()
+            : null;
 
     internal static bool IsNativeParentFile(SwShRestorationDefinition definition, SwShRestorationContribution contribution)
         => contribution.Before?.Length == SwShEvolutionSet.FileSize
