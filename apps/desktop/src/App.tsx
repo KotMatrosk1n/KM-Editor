@@ -710,7 +710,6 @@ import {
 } from './workbench/guidedDesignNavigation';
 import { DiagnosticNavigationProvider } from './diagnosticActions';
 import { PerformanceDiagnosticsPanel } from './features/settings/PerformanceDiagnosticsPanel';
-import { BugReportPanel } from './components/BugReportPanel';
 import { ProcessMemoryPanel } from './features/settings/ProcessMemoryPanel';
 import { CompatibilityActions } from './features/pokemon/CompatibilityActions';
 import { MegaLearnsetSync } from './features/pokemon/MegaLearnsetSync';
@@ -22697,7 +22696,6 @@ function HealthSection({
         ) : null}
       </section>
 
-      <BugReportPanel />
       <DiagnosticsSection diagnostics={[...bridgeDiagnostics, ...(health?.diagnostics ?? [])]} />
     </>
   );
@@ -58505,7 +58503,6 @@ function SettingsSection({
           role="tabpanel"
           tabIndex={0}
         >
-          <BugReportPanel />
           <ProcessMemoryPanel />
           <PerformanceDiagnosticsPanel />
         </section>

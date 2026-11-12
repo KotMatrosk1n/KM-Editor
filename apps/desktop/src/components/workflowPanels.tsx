@@ -24,6 +24,7 @@ import {
 } from './CommonEditorDiagnostics';
 import { mergeEditorDiagnostics } from './commonEditorDiagnosticsState';
 import { ReportableDiagnosticIssuesLink } from './ReportableErrorScreen';
+import { BugReportActions } from './BugReportActions';
 
 export type WorkflowPanelOutput = {
   actionDiagnostics: ApiDiagnostic[];
@@ -376,6 +377,9 @@ function DiagnosticsPanel({
                      <ReportableDiagnosticIssuesLink
                        messages={identities.map((identity) => identity.diagnostic.message)}
                      />
+                     {severity === 'error' ? (
+                       <BugReportActions codes={identities.map((identity) => identity.diagnostic.code)} />
+                     ) : null}
                      <DiagnosticTechnicalDetails
                       diagnostics={identities}
                       summary={translateLiteral('Technical details')}

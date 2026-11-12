@@ -21,7 +21,7 @@ import {
 } from '../errorReporting';
 import { useLocalization } from '../localization';
 import { useModalDialog } from './useModalDialog';
-import { BugReportPanel } from './BugReportPanel';
+import { BugReportActions } from './BugReportActions';
 import { observeDiagnosticCode } from '../supportReport';
 
 const maximumDisplayedReportMessageCharacters = 2_000;
@@ -96,7 +96,7 @@ export function ReportableErrorScreen({ report }: { report: ReportableError }) {
           <GitHubIssuesLink />
           <CloseApplicationButton isClosing={isClosing} onClick={handleClose} />
         </div>
-        <BugReportPanel />
+        <BugReportActions codes={[report.semanticCode]} />
       </section>
     </main>
   );
@@ -135,7 +135,7 @@ function GlobalReportableErrorDialog({
             {translateLiteral('Close')}
           </button>
         </div>
-        <BugReportPanel />
+        <BugReportActions codes={[report.semanticCode]} />
       </div>
     </div>
   );
