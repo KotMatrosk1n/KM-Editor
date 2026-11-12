@@ -315,6 +315,8 @@ public sealed partial class SwShRestorationService
             var shared = includeAllKeys ? peerKeys.Where(IsShared).ToHashSet() : peerKeys;
             foreach (var item in effective.Contributions.Where(c => c.Writer == SwShRestorationWriter.File))
             {
+                // Native parent tables own only the added regional route.
+                if (SwShRestorationEvolutionPolicy.IsNativeParentFile(SwShRestorationDefinitions.Get(intent.DefinitionId), item)) continue;
                 if (!System.IO.File.Exists(Output(paths, item.Path))) continue;
                 var nativeFallback = intent.Enabled && item.Before is not null
                     && (BoundedRead(Output(paths, item.Path)).AsSpan().SequenceEqual(item.Before)

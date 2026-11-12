@@ -1,14 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 .sectioned-editor-workspace {
   display: flex; flex-direction: column; gap: 12px;
-  width: 100%; min-width: 0; min-height: 0; height: 660px;
+  width: 100%; min-width: 0;
   --editor-hover-duration: 120ms;
   container: editorWorkspace / inline-size;
 }
 .sectioned-editor-workspace .editor-workspace-chrome {
-  display: flex; flex: 0 1 auto; flex-direction: column; gap: 8px;
-  min-height: 0; max-height: calc(100% - 72px); overflow: auto;
-  scrollbar-gutter: stable; overscroll-behavior: contain;
+  display: flex; flex: 0 0 auto; flex-direction: column; gap: 8px;
+  min-width: 0;
 }
 .sectioned-editor-workspace .editor-session-bar { position: static; flex-shrink: 0; margin: 0; }
 .sectioned-editor-workspace .items-toolbar { margin: 0; flex-shrink: 0; }
@@ -65,12 +64,12 @@
 }
 .sectioned-editor-workspace .editor-section-selector[data-invalid='true'] { border-inline-end: 3px solid var(--color-danger, #ff8e91); }
 .sectioned-editor-workspace :is(.editor-section-selector, .editor-workspace-resizer):focus-visible { outline: 2px solid var(--color-accent, #d8b55d); outline-offset: 1px; }
-.editor-workspace-slot { flex: 1 1 0; min-height: 48px; min-width: 0; position: relative; }
-.sectioned-editor-workspace .editor-workspace-surface { position: relative; min-width: 0; max-height: 100%; overflow: hidden; transition: none; }
+.editor-workspace-slot { flex: 0 0 auto; min-width: 0; position: relative; }
+.sectioned-editor-workspace .editor-workspace-surface { position: relative; min-width: 0; overflow: hidden; transition: none; }
 .sectioned-editor-workspace .editor-workspace-section {
-  position: absolute; inset: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable;
+  position: relative; min-width: 0;
 }
-.editor-workspace-section[data-outgoing='true'] { pointer-events: none; }
+.editor-workspace-section[data-outgoing='true'] { position: absolute; inset: 0 0 auto; pointer-events: none; }
 .editor-workspace-section-content { display: grid; align-content: start; gap: 12px; min-width: 0; padding: 2px 3px 12px; }
 .editor-workspace-section[hidden] { display: none; }
 .sectioned-editor-workspace .editable-field-groups {
