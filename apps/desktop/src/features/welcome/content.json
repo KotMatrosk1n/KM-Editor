@@ -2,6 +2,155 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "version": "2.7.0",
+      "summary": {
+        "en": "KM Editor 2.7.0 moves to .NET 11 and C# 15, reduces repeated work during editing, and improves memory use. This release also fixes Sword and Shield restoration, expands editor tabs, and adds sanitized bug reports from errors."
+      },
+      "sections": [
+        {
+          "title": {
+            "en": "Performance And Runtime"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "KM Editor now uses .NET 11 and C# 15 throughout the application and Windows setup. Updated data loading, model conversion, and binary writers reduce temporary allocations."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Stage, Review, Apply, and refresh load the records being edited and their required dependencies in supported workflows across all four game families. Small edits no longer repeatedly load unrelated installed restoration assets."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "After Apply, the active editor and editors with pending changes or unsaved drafts refresh as needed. Inactive editors reload when opened. Shared and structural edits retain the wider validation they require, and initial catalog loading still reads the complete catalog."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Sword And Shield"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Prepare Hisuian Qwilfish, Sliggoo, and Goodra from the correct Scarlet and Violet donor files. Basculegion Female and Enamorus Therian Forme show their species names instead of numeric placeholders."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Restoring Hisuian Sliggoo or Hisuian Decidueye changes only its added regional evolution route. Other Goomy and Dartrix evolution routes and compatible customizations remain intact when enabling, disabling, or removing the restoration."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Restoration preparation and updates show the full Pokemon form name. Staging reports progress through selected restorations, shared validation, and the catalog refresh."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Load large Placement catalogs with shared field definitions and choices while retaining every object and its editable values."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Keep supported retained restoration models editable when the original default model is unavailable. Model color listing also recognizes additional supported texture formats."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Use selective restoration in Randomizer with the effective Pokemon catalog. Custom gifts recognize compatible installed Held Item Chance changes while retaining source compatibility checks."
+              },
+              "audience": [
+                "swsh"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Workspace And Maintenance"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Pokemon, Items, Moves, and Trainers let tab contents expand down the page. Long sections use the main page scroll while the record browser keeps its resize handle and remembered height."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Generate a sanitized bug report directly from an error, then use Go to Report to reveal the saved JSON file. Reports include bounded summaries of recorded changes and installed restorations without exporting private paths, names, edited values, or file contents."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Output recovery errors explain the specific metadata, backup, compatibility, access, or storage condition that blocked recovery, with guidance for the affected operation."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Check for Updates refreshes update metadata and checks the latest stable release when needed. An available update offers Install Update or Open Release without restarting the app."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Legends Arceus loads the requested record page while keeping the full catalog count. Development builds now require Node 26.13.1 alongside .NET 11 and C# 15."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": {
+            "en": "Full changelog"
+          },
+          "url": "https://github.com/KotMatrosk1n/KM-Editor/compare/v2.6.12...v2.7.0"
+        }
+      ]
+    },
+    {
       "version": "2.6.9",
       "hotfixVersions": [
         "2.6.10",
@@ -2461,6 +2610,46 @@
     }
   ],
   "announcements": [
+    {
+      "id": "a-stronger-foundation-2-7-0",
+      "title": {
+        "en": "A stronger foundation for your projects",
+        "de": "Eine bessere Grundlage für deine Projekte",
+        "es": "Una base más sólida para tus proyectos",
+        "fr": "Une base plus solide pour vos projets",
+        "ru": "Более надёжная основа для ваших проектов",
+        "uk": "Надійніша основа для ваших проєктів",
+        "zh": "为你的项目打下更坚实的基础"
+      },
+      "body": {
+        "en": "This update brings .NET 11 and C# 15 to KM Editor and tackles the repeated work that slowed editing with large restoration collections. Thank you for reporting problems and helping improve the editor. Keep sharing your projects in KM Hub!",
+        "de": "Dieses Update bringt .NET 11 und C# 15 in KM Editor und verringert wiederholte Arbeit, die das Bearbeiten großer Wiederherstellungssammlungen verlangsamt hat. Danke für eure Fehlermeldungen und eure Hilfe bei der Verbesserung des Editors. Teilt eure Projekte weiterhin im KM Hub!",
+        "es": "Esta actualización incorpora .NET 11 y C# 15 a KM Editor y reduce el trabajo repetido que ralentizaba la edición con grandes colecciones de restauraciones. Gracias por informar de problemas y ayudar a mejorar el editor. ¡Sigue compartiendo tus proyectos en KM Hub!",
+        "fr": "Cette mise à jour apporte .NET 11 et C# 15 à KM Editor et réduit le travail répété qui ralentissait les modifications avec de grandes collections de restaurations. Merci de signaler les problèmes et de contribuer à améliorer l’éditeur. Continuez à partager vos projets sur KM Hub !",
+        "ru": "Это обновление переводит KM Editor на .NET 11 и C# 15 и сокращает повторную работу, которая замедляла редактирование с большими наборами восстановленных покемонов. Спасибо за сообщения о проблемах и помощь в улучшении редактора. Продолжайте делиться проектами в KM Hub!",
+        "uk": "Це оновлення переводить KM Editor на .NET 11 і C# 15 та скорочує повторну роботу, яка сповільнювала редагування з великими наборами відновлених покемонів. Дякую за повідомлення про проблеми й допомогу у вдосконаленні редактора. Продовжуйте ділитися проєктами в KM Hub!",
+        "zh": "本次更新为 KM Editor 带来 .NET 11 和 C# 15，并减少曾经拖慢大型还原集合编辑速度的重复工作。感谢你反馈问题，帮助改进编辑器。欢迎继续在 KM Hub 分享你的项目！"
+      },
+      "audience": [
+        "all"
+      ],
+      "published": "2026-11-13",
+      "featured": true,
+      "links": [
+        {
+          "label": {
+            "en": "Share in KM Hub",
+            "de": "Im KM Hub teilen",
+            "es": "Comparte en KM Hub",
+            "fr": "Partager sur KM Hub",
+            "ru": "Поделиться в KM Hub",
+            "uk": "Поділитися в KM Hub",
+            "zh": "在 KM Hub 分享"
+          },
+          "url": "https://discord.gg/ess4reb5eB"
+        }
+      ]
+    },
     {
       "id": "create-your-next-adventure-2-6-9",
       "title": {
