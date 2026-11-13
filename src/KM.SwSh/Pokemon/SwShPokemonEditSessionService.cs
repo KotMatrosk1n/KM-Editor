@@ -48,6 +48,21 @@ public sealed partial class SwShPokemonEditSessionService
         this.pokemonWorkflowService = pokemonWorkflowService ?? new SwShPokemonWorkflowService();
     }
 
+    private SwShPokemonWorkflow LoadForSession(OpenedProject project, EditSession session,
+        IEnumerable<int>? incoming = null, IEnumerable<string>? incomingFields = null)
+    {
+        var edits = session.PendingEdits.Where(IsPokemonDomainEdit).ToArray();
+        var fields = edits.Select(edit => edit.Field).Concat(incomingFields ?? []);
+        // Form ownership and explicit global operations can change other rows.
+        if (fields.Any(field => field is GlobalEvYieldField or GlobalExpYieldField
+            or SwShPokemonWorkflowService.FormStatsIndexField or SwShPokemonWorkflowService.FormCountField
+            or SwShPokemonWorkflowService.FormField or SwShPokemonWorkflowService.IsRegionalFormField)) return pokemonWorkflowService.Load(project);
+        var ids = (incoming ?? []).ToHashSet();
+        foreach (var edit in edits)
+            if (int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var id)) ids.Add(id);
+        return pokemonWorkflowService.LoadForEditing(project, ids);
+    }
+
     public EditSession StartSession()
     {
         return EditSession.Start();
@@ -81,7 +96,7 @@ public sealed partial class SwShPokemonEditSessionService
         ClearMemoryCaches();
         var currentSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [personalId], [field]);
         var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -158,7 +173,7 @@ public sealed partial class SwShPokemonEditSessionService
         ClearMemoryCaches();
         var currentSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, updates.Select(update => update.PersonalId), updates.Select(update => update.Field));
         var originalWorkflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -247,7 +262,7 @@ public sealed partial class SwShPokemonEditSessionService
         ClearMemoryCaches();
         var originalSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, originalSession, fieldUpdates.Select(update => update.PersonalId).Concat(evolutionUpdates.Select(update => update.PersonalId)).Concat(learnsetUpdates.Select(update => update.PersonalId)), fieldUpdates.Select(update => update.Field));
         var originalWorkflow = OverlayPendingEdits(project, loadedWorkflow, originalSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -539,7 +554,7 @@ public sealed partial class SwShPokemonEditSessionService
         ClearMemoryCaches();
         var currentSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [personalId]);
         var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -614,7 +629,7 @@ public sealed partial class SwShPokemonEditSessionService
         ClearMemoryCaches();
         var currentSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [personalId]);
         var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -679,7 +694,7 @@ public sealed partial class SwShPokemonEditSessionService
 
         ClearMemoryCaches();
         var project = projectWorkspaceService.Open(paths);
-        var workflow = pokemonWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
         CanEditPokemon(project, workflow, diagnostics);
@@ -837,9 +852,11 @@ public sealed partial class SwShPokemonEditSessionService
             DiagnosticSeverity.Info,
             $"Change plan preview contains {writes.Count} target file{(writes.Count == 1 ? string.Empty : "s")}."));
 
-        return SwShChangePlanSourceGuard.Capture(
+        var assignmentSources = LoadForSession(projectWorkspaceService.Open(paths), session).AssignmentSources;
+        return SwShChangePlanSourceGuard.CaptureWithAssignmentSources(
             paths,
-            new ChangePlan(session.Id, writes, diagnostics));
+            new ChangePlan(session.Id, writes.Select((write, index) => index == 0
+                ? write with { Sources = write.Sources.Concat(assignmentSources).Distinct().ToArray() } : write).ToArray(), diagnostics));
     }
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)

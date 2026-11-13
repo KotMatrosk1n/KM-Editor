@@ -110,7 +110,7 @@ internal sealed class ZaShopsWorkflowService
 
         try
         {
-            var itemWorkflow = itemsWorkflowService.Load(project);
+            var itemWorkflow = itemsWorkflowService.LoadForLookup(project);
             diagnostics.AddRange(itemWorkflow.Diagnostics.Where(diagnostic =>
                 string.Equals(
                     diagnostic.Field,

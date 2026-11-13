@@ -119,7 +119,11 @@ internal sealed class ZaTradePokemonWorkflowService
             WorkflowDescription);
     }
 
-    public ZaTradePokemonWorkflow Load(OpenedProject project)
+    public ZaTradePokemonWorkflow Load(OpenedProject project) => LoadCore(project, null);
+
+    internal ZaTradePokemonWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<int> indices) => LoadCore(project, indices);
+
+    private ZaTradePokemonWorkflow LoadCore(OpenedProject project, IReadOnlySet<int>? indices)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -135,7 +139,7 @@ internal sealed class ZaTradePokemonWorkflowService
             pokemonAvailability = ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel);
             var abilityResolver = ZaTradeAbilityResolver.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, ZaDataPaths.PokemonDataArray);
-            trades = LoadRecords(source, labels, abilityResolver)
+            trades = LoadRecords(source, labels, abilityResolver, indices)
                 .Select(trade => WithFormOptions(trade, pokemonAvailability))
                 .ToArray();
         }
@@ -154,7 +158,7 @@ internal sealed class ZaTradePokemonWorkflowService
             diagnostics.Count == 0 ? null : diagnostics);
 
         return new ZaTradePokemonWorkflow(
-            summary,
+            summary with { IsPartial = indices is not null },
             trades,
             CreateEditableFields(labels, pokemonAvailability),
             new ZaTradePokemonWorkflowStats(
@@ -218,12 +222,15 @@ internal sealed class ZaTradePokemonWorkflowService
     internal static IReadOnlyList<ZaTradePokemonEntry> LoadRecords(
         ZaWorkflowFile source,
         ZaTextLabelLookup labels,
-        ZaTradeAbilityResolver abilityResolver)
+        ZaTradeAbilityResolver abilityResolver,
+        IReadOnlySet<int>? indices = null)
     {
         var document = ZaPokemonDataDocument.Parse(source.Bytes);
         return document.Entries
             .Where(entry => IsTradePokemonId(entry.Id))
-            .Select((entry, tradeIndex) => ToRecord(tradeIndex, entry, source, labels, abilityResolver))
+            .Select((entry, tradeIndex) => (entry, tradeIndex))
+            .Where(row => indices is null || indices.Contains(row.tradeIndex))
+            .Select(row => ToRecord(row.tradeIndex, row.entry, source, labels, abilityResolver))
             .ToArray();
     }
 

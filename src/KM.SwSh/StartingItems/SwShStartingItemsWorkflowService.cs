@@ -202,7 +202,7 @@ public sealed class SwShStartingItemsWorkflowService
         var sources = ResolveItemSemanticSources(project);
         try
         {
-            var workflow = itemsWorkflowService.Load(project);
+            var workflow = itemsWorkflowService.LoadForLookup(project);
             foreach (var diagnostic in workflow.Diagnostics)
             {
                 diagnostics.Add(diagnostic with { Domain = SwShStartingItemsEditSessionService.StartingItemsEditDomain });

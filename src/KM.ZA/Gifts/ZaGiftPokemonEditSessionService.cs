@@ -58,7 +58,7 @@ internal sealed class ZaGiftPokemonEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = giftPokemonWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, updates.Select(update => update.GiftIndex));
         var diagnostics = new List<ValidationDiagnostic>();
         var currentWorkflow = OverlayPendingEdits(
             project,
@@ -153,7 +153,7 @@ internal sealed class ZaGiftPokemonEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = giftPokemonWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [giftIndex]);
         var diagnostics = new List<ValidationDiagnostic>();
         var currentWorkflow = OverlayPendingEdits(
             project,
@@ -272,13 +272,21 @@ internal sealed class ZaGiftPokemonEditSessionService
         return new ZaGiftPokemonEditResult(stagedWorkflow, updatedSession, diagnostics);
     }
 
+    private ZaGiftPokemonWorkflow LoadForSession(OpenedProject project, EditSession session, IEnumerable<int>? incoming = null)
+    {
+        var ids = session.PendingEdits.Where(edit => edit.Domain == ZaEditSessionSupport.GiftPokemonDomain)
+            .Select(edit => ZaGiftPokemonWorkflowService.TryParseGiftRecordId(edit.RecordId, out var id) ? id : -1)
+            .Concat(incoming ?? []).Where(id => id >= 0).ToHashSet();
+        return giftPokemonWorkflowService.LoadForEditing(project, ids);
+    }
+
     public ZaEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = giftPokemonWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var effectiveSession = RemoveSourceEquivalentPendingEdits(workflow, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -461,7 +469,7 @@ internal sealed class ZaGiftPokemonEditSessionService
         {
             var project = projectWorkspaceService.Open(paths);
             var effectiveSession = RemoveSourceEquivalentPendingEdits(
-                giftPokemonWorkflowService.Load(project),
+                LoadForSession(project, session),
                 session);
             var source = fileSource.Read(project, ZaDataPaths.PokemonDataArray);
             var originalDocument = ZaPokemonDataDocument.Parse(source.Bytes);
@@ -740,7 +748,7 @@ internal sealed class ZaGiftPokemonEditSessionService
 
             var overlaySource = source with { Bytes = document.Write() };
             var giftsByIndex = ZaGiftPokemonWorkflowService
-                .LoadRecords(overlaySource, labels, abilityResolver)
+                .LoadRecords(overlaySource, labels, abilityResolver, workflow.Gifts.Select(gift => gift.GiftIndex).ToHashSet())
                 .Select(gift => ZaGiftPokemonWorkflowService.WithFormOptions(
                     gift,
                     workflow.PokemonAvailability))

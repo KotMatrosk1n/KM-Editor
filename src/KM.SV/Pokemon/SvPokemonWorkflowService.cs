@@ -343,12 +343,15 @@ internal sealed partial class SvPokemonWorkflowService
         return workflow;
     }
 
+    internal SvPokemonWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<int> ids)
+        => LoadUncached(project, ids);
+
     public void ClearMemoryCache()
     {
         memoryCache.Clear();
     }
 
-    private SvPokemonWorkflow LoadUncached(OpenedProject project)
+    private SvPokemonWorkflow LoadUncached(OpenedProject project, IReadOnlySet<int>? ids = null)
     {
 
         var diagnostics = new List<ValidationDiagnostic>();
@@ -361,6 +364,7 @@ internal sealed partial class SvPokemonWorkflowService
         try
         {
             labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
+            if (labels.MoveNameCount <= 1) ids = null;
             var spriteLabels = SvTextLabelLookup.Load(project, fileSource, new List<ValidationDiagnostic>());
             evolutionItemArgumentLabels = LoadEvolutionItemArgumentLabels(project, labels, diagnostics, out materialItemIds);
             var tmCatalog = SvTechnicalMachineCatalog.Load(project, fileSource, labels, diagnostics);
@@ -392,7 +396,7 @@ internal sealed partial class SvPokemonWorkflowService
                     labels,
                     spriteLabels,
                     tmCatalog,
-                    evolutionItemArgumentLabels).ToArray();
+                    evolutionItemArgumentLabels, ids).ToArray();
                 pokemon = LoadMaterialDrops(project, pokemon, labels, diagnostics);
             }
             catch (Exception exception) when (
@@ -438,7 +442,7 @@ internal sealed partial class SvPokemonWorkflowService
             (source is null ? 0 : 1) + (pokemon.Any(row => row.MaterialDrop is not null) ? 1 : 0));
 
         return new SvPokemonWorkflow(
-            summary,
+            summary with { IsPartial = ids is not null },
             pokemon,
             stats,
             CreateEvolutionOptions(pokemon, labels, evolutionItemArgumentLabels),
@@ -510,7 +514,8 @@ internal sealed partial class SvPokemonWorkflowService
         SvTextLabelLookup labels,
         SvTextLabelLookup spriteLabels,
         IReadOnlyList<SvTechnicalMachineMove> tmCatalog,
-        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels,
+        IReadOnlySet<int>? ids)
     {
         var table = global::personal_table.GetRootAspersonal_table(new ByteBuffer(source.Bytes));
         global::personal_table? baseTable = baseSource is null
@@ -542,6 +547,8 @@ internal sealed partial class SvPokemonWorkflowService
             }
 
             fileSource.EnsureBoundedNestedCount(nestedCount, "The S/V personal nested vectors");
+
+            if (ids is not null && !ids.Contains(index)) continue;
 
             yield return ToRecord(
                 index,

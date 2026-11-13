@@ -54,6 +54,22 @@ internal sealed partial class SvPokemonEditSessionService
         this.pokemonWorkflowService = pokemonWorkflowService ?? new SvPokemonWorkflowService(this.fileSource);
     }
 
+    private SvPokemonWorkflow LoadForSession(OpenedProject project, EditSession session,
+        IEnumerable<int>? incoming = null, bool requiresCompleteWorkflow = false)
+    {
+        var edits = session.PendingEdits.Where(edit => edit.Domain == SvEditSessionSupport.PokemonDomain).ToArray();
+        if (requiresCompleteWorkflow || edits.Any(edit => IsGlobalScopeField(edit.Field)
+            || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out _)))
+            return pokemonWorkflowService.Load(project);
+        var ids = edits.Select(edit => int.Parse(edit.RecordId!, CultureInfo.InvariantCulture))
+            .Concat(incoming ?? []).Where(id => id >= 0).ToHashSet();
+        return pokemonWorkflowService.LoadForEditing(project, ids);
+    }
+
+    private static bool IsGlobalScopeField(string? field) => field?.Trim() is
+        "form" or "formStatsIndex" or "formCount" or "isPresentInGame" or "regionalDexIndex"
+        or "dexPlacement" or "modelId" or "alphaMove" or "alphaSize" or "evYieldAll" or "expYieldAll" or "materialDropCountAll";
+
     public SvPokemonEditResult ReadEffective(ProjectPaths paths, EditSession? session)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -85,7 +101,7 @@ internal sealed partial class SvPokemonEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [personalId], IsGlobalScopeField(field));
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -158,7 +174,7 @@ internal sealed partial class SvPokemonEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, updates.Select(update => update.PersonalId), updates.Any(update => IsGlobalScopeField(update.Field)));
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -241,7 +257,7 @@ internal sealed partial class SvPokemonEditSessionService
 
         var originalSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, originalSession, fieldUpdates.Select(update => update.PersonalId).Concat(evolutionUpdates.Select(update => update.PersonalId)).Concat(learnsetUpdates.Select(update => update.PersonalId)), fieldUpdates.Any(update => IsGlobalScopeField(update.Field)));
         var originalWorkflow = OverlayPendingEdits(loadedWorkflow, originalSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -467,7 +483,7 @@ internal sealed partial class SvPokemonEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [personalId]);
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -531,7 +547,7 @@ internal sealed partial class SvPokemonEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [personalId]);
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -594,7 +610,7 @@ internal sealed partial class SvPokemonEditSessionService
 
         pokemonWorkflowService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
-        var workflow = pokemonWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
         SvEditSessionSupport.CanEdit(

@@ -68,5 +68,7 @@ public sealed record SwShEncountersWorkflow(
     SwShEncountersWorkflowStats Stats,
     IReadOnlyList<ValidationDiagnostic> Diagnostics)
 {
+    internal KM.SwSh.Pokemon.SwShEffectivePokemonCatalog? AssignmentCatalog { get; init; }
+
     public IReadOnlySet<int> PresentSpeciesIds { get; init; } = new HashSet<int>();
 }

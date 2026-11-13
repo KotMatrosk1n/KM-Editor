@@ -44,7 +44,7 @@ internal sealed partial class SvEncountersEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = encountersWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [tableId]);
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -94,7 +94,7 @@ internal sealed partial class SvEncountersEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = encountersWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, updates.Select(update => update.TableId));
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -160,13 +160,21 @@ internal sealed partial class SvEncountersEditSessionService
             diagnostics);
     }
 
+    private SvEncountersWorkflow LoadForSession(OpenedProject project, EditSession session, IEnumerable<string>? incoming = null)
+    {
+        var ids = session.PendingEdits.Where(edit => edit.Domain == SvEditSessionSupport.EncountersDomain)
+            .Select(edit => TryParseSlotRecordId(edit.RecordId, out var id, out _) ? id : string.Empty)
+            .Concat(incoming ?? []).Where(id => !string.IsNullOrWhiteSpace(id)).ToHashSet(StringComparer.Ordinal);
+        return encountersWorkflowService.LoadForEditing(project, ids);
+    }
+
     public SvEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = encountersWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
         SvEditSessionSupport.CanEdit(

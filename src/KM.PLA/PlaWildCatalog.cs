@@ -241,13 +241,13 @@ internal sealed class PlaWildCatalog
             .. Efforts.Select(key => new PlaField(key, key, Minimum: -1, Maximum: 10)),
             .. Multipliers.Select(key => new PlaField(key, key, "decimal", -1, 100)),
         ];
-    internal IReadOnlyList<PlaRecord> Records(string kind, IReadOnlyDictionary<string, byte[]> edited)
+    internal IReadOnlyList<PlaRecord> Records(string kind, IReadOnlyDictionary<string, byte[]> edited, string? selectedId = null)
     {
         var archive = edited.TryGetValue(ArchivePath, out var data) ? new PlaFieldArchive(data) : current;
         var members = new Dictionary<string, PlaFlatBuffer>(StringComparer.Ordinal);
         PlaFlatBuffer Read(string path) => members.TryGetValue(path, out var buffer) ? buffer : members[path] = new(archive.Read(path, Runtime));
         var protectedFields = Fields(kind).Select(field => field.Key).ToArray();
-        return Entries(kind).Select(pair =>
+        return Entries(kind).Where(pair => selectedId is null || pair.Key == selectedId).Select(pair =>
         {
             return Record(kind, pair.Key, pair.Value, Read(pair.Value.Path), Read, protectedFields);
         }).ToArray();

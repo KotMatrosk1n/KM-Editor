@@ -26,6 +26,14 @@ internal sealed class ZaTradePokemonEditSessionService
         this.tradePokemonWorkflowService = tradePokemonWorkflowService ?? new ZaTradePokemonWorkflowService(this.fileSource);
     }
 
+    private ZaTradePokemonWorkflow LoadForSession(OpenedProject project, EditSession session, IEnumerable<int>? incoming = null)
+    {
+        var indices = session.PendingEdits.Where(edit => edit.Domain == ZaEditSessionSupport.TradePokemonDomain)
+            .Select(edit => ZaTradePokemonWorkflowService.TryParseTradeRecordId(edit.RecordId, out var index) ? index : -1)
+            .Concat(incoming ?? []).Where(index => index >= 0).ToHashSet();
+        return tradePokemonWorkflowService.LoadForEditing(project, indices);
+    }
+
     public ZaTradePokemonEditResult UpdateField(
         ProjectPaths paths,
         EditSession? session,
@@ -53,7 +61,7 @@ internal sealed class ZaTradePokemonEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = tradePokemonWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, updates.Select(update => update.TradeIndex));
         var diagnostics = new List<ValidationDiagnostic>();
         var currentWorkflow = OverlayPendingEdits(
             project,
@@ -134,7 +142,7 @@ internal sealed class ZaTradePokemonEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = tradePokemonWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
         ZaEditSessionSupport.CanEdit(
@@ -445,7 +453,7 @@ internal sealed class ZaTradePokemonEditSessionService
 
             var overlaySource = source with { Bytes = document.Write() };
             var tradesByIndex = ZaTradePokemonWorkflowService
-                .LoadRecords(overlaySource, labels, abilityResolver)
+                .LoadRecords(overlaySource, labels, abilityResolver, workflow.Trades.Select(row => row.TradeIndex).ToHashSet())
                 .Select(trade => ZaTradePokemonWorkflowService.WithFormOptions(
                     trade,
                     workflow.PokemonAvailability))

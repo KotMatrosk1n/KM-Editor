@@ -236,7 +236,7 @@ public static class SvBridgeMapper
     {
         ArgumentNullException.ThrowIfNull(workflow);
 
-        return new LoadTrainersWorkflowResponse(ToTrainersWorkflowDto(workflow));
+        return new LoadTrainersWorkflowResponse(ToTrainersWorkflowDto(workflow)) { IsPartial = workflow.Summary.IsPartial };
     }
 
     public static UpdateTrainerFieldResponse ToDto(
@@ -717,7 +717,7 @@ public static class SvBridgeMapper
                 workflow.Stats.TotalTrainerCount,
                 workflow.Stats.TotalPokemonCount,
                 workflow.Stats.SourceFileCount),
-            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray()) { IsPartial = workflow.Summary.IsPartial };
     }
 
     private static EncountersWorkflowDto ToEncountersWorkflowDto(SvEncountersWorkflow workflow)
@@ -1014,7 +1014,7 @@ public static class SvBridgeMapper
             summary.Label,
             summary.Description,
             ToDto(summary.Availability),
-            summary.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+            summary.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray()) { IsPartial = summary.IsPartial, UnassessedDiagnosticFiles = summary.UnassessedDiagnosticFiles };
     }
 
     private static ItemRecordDto ToDto(SvItemRecord item)

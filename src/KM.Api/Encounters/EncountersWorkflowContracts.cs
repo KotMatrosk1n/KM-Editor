@@ -9,7 +9,10 @@ using System.Text.Json.Serialization;
 
 namespace KM.Api.Encounters;
 
-public sealed record LoadEncountersWorkflowRequest(ProjectPathsDto Paths);
+public sealed record LoadEncountersWorkflowRequest(ProjectPathsDto Paths)
+{
+    public IReadOnlyList<string>? TableIds { get; init; }
+}
 
 public sealed record UpdateEncounterSlotFieldRequest(
     ProjectPathsDto Paths,

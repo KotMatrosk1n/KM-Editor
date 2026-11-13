@@ -70,7 +70,7 @@ public sealed class SwShBehaviorEditSessionService
         projectWorkspaceService.ClearMemoryCache();
         var originalSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = behaviorWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, originalSession, updates?.Where(update => update is not null).Select(update => update!.EntryId));
         var originalWorkflow = OverlayPendingEdits(loadedWorkflow, originalSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -202,6 +202,14 @@ public sealed class SwShBehaviorEditSessionService
             diagnostics);
     }
 
+    private SwShBehaviorWorkflow LoadForSession(OpenedProject project, EditSession session, IEnumerable<string>? incoming = null)
+    {
+        var indices = GetBehaviorEdits(session).Select(edit => edit.RecordId)
+            .Concat(incoming ?? []).Select(id => SwShBehaviorWorkflowService.TryParseEntryId(id, out var index, out _, out _) ? index : -1)
+            .Where(index => index >= 0).ToHashSet();
+        return behaviorWorkflowService.LoadForEditing(project, indices);
+    }
+
     public SwShEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -217,7 +225,7 @@ public sealed class SwShBehaviorEditSessionService
 
         projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
-        var workflow = behaviorWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
         if (CanEditBehavior(project, workflow, diagnostics))

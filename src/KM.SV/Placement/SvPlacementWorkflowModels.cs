@@ -42,7 +42,10 @@ public sealed record SvPlacedObjectRecord(
     double RotationY,
     string? ScriptId,
     IReadOnlyList<SvPlacementFieldValue> Fields,
-    SvPlacementProvenance Provenance);
+    SvPlacementProvenance Provenance)
+{
+    internal int StaticEncounterIndex { get; init; }
+}
 
 public sealed record SvPlacementEditableField(
     string Field,

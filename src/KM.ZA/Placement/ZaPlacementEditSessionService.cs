@@ -41,7 +41,7 @@ internal sealed class ZaPlacementEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = placementWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [objectId]);
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -89,7 +89,7 @@ internal sealed class ZaPlacementEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = placementWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, updates.Select(update => update.ObjectId));
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -152,7 +152,7 @@ internal sealed class ZaPlacementEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = placementWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
         ZaEditSessionSupport.CanEdit(
@@ -260,6 +260,14 @@ internal sealed class ZaPlacementEditSessionService
                 expected: "Writable output root"));
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
+    }
+
+    private ZaPlacementWorkflow LoadForSession(OpenedProject project, EditSession session, IEnumerable<string>? incoming = null)
+    {
+        var ids = session.PendingEdits.Where(edit => edit.Domain == ZaEditSessionSupport.PlacementDomain)
+            .Select(edit => edit.RecordId).Where(id => id is not null).Cast<string>()
+            .Concat(incoming ?? []).ToHashSet(StringComparer.Ordinal);
+        return placementWorkflowService.LoadForEditing(project, ids);
     }
 
     public ApplyResult ApplyChangePlan(

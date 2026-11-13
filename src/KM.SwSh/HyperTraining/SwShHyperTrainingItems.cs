@@ -49,7 +49,7 @@ internal static class SwShHyperTrainingItemWorkflow
                 throw new InvalidDataException("Hyper Training requires original Base payment items.");
             var script = SwShHyperTrainingItemsPatcher.ReadScript(Source(SwShHyperTrainingWorkflowService.ScriptPath));
             var runtime = SwShHyperTrainingItemsPatcher.ReadMain(Source(SwShHyperTrainingWorkflowService.ExeFsMainPath), project.Paths.SelectedGame);
-            var options = new SwShItemsWorkflowService().Load(project).Items
+            var options = new SwShItemsWorkflowService().LoadForLookup(project).Items
                 .Where(item => SwShNpcItemGiftWorkflowService.IsSelectableNpcGiftItem(item)
                     && item.Metadata.Pouch is >= 0 and <= 7 && item.Metadata.Pouch != (int)SwShItemPouch.TMs)
                 .Select(item => new SwShHyperTrainingItemOption(item.ItemId, item.Name))

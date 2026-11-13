@@ -7,6 +7,7 @@ using KM.Core.Projects;
 using KM.SwSh.Editing;
 using KM.Formats.SwSh;
 using KM.SwSh.Items;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
 
@@ -58,7 +59,7 @@ public sealed class SwShEncountersEditSessionService
 
         var currentSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = encountersWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [new(tableId, slot, field, value)]);
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -129,7 +130,7 @@ public sealed class SwShEncountersEditSessionService
 
         var currentSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = encountersWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, updates);
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -208,13 +209,48 @@ public sealed class SwShEncountersEditSessionService
             diagnostics);
     }
 
+    private SwShEncountersWorkflow LoadForSession(OpenedProject project, EditSession session,
+        IReadOnlyList<SwShEncounterSlotFieldUpdate>? updates = null)
+    {
+        var edits = session.PendingEdits.Where(edit => edit.Domain == EncountersEditDomain).ToArray();
+        var tableIds = edits.Select(edit => SwShEncountersWorkflowService.TryParseSlotRecordId(edit.RecordId, out var id, out _) ? id : "")
+            .Concat(updates?.Where(update => update is not null).Select(update => update.TableId) ?? [])
+            .Where(id => !string.IsNullOrWhiteSpace(id)).ToHashSet(StringComparer.Ordinal);
+        var workflow = encountersWorkflowService.LoadForEditing(project, tableIds);
+        var identities = edits.Where(edit => edit.Field is "speciesId" or "form")
+            .Select(edit => (SwShEncountersWorkflowService.TryParseSlotRecordId(edit.RecordId, out var id, out _) ? id : "", edit.Field, edit.NewValue))
+            .Concat(updates?.Where(update => update is not null && update.Field?.Trim() is "speciesId" or "form")
+                .Select(update => (update.TableId, (string?)update.Field.Trim(), (string?)update.Value)) ?? []).ToArray();
+        if (identities.Length == 0) return workflow;
+        var identityTables = identities.Select(edit => edit.Item1).ToHashSet(StringComparer.Ordinal);
+        var species = workflow.Tables.Where(table => identityTables.Contains(table.TableId)).SelectMany(table => table.Slots)
+            .Select(row => row.SpeciesId).ToHashSet();
+        foreach (var identity in identities.Where(edit => edit.Item2 == SwShEncountersWorkflowService.SpeciesIdField))
+            if (int.TryParse(identity.Item3, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id)) species.Add(id);
+        return workflow with { AssignmentCatalog = SwShEffectivePokemonCatalog.Load(project.Paths, species) };
+    }
+
+    private static void ValidateAssignmentSources(SwShEncountersWorkflow workflow, EditSession session,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (workflow.AssignmentCatalog is not { Available: true } catalog) return;
+        var identities = session.PendingEdits.Where(edit => edit.Domain == EncountersEditDomain && edit.Field is "speciesId" or "form")
+            .Select(edit => edit.RecordId).ToHashSet(StringComparer.Ordinal);
+        foreach (var table in workflow.Tables)
+        foreach (var row in table.Slots.Where(row => identities.Contains(SwShEncountersWorkflowService.CreateSlotRecordId(table.TableId, row.Slot))))
+            if (row.SpeciesId > 0 && (!catalog.Available || !catalog.Entries.Any(entry => entry.Identity.Species == row.SpeciesId
+                && entry.Identity.Form == row.Form && entry.Capabilities.HasFlag(SwShPokemonCapability.Assignment))))
+                diagnostics.Add(CreateDiagnostic(DiagnosticSeverity.Error,
+                    "Assigned Pokemon form does not have complete installed assets.", field: "speciesId"));
+    }
+
     public SwShEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = encountersWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var workflowWithPendingEdits = OverlayPendingEdits(workflow, session.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -223,6 +259,7 @@ public sealed class SwShEncountersEditSessionService
         ValidateEncounterProbabilityTotals(workflow, workflowWithPendingEdits, session.PendingEdits, diagnostics);
         ValidateNoEmptyWeightedSlots(workflow, workflowWithPendingEdits, session.PendingEdits, diagnostics);
         ValidateEmptySlotForms(workflow, workflowWithPendingEdits, session.PendingEdits, diagnostics);
+        ValidateAssignmentSources(workflowWithPendingEdits, session, diagnostics);
 
         foreach (var edit in session.PendingEdits)
         {
@@ -297,7 +334,10 @@ public sealed class SwShEncountersEditSessionService
             DiagnosticSeverity.Info,
             "Change plan preview contains 1 target file."));
 
-        return SwShChangePlanSourceGuard.Capture(
+        var assignmentWorkflow = LoadForSession(project, session);
+        if (assignmentWorkflow.AssignmentCatalog is { Available: true } catalog)
+            write = write with { Sources = write.Sources.Concat(catalog.Sources).Distinct().ToArray() };
+        return SwShChangePlanSourceGuard.CaptureWithAssignmentSources(
             paths,
             new ChangePlan(session.Id, [write], diagnostics));
     }

@@ -247,9 +247,9 @@ internal sealed class PlaEconomyCatalog
             RelatedRecords = kind == "drops" ? dropUsers.GetValueOrDefault(id) ?? [] : [] };
     }
 
-    internal IReadOnlyList<PlaRecord> Records(string kind, IReadOnlyDictionary<string, byte[]> edited)
+    internal IReadOnlyList<PlaRecord> Records(string kind, IReadOnlyDictionary<string, byte[]> edited, string? selectedId = null)
     {
-        var records = Ids(kind).Select(id => Record(kind, id, edited.GetValueOrDefault(PathFor(kind, id)))).ToArray();
+        var records = Ids(kind).Where(id => selectedId is null || id == selectedId).Select(id => Record(kind, id, edited.GetValueOrDefault(PathFor(kind, id)))).ToArray();
         if (kind != "items") return records;
         var uses = new Dictionary<int, List<PlaRelatedRecord>>();
         foreach (var relatedKind in new[] { "crafting", "shops", "ginkgo", "drops" })

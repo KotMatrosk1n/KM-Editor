@@ -87,12 +87,22 @@ public static class SwShChangePlanSourceGuard
             sourceReadBudget: null);
     }
 
+    internal static ChangePlan CaptureWithAssignmentSources(ProjectPaths paths, ChangePlan plan)
+        => CaptureCore(paths, plan, preserveExplicitSourceLayers: false, sourceReadBudget: null,
+            assignmentSourcesBound: true);
+
+    // Combining already captured editor plans must not broaden their explicitly
+    // validated dependencies back to every installed Pokemon.
+    public static ChangePlan CapturePreparedPlan(ProjectPaths paths, ChangePlan plan, bool preserveExplicitSourceLayers = false)
+        => CaptureCore(paths, plan, preserveExplicitSourceLayers, sourceReadBudget: null, assignmentSourcesBound: true);
+
     public static ChangePlan CaptureBounded(
         ProjectPaths paths,
         ChangePlan plan,
         long maximumSourceBytesPerFile,
         long maximumTotalSourceBytes,
-        bool preserveExplicitSourceLayers = false)
+        bool preserveExplicitSourceLayers = false,
+        bool assignmentSourcesBound = false)
     {
         if (maximumSourceBytesPerFile <= 0
             || maximumTotalSourceBytes <= 0
@@ -105,19 +115,20 @@ public static class SwShChangePlanSourceGuard
             paths,
             plan,
             preserveExplicitSourceLayers,
-            new SourceReadBudget(maximumSourceBytesPerFile, maximumTotalSourceBytes));
+            new SourceReadBudget(maximumSourceBytesPerFile, maximumTotalSourceBytes), assignmentSourcesBound);
     }
 
     private static ChangePlan CaptureCore(
         ProjectPaths paths,
         ChangePlan plan,
         bool preserveExplicitSourceLayers,
-        SourceReadBudget? sourceReadBudget)
+        SourceReadBudget? sourceReadBudget,
+        bool assignmentSourcesBound = false)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(plan);
 
-        try { plan = SwShRestorationCustomizations.AddAnchor(paths, plan); }
+        try { plan = SwShRestorationCustomizations.AddAnchor(paths, plan, assignmentSourcesBound); }
         catch (Exception exception) when (SwShRestorationService.SourceError(exception))
         { return plan with { Diagnostics = plan.Diagnostics.Append(CreateReadDiagnostic("", exception.Message)).ToArray() }; }
         var diagnostics = plan.Diagnostics.ToList();
@@ -944,7 +955,7 @@ public static class SwShChangePlanSourceGuard
             ArgumentNullException.ThrowIfNull(snapshotPlan);
             ThrowIfDisposed();
 
-            preparedPlan = Capture(
+            preparedPlan = CapturePreparedPlan(
                 ApplyPaths,
                 snapshotPlan,
                 preserveExplicitSourceLayers);
@@ -1011,8 +1022,19 @@ public static class SwShChangePlanSourceGuard
                         var file = ResolveContainedPath(snapshotOutputRootPath, relative)!;
                         return File.Exists(file) ? File.ReadAllBytes(file) : null;
                     }
+                    byte[]? ReadOriginal(string relative)
+                    {
+                        foreach (var layer in new[] { ProjectFileLayer.Layered, ProjectFileLayer.Generated, ProjectFileLayer.Base })
+                        {
+                            if (!sourceStreams.TryGetValue(new(layer, NormalizeRelativePath(relative)), out var stream)) continue;
+                            var bytes = new byte[checked((int)stream.Length)];
+                            stream.Position = 0; stream.ReadExactly(bytes); stream.Position = 0;
+                            return bytes;
+                        }
+                        return null;
+                    }
                     var captured = SwShRestorationCustomizations.Capture(SourcePaths, currentState,
-                        writtenTargets.ToHashSet(StringComparer.Ordinal), ReadOutput);
+                        writtenTargets.ToHashSet(StringComparer.Ordinal), ReadOutput, ReadOriginal);
                     if (captured.Hash != originalState.Hash)
                         RestorationTransition = new(originalState.Hash, captured.Hash!);
                     if (captured.Hash is not null)

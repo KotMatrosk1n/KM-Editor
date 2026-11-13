@@ -67,6 +67,17 @@ public static class SwShRestorationStateStore
         if (bundle.Game != paths.SelectedGame) throw new InvalidDataException("Prepared restoration belongs to another game edition.");
         return bundle;
     }
+    internal static SwShPreparedRestoration ReadPreparedContributions(ProjectPaths project, string hash, IReadOnlySet<string> contributionPaths)
+    {
+        ValidateHash(hash);
+        var paths = SwShChangePlanSourceGuard.OriginalPaths(project);
+        var bytes = SwShRestorationReadScope.Find(paths)?.ReadBytes(hash)
+            ?? OutputTransactionCoordinator.ForProject(paths).ReadPreservationArtifactAsync(hash).GetAwaiter().GetResult();
+        var bundle = SwShPreparedRestoration.DecodeContributions(bytes, contributionPaths);
+        if (bundle.Game != paths.SelectedGame) throw new InvalidDataException("Prepared restoration belongs to another game edition.");
+        return bundle;
+    }
+
     internal static IReadOnlyDictionary<string, SwShPreparedRestoration> ReadPreparedMany(ProjectPaths project, IEnumerable<string> hashes)
     {
         var identities = hashes.Distinct(StringComparer.Ordinal).ToArray();

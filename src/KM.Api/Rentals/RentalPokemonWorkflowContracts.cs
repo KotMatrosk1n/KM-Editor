@@ -7,7 +7,10 @@ using KM.Api.Workflows;
 
 namespace KM.Api.Rentals;
 
-public sealed record LoadRentalPokemonWorkflowRequest(ProjectPathsDto Paths);
+public sealed record LoadRentalPokemonWorkflowRequest(ProjectPathsDto Paths)
+{
+    public IReadOnlyList<int>? RecordIndices { get; init; }
+}
 
 public sealed record UpdateRentalPokemonFieldRequest(
     ProjectPathsDto Paths,

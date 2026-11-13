@@ -137,11 +137,16 @@ public sealed class SwShGiftPokemonWorkflowService
             : SwShWorkflowAvailability.ReadOnly);
     }
 
-    public SwShGiftPokemonWorkflow Load(OpenedProject project)
+    public SwShGiftPokemonWorkflow Load(OpenedProject project) => LoadCore(project, null);
+
+    internal SwShGiftPokemonWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<int> recordIndices)
+        => LoadCore(project, recordIndices);
+
+    private SwShGiftPokemonWorkflow LoadCore(OpenedProject project, IReadOnlySet<int>? recordIndices)
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        var summary = CreateSummary(project);
+        var summary = CreateSummary(project) with { IsPartial = recordIndices is not null };
         var diagnostics = new List<ValidationDiagnostic>(summary.Diagnostics);
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
@@ -158,7 +163,7 @@ public sealed class SwShGiftPokemonWorkflowService
             return CreateWorkflow(summary, [], sourceFileCount: 0, CreateEmptyLookupTables(), diagnostics);
         }
 
-        var lookupTables = LoadLookupTables(project, diagnostics);
+        var lookupTables = LoadLookupTables(project, diagnostics, includeAssignmentCatalog: recordIndices is null);
 
         try
         {
@@ -176,6 +181,7 @@ public sealed class SwShGiftPokemonWorkflowService
                     "Base RomFS gifts are unavailable for restoration.", file: GiftPokemonDataPath));
             }
             var gifts = archive.Gifts
+                .Where(gift => recordIndices is null || recordIndices.Contains(gift.Index))
                 .Select(gift => ToGiftEntry(gift, lookupTables, provenance) with
                 {
                     Vanilla = vanilla?.Gifts.SingleOrDefault(row => row.Index == gift.Index && row.Hash1 == gift.Hash1) is { } original
@@ -521,14 +527,16 @@ public sealed class SwShGiftPokemonWorkflowService
 
     private static GiftLookupTables LoadLookupTables(
         OpenedProject project,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        bool includeAssignmentCatalog)
     {
         var messageRoot = ResolveLanguageMessageRoot(project, diagnostics);
         var speciesNames = LoadMessageTable(project, messageRoot, "monsname.dat", diagnostics);
         var itemNames = LoadMessageTable(project, messageRoot, "itemname.dat", diagnostics);
         var moveNames = LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics);
         var itemDisplayNames = SwShItemsWorkflowService.CreateItemDisplayNames(project, itemNames, moveNames);
-        var presentSpeciesIds = SwShSpeciesAvailability.LoadPresentSpeciesIds(project);
+        var presentSpeciesIds = SwShSpeciesAvailability.LoadPresentSpeciesIds(project, File.ReadAllBytes,
+            includeAssignmentCatalog ? null : 10_000);
         var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(project);
         var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
 

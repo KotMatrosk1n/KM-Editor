@@ -8,7 +8,10 @@ using System.Text.Json.Serialization;
 
 namespace KM.Api.StaticEncounters;
 
-public sealed record LoadStaticEncountersWorkflowRequest(ProjectPathsDto Paths);
+public sealed record LoadStaticEncountersWorkflowRequest(ProjectPathsDto Paths)
+{
+    public IReadOnlyList<int>? RecordIndices { get; init; }
+}
 
 public sealed record UpdateStaticEncounterFieldRequest(
     ProjectPathsDto Paths,

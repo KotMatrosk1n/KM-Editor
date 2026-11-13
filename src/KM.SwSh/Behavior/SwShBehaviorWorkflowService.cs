@@ -173,11 +173,15 @@ public sealed class SwShBehaviorWorkflowService
             : SwShWorkflowAvailability.ReadOnly);
     }
 
-    public SwShBehaviorWorkflow Load(OpenedProject project)
+    public SwShBehaviorWorkflow Load(OpenedProject project) => LoadCore(project, null);
+
+    internal SwShBehaviorWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<int> indices) => LoadCore(project, indices);
+
+    private SwShBehaviorWorkflow LoadCore(OpenedProject project, IReadOnlySet<int>? indices)
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        var summary = CreateSummary(project);
+        var summary = CreateSummary(project) with { IsPartial = indices is not null };
         var diagnostics = new List<ValidationDiagnostic>(summary.Diagnostics);
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
@@ -208,6 +212,7 @@ public sealed class SwShBehaviorWorkflowService
             var speciesOptions = CreateSpeciesOptions(speciesNames, presentSpeciesIds);
             var fields = CreateFields(speciesOptions, behaviorOptions, modelPartOptions);
             var entries = archive.Entries
+                .Where(entry => indices is null || indices.Contains(entry.Index))
                 .Select(entry => CreateEntryRecord(entry, speciesNames, personalRecords, provenance))
                 .OrderBy(entry => entry.SpeciesName, StringComparer.Ordinal)
                 .ThenBy(entry => entry.Form)

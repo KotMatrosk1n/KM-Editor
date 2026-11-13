@@ -64,7 +64,7 @@ internal sealed class SvStaticEncountersEditSessionService
 
         var originalSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = staticEncountersWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, originalSession, updates.Select(update => update.EncounterIndex));
         var originalWorkflow = OverlayPendingEdits(loadedWorkflow, originalSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -183,7 +183,7 @@ internal sealed class SvStaticEncountersEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = OverlayPendingEdits(staticEncountersWorkflowService.Load(project), session.PendingEdits);
+        var workflow = OverlayPendingEdits(LoadForSession(project, session), session.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
         SvEditSessionSupport.CanEdit(
@@ -413,13 +413,22 @@ internal sealed class SvStaticEncountersEditSessionService
         _ = NormalizeValue(editableField, edit.NewValue ?? string.Empty, diagnostics);
     }
 
+    private SvStaticEncountersWorkflow LoadForSession(OpenedProject project, EditSession session, IEnumerable<int>? incoming = null)
+    {
+        var indices = session.PendingEdits
+            .Where(edit => edit.Domain == SvEditSessionSupport.StaticEncountersDomain)
+            .Select(edit => SvStaticEncountersWorkflowService.TryParseRecordId(edit.RecordId, out var index) ? index : -1)
+            .Where(index => index >= 0).Concat(incoming ?? []).ToHashSet();
+        return staticEncountersWorkflowService.LoadForEditing(project, indices);
+    }
+
     private EditSession TranslateToPlacementSession(
         ProjectPaths paths,
         EditSession session,
         out IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
         var project = projectWorkspaceService.Open(paths);
-        var workflow = staticEncountersWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var placementEdits = new List<PendingEdit>();
         var translationDiagnostics = new List<ValidationDiagnostic>();
 

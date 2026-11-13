@@ -121,4 +121,7 @@ public sealed record SwShTrainersWorkflow(
     IReadOnlyList<ValidationDiagnostic> Diagnostics)
 {
     internal IReadOnlyList<string> SpriteSpeciesNames { get; init; } = [];
+    internal KM.SwSh.Pokemon.SwShEffectivePokemonCatalog? AssignmentCatalog { get; init; }
+    public bool IsPartial { get; init; }
+    public bool HasClassOwnership { get; init; } = true;
 }

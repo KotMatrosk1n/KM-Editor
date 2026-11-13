@@ -28,6 +28,18 @@ internal sealed partial class SvItemsEditSessionService
         this.itemsWorkflowService = itemsWorkflowService ?? new SvItemsWorkflowService(this.fileSource);
     }
 
+    private SvItemsWorkflow LoadForSession(OpenedProject project, EditSession session, IEnumerable<int>? incoming = null, bool requiresCompleteWorkflow = false)
+    {
+        if (requiresCompleteWorkflow || session.PendingEdits.Any(edit => edit.Domain == SvEditSessionSupport.ItemsDomain && IsOwnershipField(edit.Field)))
+            return itemsWorkflowService.Load(project);
+        var ids = session.PendingEdits.Where(edit => edit.Domain == SvEditSessionSupport.ItemsDomain)
+            .Select(edit => int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : -1)
+            .Concat(incoming ?? []).Where(id => id >= 0).ToHashSet();
+        return itemsWorkflowService.LoadForEditing(project, ids);
+    }
+
+    private static bool IsOwnershipField(string? field) => field?.Trim() is "groupIndex" or "itemType" or "groupType";
+
     public SvItemsEditResult UpdateField(
         ProjectPaths paths,
         EditSession? session,
@@ -42,7 +54,7 @@ internal sealed partial class SvItemsEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = itemsWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [itemId], IsOwnershipField(field));
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -91,7 +103,7 @@ internal sealed partial class SvItemsEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = itemsWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, updates.Select(update => update.ItemId), updates.Any(update => IsOwnershipField(update.Field)));
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -154,7 +166,7 @@ internal sealed partial class SvItemsEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = itemsWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
         SvEditSessionSupport.CanEdit(

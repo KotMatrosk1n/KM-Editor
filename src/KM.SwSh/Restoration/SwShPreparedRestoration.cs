@@ -49,7 +49,13 @@ public sealed record SwShPreparedRestoration(string DefinitionId, int Definition
         return output.ToArray();
     }
 
-    public static SwShPreparedRestoration Decode(byte[] bytes)
+    public static SwShPreparedRestoration Decode(byte[] bytes) => DecodeCore(bytes, null);
+
+    // Preservation artifacts are content verified before this reader is called.
+    // Inspecting one shared row must not inflate every unrelated model blob.
+    internal static SwShPreparedRestoration DecodeContributions(byte[] bytes, IReadOnlySet<string> paths) => DecodeCore(bytes, paths);
+
+    private static SwShPreparedRestoration DecodeCore(byte[] bytes, IReadOnlySet<string>? paths)
     {
         if (bytes.Length is < 1 or > 192 * 1024 * 1024) throw new InvalidDataException("Prepared restoration size is invalid.");
         using var stream = new MemoryStream(bytes, writable: false); using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
@@ -86,18 +92,32 @@ public sealed record SwShPreparedRestoration(string DefinitionId, int Definition
             if (Convert.ToHexStringLower(SHA256.HashData(payload)) != hash) throw new InvalidDataException("Prepared asset content does not match its identity.");
             read.Add(hash, payload); return payload;
         }
-        var contributions = manifest.Items.Select(i => new SwShRestorationContribution(i.Path, i.Writer, i.Key, i.Before is null ? null : Blob(i.Before), Blob(i.After))).ToArray();
+        foreach (var item in manifest.Items)
+        {
+            SwShRestorationComposer.ValidatePath(item.Path, item.Writer);
+            foreach (var identity in new[] { item.Before, item.After }.OfType<string>())
+            {
+                if (identity.Length != 64 || identity.Any(c => !char.IsAsciiHexDigitLower(c))) throw new InvalidDataException("Prepared asset identity is invalid.");
+                var entry = zip.GetEntry("blobs/" + identity) ?? throw new InvalidDataException("Prepared asset is missing.");
+                if (entry.Length > 64 * 1024 * 1024) throw new InvalidDataException("Prepared asset exceeds its size budget.");
+            }
+        }
+        var contributions = manifest.Items.Where(i => paths is null || paths.Contains(i.Path))
+            .Select(i => new SwShRestorationContribution(i.Path, i.Writer, i.Key, i.Before is null ? null : Blob(i.Before), Blob(i.After))).ToArray();
         var prepared = new SwShPreparedRestoration(manifest.DefinitionId, manifest.DefinitionVersion, manifest.ConverterVersion, manifest.Game, manifest.Sources, contributions, manifest.UnavailableSourceMoves)
             { AssetRevision = manifest.AssetRevision };
-        ValidateContributions(definition, prepared);
+        // Layout identity comes from the complete manifest, including model paths
+        // outside this contribution selection.
+        var layout = prepared with { Contributions = manifest.Items.Select(i => new SwShRestorationContribution(i.Path, i.Writer, i.Key, null, [])).ToArray() };
+        ValidateContributions(definition, prepared, SwShRestorationModelResources.Variants(layout).ToArray());
         return prepared;
     }
 
-    private static void ValidateContributions(SwShRestorationDefinition definition, SwShPreparedRestoration prepared)
+    private static void ValidateContributions(SwShRestorationDefinition definition, SwShPreparedRestoration prepared,
+        SwShRestorationModelVariant[] variants)
     {
         var rows = definition.Identities.Select(SwShRestorationForms.PersonalRow).ToHashSet();
         var stones = definition.Identities.Select(SwShRestorationMegaItems.For).OfType<SwShRestorationMegaItem>().ToArray();
-        var variants = SwShRestorationModelResources.Variants(prepared).ToArray();
         foreach (var item in prepared.Contributions)
         {
             SwShRestorationComposer.ValidatePath(item.Path, item.Writer);

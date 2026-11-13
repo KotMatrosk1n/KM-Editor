@@ -48,7 +48,7 @@ internal sealed partial class ZaMovesEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = movesWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [moveId]);
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -97,7 +97,7 @@ internal sealed partial class ZaMovesEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = movesWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, updates.Select(update => update.MoveId));
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -165,7 +165,7 @@ internal sealed partial class ZaMovesEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = movesWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [moveId]);
         var currentWorkflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -346,13 +346,21 @@ internal sealed partial class ZaMovesEditSessionService
             diagnostics);
     }
 
+    private ZaMovesWorkflow LoadForSession(OpenedProject project, EditSession session, IEnumerable<int>? incoming = null)
+    {
+        var ids = session.PendingEdits.Where(edit => edit.Domain == ZaEditSessionSupport.MovesDomain)
+            .Select(edit => int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : -1)
+            .Concat(incoming ?? []).Where(id => id >= 0).ToHashSet();
+        return movesWorkflowService.LoadForEditing(project, ids);
+    }
+
     public ZaEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = movesWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
         ZaEditSessionSupport.CanEdit(
@@ -422,7 +430,7 @@ internal sealed partial class ZaMovesEditSessionService
         try
         {
             var project = projectWorkspaceService.Open(paths);
-            var workflow = movesWorkflowService.Load(project);
+            var workflow = LoadForSession(project, session);
             var writes = new List<PlannedFileWrite>();
             AddWazaWrite(writes);
             AddRuntimeWrite(ZaDataPaths.BattleMoveParameterArray, ZaRuntimeMoveData.BattlePrefix, "battle parameters", writes);
@@ -613,7 +621,7 @@ internal sealed partial class ZaMovesEditSessionService
         try
         {
             var project = projectWorkspaceService.Open(paths);
-            var workflow = movesWorkflowService.Load(project);
+            var workflow = LoadForSession(project, session);
             var wazaEdits = session.PendingEdits
                 .Where(IsWazaEdit)
                 .ToArray();

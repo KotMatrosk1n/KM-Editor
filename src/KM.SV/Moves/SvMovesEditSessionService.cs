@@ -27,6 +27,14 @@ internal sealed partial class SvMovesEditSessionService
         this.movesWorkflowService = movesWorkflowService ?? new SvMovesWorkflowService(this.fileSource);
     }
 
+    private SvMovesWorkflow LoadForSession(OpenedProject project, EditSession session, IEnumerable<int>? incoming = null)
+    {
+        var ids = session.PendingEdits.Where(edit => edit.Domain == SvEditSessionSupport.MovesDomain)
+            .Select(edit => int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : -1)
+            .Concat(incoming ?? []).Where(id => id >= 0).ToHashSet();
+        return movesWorkflowService.LoadForEditing(project, ids);
+    }
+
     public SvMovesEditResult UpdateField(
         ProjectPaths paths,
         EditSession? session,
@@ -40,7 +48,7 @@ internal sealed partial class SvMovesEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = movesWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [moveId]);
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -89,7 +97,7 @@ internal sealed partial class SvMovesEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = movesWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, updates.Select(update => update.MoveId));
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -158,7 +166,7 @@ internal sealed partial class SvMovesEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = movesWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
         SvEditSessionSupport.CanEdit(

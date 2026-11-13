@@ -285,7 +285,9 @@ internal sealed class SvTeraRaidsWorkflowService
         return Load(project, includeEditorMetadata: false);
     }
 
-    private SvTeraRaidsWorkflow Load(OpenedProject project, bool includeEditorMetadata)
+    internal SvTeraRaidsWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<string> recordIds) => Load(project, true, recordIds);
+
+    private SvTeraRaidsWorkflow Load(OpenedProject project, bool includeEditorMetadata, IReadOnlySet<string>? recordIds = null)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -302,7 +304,7 @@ internal sealed class SvTeraRaidsWorkflowService
             var moveResolver = includeEditorMetadata
                 ? SvDefaultMoveResolver.Load(project, fileSource, diagnostics)
                 : SvDefaultMoveResolver.Empty;
-            dataSet = LoadDataSet(project, diagnostics, includeEditorMetadata);
+            dataSet = LoadDataSet(project, diagnostics, includeEditorMetadata, recordIds);
             return CreateWorkflow(
                 project,
                 labels,
@@ -310,7 +312,7 @@ internal sealed class SvTeraRaidsWorkflowService
                 moveResolver,
                 dataSet,
                 diagnostics,
-                includeEditorMetadata);
+                includeEditorMetadata, recordIds);
         }
         catch (Exception exception) when (
             (exception is IOException or InvalidDataException or ArgumentException)
@@ -447,12 +449,15 @@ internal sealed class SvTeraRaidsWorkflowService
     internal RaidDataSet LoadDataSet(
         OpenedProject project,
         ICollection<ValidationDiagnostic> diagnostics,
-        bool includeEditorMetadata = true)
+        bool includeEditorMetadata = true,
+        IReadOnlySet<string>? recordIds = null)
     {
+        var sourceKeys = recordIds?.Select(id => TryParseRecordId(id, out var key) && key.Kind == "raid" ? key.SourceKey : null).Where(key => key is not null).ToHashSet(StringComparer.Ordinal);
         var raidSources = new List<RaidEnemySourceRows>();
         var cumulativeRowCount = 0;
         foreach (var definition in RaidEnemySources)
         {
+            if (sourceKeys is not null && !sourceKeys.Contains(definition.SourceKey)) continue;
             try
             {
                 var source = fileSource.Read(project, definition.VirtualPath);
@@ -507,7 +512,8 @@ internal sealed class SvTeraRaidsWorkflowService
         SvDefaultMoveResolver moveResolver,
         RaidDataSet dataSet,
         IReadOnlyList<ValidationDiagnostic> diagnostics,
-        bool includeEditorMetadata = true)
+        bool includeEditorMetadata = true,
+        IReadOnlySet<string>? recordIds = null)
     {
         var fixedTables = BuildFixedRewardTables(dataSet.FixedRewardSource, dataSet.FixedRewards, labels).ToArray();
         var lotteryTables = BuildLotteryRewardTables(dataSet.LotteryRewardSource, dataSet.LotteryRewards, labels).ToArray();
@@ -522,7 +528,7 @@ internal sealed class SvTeraRaidsWorkflowService
                 fixedByHash,
                 lotteryByHash,
                 project.Paths.SelectedGame,
-                includeEditorMetadata))
+                includeEditorMetadata, recordIds))
             .ToArray();
 
         var allDiagnostics = diagnostics.ToArray();
@@ -534,7 +540,7 @@ internal sealed class SvTeraRaidsWorkflowService
             allDiagnostics.Length == 0 ? null : allDiagnostics);
 
         return new SvTeraRaidsWorkflow(
-            summary,
+            summary with { IsPartial = recordIds is not null },
             raids,
             fixedTables,
             lotteryTables,
@@ -756,10 +762,12 @@ internal sealed class SvTeraRaidsWorkflowService
         IReadOnlyDictionary<string, SvTeraRaidRewardTableRecord> fixedRewardTables,
         IReadOnlyDictionary<string, SvTeraRaidRewardTableRecord> lotteryRewardTables,
         ProjectGame? selectedGame,
-        bool includeEditorMetadata)
+        bool includeEditorMetadata,
+        IReadOnlySet<string>? recordIds = null)
     {
         for (var index = 0; index < sourceRows.Rows.Count; index++)
         {
+            if (recordIds is not null && !recordIds.Contains(CreateRaidRecordId(sourceRows.Definition.SourceKey, index))) continue;
             var info = sourceRows.Rows[index].Info;
             if (info is null || !IsAvailableForSelectedGame(info.RomVer, selectedGame))
             {

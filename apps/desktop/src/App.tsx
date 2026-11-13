@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+import { appliedPlacementObjectIds, appliedRecordIndices, appliedNumericRecordIds, appliedEncounterTableIds, appliedRaidTableIds, appliedTrainerPartyIds, appliedTeraRaidRecordIds, appliedZaEncounterTableIds } from './partialWorkflow';
 import { evolutionDraftFields, evolutionDraftsEqual, orderEvolutionDraftRows, planEvolutionDraftStage, projectEvolutionDraftRows, replaceEvolutionDraftRecord, settleEvolutionDrafts, type PokemonEvolutionLocalDraft } from './features/pokemon/evolutionDrafts';
 import { learnsetDraftsEqual, projectLearnsetDraftRows, replaceLearnsetDraftRecord, replaceLearnsetDrafts, settleLearnsetDrafts, stagedLearnsetSlotMap, type PokemonLearnsetLocalDraft } from './features/pokemon/learnsetDrafts';
 import { LearnsetClipboardActions } from './features/pokemon/LearnsetClipboardActions';
@@ -5,7 +7,6 @@ import { InteractiveTableRow, VirtualTableBody } from './components/VirtualTable
 import { EditorWorkspaceHeader, EditorWorkspaceSection, SectionedEditorWorkspace } from './components/SectionedEditorWorkspace';
 import { PokemonSearchBox, PokemonTable, filterPokemonRecords, formatPokemonTypes, type PokemonSelectionRecord } from './components/PokemonSelection';
 import { stageModelAsset, stageModelTexture } from './features/model-viewer/modelTextureBridge';
-/* SPDX-License-Identifier: GPL-3.0-only */
 import { PlaEditorSection, type PlaDrafts } from './features/pla/PlaEditorSection';
 import { isPlaSection, parsePlaLocation, plaLocationLoadOptions, plaRecordKind, type PlaNavigationTarget } from './workbench/plaLocations';
 import type { StagePlaRequest } from './bridge/plaProjectBridge';
@@ -99,6 +100,7 @@ import {
   canonicalizeTrainerPartySlotDrafts,
   clearSubmittedTrainerDraftRecords,
   createTrainerPartySourceSpeciesIndex,
+  getTrainerPartyRefreshIds,
   isTrainerPartySlotBlockedByEarlierEmptySlot,
   isTrainerSlotOccupiedForMaxIvs,
   orderTrainerFieldUpdates,
@@ -18884,7 +18886,8 @@ export function App({
 
       if (didWriteFiles) {
         progress.refresh();
-        await refreshLoadedWorkflowsAfterApply(paths, isCurrentProjectOperation, progress.refresh);
+        await refreshLoadedWorkflowsAfterApply(paths, isCurrentProjectOperation, progress.refresh,
+          completedApplyResult.writtenFiles, reviewedSession.pendingEdits);
       }
 
       if (didWriteFiles || completedApplyResult.outputTransaction !== null) {
@@ -18921,7 +18924,9 @@ export function App({
   const refreshLoadedWorkflowsAfterApply = async (
     paths: ReturnType<typeof toProjectPaths>,
     canCommitProjectRefresh: () => boolean = () => true,
-    onRefreshing?: (section: StoredRetainedWorkflowSection) => void
+    onRefreshing?: (section: StoredRetainedWorkflowSection) => void,
+    writtenFiles?: readonly string[],
+    appliedEdits?: readonly PendingEdit[]
   ) => {
     if (!canCommitProjectRefresh()) {
       return;
@@ -18932,7 +18937,8 @@ export function App({
       loadedWorkflowRetentionEntries,
       workflowRecencyRef.current,
       protectedRefreshSections,
-      0
+      0,
+      false
     );
     const reloadSectionOrder = ([
       'items',
@@ -19152,7 +19158,8 @@ export function App({
     if (itemsWorkflow && refreshSections.has('items')) {
       reloadTasks.push(
         async () => {
-          const response = await bridge.loadItemsWorkflow({ paths });
+          const response = await bridge.loadItemsWorkflow({ paths, recordIndices: ['sword', 'shield', 'scarlet', 'violet', 'za'].includes(paths.selectedGame ?? "")
+            ? appliedNumericRecordIds(appliedEdits, 'workflow.items') : undefined });
           if (canCommitRefresh()) {
             setItemsWorkflow(response.workflow);
           }
@@ -19162,7 +19169,8 @@ export function App({
     if (pokemonWorkflow && refreshSections.has('pokemon')) {
       reloadTasks.push(
         async () => {
-          const response = await bridge.loadPokemonWorkflow({ paths });
+          const response = await bridge.loadPokemonWorkflow({ paths, recordIndices: ['sword', 'shield', 'scarlet', 'violet', 'za'].includes(paths.selectedGame ?? "")
+            ? appliedNumericRecordIds(appliedEdits, 'workflow.pokemon') : undefined });
           if (canCommitRefresh()) {
             setPokemonWorkflow(response.workflow);
           }
@@ -19172,7 +19180,8 @@ export function App({
     if (movesWorkflow && refreshSections.has('moves')) {
       reloadTasks.push(
         async () => {
-          const response = await bridge.loadMovesWorkflow({ paths });
+          const response = await bridge.loadMovesWorkflow({ paths, recordIndices: ['sword', 'shield', 'scarlet', 'violet', 'za'].includes(paths.selectedGame ?? "")
+            ? appliedNumericRecordIds(appliedEdits, 'workflow.moves') : undefined });
           if (canCommitRefresh()) {
             setMovesWorkflow(response.workflow);
           }
@@ -19202,11 +19211,23 @@ export function App({
     if (trainersWorkflow && refreshSections.has('trainers')) {
       reloadTasks.push(
         async () => {
-          const response = await bridge.loadTrainersWorkflow({ paths });
+          const trainerIds = isSwordShieldProject && writtenFiles
+            ? getTrainerPartyRefreshIds(trainersWorkflow, writtenFiles)
+            : appliedTrainerPartyIds(appliedEdits, writtenFiles, trainersWorkflow);
+          const response = await bridge.loadTrainersWorkflow({ paths, trainerIds });
           if (canCommitRefresh()) {
+            const workflow = response.isPartial
+              ? applyTrainerWorkflowDelta(trainersWorkflow, {
+                  trainers: response.workflow.trainers,
+                  stats: response.workflow.stats,
+                  diagnostics: response.workflow.diagnostics,
+                  isPartial: true,
+                  preserveClassBallScope: response.preserveClassBallScope
+                }, trainerIds)
+              : response.workflow;
             loadedTrainerSourceSpeciesBySlotRef.current =
-              createTrainerPartySourceSpeciesIndex(response.workflow);
-            setTrainersWorkflow(response.workflow);
+              createTrainerPartySourceSpeciesIndex(workflow);
+            setTrainersWorkflow(workflow);
           }
         }
       );
@@ -19362,7 +19383,9 @@ export function App({
     if (giftPokemonWorkflow && refreshSections.has('giftPokemon')) {
       reloadTasks.push(
         async () => {
-          const response = await bridge.loadGiftPokemonWorkflow({ paths });
+          const response = await bridge.loadGiftPokemonWorkflow({ paths,
+            recordIndices: ['sword', 'shield', 'scarlet', 'violet', 'za'].includes(paths.selectedGame ?? "")
+              ? appliedRecordIndices(appliedEdits, 'workflow.giftPokemon', 'gift') : undefined });
           if (canCommitRefresh()) {
             setGiftPokemonWorkflow(response.workflow);
           }
@@ -19372,7 +19395,9 @@ export function App({
     if (tradePokemonWorkflow && refreshSections.has('tradePokemon')) {
       reloadTasks.push(
         async () => {
-          const response = await bridge.loadTradePokemonWorkflow({ paths });
+          const response = await bridge.loadTradePokemonWorkflow({ paths,
+            recordIndices: ['sword', 'shield', 'scarlet', 'violet', 'za'].includes(paths.selectedGame ?? "")
+              ? appliedRecordIndices(appliedEdits, 'workflow.tradePokemon', 'trade') : undefined });
           if (canCommitRefresh()) {
             setTradePokemonWorkflow(response.workflow);
           }
@@ -19382,7 +19407,9 @@ export function App({
     if (staticEncountersWorkflow && refreshSections.has('staticEncounters')) {
       reloadTasks.push(
         async () => {
-          const response = await bridge.loadStaticEncountersWorkflow({ paths });
+          const response = await bridge.loadStaticEncountersWorkflow({ paths,
+            recordIndices: (paths.selectedGame === 'sword' || paths.selectedGame === 'shield')
+              ? appliedRecordIndices(appliedEdits, 'workflow.staticEncounters', 'static') : undefined });
           if (canCommitRefresh()) {
             setStaticEncountersWorkflow(response.workflow);
           }
@@ -19392,7 +19419,9 @@ export function App({
     if (rentalPokemonWorkflow && refreshSections.has('rentalPokemon')) {
       reloadTasks.push(
         async () => {
-          const response = await bridge.loadRentalPokemonWorkflow({ paths });
+          const response = await bridge.loadRentalPokemonWorkflow({ paths,
+            recordIndices: (paths.selectedGame === 'sword' || paths.selectedGame === 'shield')
+              ? appliedRecordIndices(appliedEdits, 'workflow.rentalPokemon', 'rental') : undefined });
           if (canCommitRefresh()) {
             setRentalPokemonWorkflow(response.workflow);
           }
@@ -19436,7 +19465,7 @@ export function App({
     if (encountersWorkflow && refreshSections.has('encounters')) {
       reloadTasks.push(
         async () => {
-          const response = await bridge.loadEncountersWorkflow({ paths });
+          const response = await bridge.loadEncountersWorkflow({ paths, tableIds: paths.selectedGame === 'za' ? appliedZaEncounterTableIds(appliedEdits, encountersWorkflow) : appliedEncounterTableIds(appliedEdits) });
           if (canCommitRefresh()) {
             setEncountersWorkflow(response.workflow);
           }
@@ -19446,7 +19475,7 @@ export function App({
     if (teraRaidsWorkflow && refreshSections.has('teraRaids')) {
       reloadTasks.push(
         async () => {
-          const response = await bridge.loadTeraRaidsWorkflow({ paths });
+          const response = await bridge.loadTeraRaidsWorkflow({ paths, recordIds: appliedTeraRaidRecordIds(appliedEdits) });
           if (canCommitRefresh()) {
             setTeraRaidsWorkflow(response.workflow);
           }
@@ -19456,7 +19485,7 @@ export function App({
     if (raidBattlesWorkflow && refreshSections.has('raidBattles')) {
       reloadTasks.push(
         async () => {
-          const response = await bridge.loadRaidBattlesWorkflow({ paths });
+          const response = await bridge.loadRaidBattlesWorkflow({ paths, tableIds: appliedRaidTableIds(appliedEdits) });
           if (canCommitRefresh()) {
             setRaidBattlesWorkflow(response.workflow);
           }
@@ -19488,7 +19517,7 @@ export function App({
         async () => {
           const response = isSwordShieldProject
             ? await bridge.openSwShPlacementCatalog({ paths })
-            : await bridge.loadPlacementWorkflow({ paths });
+            : await bridge.loadPlacementWorkflow({ paths, objectIds: appliedPlacementObjectIds(appliedEdits) });
           if (canCommitRefresh()) {
             if ('catalog' in response) {
               commitSwShPlacementCatalog(response.catalog);
@@ -19502,7 +19531,7 @@ export function App({
     if (behaviorWorkflow && refreshSections.has('behavior')) {
       reloadTasks.push(
         async () => {
-          const response = await bridge.loadBehaviorWorkflow({ paths });
+          const response = await bridge.loadBehaviorWorkflow({ paths, entryIndices: !isSwordShieldProject ? undefined : appliedRecordIndices(appliedEdits, 'workflow.behavior', 'behavior') });
           if (canCommitRefresh()) {
             setBehaviorWorkflow(response.workflow);
           }

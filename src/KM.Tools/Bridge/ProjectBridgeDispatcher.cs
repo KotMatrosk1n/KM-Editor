@@ -2258,10 +2258,10 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
         var request = DeserializeRequest<LoadItemsWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var response = IsPokemonLegendsZA(paths)
-            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadItems(paths))
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadItems(paths, request.Payload.RecordIndices))
             : IsScarletViolet(paths)
-            ? SvBridgeMapper.ToDto(svWorkflowService.LoadItems(paths))
-            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadItems(paths));
+            ? SvBridgeMapper.ToDto(svWorkflowService.LoadItems(paths, request.Payload.RecordIndices))
+            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadItems(paths, request.Payload.RecordIndices));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2271,10 +2271,10 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
         var request = DeserializeRequest<LoadPokemonWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var response = IsPokemonLegendsZA(paths)
-            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadPokemon(paths))
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadPokemon(paths, request.Payload.RecordIndices))
             : IsScarletViolet(paths)
-            ? SvBridgeMapper.ToDto(svWorkflowService.LoadPokemon(paths))
-            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadPokemon(paths));
+            ? SvBridgeMapper.ToDto(svWorkflowService.LoadPokemon(paths, request.Payload.RecordIndices))
+            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadPokemon(paths, request.Payload.RecordIndices));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2651,10 +2651,10 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
         var request = DeserializeRequest<LoadMovesWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var response = IsPokemonLegendsZA(paths)
-            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadMoves(paths))
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadMoves(paths, request.Payload.RecordIndices))
             : IsScarletViolet(paths)
-            ? SvBridgeMapper.ToDto(svWorkflowService.LoadMoves(paths))
-            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadMoves(paths));
+            ? SvBridgeMapper.ToDto(svWorkflowService.LoadMoves(paths, request.Payload.RecordIndices))
+            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadMoves(paths, request.Payload.RecordIndices));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2830,10 +2830,10 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
         var request = DeserializeRequest<LoadTrainersWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var response = IsPokemonLegendsZA(paths)
-            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadTrainers(paths))
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadTrainers(paths, request.Payload.TrainerIds))
             : IsScarletViolet(paths)
-            ? SvBridgeMapper.ToDto(svWorkflowService.LoadTrainers(paths))
-            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadTrainers(paths));
+            ? SvBridgeMapper.ToDto(svWorkflowService.LoadTrainers(paths, request.Payload.TrainerIds))
+            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadTrainers(paths, request.Payload.TrainerIds));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2950,10 +2950,10 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
         var request = DeserializeRequest<LoadGiftPokemonWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         object response = IsPokemonLegendsZA(paths)
-            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadGiftPokemon(paths))
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadGiftPokemon(paths, request.Payload.RecordIndices))
             : IsScarletViolet(paths)
-            ? SvBridgeMapper.ToDto(svWorkflowService.LoadGiftPokemon(paths))
-            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadGiftPokemon(paths));
+            ? SvBridgeMapper.ToDto(svWorkflowService.LoadGiftPokemon(paths, request.Payload.RecordIndices))
+            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadGiftPokemon(paths, request.Payload.RecordIndices));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -3044,10 +3044,10 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
         var request = DeserializeRequest<LoadTradePokemonWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         object response = IsPokemonLegendsZA(paths)
-            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadTradePokemon(paths))
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadTradePokemon(paths, request.Payload.RecordIndices))
             : IsScarletViolet(paths)
-            ? SvBridgeMapper.ToDto(svWorkflowService.LoadTradePokemon(paths))
-            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadTradePokemon(paths));
+            ? SvBridgeMapper.ToDto(svWorkflowService.LoadTradePokemon(paths, request.Payload.RecordIndices))
+            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadTradePokemon(paths, request.Payload.RecordIndices));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -3129,8 +3129,8 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
         object response = IsPokemonLegendsZA(paths)
             ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadStaticEncounters(paths))
             : IsScarletViolet(paths)
-                ? SvBridgeMapper.ToDto(svWorkflowService.LoadStaticEncounters(paths))
-                : SwShBridgeMapper.ToDto(swShWorkflowService.LoadStaticEncounters(paths));
+                ? SvBridgeMapper.ToDto(svWorkflowService.LoadStaticEncounters(paths, request.Payload.RecordIndices))
+                : SwShBridgeMapper.ToDto(swShWorkflowService.LoadStaticEncounters(paths, request.Payload.RecordIndices));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -3219,7 +3219,7 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
     private string DispatchLoadRentalPokemonWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadRentalPokemonWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadRentalPokemon(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var workflow = swShWorkflowService.LoadRentalPokemon(ProjectBridgeMapper.ToCore(request.Payload.Paths), request.Payload.RecordIndices);
         var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);
@@ -4085,10 +4085,10 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
         var request = DeserializeRequest<LoadEncountersWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         object response = IsPokemonLegendsZA(paths)
-            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadEncounters(paths))
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadEncounters(paths, request.Payload.TableIds))
             : IsScarletViolet(paths)
-                ? SvBridgeMapper.ToDto(svWorkflowService.LoadEncounters(paths))
-                : SwShBridgeMapper.ToDto(swShWorkflowService.LoadEncounters(paths));
+                ? SvBridgeMapper.ToDto(svWorkflowService.LoadEncounters(paths, request.Payload.TableIds))
+                : SwShBridgeMapper.ToDto(swShWorkflowService.LoadEncounters(paths, request.Payload.TableIds));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -4197,7 +4197,7 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
     private string DispatchLoadRaidBattlesWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadRaidBattlesWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadRaidBattles(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var workflow = swShWorkflowService.LoadRaidBattles(ProjectBridgeMapper.ToCore(request.Payload.Paths), request.Payload.TableIds);
         var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);
@@ -4248,7 +4248,7 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
     private string DispatchLoadTeraRaidsWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadTeraRaidsWorkflowRequest>(requestJson);
-        var workflow = svWorkflowService.LoadTeraRaids(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var workflow = svWorkflowService.LoadTeraRaids(ProjectBridgeMapper.ToCore(request.Payload.Paths), request.Payload.RecordIds);
         var response = SvBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);
@@ -4395,9 +4395,11 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
     {
         var request = DeserializeRequest<LoadPlacementWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (request.Payload.ObjectIds is { } ids && (ids.Count is < 1 or > 10000 || ids.Any(string.IsNullOrWhiteSpace)))
+            throw new ArgumentException("Select between 1 and 10000 placement objects.");
         if (IsPokemonLegendsZA(paths))
         {
-            var zaWorkflow = zaWorkflowService.LoadPlacement(paths);
+            var zaWorkflow = zaWorkflowService.LoadPlacement(paths, request.Payload.ObjectIds);
             var zaResponse = ZaBridgeMapper.ToDto(zaWorkflow);
 
             return SerializeSuccess(zaResponse, request.RequestId);
@@ -4405,7 +4407,7 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
 
         if (IsScarletViolet(paths))
         {
-            var svWorkflow = svWorkflowService.LoadPlacement(paths);
+            var svWorkflow = svWorkflowService.LoadPlacement(paths, request.Payload.ObjectIds);
             var svResponse = SvBridgeMapper.ToDto(svWorkflow);
 
             return SerializeSuccess(svResponse, request.RequestId);
@@ -4600,7 +4602,9 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
             ?? throw new BridgeRequestException("Behavior load paths are required.");
         if (ProjectBridgeMapper.ToCore(paths).SelectedGame == ProjectGame.ZA)
             return SerializeSuccess(ZaBridgeMapper.ToDto(zaWorkflowService.LoadBehavior(ProjectBridgeMapper.ToCore(paths))), request.RequestId);
-        var workflow = swShWorkflowService.LoadBehavior(ProjectBridgeMapper.ToCore(paths));
+        if (request.Payload.EntryIndices is { } indices && (indices.Count is 0 or > 10000 || indices.Any(index => index < 0)))
+            throw new BridgeRequestException("Behavior entry indices must contain between 1 and 10000 nonnegative indices.");
+        var workflow = swShWorkflowService.LoadBehavior(ProjectBridgeMapper.ToCore(paths), request.Payload.EntryIndices);
         var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);
@@ -6221,7 +6225,7 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
             {
                 using var restorationReads = KM.SwSh.Restoration.SwShRestorationReadScope.Begin(paths);
                 ClearCriticalSwShApplyCaches();
-                changePlan = SwShChangePlanSourceGuard.Capture(
+                changePlan = SwShChangePlanSourceGuard.CapturePreparedPlan(
                     paths,
                     CreateSwShChangePlan(paths, session),
                     HasRestoration(session) || SwShGymUniformRemovalEditSessionService.IsCanonicalUninstallSession(session));
@@ -6790,7 +6794,7 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
 
-        return SwShChangePlanSourceGuard.Capture(
+        return SwShChangePlanSourceGuard.CapturePreparedPlan(
             paths,
             new ChangePlan(session.Id, CombinePlannedWrites(writes), diagnostics));
     }

@@ -47,7 +47,7 @@ internal sealed class SvPlacementEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = LoadWorkflow(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [objectId]);
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -95,7 +95,7 @@ internal sealed class SvPlacementEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = LoadWorkflow(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, updates.Select(update => update.ObjectId));
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -166,7 +166,7 @@ internal sealed class SvPlacementEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = LoadWorkflow(project);
+        var workflow = LoadForSession(project, session);
         var projectedWorkflow = OverlayPendingEdits(workflow, session.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -283,11 +283,12 @@ internal sealed class SvPlacementEditSessionService
         }
     }
 
-    private SvPlacementWorkflow LoadWorkflow(OpenedProject project)
+    private SvPlacementWorkflow LoadForSession(OpenedProject project, EditSession session, IEnumerable<string>? incoming = null)
     {
-        return includeStaticEncounterObjects
-            ? placementWorkflowService.LoadStaticEncounterObjects(project)
-            : placementWorkflowService.Load(project);
+        var ids = session.PendingEdits.Where(edit => edit.Domain == SvEditSessionSupport.PlacementDomain)
+            .Select(edit => edit.RecordId).Where(id => id is not null).Cast<string>()
+            .Concat(incoming ?? []).ToHashSet(StringComparer.Ordinal);
+        return placementWorkflowService.LoadForEditing(project, ids, includeStaticEncounterObjects);
     }
 
     public ApplyResult ApplyChangePlan(

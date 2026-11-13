@@ -451,6 +451,22 @@ public sealed class SwShTrainersWorkflowService
     }
 
     public SwShTrainersWorkflow Load(OpenedProject project)
+        => LoadCore(project, trainerIds: null, includeClassOwnership: true);
+
+    internal SwShTrainersWorkflow LoadForEditing(
+        OpenedProject project, IReadOnlySet<int> trainerIds, bool includeClassOwnership,
+        IReadOnlySet<int>? classIds = null, bool includeMoveOptions = true,
+        IReadOnlySet<int>? classBallTrainerIds = null)
+        => LoadCore(project, trainerIds, includeClassOwnership, classIds, includeMoveOptions, classBallTrainerIds) with
+        {
+            IsPartial = true,
+            HasClassOwnership = includeClassOwnership,
+        };
+
+    private SwShTrainersWorkflow LoadCore(
+        OpenedProject project, IReadOnlySet<int>? trainerIds, bool includeClassOwnership,
+        IReadOnlySet<int>? classIds = null, bool includeMoveOptions = true,
+        IReadOnlySet<int>? classBallTrainerIds = null)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -462,8 +478,10 @@ public sealed class SwShTrainersWorkflowService
             return CreateWorkflow(summary, Array.Empty<SwShTrainerRecord>(), diagnostics, sourceFileCount: 0);
         }
 
-        var trainerDataSources = ResolveTrainerFolder(project, TrainerDataRootPath, "trainer data", diagnostics);
-        var trainerPokeSources = ResolveTrainerFolder(project, TrainerPokeRootPath, "trainer party", diagnostics);
+        var trainerDataSources = ResolveTrainerFolder(project, TrainerDataRootPath, "trainer data", diagnostics,
+            includeClassOwnership ? null : trainerIds);
+        var trainerPokeSources = ResolveTrainerFolder(project, TrainerPokeRootPath, "trainer party", diagnostics,
+            classIds is { Count: > 0 } || classBallTrainerIds is { Count: > 0 } ? null : trainerIds);
         var trainerClassSources = ResolveTrainerFolder(project, TrainerClassRootPath, "trainer class", diagnostics);
         if (trainerDataSources.Count == 0)
         {
@@ -509,9 +527,20 @@ public sealed class SwShTrainersWorkflowService
             .Where(group => group.Count() == 1)
             .Select(group => group.Single())
             .ToArray();
-        var names = LoadLookupTables(project, diagnostics);
-        var classRecordsByClassId = LoadTrainerClassRecords(uniqueClassSources, diagnostics);
-        var classOwnershipByClassId = CreateTrainerClassOwnership(uniqueDataSources, names);
+        var names = LoadLookupTables(project, diagnostics, includeMoveOptions, includeAssignmentCatalog: trainerIds is null);
+        var dataRecords = new Dictionary<int, SwShTrainerDataRecord>();
+        var classRecordsByClassId = new Dictionary<int, SwShTrainerClassRecord>();
+        var classOwnershipByClassId = includeClassOwnership
+            ? CreateTrainerClassOwnership(uniqueDataSources, names, dataRecords)
+            : new Dictionary<int, TrainerClassOwnership>();
+        var affectedClassIds = new HashSet<int>(classIds?.AsEnumerable() ?? []);
+        foreach (var trainerId in classBallTrainerIds?.AsEnumerable() ?? [])
+        {
+            if (dataRecords.TryGetValue(trainerId, out var owner))
+            {
+                affectedClassIds.Add(owner.ClassId);
+            }
+        }
         var pokeSourcesByTrainerId = pokeSourceGroups
             .Where(group => group.Count() == 1)
             .ToDictionary(group => group.Key, group => group.Single());
@@ -521,6 +550,13 @@ public sealed class SwShTrainersWorkflowService
 
         foreach (var dataSource in uniqueDataSources)
         {
+            if (trainerIds is not null && !trainerIds.Contains(dataSource.TrainerId)
+                && !(dataRecords.TryGetValue(dataSource.TrainerId, out var owner)
+                    && affectedClassIds.Contains(owner.ClassId)))
+            {
+                continue;
+            }
+
             if (!pokeSourcesByTrainerId.TryGetValue(dataSource.TrainerId, out var pokeSource))
             {
                 diagnostics.Add(CreateDiagnostic(
@@ -533,23 +569,32 @@ public sealed class SwShTrainersWorkflowService
 
             try
             {
-                var dataFile = SwShTrainerDataFile.Parse(readAllBytes(dataSource.AbsolutePath));
+                var dataRecord = dataRecords.TryGetValue(dataSource.TrainerId, out var parsedData)
+                    ? parsedData
+                    : SwShTrainerDataFile.Parse(readAllBytes(dataSource.AbsolutePath)).Record;
                 var teamFile = SwShTrainerTeamFile.Parse(readAllBytes(pokeSource.AbsolutePath));
                 parsedSourceFiles.Add(dataSource.Entry.RelativePath);
                 parsedSourceFiles.Add(pokeSource.Entry.RelativePath);
 
-                if (dataFile.Record.PokemonCount != teamFile.Records.Count)
+                if (dataRecord.PokemonCount != teamFile.Records.Count)
                 {
                     diagnostics.Add(CreateDiagnostic(
                         DiagnosticSeverity.Warning,
-                        $"Trainer {dataSource.TrainerId} data declares {dataFile.Record.PokemonCount} Pokemon but the party file contains {teamFile.Records.Count}.",
+                        $"Trainer {dataSource.TrainerId} data declares {dataRecord.PokemonCount} Pokemon but the party file contains {teamFile.Records.Count}.",
                         file: dataSource.Entry.RelativePath,
                         expected: "Trainer data Pokemon count matching party rows"));
                 }
 
-                classSourcesByClassId.TryGetValue(dataFile.Record.ClassId, out var classSource);
-                classRecordsByClassId.TryGetValue(dataFile.Record.ClassId, out var classRecord);
-                classOwnershipByClassId.TryGetValue(dataFile.Record.ClassId, out var classOwnership);
+                classSourcesByClassId.TryGetValue(dataRecord.ClassId, out var classSource);
+                if (classSource is not null && !classRecordsByClassId.ContainsKey(dataRecord.ClassId))
+                {
+                    foreach (var entry in LoadTrainerClassRecords([classSource], diagnostics))
+                    {
+                        classRecordsByClassId.Add(entry.Key, entry.Value);
+                    }
+                }
+                classRecordsByClassId.TryGetValue(dataRecord.ClassId, out var classRecord);
+                classOwnershipByClassId.TryGetValue(dataRecord.ClassId, out var classOwnership);
                 if (classRecord is not null && classSource is not null)
                 {
                     parsedSourceFiles.Add(classSource.Entry.RelativePath);
@@ -559,7 +604,7 @@ public sealed class SwShTrainersWorkflowService
                     dataSource,
                     pokeSource,
                     classSource,
-                    dataFile.Record,
+                    dataRecord,
                     teamFile.Records,
                     classRecord,
                     classOwnership,
@@ -762,11 +807,11 @@ public sealed class SwShTrainersWorkflowService
                 (value, label) => new SwShTrainerEditableFieldOption(value, label)))
             .ToArray();
         var itemOptions = CreateIndexedOptions(names.ItemNames, "Item");
-        var moveOptions = SwShMoveAvailability.CreateMoveOptions(
+        var moveOptions = names.IncludeMoveOptions ? SwShMoveAvailability.CreateMoveOptions(
             names.MoveNames,
             names.UsableMoveIds,
             (value, label) => new SwShTrainerEditableFieldOption(value, label),
-            includeNone: true);
+            includeNone: true) : [];
 
         return EditableFields
             .Select(field =>
@@ -812,13 +857,20 @@ public sealed class SwShTrainersWorkflowService
         OpenedProject project,
         string rootPath,
         string sourceKind,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        IReadOnlySet<int>? trainerIds = null)
     {
         var sources = new List<WorkflowFileSource>();
         foreach (var entry in project.FileGraph.Entries.Where(entry =>
                      entry.RelativePath.StartsWith($"{rootPath}/", StringComparison.OrdinalIgnoreCase)
                      && !entry.RelativePath.EndsWith("/", StringComparison.Ordinal)))
         {
+            if (trainerIds is not null
+                && (!TryGetTrainerId(entry.RelativePath, out var requestedId) || !trainerIds.Contains(requestedId)))
+            {
+                continue;
+            }
+
             var sourcePath = ResolveSourcePath(project.Paths, entry);
             if (sourcePath is null || !File.Exists(sourcePath))
             {
@@ -902,7 +954,8 @@ public sealed class SwShTrainersWorkflowService
 
     private IReadOnlyDictionary<int, TrainerClassOwnership> CreateTrainerClassOwnership(
         IReadOnlyList<WorkflowFileSource> trainerDataSources,
-        TrainerLookupTables names)
+        TrainerLookupTables names,
+        IDictionary<int, SwShTrainerDataRecord> dataRecords)
     {
         var firstOwnerNames = new Dictionary<int, string>();
         var ownerIdsByClassId = new Dictionary<int, HashSet<int>>();
@@ -913,6 +966,7 @@ public sealed class SwShTrainersWorkflowService
             try
             {
                 trainer = SwShTrainerDataFile.Parse(readAllBytes(source.AbsolutePath)).Record;
+                dataRecords[source.TrainerId] = trainer;
             }
             catch (InvalidDataException exception) when (!IsBoundedSemanticLimit(exception))
             {
@@ -989,7 +1043,9 @@ public sealed class SwShTrainersWorkflowService
 
     private TrainerLookupTables LoadLookupTables(
         OpenedProject project,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        bool includeMoveOptions,
+        bool includeAssignmentCatalog)
     {
         var messageRoot = ResolveLanguageMessageRoot(project, diagnostics);
         var abilityResolver = SwShPokemonAbilityOptionResolver.Load(
@@ -1013,11 +1069,11 @@ public sealed class SwShTrainersWorkflowService
         var presentSpeciesIds = SwShSpeciesAvailability.LoadPresentSpeciesIds(
             project,
             readAllBytes,
-            maximumLookupRecordCount);
-        var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(
+            includeAssignmentCatalog ? maximumLookupRecordCount : maximumLookupRecordCount ?? 4096);
+        var usableMoveIds = includeMoveOptions ? SwShMoveAvailability.LoadUsableMoveIds(
             project,
             readAllBytes,
-            maximumLookupRecordCount);
+            maximumLookupRecordCount) : new HashSet<int>();
 
         return new TrainerLookupTables(
             LoadMessageTable(project, messageRoot, "trname.dat", diagnostics),
@@ -1028,7 +1084,8 @@ public sealed class SwShTrainersWorkflowService
             itemDisplayNames,
             moveNames,
             usableMoveIds,
-            abilityResolver);
+            abilityResolver,
+            includeMoveOptions);
     }
 
     private static string? ResolveLanguageMessageRoot(
@@ -1503,7 +1560,8 @@ public sealed class SwShTrainersWorkflowService
         IReadOnlyList<string> ItemNames,
         IReadOnlyList<string> MoveNames,
         IReadOnlySet<int> UsableMoveIds,
-        SwShPokemonAbilityOptionResolver AbilityResolver);
+        SwShPokemonAbilityOptionResolver AbilityResolver,
+        bool IncludeMoveOptions);
 
     private sealed record TrainerClassOwnership(
         string OwnerName,

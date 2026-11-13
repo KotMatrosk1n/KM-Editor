@@ -40,7 +40,7 @@ internal sealed class SvTeraRaidsEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = teraRaidsWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [recordId]);
         var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -77,7 +77,7 @@ internal sealed class SvTeraRaidsEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = teraRaidsWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, updates.Select(update => update.RecordId));
         var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -120,13 +120,20 @@ internal sealed class SvTeraRaidsEditSessionService
             diagnostics);
     }
 
+    private static HashSet<string> RecordIds(IEnumerable<PendingEdit> edits) => edits
+        .Where(edit => edit.Domain == SvEditSessionSupport.TeraRaidsDomain && edit.RecordId is not null)
+        .Select(edit => edit.RecordId!).ToHashSet(StringComparer.Ordinal);
+
+    private SvTeraRaidsWorkflow LoadForSession(OpenedProject project, EditSession session, IEnumerable<string>? incoming = null) =>
+        teraRaidsWorkflowService.LoadForEditing(project, RecordIds(session.PendingEdits).Concat(incoming ?? []).ToHashSet(StringComparer.Ordinal));
+
     public SvEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = teraRaidsWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
         SvEditSessionSupport.CanEdit(
@@ -261,7 +268,7 @@ internal sealed class SvTeraRaidsEditSessionService
         try
         {
             var project = projectWorkspaceService.Open(paths);
-            var dataSet = teraRaidsWorkflowService.LoadDataSet(project, diagnostics);
+            var dataSet = teraRaidsWorkflowService.LoadDataSet(project, diagnostics, recordIds: RecordIds(session.PendingEdits));
             var moveResolver = SvDefaultMoveResolver.Load(project, fileSource, diagnostics);
             foreach (var edit in session.PendingEdits)
             {
@@ -478,7 +485,8 @@ internal sealed class SvTeraRaidsEditSessionService
         try
         {
             var overlayDiagnostics = new List<ValidationDiagnostic>();
-            var dataSet = teraRaidsWorkflowService.LoadDataSet(project, overlayDiagnostics);
+            var recordIds = RecordIds(pendingEdits).Concat(workflow.Raids.Select(raid => raid.RecordId)).ToHashSet(StringComparer.Ordinal);
+            var dataSet = teraRaidsWorkflowService.LoadDataSet(project, overlayDiagnostics, recordIds: recordIds);
             var labels = SvTextLabelLookup.Load(project, fileSource, overlayDiagnostics, project.Paths);
             var abilityResolver = SvTeraRaidsWorkflowService.SvTeraRaidAbilityResolver.Load(
                 project,
@@ -504,7 +512,7 @@ internal sealed class SvTeraRaidsEditSessionService
                 return workflow;
             }
 
-            return teraRaidsWorkflowService.CreateWorkflow(project, labels, abilityResolver, moveResolver, dataSet, workflow.Diagnostics);
+            return teraRaidsWorkflowService.CreateWorkflow(project, labels, abilityResolver, moveResolver, dataSet, workflow.Diagnostics, recordIds: workflow.Summary.IsPartial ? recordIds : null);
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException or OverflowException)
         {

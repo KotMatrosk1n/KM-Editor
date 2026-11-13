@@ -3,45 +3,51 @@ using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.SwSh.Pokemon;
+using KM.Formats.SwSh;
 
 namespace KM.SwSh.Restoration;
 
 internal static class SwShRestorationCustomizations
 {
-    internal static ChangePlan AddAnchor(ProjectPaths paths, ChangePlan plan)
+    internal static ChangePlan AddAnchor(ProjectPaths paths, ChangePlan plan, bool assignmentSourcesBound = false)
     {
         if (plan.Writes.Count == 0 || plan.EffectivePendingEdits?.Any(e => e.Domain == SwShRestorationDefinitions.Domain) == true) return plan;
+        if (plan.Writes.All(write => write.TargetRelativePath.StartsWith("romfs/bin/trainer/", StringComparison.Ordinal))) return plan;
+        // Only restoration-owned outputs can change a retained customization.
+        // Assignment dependencies belong to the assigning editor's plan, rather
+        // than every installed Pokemon being a dependency of every editor.
+        if (!plan.Writes.Any(write => CanContainContribution(write.TargetRelativePath)))
+            return !assignmentSourcesBound && plan.Writes.Any(write => write.Sources.Any(source => source.RelativePath == SwShRestorationComposer.PersonalPath))
+                ? BindCatalogSources(paths, plan) : plan;
         var state = SwShRestorationStateStore.Read(paths);
-        if (!state.State.Selections.Any(s => s.Enabled)) return BindCatalogSources(paths, plan);
-        var targets = plan.Writes.Select(w => w.TargetRelativePath).ToHashSet(StringComparer.Ordinal);
-        var resourcePaths = new HashSet<string>(StringComparer.Ordinal);
-        var needsAnchor = false;
-        // The installed set can be larger than the operation cache. Consume one
-        // package at a time so its size is not an editing limit for the project.
-        foreach (var selection in state.State.Selections.Where(s => s.Enabled))
-        {
-            var prepared = SwShRestorationStateStore.ReadPrepared(paths, selection.PreparedHash);
-            foreach (var contribution in prepared.Contributions) resourcePaths.Add(contribution.Path);
-            needsAnchor |= prepared.Contributions.Any(c => targets.Contains(c.Path))
-                || targets.Any(p => IsLooseModel(p, prepared));
-        }
-        // Species validation runs again in a verified snapshot. Bind the complete
-        // installed resource closure so that snapshot sees the same capabilities.
-        var dependencies = resourcePaths
-            .Where(p => File.Exists(Path.Combine(paths.OutputRootPath!, p)) || File.Exists(Path.Combine(paths.BaseRomFsPath!, p[6..])))
-            .Select(p => new ProjectFileReference(File.Exists(Path.Combine(paths.OutputRootPath!, p)) ? ProjectFileLayer.Layered : ProjectFileLayer.Base, p)).ToArray();
-        var first = plan.Writes[0];
-        plan = plan with { Writes = plan.Writes.Select((write, index) => index == 0
-            ? first with { Sources = first.Sources.Concat(dependencies).Distinct().ToArray() } : write).ToArray() };
-        if (!needsAnchor) return BindCatalogSources(paths, plan);
-        if (targets.Contains(SwShRestorationComposer.PersonalPath)) return BindCatalogSources(paths, plan);
+        ChangePlan Complete(ChangePlan result) => assignmentSourcesBound ? result : BindCatalogSources(paths, result);
+        if (!state.State.Selections.Any(s => s.Enabled)) return Complete(plan);
+        // The registered ownership families determine whether an anchor can be
+        // needed. No model payload is needed to make this conservative decision.
+        if (plan.Writes.Any(write => write.TargetRelativePath == SwShRestorationComposer.PersonalPath)) return Complete(plan);
         var personal = SwShRestorationComposer.PersonalPath;
         var sources = new List<ProjectFileReference> { new(ProjectFileLayer.Base, personal) };
         if (File.Exists(Path.Combine(paths.OutputRootPath!, personal))) sources.Add(new(ProjectFileLayer.Layered, personal));
         plan = plan with { Writes = plan.Writes.Append(new(personal, sources, sources.Count == 2,
             "Retain restoration settings and Pokemon customizations.")).ToArray() };
-        return BindCatalogSources(paths, plan);
+        return Complete(plan);
     }
+
+    internal static bool CanContainContribution(string path) => path is
+        SwShRestorationComposer.PersonalPath or SwShRestorationComposer.LearnsetPath
+        or SwShRestorationComposer.IconsPath or SwShRestorationComposer.CatalogPath
+        or SwShRestorationComposer.CampPath or SwShRestorationComposer.VoicesPath
+        || path == KM.Formats.SwSh.SwShItemTable.ItemDataRelativePath
+        || SwShRestorationMegaItems.IsTextPath(path)
+        || SwShRestorationAbilities.IsTextPath(path)
+        || SwShRestorationSpeciesText.IsPath(path)
+        || path.StartsWith("romfs/bin/archive/pokemon/", StringComparison.Ordinal)
+        || path.StartsWith("romfs/bin/archive/gpokemon/", StringComparison.Ordinal)
+        || path.StartsWith("romfs/bin/appli/icon_pokemon/poke_icon_", StringComparison.Ordinal)
+        || path.StartsWith("romfs/bin/pml/evolution/evo_", StringComparison.Ordinal)
+        || path.StartsWith("romfs/bin/pml/tamagowaza/tamagowaza_", StringComparison.Ordinal)
+        || path.StartsWith("romfs/bin/pokemon/pm", StringComparison.Ordinal)
+        || SwShRestorationMegaItems.All.Any(item => path == SwShRestorationMegaItems.IconPath(item.ItemId));
 
     private static ChangePlan BindCatalogSources(ProjectPaths paths, ChangePlan plan)
     {
@@ -59,15 +65,25 @@ internal static class SwShRestorationCustomizations
     }
 
     internal static SwShRestorationStateSnapshot Capture(ProjectPaths paths, SwShRestorationStateSnapshot state,
-        IReadOnlySet<string> changed, Func<string, byte[]?> readOutput)
+        IReadOnlySet<string> changed, Func<string, byte[]?> readOutput, Func<string, byte[]?>? readOriginal = null)
     {
+        var output = changed.ToDictionary(path => path, readOutput, StringComparer.Ordinal);
+        var original = changed.ToDictionary(path => path, path => readOriginal?.Invoke(path), StringComparer.Ordinal);
+        // In particular, an unchanged personal-data anchor does not make every
+        // installed family a changed Pokemon.
+        changed = changed.Where(path => readOriginal is null || !SameBytes(original[path], output[path])).ToHashSet(StringComparer.Ordinal);
+        if (changed.Count == 0) return state;
+        readOutput = path => output.GetValueOrDefault(path);
+        var changedMegaItems = ChangedMegaItems(changed, original, output);
         var selections = new List<SwShRestorationSelection>(); var any = false;
-        SwShRestorationReadScope.Find(paths)?.Prefetch(state.State.Selections.Where(s => s.Enabled)
-            .Select(s => s.CustomizationHash ?? s.PreparedHash));
         foreach (var selection in state.State.Selections)
         {
             if (!selection.Enabled) { selections.Add(selection); continue; }
-            var previous = SwShRestorationStateStore.ReadPrepared(paths, selection.CustomizationHash ?? selection.PreparedHash);
+            var definition = SwShRestorationDefinitions.Get(selection.DefinitionId);
+            if (!changed.Any(path => MayAffect(definition, path, original.GetValueOrDefault(path), output.GetValueOrDefault(path), changedMegaItems)))
+            { selections.Add(selection); continue; }
+            var looseChanges = changed.Where(p => IsLooseModel(p, definition)).ToArray();
+            var previous = SwShRestorationStateStore.ReadPreparedContributions(paths, selection.CustomizationHash ?? selection.PreparedHash, changed);
             var items = previous.Contributions.ToDictionary(c => (c.Path, c.Key));
             var changedItems = items.Values.Where(c => changed.Contains(c.Path)).ToArray();
             // The verified snapshot is immutable. Probe each changed file once,
@@ -78,7 +94,6 @@ internal static class SwShRestorationCustomizations
             if (touched.Length > 0)
                 foreach (var item in SwShRestorationComposer.Compose(touched, readOutput, false, captureOnly: true).RetainedCustomizations)
                     items[(item.Path, item.Key)] = SwShRestorationDependencies.Retain(items[(item.Path, item.Key)], item, state.State);
-            var looseChanges = changed.Where(p => IsLooseModel(p, previous)).ToArray();
             foreach (var path in looseChanges)
             {
                 if (readOutput(path) is { } bytes) items[(path, "")] = new(path, SwShRestorationWriter.File, "", items.GetValueOrDefault((path, ""))?.Before, bytes);
@@ -94,7 +109,11 @@ internal static class SwShRestorationCustomizations
                 selections.Add(selection);
                 continue;
             }
-            var stored = SwShRestorationStateStore.Store(paths, previous with { Contributions = items.Values.ToArray() });
+            // Only a changed family needs the complete package for publication.
+            // Merge into that complete package so untouched assets are retained.
+            var complete = SwShRestorationStateStore.ReadPrepared(paths, selection.CustomizationHash ?? selection.PreparedHash);
+            var merged = complete.Contributions.Where(item => !changed.Contains(item.Path)).Concat(items.Values).ToArray();
+            var stored = SwShRestorationStateStore.Store(paths, complete with { Contributions = merged });
             using (stored.Lease) { }
             selections.Add(selection with { CustomizationHash = stored.Hash,
                 AssetHashes = selection.AssetHashes.Concat(new[] { selection.PreparedHash, selection.CustomizationHash, stored.Hash }.OfType<string>()).Distinct(StringComparer.Ordinal).ToArray() });
@@ -104,6 +123,51 @@ internal static class SwShRestorationCustomizations
         var next = state.State with { Selections = selections }; var saved = SwShRestorationStateStore.Store(paths, next);
         using (saved.Lease) { }
         return new(saved.Hash, next);
+    }
+
+    private static bool SameBytes(byte[]? before, byte[]? after) => before is null ? after is null
+        : after is not null && before.AsSpan().SequenceEqual(after);
+
+    private static IReadOnlySet<int>? ChangedMegaItems(IReadOnlySet<string> changed,
+        IReadOnlyDictionary<string, byte[]?> original, IReadOnlyDictionary<string, byte[]?> output)
+    {
+        var path = SwShItemTable.ItemDataRelativePath;
+        if (!changed.Contains(path)) return new HashSet<int>();
+        if (original.GetValueOrDefault(path) is not { } before || output.GetValueOrDefault(path) is not { } after) return null;
+        var previous = SwShItemTable.Parse(before, 4096);
+        var current = SwShItemTable.Parse(after, 4096);
+        // Compare logical item rows so shared-row aliases remain dependencies.
+        return SwShRestorationMegaItems.All.Select(item => item.ItemId).Where(id =>
+            id >= previous.Records.Count || id >= current.Records.Count
+            || !previous.ReadRow(id).AsSpan().SequenceEqual(current.ReadRow(id))).ToHashSet();
+    }
+
+    private static bool MayAffect(SwShRestorationDefinition definition, string path, byte[]? before, byte[]? after,
+        IReadOnlySet<int>? changedMegaItems)
+    {
+        if (path is SwShRestorationComposer.PersonalPath or SwShRestorationComposer.LearnsetPath)
+        {
+            if (before is null || after is null) return true;
+            var size = path == SwShRestorationComposer.PersonalPath ? SwShPersonalTable.RecordSize : 260;
+            return definition.Identities.Select(SwShRestorationForms.PersonalRow).Any(row =>
+                row > before.Length / size - 1 || row > after.Length / size - 1
+                || !before.AsSpan(row * size, size).SequenceEqual(after.AsSpan(row * size, size)));
+        }
+        if (path == SwShItemTable.ItemDataRelativePath)
+            return definition.Identities.Any(identity => SwShRestorationMegaItems.For(identity) is { } item
+                && (changedMegaItems is null || changedMegaItems.Contains(item.ItemId)));
+        if (SwShRestorationMegaItems.IsTextPath(path)
+            || SwShRestorationMegaItems.All.Any(item => path == SwShRestorationMegaItems.IconPath(item.ItemId)))
+            return definition.Identities.Any(identity => SwShRestorationMegaItems.For(identity) is not null);
+        if (path.StartsWith("romfs/bin/archive/pokemon/", StringComparison.Ordinal)
+            || path.StartsWith("romfs/bin/archive/gpokemon/", StringComparison.Ordinal)
+            || path.StartsWith("romfs/bin/pokemon/", StringComparison.Ordinal))
+            return IsLooseModel(path, definition) || SwShRestorationModelResources.Variants(definition)
+                .Concat(SwShRestorationModelResources.Variants(definition, legacy: true)).Any(variant =>
+                    path == $"romfs/bin/archive/pokemon/{variant.ResourceStem}.gfpak"
+                    || path == $"romfs/bin/archive/pokemon/{variant.ResourceStem}_rare.gfpak"
+                    || path == $"romfs/bin/archive/gpokemon/{variant.ResourceStem}.gfpak");
+        return true;
     }
 
     internal static SwShPreparedRestoration IncludeLooseModels(ProjectPaths paths, SwShPreparedRestoration prepared, IReadOnlySet<string> owned)
@@ -139,6 +203,7 @@ internal static class SwShRestorationCustomizations
     }
     internal static IEnumerable<string> ModelStems(SwShPreparedRestoration prepared) => SwShRestorationModelResources.Variants(prepared)
         .Select(variant => variant.ResourceStem).Distinct(StringComparer.Ordinal);
-    private static bool IsLooseModel(string path, SwShPreparedRestoration prepared) => ModelStems(prepared).Any(stem =>
-        path.StartsWith($"romfs/bin/pokemon/{stem}/", StringComparison.Ordinal));
+    private static bool IsLooseModel(string path, SwShRestorationDefinition definition) =>
+        SwShRestorationModelResources.Variants(definition).Concat(SwShRestorationModelResources.Variants(definition, legacy: true))
+            .Any(variant => path.StartsWith($"romfs/bin/pokemon/{variant.ResourceStem}/", StringComparison.Ordinal));
 }

@@ -254,7 +254,7 @@ public sealed class SwShNpcItemGiftEditSessionService
             DiagnosticSeverity.Info,
             $"NPC Item Gift change plan preview contains {writes.Count:N0} target file(s)."));
 
-        return SwShChangePlanSourceGuard.Capture(
+        return SwShChangePlanSourceGuard.CaptureWithAssignmentSources(
             paths,
             new ChangePlan(session.Id, writes, diagnostics));
     }

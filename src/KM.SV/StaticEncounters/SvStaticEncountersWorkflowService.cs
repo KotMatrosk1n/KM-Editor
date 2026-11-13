@@ -151,18 +151,22 @@ internal sealed class SvStaticEncountersWorkflowService
             WorkflowDescription);
     }
 
-    public SvStaticEncountersWorkflow Load(OpenedProject project)
+    public SvStaticEncountersWorkflow Load(OpenedProject project) => LoadCore(project, null);
+
+    internal SvStaticEncountersWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<int> indices) => LoadCore(project, indices);
+
+    private SvStaticEncountersWorkflow LoadCore(OpenedProject project, IReadOnlySet<int>? indices)
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        var placementWorkflow = placementWorkflowService.LoadStaticEncounterObjects(project);
+        var placementWorkflow = placementWorkflowService.LoadStaticEncounterObjects(project, indices);
         var sourceFiles = placementWorkflow.Objects
             .Select(placedObject => placedObject.Provenance.SourceFile)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Count();
         var encounters = placementWorkflow.Objects
             .Where(IsStaticEncounterObject)
-            .Select((placedObject, index) => ToEntry(index, placedObject))
+            .Select(placedObject => ToEntry(placedObject.StaticEncounterIndex, placedObject))
             .ToArray();
         var diagnostics = placementWorkflow.Diagnostics
             .Select(diagnostic => diagnostic with { Domain = StaticEncountersEditDomain })
@@ -175,7 +179,7 @@ internal sealed class SvStaticEncountersWorkflowService
             diagnostics.Length == 0 ? null : diagnostics);
 
         return new SvStaticEncountersWorkflow(
-            summary,
+            summary with { IsPartial = indices is not null },
             encounters,
             CreateEditableFields(placementWorkflow.EditableFields),
             new SvStaticEncountersWorkflowStats(

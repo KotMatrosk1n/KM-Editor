@@ -40,7 +40,10 @@ public sealed record ZaWorkflowSummary(
     string Label,
     string Description,
     ZaWorkflowAvailability Availability,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    public bool IsPartial { get; init; }
+}
 
 public sealed record ZaWorkflowList(IReadOnlyList<ZaWorkflowSummary> Workflows);
 

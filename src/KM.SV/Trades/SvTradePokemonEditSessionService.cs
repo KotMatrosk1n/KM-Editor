@@ -27,6 +27,14 @@ internal sealed class SvTradePokemonEditSessionService
         this.tradePokemonWorkflowService = tradePokemonWorkflowService ?? new SvTradePokemonWorkflowService(this.fileSource);
     }
 
+    private SvTradePokemonWorkflow LoadForSession(OpenedProject project, EditSession session, IEnumerable<int>? incoming = null)
+    {
+        var indices = session.PendingEdits.Where(edit => edit.Domain == SvEditSessionSupport.TradePokemonDomain)
+            .Select(edit => SvTradePokemonWorkflowService.TryParseTradeRecordId(edit.RecordId, out var index) ? index : -1)
+            .Concat(incoming ?? []).Where(index => index >= 0).ToHashSet();
+        return tradePokemonWorkflowService.LoadForEditing(project, indices);
+    }
+
     public SvTradePokemonEditResult UpdateField(
         ProjectPaths paths,
         EditSession? session,
@@ -40,7 +48,7 @@ internal sealed class SvTradePokemonEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = tradePokemonWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [tradeIndex]);
         var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -89,7 +97,7 @@ internal sealed class SvTradePokemonEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = tradePokemonWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, updates.Select(update => update.TradeIndex));
         var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -150,7 +158,7 @@ internal sealed class SvTradePokemonEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = tradePokemonWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
         SvEditSessionSupport.CanEdit(
@@ -501,7 +509,7 @@ internal sealed class SvTradePokemonEditSessionService
             var overlayTradeListSource = tradeListSource with { Bytes = WriteTradeListRows(tradeListRows) };
             var overlayTradePokemonSource = tradePokemonSource with { Bytes = WriteTradePokemonRows(tradePokemonRows) };
             var tradesByIndex = SvTradePokemonWorkflowService
-                .LoadRecords(overlayTradeListSource, overlayTradePokemonSource, labels, abilityResolver, moveResolver)
+                .LoadRecords(overlayTradeListSource, overlayTradePokemonSource, labels, abilityResolver, moveResolver, workflow.Trades.Select(row => row.TradeIndex).ToHashSet())
                 .ToDictionary(trade => trade.TradeIndex);
 
             return workflow with

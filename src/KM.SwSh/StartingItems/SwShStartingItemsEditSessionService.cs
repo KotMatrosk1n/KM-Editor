@@ -179,7 +179,7 @@ public sealed class SwShStartingItemsEditSessionService
             DiagnosticSeverity.Info,
             string.Create(CultureInfo.InvariantCulture, $"Starting Items change plan preview contains {writes.Length:N0} target file(s).")));
 
-        return SwShChangePlanSourceGuard.Capture(
+        return SwShChangePlanSourceGuard.CaptureWithAssignmentSources(
             paths,
             new ChangePlan(session.Id, writes, diagnostics));
     }

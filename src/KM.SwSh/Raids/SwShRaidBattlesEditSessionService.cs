@@ -41,6 +41,16 @@ public sealed class SwShRaidBattlesEditSessionService
         this.temporaryFileWriter = temporaryFileWriter;
     }
 
+    private SwShRaidBattlesWorkflow LoadForSession(OpenedProject project, EditSession session,
+        IReadOnlyList<SwShRaidBattleFieldUpdate?>? updates = null)
+    {
+        var ids = GetRaidBattleEdits(session)
+            .Select(edit => SwShRaidBattlesWorkflowService.TryParseSlotRecordId(edit.RecordId, out var id, out _) ? id : "")
+            .Concat(updates?.OfType<SwShRaidBattleFieldUpdate>().Select(update => update.TableId) ?? [])
+            .Where(id => !string.IsNullOrWhiteSpace(id)).ToHashSet(StringComparer.Ordinal);
+        return raidBattlesWorkflowService.LoadForEditing(project, ids);
+    }
+
     public EditSession StartSession()
     {
         return EditSession.Start();
@@ -70,7 +80,7 @@ public sealed class SwShRaidBattlesEditSessionService
         projectWorkspaceService.ClearMemoryCache();
         var originalSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = raidBattlesWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, originalSession, updates);
         var originalWorkflow = OverlayPendingEdits(loadedWorkflow, originalSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -221,7 +231,7 @@ public sealed class SwShRaidBattlesEditSessionService
 
         projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
-        var workflow = raidBattlesWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
         if (CanEditRaidBattles(project, workflow, diagnostics))
@@ -306,7 +316,18 @@ public sealed class SwShRaidBattlesEditSessionService
             DiagnosticSeverity.Info,
             "Change plan preview contains 1 target file."));
 
-        return SwShChangePlanSourceGuard.Capture(
+        var assignedWorkflow = OverlayPendingEdits(LoadForSession(project, session), session.PendingEdits);
+        var identityRecords = raidBattleEdits.Where(edit => edit.Field is SwShRaidBattlesWorkflowService.SpeciesField or SwShRaidBattlesWorkflowService.FormField)
+            .Select(edit => edit.RecordId).ToHashSet(StringComparer.Ordinal);
+        var species = assignedWorkflow.Tables.SelectMany(table => table.Slots.Where(slot =>
+            identityRecords.Contains(SwShRaidBattlesWorkflowService.CreateSlotRecordId(table.TableId, slot.Slot))))
+            .Select(slot => slot.SpeciesId).ToHashSet();
+        if (species.Count > 0)
+        {
+            var catalog = SwShEffectivePokemonCatalog.Load(paths, species);
+            if (catalog.Available) write = write with { Sources = write.Sources.Concat(catalog.Sources).Distinct().ToArray() };
+        }
+        return SwShChangePlanSourceGuard.CaptureWithAssignmentSources(
             paths,
             new ChangePlan(session.Id, [write], diagnostics));
     }
@@ -555,6 +576,19 @@ public sealed class SwShRaidBattlesEditSessionService
             }
         }
 
+        var identityRecords = GetRaidBattleEdits(session).Where(edit => edit.Field is SwShRaidBattlesWorkflowService.SpeciesField or SwShRaidBattlesWorkflowService.FormField)
+            .Select(edit => edit.RecordId).ToHashSet(StringComparer.Ordinal);
+        var assigned = effectiveWorkflow.Tables.SelectMany(table => table.Slots.Where(slot =>
+            identityRecords.Contains(SwShRaidBattlesWorkflowService.CreateSlotRecordId(table.TableId, slot.Slot)))).ToArray();
+        if (assigned.Length > 0)
+        {
+            var catalog = SwShEffectivePokemonCatalog.Load(project.Paths, assigned.Select(slot => slot.SpeciesId).ToHashSet());
+            foreach (var slot in assigned)
+                if (!catalog.Available || !catalog.Entries.Any(entry => entry.Identity.Species == slot.SpeciesId
+                    && entry.Identity.Form == slot.Form && entry.Capabilities.HasFlag(SwShPokemonCapability.Assignment)))
+                    diagnostics.Add(CreateDiagnostic(DiagnosticSeverity.Error,
+                        "Assigned Pokemon form does not have complete installed assets.", field: SwShRaidBattlesWorkflowService.SpeciesField));
+        }
         ValidateSemanticRecords(effectiveWorkflow, semanticRecords, diagnostics);
         ValidateProbabilityColumns(effectiveWorkflow, probabilityColumns, diagnostics);
 

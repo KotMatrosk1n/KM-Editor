@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { mergeBehaviorWorkflow, mergePlacementWorkflow, mergePokemonWorkflow, mergeItemsWorkflow, mergeMovesWorkflow, mergeEncountersWorkflow, mergeRaidBattlesWorkflow, mergeTeraRaidsWorkflow } from './partialWorkflow';
 import { create } from 'zustand';
+import { mergeGiftWorkflow, mergeTradeWorkflow, mergeRentalWorkflow, mergeStaticEncounterWorkflow } from './partialWorkflow';
 import {
   type ApiDiagnostic,
   type ApplyResult,
@@ -777,6 +779,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set({ spreadsheetImportPreview }),
   setItemsWorkflow: (itemsWorkflow) =>
     set((state) => {
+      itemsWorkflow = mergeItemsWorkflow(state.itemsWorkflow, itemsWorkflow);
       const selectableItems = itemsWorkflow.items.filter((item) => item.itemId !== 0);
       const selectedItemId = selectableItems.some((item) => item.itemId === state.selectedItemId)
         ? state.selectedItemId
@@ -790,6 +793,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     }),
   setMovesWorkflow: (movesWorkflow) =>
     set((state) => {
+      movesWorkflow = mergeMovesWorkflow(state.movesWorkflow, movesWorkflow);
       const selectedMoveId = movesWorkflow.moves.some(
         (move) => move.moveId === state.selectedMoveId
       )
@@ -805,6 +809,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     }),
   setPokemonWorkflow: (pokemonWorkflow) =>
     set((state) => {
+      pokemonWorkflow = mergePokemonWorkflow(state.pokemonWorkflow, pokemonWorkflow);
       const selectedPokemonPersonalId = resolveSelectedPokemonPersonalId(
         pokemonWorkflow,
         state.selectedPokemonPersonalId
@@ -827,6 +832,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     }),
   setGiftPokemonWorkflow: (giftPokemonWorkflow) =>
     set((state) => {
+      giftPokemonWorkflow = mergeGiftWorkflow(state.giftPokemonWorkflow, giftPokemonWorkflow);
       const selectedGiftPokemonIndex = giftPokemonWorkflow.gifts.some(
         (gift) => gift.giftIndex === state.selectedGiftPokemonIndex
       )
@@ -841,6 +847,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     }),
   setTradePokemonWorkflow: (tradePokemonWorkflow) =>
     set((state) => {
+      tradePokemonWorkflow = mergeTradeWorkflow(state.tradePokemonWorkflow, tradePokemonWorkflow);
       const selectedTradePokemonIndex = tradePokemonWorkflow.trades.some(
         (trade) => trade.tradeIndex === state.selectedTradePokemonIndex
       )
@@ -855,6 +862,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     }),
   setStaticEncountersWorkflow: (staticEncountersWorkflow) =>
     set((state) => {
+      staticEncountersWorkflow = mergeStaticEncounterWorkflow(state.staticEncountersWorkflow, staticEncountersWorkflow);
       const selectedStaticEncounterIndex = staticEncountersWorkflow.encounters.some(
         (encounter) => encounter.encounterIndex === state.selectedStaticEncounterIndex
       )
@@ -869,6 +877,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     }),
   setRentalPokemonWorkflow: (rentalPokemonWorkflow) =>
     set((state) => {
+      rentalPokemonWorkflow = mergeRentalWorkflow(state.rentalPokemonWorkflow, rentalPokemonWorkflow);
       const selectedRentalPokemonIndex = rentalPokemonWorkflow.rentals.some(
         (rental) => rental.rentalIndex === state.selectedRentalPokemonIndex
       )
@@ -1137,6 +1146,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     })),
   setEncountersWorkflow: (encountersWorkflow) =>
     set((state) => {
+      encountersWorkflow = mergeEncountersWorkflow(state.encountersWorkflow, encountersWorkflow);
       const selectedEncounterTableId = resolveSelectedEncounterTableId(
         encountersWorkflow,
         state.selectedEncounterTableId
@@ -1158,8 +1168,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         selectedEncounterTableId
       };
     }),
-  setTeraRaidsWorkflow: (teraRaidsWorkflow) =>
+  setTeraRaidsWorkflow: (incoming) =>
     set((state) => {
+      const teraRaidsWorkflow = mergeTeraRaidsWorkflow(state.teraRaidsWorkflow, incoming);
       const selectedTeraRaidRecordId = teraRaidsWorkflow.raids.some(
         (raid) => raid.recordId === state.selectedTeraRaidRecordId
       )
@@ -1173,8 +1184,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         teraRaidsWorkflow
       };
     }),
-  setRaidBattlesWorkflow: (raidBattlesWorkflow) =>
+  setRaidBattlesWorkflow: (incoming) =>
     set((state) => {
+      const raidBattlesWorkflow = mergeRaidBattlesWorkflow(state.raidBattlesWorkflow, incoming);
       const selectedRaidBattleTableId = raidBattlesWorkflow.tables.some(
         (table) => table.tableId === state.selectedRaidBattleTableId
       )
@@ -1217,6 +1229,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     }),
   setPlacementWorkflow: (placementWorkflow) =>
     set((state) => {
+      placementWorkflow = mergePlacementWorkflow(state.placementWorkflow, placementWorkflow);
       const selectedPlacementObjectId = placementWorkflow.objects.some(
         (placedObject) => placedObject.objectId === state.selectedPlacementObjectId
       )
@@ -1243,8 +1256,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         selectedPlacementObjectId
       };
     }),
-  setBehaviorWorkflow: (behaviorWorkflow) =>
+  setBehaviorWorkflow: (incoming) =>
     set((state) => {
+      const behaviorWorkflow = mergeBehaviorWorkflow(state.behaviorWorkflow, incoming);
       const entries = 'resources' in behaviorWorkflow ? behaviorWorkflow.resources : behaviorWorkflow.entries;
       const selectedBehaviorEntryId = entries.some(
         (entry) => entry.entryId === state.selectedBehaviorEntryId

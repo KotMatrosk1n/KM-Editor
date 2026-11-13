@@ -7,7 +7,10 @@ using KM.Api.Workflows;
 
 namespace KM.Api.Items;
 
-public sealed record LoadItemsWorkflowRequest(ProjectPathsDto Paths);
+public sealed record LoadItemsWorkflowRequest(ProjectPathsDto Paths)
+{
+    public IReadOnlyList<int>? RecordIndices { get; init; }
+}
 
 public sealed record UpdateItemFieldRequest(
     ProjectPathsDto Paths,

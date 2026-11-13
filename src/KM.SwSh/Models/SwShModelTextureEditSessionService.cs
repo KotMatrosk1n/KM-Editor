@@ -94,7 +94,7 @@ public sealed class SwShModelTextureEditSessionService
                 File.Exists(Path.Combine(paths.OutputRootPath!, pair.Key)), "Apply verified model changes.",
                 ModelTextureIntent.Hash(System.Text.Encoding.UTF8.GetBytes(string.Join("\n", session.PendingEdits.Select(e => e.NewValue)))))).ToArray();
             return SwShChangePlanSourceGuard.CaptureBounded(paths, new(session.Id, writes, []) { EffectivePendingEdits = session.PendingEdits },
-                64L * 1024 * 1024, 512L * 1024 * 1024);
+                64L * 1024 * 1024, 512L * 1024 * 1024, assignmentSourcesBound: true);
         }
         catch (Exception ex) when (Expected(ex)) { return new(session.Id, [], [Diagnostic("Model asset output could not be prepared. Reload and review the edits again.")]); }
     }

@@ -222,7 +222,11 @@ public static class SwShBridgeMapper
     {
         ArgumentNullException.ThrowIfNull(workflow);
 
-        return new LoadTrainersWorkflowResponse(ToTrainersWorkflowDto(workflow));
+        return new LoadTrainersWorkflowResponse(ToTrainersWorkflowDto(workflow))
+        {
+            IsPartial = workflow.IsPartial,
+            PreserveClassBallScope = !workflow.HasClassOwnership
+        };
     }
 
     public static LoadShopsWorkflowResponse ToDto(SwShShopsWorkflow workflow)
@@ -1739,7 +1743,11 @@ public static class SwShBridgeMapper
                 workflow.Stats.TotalTrainerCount,
                 workflow.Stats.TotalPokemonCount,
                 workflow.Stats.SourceFileCount),
-            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray())
+        {
+            IsPartial = workflow.IsPartial,
+            PreserveClassBallScope = !workflow.HasClassOwnership,
+        };
     }
 
     private static TrainersWorkflowDeltaDto ToTrainersWorkflowDeltaDto(
@@ -1776,7 +1784,11 @@ public static class SwShBridgeMapper
                 workflow.Stats.TotalTrainerCount,
                 workflow.Stats.TotalPokemonCount,
                 workflow.Stats.SourceFileCount),
-            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray())
+        {
+            IsPartial = workflow.IsPartial,
+            PreserveClassBallScope = !workflow.HasClassOwnership,
+        };
     }
 
     private static ShopsWorkflowDto ToShopsWorkflowDto(SwShShopsWorkflow workflow)
@@ -2244,7 +2256,7 @@ public static class SwShBridgeMapper
             summary.Label,
             summary.Description,
             ToDto(summary.Availability),
-            summary.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+            summary.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray()) { IsPartial = summary.IsPartial, UnassessedDiagnosticFiles = summary.UnassessedDiagnosticFiles };
     }
 
     private static ItemRecordDto ToDto(SwShItemRecord item)

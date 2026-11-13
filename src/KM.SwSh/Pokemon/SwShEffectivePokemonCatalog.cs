@@ -25,7 +25,9 @@ public sealed record SwShEffectivePokemonCatalog(string Revision, IReadOnlyList<
     public IReadOnlySet<int> SpeciesFor(SwShPokemonCapability capability) => Entries
         .Where(e => (e.Capabilities & capability) == capability).Select(e => e.Identity.Species).ToHashSet();
 
-    public static SwShEffectivePokemonCatalog Load(ProjectPaths paths)
+    public static SwShEffectivePokemonCatalog Load(ProjectPaths paths) => Load(paths, speciesIds: null);
+
+    internal static SwShEffectivePokemonCatalog Load(ProjectPaths paths, IReadOnlySet<int>? speciesIds)
     {
         try
         {
@@ -76,10 +78,12 @@ public sealed record SwShEffectivePokemonCatalog(string Revision, IReadOnlyList<
                 return bytes;
             }
             var state = SwShRestorationStateStore.Read(paths);
-            SwShRestorationReadScope.Find(paths)?.Prefetch(state.State.Selections.Where(s => s.Enabled).Select(s => s.PreparedHash));
+            var selections = state.State.Selections.Where(s => s.Enabled
+                && (speciesIds is null || SwShRestorationDefinitions.Get(s.DefinitionId).Identities.Any(i => speciesIds.Contains(i.Species)))).ToArray();
+            SwShRestorationReadScope.Find(paths)?.Prefetch(selections.Select(s => s.PreparedHash));
             var managed = new Dictionary<SwShPokemonIdentity, bool>();
             var presence = new SwShRestorationComposer.PresenceValidator();
-            foreach (var selection in state.State.Selections.Where(s => s.Enabled))
+            foreach (var selection in selections)
             {
                 var prepared = SwShRestorationStateStore.ReadPrepared(paths, selection.PreparedHash);
                 var complete = true;
@@ -96,9 +100,10 @@ public sealed record SwShEffectivePokemonCatalog(string Revision, IReadOnlyList<
                 foreach (var identity in SwShRestorationDefinitions.Get(selection.DefinitionId).Identities) managed[identity] = complete;
             }
             var rows = Identities(current); var nativeRows = Identities(native).ToDictionary(e => e.Identity);
-            var extendedSupport = current.Count <= SwShRestorationSpecies.AnnihilapeRow
+            var extendedSupport = speciesIds is not null && !speciesIds.Contains(SwShRestorationSpecies.Annihilape)
+                || current.Count <= SwShRestorationSpecies.AnnihilapeRow
                 || !current[SwShRestorationSpecies.AnnihilapeRow].IsPresentInGame || HasSpeciesSupport();
-            var entries = rows.Select(row =>
+            var entries = rows.Where(row => speciesIds is null || speciesIds.Contains(row.Identity.Species)).Select(row =>
             {
                 var present = row.Personal.IsPresentInGame;
                 var origin = nativeRows.TryGetValue(row.Identity, out var baseline) && baseline.Personal.IsPresentInGame

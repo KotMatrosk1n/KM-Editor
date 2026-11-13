@@ -143,11 +143,16 @@ public sealed class SwShRentalPokemonWorkflowService
             : SwShWorkflowAvailability.ReadOnly);
     }
 
-    public SwShRentalPokemonWorkflow Load(OpenedProject project)
+    public SwShRentalPokemonWorkflow Load(OpenedProject project) => LoadCore(project, null);
+
+    internal SwShRentalPokemonWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<int> recordIndices)
+        => LoadCore(project, recordIndices);
+
+    private SwShRentalPokemonWorkflow LoadCore(OpenedProject project, IReadOnlySet<int>? recordIndices)
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        var summary = CreateSummary(project);
+        var summary = CreateSummary(project) with { IsPartial = recordIndices is not null };
         var diagnostics = new List<ValidationDiagnostic>(summary.Diagnostics);
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
@@ -164,13 +169,14 @@ public sealed class SwShRentalPokemonWorkflowService
             return CreateWorkflow(summary, [], sourceFileCount: 0, CreateEmptyLookupTables(), diagnostics);
         }
 
-        var lookupTables = LoadLookupTables(project, diagnostics);
+        var lookupTables = LoadLookupTables(project, diagnostics, includeAssignmentCatalog: recordIndices is null);
 
         try
         {
             var archive = SwShRentalPokemonArchive.Parse(readAllBytes(source.AbsolutePath));
             var provenance = CreateProvenance(source.GraphEntry);
             var rentals = archive.Rentals
+                .Where(rental => recordIndices is null || recordIndices.Contains(rental.Index))
                 .Select(rental => ToRentalEntry(rental, lookupTables, provenance))
                 .ToArray();
             var sourceFileCount = 1 + lookupTables.SourceFileCount;
@@ -549,14 +555,16 @@ public sealed class SwShRentalPokemonWorkflowService
 
     private RentalLookupTables LoadLookupTables(
         OpenedProject project,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        bool includeAssignmentCatalog)
     {
         var messageRoot = ResolveLanguageMessageRoot(project, diagnostics);
         var speciesNames = LoadMessageTable(project, messageRoot, "monsname.dat", diagnostics);
         var itemNames = LoadMessageTable(project, messageRoot, "itemname.dat", diagnostics);
         var moveNames = LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics);
         var itemDisplayNames = SwShItemsWorkflowService.CreateItemDisplayNames(project, itemNames, moveNames);
-        var presentSpeciesIds = SwShSpeciesAvailability.LoadPresentSpeciesIds(project);
+        var presentSpeciesIds = SwShSpeciesAvailability.LoadPresentSpeciesIds(project, File.ReadAllBytes,
+            includeAssignmentCatalog ? null : 10_000);
         var itemSemanticData = LoadItemSemanticData(project);
         var moveAvailability = SwShMoveAvailability.Load(project);
         var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);

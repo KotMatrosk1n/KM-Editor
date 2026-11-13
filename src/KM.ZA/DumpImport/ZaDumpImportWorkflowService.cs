@@ -54,7 +54,7 @@ internal sealed class ZaDumpImportWorkflowService
             return CreateWorkflow(summary, [], sourceFileCount: 0, diagnostics);
         }
 
-        var itemsWorkflow = itemsWorkflowService.Load(project);
+        var itemsWorkflow = itemsWorkflowService.LoadForLookup(project);
         var itemErrors = itemsWorkflow.Diagnostics
             .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             .ToArray();

@@ -164,7 +164,10 @@ public sealed record SwShPokemonWorkflow(
     IReadOnlyList<SwShPokemonEvolutionMethodOption> EvolutionMethodOptions,
     IReadOnlyList<SwShPokemonEditableFieldOption> LearnsetMoveOptions,
     IReadOnlyList<SwShPokemonEditableField> EditableFields,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    internal IReadOnlyList<ProjectFileReference> AssignmentSources { get; init; } = [];
+}
 
 public sealed record SwShPokemonEditableField(
     string Field,

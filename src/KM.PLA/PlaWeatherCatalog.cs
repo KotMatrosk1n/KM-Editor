@@ -53,10 +53,10 @@ internal sealed class PlaWeatherCatalog
     }
     private PlaFlatBuffer Buffer(byte[]? archive) => archive is null ? current : new(new PlaFieldArchive(archive).Read(MemberPath, catalog.Scope.Compression));
     internal PlaRecord Record(string id, byte[]? archive) => Record(id, Buffer(archive));
-    internal IReadOnlyList<PlaRecord> Records(IReadOnlyDictionary<string, byte[]> files)
+    internal IReadOnlyList<PlaRecord> Records(IReadOnlyDictionary<string, byte[]> files, string? selectedId = null)
     {
         var b = Buffer(files.GetValueOrDefault(PlaWildCatalog.ArchivePath));
-        return indices.Keys.Select(id => Record(id, b)).ToArray();
+        return indices.Keys.Where(id => selectedId is null || id == selectedId).Select(id => Record(id, b)).ToArray();
     }
     private void Validate(PlaFlatBuffer b)
     {

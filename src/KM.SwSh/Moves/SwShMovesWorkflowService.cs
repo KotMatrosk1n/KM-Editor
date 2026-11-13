@@ -320,11 +320,15 @@ public sealed class SwShMovesWorkflowService
             : SwShWorkflowAvailability.ReadOnly);
     }
 
-    public SwShMovesWorkflow Load(OpenedProject project)
+    public SwShMovesWorkflow Load(OpenedProject project) => LoadCore(project, null);
+
+    internal SwShMovesWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<int> moveIds) => LoadCore(project, moveIds);
+
+    private SwShMovesWorkflow LoadCore(OpenedProject project, IReadOnlySet<int>? moveIds)
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        var summary = CreateSummary(project);
+        var summary = CreateSummary(project) with { IsPartial = moveIds is not null };
         var diagnostics = new List<ValidationDiagnostic>(summary.Diagnostics);
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
@@ -390,6 +394,9 @@ public sealed class SwShMovesWorkflowService
                     continue;
                 }
 
+                // IDs live in the header. Read every small header to preserve alternate
+                // filename precedence, but build editor details only for selected records.
+                if (moveIds is not null && !moveIds.Contains((int)moveFile.Record.MoveId)) continue;
                 moves.Add(ToMoveRecord(
                     moveFile.Record,
                     moveNames,

@@ -416,7 +416,11 @@ internal sealed class ZaMovesWorkflowService
             WorkflowDescription);
     }
 
-    public ZaMovesWorkflow Load(OpenedProject project)
+    public ZaMovesWorkflow Load(OpenedProject project) => LoadCore(project, null);
+
+    internal ZaMovesWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<int> moveIds) => LoadCore(project, moveIds);
+
+    private ZaMovesWorkflow LoadCore(OpenedProject project, IReadOnlySet<int>? moveIds)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -592,11 +596,11 @@ internal sealed class ZaMovesWorkflowService
                     basePlayerDamageData))
                 .ToArray();
 
-            var vanillaFlinchByMoveId = LoadRecords(baseSource, labels)
+            var vanillaFlinchByMoveId = LoadRecords(baseSource, labels, moveIds)
                 .GroupBy(move => move.MoveId)
                 .Where(group => group.Count() == 1)
                 .ToDictionary(group => group.Key, group => group.Single().Flinch);
-            moves = LoadRecords(source, labels)
+            moves = LoadRecords(source, labels, moveIds)
                 .Select(move => vanillaFlinchByMoveId.TryGetValue(move.MoveId, out var vanillaFlinch)
                     ? move with
                     {
@@ -649,7 +653,7 @@ internal sealed class ZaMovesWorkflowService
             diagnostics.Count == 0 ? null : diagnostics);
 
         return new ZaMovesWorkflow(
-            summary,
+            summary with { IsPartial = moveIds is not null },
             moves,
             [.. WazaEditableFields, .. runtimeEditableFields],
             new ZaMovesWorkflowStats(
@@ -907,14 +911,15 @@ internal sealed class ZaMovesWorkflowService
 
     private IEnumerable<ZaMoveRecord> LoadRecords(
         ZaWorkflowFile source,
-        ZaTextLabelLookup labels)
+        ZaTextLabelLookup labels,
+        IReadOnlySet<int>? moveIds = null)
     {
         var table = ZaMoveDataArray.GetRootAsZaMoveDataArray(new ByteBuffer(source.Bytes));
         fileSource.EnsureBoundedTableCount(table.ValuesLength, "The Z-A move table");
         for (var index = 0; index < table.ValuesLength; index++)
         {
             var move = table.Values(index);
-            if (move is not null)
+            if (move is not null && (moveIds is null || moveIds.Contains(move.Value.MoveId)))
             {
                 yield return ToRecord(move.Value, labels, source);
             }

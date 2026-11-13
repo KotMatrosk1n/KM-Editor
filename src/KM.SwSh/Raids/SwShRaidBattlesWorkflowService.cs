@@ -107,11 +107,15 @@ public sealed class SwShRaidBattlesWorkflowService
             : SwShWorkflowAvailability.ReadOnly);
     }
 
-    public SwShRaidBattlesWorkflow Load(OpenedProject project)
+    public SwShRaidBattlesWorkflow Load(OpenedProject project) => LoadCore(project, null);
+
+    internal SwShRaidBattlesWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<string> tableIds) => LoadCore(project, tableIds);
+
+    private SwShRaidBattlesWorkflow LoadCore(OpenedProject project, IReadOnlySet<string>? tableIds)
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        var summary = CreateSummary(project);
+        var summary = CreateSummary(project) with { IsPartial = tableIds is not null };
         var diagnostics = new List<ValidationDiagnostic>(summary.Diagnostics);
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
@@ -146,7 +150,7 @@ public sealed class SwShRaidBattlesWorkflowService
             var archive = SwShEncounterNestArchive.Parse(memberData);
             var provenance = CreateProvenance(dataSource.GraphEntry);
             var rewardLinks = LoadRewardLinks(project);
-            var tables = FlattenArchive(archive, provenance, lookupTables, rewardLinks, diagnostics);
+            var tables = FlattenArchive(archive, provenance, lookupTables, rewardLinks, diagnostics, tableIds);
 
             return CreateWorkflow(summary, tables, sourceFileCount: 1 + lookupTables.SourceFileCount, lookupTables, diagnostics);
         }
@@ -370,11 +374,13 @@ public sealed class SwShRaidBattlesWorkflowService
         SwShRaidBattleProvenance provenance,
         RaidBattleLookupTables lookupTables,
         IReadOnlyDictionary<(string RewardKind, string SourceTableHash), SwShRaidBattleRewardLinkRecord> rewardLinks,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        IReadOnlySet<string>? tableIds)
     {
         var denTableIndexes = CreateEncounterDenTableIndexes(archive.Tables, diagnostics);
-        return archive.Tables
-            .Select((table, tableIndex) => new SwShRaidBattleTableRecord(
+        return archive.Tables.Select((table, tableIndex) => (table, tableIndex))
+            .Where(row => tableIds is null || tableIds.Contains(CreateTableId(row.tableIndex, row.table)))
+            .Select(row => { var (table, tableIndex) = row; return new SwShRaidBattleTableRecord(
                 CreateTableId(tableIndex, table),
                 FormatRaidTableDisplayName(table, tableIndex, denTableIndexes[tableIndex]),
                 $"table_{table.TableId:X16}",
@@ -389,7 +395,7 @@ public sealed class SwShRaidBattlesWorkflowService
                         lookupTables,
                         rewardLinks))
                     .ToArray(),
-                provenance))
+                provenance); })
             .ToArray();
     }
 

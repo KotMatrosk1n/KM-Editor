@@ -105,7 +105,7 @@ public sealed class SwShSpreadsheetImportExecutionService
             return new SwShSpreadsheetImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
         }
 
-        var itemsWorkflow = itemsWorkflowService.Load(project);
+        var itemsWorkflow = itemsWorkflowService.LoadForLookup(project);
         if (itemsWorkflow.Items.Count == 0 || itemsWorkflow.Diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             diagnostics.Add(CreateDiagnostic(

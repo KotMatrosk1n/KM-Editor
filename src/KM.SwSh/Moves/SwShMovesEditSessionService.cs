@@ -27,6 +27,14 @@ public sealed class SwShMovesEditSessionService
         this.movesWorkflowService = movesWorkflowService ?? new SwShMovesWorkflowService();
     }
 
+    private SwShMovesWorkflow LoadForSession(OpenedProject project, EditSession session, IEnumerable<int>? incoming = null)
+    {
+        var ids = incoming?.ToHashSet() ?? [];
+        foreach (var edit in session.PendingEdits.Where(edit => edit.Domain == MovesEditDomain))
+            if (int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var id)) ids.Add(id);
+        return movesWorkflowService.LoadForEditing(project, ids);
+    }
+
     public EditSession StartSession()
     {
         return EditSession.Start();
@@ -45,7 +53,7 @@ public sealed class SwShMovesEditSessionService
 
         var currentSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = movesWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [moveId]);
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -96,7 +104,7 @@ public sealed class SwShMovesEditSessionService
 
         var currentSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = movesWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, updates.OfType<SwShMoveFieldUpdate>().Select(update => update.MoveId));
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -178,7 +186,7 @@ public sealed class SwShMovesEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = movesWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         return Validate(project, workflow, session);
     }
 
@@ -216,7 +224,7 @@ public sealed class SwShMovesEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = movesWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var validation = Validate(project, workflow, session);
         var diagnostics = validation.Diagnostics.ToList();
 
@@ -243,7 +251,7 @@ public sealed class SwShMovesEditSessionService
             DiagnosticSeverity.Info,
             $"Change plan preview contains {writes.Count} target file{(writes.Count == 1 ? string.Empty : "s")}."));
 
-        return SwShChangePlanSourceGuard.Capture(
+        return SwShChangePlanSourceGuard.CaptureWithAssignmentSources(
             paths,
             new ChangePlan(session.Id, writes, diagnostics));
     }
@@ -286,7 +294,7 @@ public sealed class SwShMovesEditSessionService
         using var verifiedApply = applyScope!;
         paths = verifiedApply.ApplyPaths;
         var project = projectWorkspaceService.Open(paths);
-        var workflow = movesWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var pendingOutputs = new List<MoveOutput>();
 
         foreach (var editGroup in session.PendingEdits.GroupBy(edit => GetTargetRelativePath(workflow, edit), StringComparer.OrdinalIgnoreCase))

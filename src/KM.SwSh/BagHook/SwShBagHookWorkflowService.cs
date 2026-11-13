@@ -236,7 +236,7 @@ public sealed class SwShBagHookWorkflowService
     {
         try
         {
-            return itemsWorkflowService.Load(project).Items.ToDictionary(item => item.ItemId, item => item.Name);
+            return itemsWorkflowService.LoadForLookup(project).Items.ToDictionary(item => item.ItemId, item => item.Name);
         }
         catch (InvalidDataException)
         {

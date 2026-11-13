@@ -20,6 +20,23 @@ export type TrainerFieldDraftRecords = Readonly<
   Record<string, Readonly<Record<string, string>>>
 >;
 
+export function getTrainerPartyRefreshIds(
+  workflow: TrainersWorkflow,
+  writtenFiles: readonly string[]
+): number[] | undefined {
+  const normalize = (file: string) => file.replaceAll('\\', '/').toLowerCase();
+  const paths = new Set(writtenFiles.map(normalize));
+  if (paths.size === 0 || [...paths].some(
+    (file) => !/^romfs\/bin\/trainer\/trainer_poke\/trainer_poke_\d+\.bin$/u.test(file)
+  )) return undefined;
+
+  const trainers = workflow.trainers.filter((trainer) => paths.has(normalize(trainer.provenance.teamSourceFile)));
+  // Unknown or structural writes require the complete workflow refresh.
+  if (new Set(trainers.map((trainer) => normalize(trainer.provenance.teamSourceFile))).size !== paths.size)
+    return undefined;
+  return trainers.map((trainer) => trainer.trainerId);
+}
+
 export function applyTrainerWorkflowDelta(
   workflow: TrainersWorkflow,
   delta: TrainersWorkflowDelta,
@@ -48,13 +65,45 @@ export function applyTrainerWorkflowDelta(
     }
   }
 
+  const trainers = workflow.trainers.map((trainer) => {
+    const changed = changedTrainers.get(trainer.trainerId);
+    if (!changed) return trainer;
+    if (delta.preserveClassBallScope && changed.trainerClassId === trainer.trainerClassId) {
+      return {
+        ...changed,
+        canEditClassBall: trainer.canEditClassBall,
+        classBallScope: trainer.classBallScope
+      };
+    }
+    return changed;
+  });
+  const refreshedFiles = new Set(delta.trainers.flatMap((trainer) => [
+    trainer.provenance.sourceFile,
+    trainer.provenance.teamSourceFile,
+    trainer.provenance.classSourceFile
+  ]).filter((file): file is string => file !== null));
+  const diagnostics = delta.isPartial
+    ? [...new Map([
+      ...workflow.diagnostics.filter((diagnostic) => !diagnostic.file || !refreshedFiles.has(diagnostic.file)),
+      ...delta.diagnostics
+    ].map((diagnostic) => [JSON.stringify(diagnostic), diagnostic])).values()]
+    : delta.diagnostics;
+  const stats = delta.isPartial ? {
+    totalTrainerCount: trainers.length,
+    totalPokemonCount: trainers.reduce(
+      (count, trainer) => count + trainer.team.filter((pokemon) => pokemon.speciesId > 0).length, 0),
+    sourceFileCount: new Set(trainers.flatMap((trainer) => [
+      trainer.provenance.sourceFile,
+      trainer.provenance.teamSourceFile,
+      trainer.provenance.classSourceFile
+    ]).filter((file): file is string => file !== null)).size
+  } : delta.stats;
+
   return {
     ...workflow,
-    diagnostics: delta.diagnostics,
-    stats: delta.stats,
-    trainers: workflow.trainers.map(
-      (trainer) => changedTrainers.get(trainer.trainerId) ?? trainer
-    )
+    diagnostics,
+    stats,
+    trainers
   };
 }
 

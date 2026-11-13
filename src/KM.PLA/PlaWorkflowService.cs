@@ -141,7 +141,7 @@ public sealed partial class PlaWorkflowService
     }
 
     private static IReadOnlyList<PlaRecord> Records(PlaCatalog catalog, string kind, string? textFile, Dictionary<string, byte[]> edited,
-        out string[] textFiles, out string? selectedFile)
+        out string[] textFiles, out string? selectedFile, string? selectedId = null)
     {
         textFiles = [];
         selectedFile = null;
@@ -149,14 +149,14 @@ public sealed partial class PlaWorkflowService
         if (PlaExecutableCatalog.Supports(kind)) return catalog.Executable.Records(kind, edited);
         if (PlaScriptCatalog.Supports(kind)) return catalog.Scripts.Records(kind, edited);
         if (PlaSettingsCatalog.Supports(kind)) return catalog.Settings.Records(kind, edited);
-        if (kind == "weather") return catalog.Weather.Records(edited);
+        if (kind == "weather") return catalog.Weather.Records(edited, selectedId);
         if (PlaWildCatalog.Supports(kind))
         {
             if (kind is not ("encounters" or "spawns")) _ = catalog.Events;
-            return catalog.Wild.Records(kind, edited);
+            return catalog.Wild.Records(kind, edited, selectedId);
         }
-        if (PlaEventCatalog.Supports(kind)) return catalog.Events.Records(kind, edited);
-        if (PlaEconomyCatalog.Supports(kind)) return catalog.Economy.Records(kind, edited);
+        if (PlaEventCatalog.Supports(kind)) return catalog.Events.Records(kind, edited, selectedId);
+        if (PlaEconomyCatalog.Supports(kind)) return catalog.Economy.Records(kind, edited, selectedId);
         if (kind == "text")
         {
             textFiles = catalog.Scope.TextFiles();
@@ -166,7 +166,7 @@ public sealed partial class PlaWorkflowService
             var original = catalog.Scope.Read(path);
             var text = new PlaMessageFile(edited.GetValueOrDefault(path) ?? original, catalog.Scope.Read(Path.ChangeExtension(path, ".tbl")));
             var fileIdentity = selectedFile;
-            return text.Lines.Select((line, index) => new PlaRecord($"{catalog.Scope.Language}/{fileIdentity}:{index}", $"{index}: {text.Keys[index].Name}", new Dictionary<string, string> { ["text"] = line.Text })).ToArray();
+            return text.Lines.Select((line, index) => (line, index)).Where(row => selectedId is null || $"{catalog.Scope.Language}/{fileIdentity}:{row.index}" == selectedId).Select(row => new PlaRecord($"{catalog.Scope.Language}/{fileIdentity}:{row.index}", $"{row.index}: {text.Keys[row.index].Name}", new Dictionary<string, string> { ["text"] = row.line.Text })).ToArray();
         }
         var ids = kind switch
         {
@@ -175,7 +175,7 @@ public sealed partial class PlaWorkflowService
             "trainers" or "gifts" or "static" => catalog.Battles.Ids(kind),
             _ => catalog.Pokemon.Keys,
         };
-        return ids.Select(id => catalog.Record(kind, id, edited.GetValueOrDefault(catalog.Locate(kind, id).Path))).ToArray();
+        return ids.Where(id => selectedId is null || id == selectedId).Select(id => catalog.Record(kind, id, edited.GetValueOrDefault(catalog.Locate(kind, id).Path))).ToArray();
     }
 
     public EditSession Stage(ProjectPaths paths, EditSession session, string kind, string id, IReadOnlyDictionary<string, string> values,
@@ -193,7 +193,7 @@ public sealed partial class PlaWorkflowService
         var catalog = new PlaCatalog(scope);
         // Load the same dependencies as a displayed page, including pending data.
         var files = BuildFiles(catalog, session);
-        var records = Records(catalog, kind, kind == "text" ? SplitTextId(id).File[(scope.Language.Length + 1)..] : null, files, out _, out _);
+        var records = Records(catalog, kind, kind == "text" ? SplitTextId(id).File[(scope.Language.Length + 1)..] : null, files, out _, out _, kind == "personal" && id == "*" ? null : id);
         var fields = catalog.Fields(kind).ToDictionary(field => field.Key, StringComparer.Ordinal);
         _ = catalog.RowFields(kind);
         if (!string.Equals(revision, scope.Fingerprint(), StringComparison.Ordinal))
