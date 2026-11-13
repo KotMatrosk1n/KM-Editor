@@ -11,6 +11,9 @@ public static class OutputLimits
     public const int MaximumCreatedDirectoriesPerApply = 4_096;
     public const int MaximumHistoryReceipts = 1_024;
     public const int MaximumCheckpoints = 64;
+    // Small data patches can outnumber the retained model bundles. Keep the
+    // existing byte budget while allowing several complete restoration edits.
+    public const int MaximumPreservationArtifacts = 8_192;
     public const int MaximumIntegrityEntries = 250_000;
     public const int MaximumRecoveryTransactions = 1_024;
     public const int MaximumWriteBytesPerMutation = 512 * 1024 * 1024;

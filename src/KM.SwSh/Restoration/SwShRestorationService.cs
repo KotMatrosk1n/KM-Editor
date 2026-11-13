@@ -424,6 +424,7 @@ public sealed partial class SwShRestorationService
         }
         AddSamplerSupport(paths, state, outputs, sources);
         var storedState = SwShRestorationStateStore.Store(paths, state); using (storedState.Lease) { }
+        state = SwShRestorationStateStore.ReadState(paths, storedState.Hash).State;
         if (!outputs.ContainsKey(SwShRestorationComposer.PersonalPath)) outputs.Add(SwShRestorationComposer.PersonalPath, Current(SwShRestorationComposer.PersonalPath)
             ?? throw new InvalidDataException("Restoration state requires a personal data anchor."));
         return new(outputs, storedState.Hash, snapshot.Hash, state, sources.OrderBy(s => s.RelativePath, StringComparer.Ordinal).ThenBy(s => s.Layer).ToArray(),

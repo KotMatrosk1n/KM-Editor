@@ -47,6 +47,7 @@ type WorkspaceProps = {
   browser?: ReactNode;
   browserControls?: ReactNode;
   browserVisibleRows?: number;
+  sessionBar?: ReactNode;
   onActiveSectionChange?: (section: string | null) => void;
   children: ReactNode;
 };
@@ -55,7 +56,7 @@ export function SectionedEditorWorkspace(props: WorkspaceProps) {
   return <WorkspaceSession key={props.sessionKey} {...props} />;
 }
 
-function WorkspaceSession({ sessionKey, initialSection = 'details', browser, browserControls, browserVisibleRows, onActiveSectionChange, children }: WorkspaceProps) {
+function WorkspaceSession({ sessionKey, initialSection = 'details', browser, browserControls, browserVisibleRows, sessionBar, onActiveSectionChange, children }: WorkspaceProps) {
   const { t } = useLocalization();
   const { preferences } = useAppearancePreferences();
   const [session] = useState(() => sessionFor(sessionKey, initialSection));
@@ -102,7 +103,9 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
       if (!root.current || !chrome.current) return;
       const viewportBottom = (window.visualViewport?.height ?? window.innerHeight) + (window.visualViewport?.offsetTop ?? 0);
       const available = Math.max(160, viewportBottom - Math.max(0, root.current.getBoundingClientRect().top) - 18);
-      const fixed = chrome.current.scrollHeight - (table.current?.getBoundingClientRect().height ?? 0);
+      const sessionHeight = root.current.querySelector(':scope > .editor-session-bar')?.getBoundingClientRect().height ?? 0;
+      const fixed = chrome.current.scrollHeight - (table.current?.getBoundingClientRect().height ?? 0)
+        + (sessionHeight ? sessionHeight + 12 : 0);
       const browserTable = table.current?.querySelector<HTMLElement>('[role="table"]');
       let minimumTableHeight = 80;
       if (browserVisibleRows && browserTable) {
@@ -121,6 +124,8 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
     const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); };
     const observer = new ResizeObserver(schedule);
     if (chrome.current) observer.observe(chrome.current);
+    const sessionElement = root.current?.querySelector(':scope > .editor-session-bar');
+    if (sessionElement) observer.observe(sessionElement);
     window.addEventListener('resize', schedule);
     window.visualViewport?.addEventListener('resize', schedule);
     measure();
@@ -207,6 +212,7 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
   };
 
   return <div className="sectioned-editor-workspace" data-reduced-motion={reduced || undefined} ref={root}>
+    {sessionBar}
     <div className="editor-workspace-chrome" ref={chrome}>
       {headers.filter(header => !header.props.afterBrowser).map((header, index) => <Fragment key={index}>{header}</Fragment>)}
       {browserControls}

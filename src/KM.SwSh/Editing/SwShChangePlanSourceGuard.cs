@@ -1014,6 +1014,7 @@ public static class SwShChangePlanSourceGuard
             {
                 try
                 {
+                    using var restorationReads = SwShRestorationReadScope.Begin(SourcePaths);
                     var originalState = SwShRestorationStateStore.Read(SourcePaths);
                     var currentState = RestorationTransition is { } transition
                         ? SwShRestorationStateStore.ReadState(SourcePaths, transition.After) : originalState;

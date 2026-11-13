@@ -1066,10 +1066,9 @@ public sealed class SwShTrainersWorkflowService
             moveNames,
             readAllBytes,
             maximumLookupRecordCount);
-        var presentSpeciesIds = SwShSpeciesAvailability.LoadPresentSpeciesIds(
-            project,
-            readAllBytes,
-            includeAssignmentCatalog ? maximumLookupRecordCount : maximumLookupRecordCount ?? 4096);
+        var presentSpeciesIds = includeAssignmentCatalog && maximumLookupRecordCount is null
+            ? SwShEffectivePokemonCatalog.LoadForBrowsing(project.Paths).SpeciesFor(SwShPokemonCapability.Assignment)
+            : SwShSpeciesAvailability.LoadPresentSpeciesIds(project, readAllBytes, maximumLookupRecordCount ?? 4096);
         var usableMoveIds = includeMoveOptions ? SwShMoveAvailability.LoadUsableMoveIds(
             project,
             readAllBytes,

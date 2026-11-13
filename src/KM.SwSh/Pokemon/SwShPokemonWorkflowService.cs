@@ -533,9 +533,7 @@ public sealed class SwShPokemonWorkflowService
                 presentSpeciesIds);
             var provenance = CreateProvenance(personalSource.GraphEntry);
             var formOwners = CreateFormOwnerLookup(personalTable.Records, diagnostics);
-            var selectedSpecies = personalIds is null ? null : SwShEffectivePokemonCatalog.Identities(personalTable.Records)
-                .Where(entry => personalIds.Contains(entry.PersonalId)).Select(entry => entry.Identity.Species).ToHashSet();
-            var catalog = maximumRecordCount is null ? SwShEffectivePokemonCatalog.Load(project.Paths, selectedSpecies) : null;
+            var catalog = maximumRecordCount is null ? SwShEffectivePokemonCatalog.LoadForBrowsing(project.Paths) : null;
             var restoredAssets = catalog is not null ? catalog.Entries
                 .Where(e => e.Origin is SwShPokemonOrigin.ManagedRestoration or SwShPokemonOrigin.ExternalRestoration
                     && e.Capabilities.HasFlag(SwShPokemonCapability.Assignment)).Select(e => e.PersonalId).ToHashSet() : [];

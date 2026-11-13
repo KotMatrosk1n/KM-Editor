@@ -17,14 +17,17 @@ public sealed record SwShRestorationSelection(string DefinitionId, string Prepar
 }
 public sealed record SwShRestorationState(int Schema, IReadOnlyList<SwShRestorationSelection> Selections)
 {
+    public string? DataHash { get; init; }
     public static SwShRestorationState Empty { get; } = new(1, []);
 }
 public sealed record SwShRestorationStateSnapshot(string? Hash, SwShRestorationState State);
 internal sealed record SwShRestorationStateTransition(string? Before, string After);
 
 /// <summary>Publishes immutable state through the same ownership transaction as its game data.</summary>
-public static class SwShRestorationStateStore
+public static partial class SwShRestorationStateStore
 {
+    private sealed record Customization(string Kind, int Schema, string BaseHash, byte[] Patch);
+    private const string CustomizationKind = "pokemon-restoration-customization";
     private const string ClaimPrefix = "pokemon-restoration-state.";
     private const string Owner = "sword-shield-verified-editor";
 
@@ -48,7 +51,7 @@ public static class SwShRestorationStateStore
         if (hash is null) return new(null, SwShRestorationState.Empty);
         return ReadState(paths, hash);
     }
-    internal static SwShRestorationStateSnapshot ReadState(ProjectPaths project, string hash)
+    public static SwShRestorationStateSnapshot ReadState(ProjectPaths project, string hash)
     {
         ValidateHash(hash);
         var paths = SwShChangePlanSourceGuard.OriginalPaths(project);
@@ -56,14 +59,16 @@ public static class SwShRestorationStateStore
             ?? OutputTransactionCoordinator.ForProject(paths).ReadPreservationArtifactAsync(hash).GetAwaiter().GetResult();
         if (bytes.Length > 1024 * 1024) throw new InvalidDataException("Restoration state exceeds its size limit.");
         var state = JsonSerializer.Deserialize<SwShRestorationState>(bytes) ?? throw new InvalidDataException("Restoration state is empty.");
-        Validate(state); return new(hash, SwShRestorationCompatibility.Normalize(paths, state));
+        Validate(state);
+        SwShRestorationReadScope.Find(paths)?.BindDataIndex(state.DataHash);
+        return new(hash, SwShRestorationCompatibility.Normalize(paths, state));
     }
     public static SwShPreparedRestoration ReadPrepared(ProjectPaths project, string hash)
     {
         ValidateHash(hash);
         var paths = SwShChangePlanSourceGuard.OriginalPaths(project);
         if (SwShRestorationReadScope.Find(paths) is { } scope) return scope.ReadPrepared([hash])[hash];
-        var bundle = SwShPreparedRestoration.Decode(OutputTransactionCoordinator.ForProject(paths).ReadPreservationArtifactAsync(hash).GetAwaiter().GetResult());
+        var bundle = DecodePrepared(paths, ReadArtifact(paths, hash));
         if (bundle.Game != paths.SelectedGame) throw new InvalidDataException("Prepared restoration belongs to another game edition.");
         return bundle;
     }
@@ -71,9 +76,8 @@ public static class SwShRestorationStateStore
     {
         ValidateHash(hash);
         var paths = SwShChangePlanSourceGuard.OriginalPaths(project);
-        var bytes = SwShRestorationReadScope.Find(paths)?.ReadBytes(hash)
-            ?? OutputTransactionCoordinator.ForProject(paths).ReadPreservationArtifactAsync(hash).GetAwaiter().GetResult();
-        var bundle = SwShPreparedRestoration.DecodeContributions(bytes, contributionPaths);
+        if (SwShRestorationReadScope.Find(paths) is { } scope) return scope.ReadPreparedContributions(hash, contributionPaths);
+        var bundle = DecodePrepared(paths, ReadArtifact(paths, hash), contributionPaths);
         if (bundle.Game != paths.SelectedGame) throw new InvalidDataException("Prepared restoration belongs to another game edition.");
         return bundle;
     }
@@ -87,10 +91,88 @@ public static class SwShRestorationStateStore
         var artifacts = OutputTransactionCoordinator.ForProject(paths).ReadPreservationArtifactsAsync(identities).GetAwaiter().GetResult();
         return artifacts.ToDictionary(pair => pair.Key, pair =>
         {
-            var bundle = SwShPreparedRestoration.Decode(pair.Value);
+            var bundle = DecodePrepared(paths, pair.Value);
             if (bundle.Game != paths.SelectedGame) throw new InvalidDataException("Prepared restoration belongs to another game edition.");
             return bundle;
         }, StringComparer.Ordinal);
+    }
+    private static byte[] ReadArtifact(ProjectPaths paths, string hash)
+    {
+        ValidateHash(hash);
+        return SwShRestorationReadScope.Find(paths)?.ReadBytes(hash)
+            ?? OutputTransactionCoordinator.ForProject(paths).ReadPreservationArtifactAsync(hash).GetAwaiter().GetResult();
+    }
+
+    private static Customization? ReadCustomization(byte[] bytes)
+    {
+        if (bytes.Length >= 2 && bytes[0] == 'P' && bytes[1] == 'K') return null;
+        if (bytes.Length > 2 * 1024 * 1024) throw new InvalidDataException("Restoration customization exceeds its size limit.");
+        var value = JsonSerializer.Deserialize<Customization>(bytes)
+            ?? throw new InvalidDataException("Restoration customization is empty.");
+        if (value.Kind != CustomizationKind || value.Schema != 1)
+            throw new InvalidDataException("Restoration customization schema is invalid.");
+        ValidateHash(value.BaseHash);
+        if (value.Patch is null || value.Patch.Length > 1024 * 1024)
+            throw new InvalidDataException("Restoration customization patch is invalid.");
+        return value;
+    }
+
+    internal static IReadOnlyList<string>? CustomizationReferences(byte[] bytes)
+    {
+        using var document = JsonDocument.Parse(bytes);
+        if (!document.RootElement.TryGetProperty("Kind", out var kind) || kind.GetString() != CustomizationKind) return null;
+        var value = ReadCustomization(bytes)!;
+        return [value.BaseHash];
+    }
+
+    internal static SwShPreparedRestoration DecodePrepared(ProjectPaths paths, byte[] bytes, IReadOnlySet<string>? contributionPaths = null)
+    {
+        SwShPreparedRestoration Decode(byte[] payload)
+        {
+            // Overlay dependencies are flat immutable bundles, never descriptor chains.
+            if (payload.Length < 2 || payload[0] != 'P' || payload[1] != 'K')
+                throw new InvalidDataException("Restoration customization dependency is not a prepared bundle.");
+            return contributionPaths is null ? SwShPreparedRestoration.Decode(payload)
+                : SwShPreparedRestoration.DecodeContributions(payload, contributionPaths);
+        }
+        if (ReadCustomization(bytes) is not { } overlay) return Decode(bytes);
+        var baseline = contributionPaths is not null && SwShRestorationReadScope.Find(paths) is { } scope
+            ? scope.ReadBaseContributions(overlay.BaseHash, contributionPaths) : Decode(ReadArtifact(paths, overlay.BaseHash));
+        var patch = Decode(overlay.Patch);
+        if (baseline.DefinitionId != patch.DefinitionId || baseline.Game != patch.Game
+            || baseline.AssetRevision != patch.AssetRevision || !baseline.Sources.SequenceEqual(patch.Sources))
+            throw new InvalidDataException("Restoration customization does not match its prepared bundle.");
+        var merged = baseline.Contributions.ToDictionary(c => (c.Path, c.Key));
+        if (patch.Contributions.Any(c => !DataPaths.Contains(c.Path)))
+            throw new InvalidDataException("Restoration customization contains an unsupported contribution.");
+        foreach (var contribution in patch.Contributions.Where(c => contributionPaths is null || contributionPaths.Contains(c.Path)))
+        {
+            if (!merged.ContainsKey((contribution.Path, contribution.Key))
+                || contribution.Path is not (SwShRestorationComposer.PersonalPath or SwShRestorationComposer.LearnsetPath))
+                throw new InvalidDataException("Restoration customization contains an unsupported contribution.");
+            merged[(contribution.Path, contribution.Key)] = contribution;
+        }
+        return baseline with { Contributions = merged.Values.ToArray() };
+    }
+
+    internal static byte[] CreateDataCustomization(ProjectPaths paths, string currentHash, bool customized, SwShPreparedRestoration changes)
+    {
+        var overlay = customized && !(SwShRestorationReadScope.Find(paths)?.IsPreparedBundle(currentHash) ?? false)
+            ? ReadCustomization(ReadArtifact(paths, currentHash)) : null;
+        var baseHash = overlay?.BaseHash ?? currentHash;
+        var items = overlay is null ? new Dictionary<(string, string), SwShRestorationContribution>()
+            : SwShPreparedRestoration.Decode(overlay.Patch).Contributions.ToDictionary(c => (c.Path, c.Key));
+        foreach (var contribution in changes.Contributions) items[(contribution.Path, contribution.Key)] = contribution;
+        var patch = (changes with { Contributions = items.Values.ToArray() }).Encode();
+        return JsonSerializer.SerializeToUtf8Bytes(new Customization(CustomizationKind, 1, baseHash, patch));
+    }
+
+    internal static void StoreCustomizations(ProjectPaths paths, IReadOnlyCollection<byte[]> bytes)
+    {
+        if (bytes.Count == 0) return;
+        var stored = OutputTransactionCoordinator.ForProject(SwShChangePlanSourceGuard.OriginalPaths(paths))
+            .StorePreservationArtifactsAsync(bytes).GetAwaiter().GetResult();
+        foreach (var lease in stored.Values) lease.Dispose();
     }
     public static (string Hash, FileStream Lease) Store(ProjectPaths project, SwShPreparedRestoration prepared, CancellationToken token = default)
     {
@@ -99,7 +181,10 @@ public static class SwShRestorationStateStore
     }
     public static (string Hash, FileStream Lease) Store(ProjectPaths project, SwShRestorationState state, CancellationToken token = default)
     {
-        Validate(state); return StoreBytes(project, JsonSerializer.SerializeToUtf8Bytes(state), token);
+        Validate(state);
+        using var scope = SwShRestorationReadScope.Begin(project);
+        state = IndexData(project, state, token);
+        return StoreBytes(project, JsonSerializer.SerializeToUtf8Bytes(state), token);
     }
     private static (string Hash, FileStream Lease) StoreBytes(ProjectPaths project, byte[] bytes, CancellationToken token)
     {
@@ -128,6 +213,7 @@ public static class SwShRestorationStateStore
     {
         if (state.Schema != 1 || state.Selections is null || state.Selections.Any(s => s is null) || state.Selections.Count > SwShRestorationDefinitions.All.Count || state.Selections.Select(s => s.DefinitionId).Distinct(StringComparer.Ordinal).Count() != state.Selections.Count)
             throw new InvalidDataException("Restoration state schema or selection count is invalid.");
+        if (state.DataHash is not null) ValidateHash(state.DataHash);
         foreach (var selection in state.Selections)
         {
             _ = SwShRestorationDefinitions.Get(selection.DefinitionId); ValidateHash(selection.PreparedHash);
