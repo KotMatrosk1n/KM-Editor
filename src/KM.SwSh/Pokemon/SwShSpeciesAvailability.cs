@@ -26,7 +26,7 @@ internal static class SwShSpeciesAvailability
         ArgumentNullException.ThrowIfNull(readAllBytes);
 
         if (maximumRecordCount is null)
-            return SwShEffectivePokemonCatalog.Load(project.Paths).SpeciesFor(SwShPokemonCapability.Assignment);
+            return SwShEffectivePokemonCatalog.LoadForBrowsing(project.Paths).SpeciesFor(SwShPokemonCapability.Assignment);
 
         var source = ResolveWorkflowFile(project, SwShPersonalTable.PersonalDataRelativePath);
         if (source is null)

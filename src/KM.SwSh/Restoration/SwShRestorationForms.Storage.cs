@@ -1,11 +1,32 @@
 // SPDX-License-Identifier: GPL-3.0-only
 using System.Buffers.Binary;
 using KM.Formats.SwSh;
+using KM.SwSh.Pokemon;
 
 namespace KM.SwSh.Restoration;
 
 public static partial class SwShRestorationForms
 {
+    internal static byte[] BaselinePersonal(byte[] native, byte[] personal, SwShPokemonIdentity[] forms)
+    {
+        var result = personal.ToArray();
+        foreach (var group in forms.GroupBy(i => i.Species))
+        {
+            var block = SwShRestorationFormSlots.Blocks.Single(b => b.Species == group.Key);
+            if (block.NativeFirstRow == block.FirstRow) continue;
+            for (var form = 1; form <= block.NativeAlternateCount; form++)
+            {
+                if (group.Any(i => i.Form == form)) continue;
+                var source = checked((block.NativeFirstRow + form - 1) * SwShPersonalTable.RecordSize);
+                var destination = checked(block.PersonalRow(form) * SwShPersonalTable.RecordSize);
+                if (source + SwShPersonalTable.RecordSize > native.Length || destination + SwShPersonalTable.RecordSize > result.Length)
+                    throw new InvalidDataException("Native form defaults have an incompatible length.");
+                native.AsSpan(source, SwShPersonalTable.RecordSize).CopyTo(result.AsSpan(destination));
+            }
+        }
+        return ApplyHeaders(result, forms);
+    }
+
     internal static void ValidateEggContributions(Func<string, byte[]?> native, SwShPreparedRestoration prepared)
     {
         var identities = SwShRestorationDefinitions.Get(prepared.DefinitionId).Identities;

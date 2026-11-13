@@ -19,13 +19,15 @@ public static class SwShRestorationAssetCleanup
             bytes =>
             {
                 if (bytes.Length >= 4 && bytes[0] == 'P' && bytes[1] == 'K') return [];
+                if (SwShRestorationStateStore.CustomizationReferences(bytes) is { } dependencies) return dependencies;
                 if (bytes.Length > 1024 * 1024) throw new InvalidDataException("Restoration state exceeds its size limit.");
                 var saved = JsonSerializer.Deserialize<SwShRestorationState>(bytes)
                     ?? throw new InvalidDataException("Restoration state is empty.");
                 if (saved.Schema != 1 || saved.Selections is null || saved.Selections.Count > SwShRestorationDefinitions.All.Count)
                     throw new InvalidDataException("Restoration state is invalid.");
                 return saved.Selections.Where(s => s.RemovalId is null)
-                    .SelectMany(s => s.CustomizationHash is { } custom ? new[] { s.PreparedHash, custom } : [s.PreparedHash]).ToArray();
+                    .SelectMany(s => s.CustomizationHash is { } custom ? new[] { s.PreparedHash, custom } : [s.PreparedHash])
+                    .Concat(saved.DataHash is { } dataHash ? [dataHash] : []).ToArray();
             }).GetAwaiter().GetResult();
     }
 }

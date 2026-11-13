@@ -28,6 +28,14 @@ public sealed record SwShEffectivePokemonCatalog(string Revision, IReadOnlyList<
     public static SwShEffectivePokemonCatalog Load(ProjectPaths paths) => Load(paths, speciesIds: null);
 
     internal static SwShEffectivePokemonCatalog Load(ProjectPaths paths, IReadOnlySet<int>? speciesIds)
+        => LoadCore(paths, speciesIds, validateModels: true);
+
+    // Browsing lists candidates. Assignment writers still use Load, which
+    // verifies the selected identities and binds their complete resource sources.
+    internal static SwShEffectivePokemonCatalog LoadForBrowsing(ProjectPaths paths)
+        => LoadCore(paths, null, validateModels: false);
+
+    private static SwShEffectivePokemonCatalog LoadCore(ProjectPaths paths, IReadOnlySet<int>? speciesIds, bool validateModels)
     {
         try
         {
@@ -80,11 +88,16 @@ public sealed record SwShEffectivePokemonCatalog(string Revision, IReadOnlyList<
             var state = SwShRestorationStateStore.Read(paths);
             var selections = state.State.Selections.Where(s => s.Enabled
                 && (speciesIds is null || SwShRestorationDefinitions.Get(s.DefinitionId).Identities.Any(i => speciesIds.Contains(i.Species)))).ToArray();
-            SwShRestorationReadScope.Find(paths)?.Prefetch(selections.Select(s => s.PreparedHash));
+            if (validateModels) SwShRestorationReadScope.Find(paths)?.Prefetch(selections.Select(s => s.PreparedHash));
             var managed = new Dictionary<SwShPokemonIdentity, bool>();
             var presence = new SwShRestorationComposer.PresenceValidator();
             foreach (var selection in selections)
             {
+                if (!validateModels)
+                {
+                    foreach (var identity in SwShRestorationDefinitions.Get(selection.DefinitionId).Identities) managed[identity] = true;
+                    continue;
+                }
                 var prepared = SwShRestorationStateStore.ReadPrepared(paths, selection.PreparedHash);
                 var complete = true;
                 try
@@ -112,7 +125,7 @@ public sealed record SwShEffectivePokemonCatalog(string Revision, IReadOnlyList<
                 var capabilities = present ? SwShPokemonCapability.Data : SwShPokemonCapability.None;
                 var complete = origin == SwShPokemonOrigin.Native || present
                     && (!managed.TryGetValue(row.Identity, out var ready) || ready)
-                    && ModelsComplete(paths, modelCatalog, row.Identity, ReadResource);
+                    && (!validateModels || ModelsComplete(paths, modelCatalog, row.Identity, ReadResource));
                 if (present && complete && models.Contains(row.Identity)
                     && (row.Identity.Species != SwShRestorationSpecies.Annihilape || extendedSupport))
                     capabilities |= SwShPokemonCapability.Model | SwShPokemonCapability.Assignment;

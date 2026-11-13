@@ -9,7 +9,7 @@
   display: flex; flex: 0 0 auto; flex-direction: column; gap: 8px;
   min-width: 0;
 }
-.sectioned-editor-workspace .editor-session-bar { position: static; flex-shrink: 0; margin: 0; }
+.sectioned-editor-workspace .editor-session-bar { flex-shrink: 0; margin: 0; }
 .sectioned-editor-workspace .items-toolbar { margin: 0; flex-shrink: 0; }
 .sectioned-editor-workspace .editor-workspace-chrome .pokemon-toolbar { grid-template-columns: minmax(200px, 1fr) minmax(0, 1.2fr); gap: 8px; }
 .sectioned-editor-workspace .editor-workspace-chrome .pokemon-toolbar-side { gap: 6px; }

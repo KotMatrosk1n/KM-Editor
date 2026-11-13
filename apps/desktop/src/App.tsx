@@ -23653,9 +23653,8 @@ function SelectedItemPanel({
 
   return (
     <SectionedEditorWorkspace sessionKey={`${ordinaryDraftProject?.projectId ?? 'project'}:${editorFamily}:items`}
-      browser={browser} browserControls={browserControls}>
+      browser={browser} browserControls={browserControls} sessionBar={editorHeader}>
       <EditorWorkspaceHeader>
-      {editorHeader}
       <PublishedLocalEditorValidationDiagnostics
         domain="workflow.items"
         issues={itemDraftSummary.invalidFields}
@@ -26673,6 +26672,17 @@ function SelectedPokemonPanel({
       browser={pokemonTable}
       browserControls={browserControls}
       browserVisibleRows={5}
+      sessionBar={<EditorSessionBar
+        canEdit={canEditPokemon && pokemon !== null}
+        isEditing={editSession !== null}
+        isStarting={isEditStarting}
+        label="Pokemon"
+        onStart={onStartEditSession}
+        readOnlyReason={pokemon === null ? 'No Pokemon selected.' : undefined}
+        selection={pokemon ? (
+          <SelectedPokemonSessionIdentity pokemon={pokemon} editorFamily={editorFamily} />
+        ) : null}
+      />}
     >
       <EditorWorkspaceHeader>
       <PublishedLocalEditorValidationDiagnostics
@@ -26710,18 +26720,6 @@ function SelectedPokemonPanel({
             : [])
         ]}
       />
-      <EditorSessionBar
-        canEdit={canEditPokemon && pokemon !== null}
-        isEditing={editSession !== null}
-        isStarting={isEditStarting}
-        label="Pokemon"
-        onStart={onStartEditSession}
-        readOnlyReason={pokemon === null ? 'No Pokemon selected.' : undefined}
-        selection={pokemon ? (
-          <SelectedPokemonSessionIdentity pokemon={pokemon} editorFamily={editorFamily} />
-        ) : null}
-      />
-
       {editSession ? (
         <EditorSessionBarActions>
           <button
@@ -29447,9 +29445,8 @@ function SelectedMovePanel({
 
   return (
     <SectionedEditorWorkspace sessionKey={`${ordinaryDraftProject?.projectId ?? 'project'}:${ordinaryDraftProject?.game ?? 'game'}:moves`}
-      browser={browser} browserControls={browserControls}>
+      browser={browser} browserControls={browserControls} sessionBar={editorHeader}>
       <EditorWorkspaceHeader>
-      {editorHeader}
       <PublishedLocalEditorValidationDiagnostics
         domain="workflow.moves"
         issues={

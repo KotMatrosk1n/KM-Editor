@@ -97,52 +97,79 @@ public sealed partial class OutputTransactionCoordinator
     /// Durably stores restoration data before its ownership reference is committed. The returned
     /// lease protects it through publication; an unreferenced artifact grants no output authority.
     /// </summary>
-    public Task<FileStream> StorePreservationArtifactAsync(byte[] bytes, CancellationToken cancellationToken = default)
+    public async Task<FileStream> StorePreservationArtifactAsync(byte[] bytes, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(bytes);
-        if (bytes.Length is 0 or > MaximumPreservationArtifactBytes)
+        var stored = await StorePreservationArtifactsAsync([bytes], cancellationToken).ConfigureAwait(false);
+        return stored.Values.Single();
+    }
+
+    /// <summary>Stores a bounded artifact batch under one recovery and workspace lease.</summary>
+    public Task<IReadOnlyDictionary<string, FileStream>> StorePreservationArtifactsAsync(
+        IReadOnlyCollection<byte[]> payloads, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(payloads);
+        if (payloads.Count > 468 || payloads.Any(bytes => bytes is null || bytes.Length is 0 or > MaximumPreservationArtifactBytes)
+            || payloads.Sum(bytes => bytes.LongLength) > 512L * 1024 * 1024)
             throw new OutputLimitExceededException("The restoration artifact exceeds its supported size.");
-        var content = bytes.ToArray();
-        var hash = Convert.ToHexStringLower(SHA256.HashData(content));
-        return ExecuteExclusiveOutputOperationAsync(async token =>
+        var contents = payloads.Select(bytes => bytes.ToArray()).DistinctBy(bytes => Convert.ToHexStringLower(SHA256.HashData(bytes)))
+            .ToDictionary(bytes => Convert.ToHexStringLower(SHA256.HashData(bytes)), StringComparer.Ordinal);
+        return ExecuteExclusiveOutputOperationAsync<IReadOnlyDictionary<string, FileStream>>(async token =>
         {
-            var root = paths.GetContainedMetadataPath(paths.MetadataRoot, "preservation");
-            paths.EnsureMetadataDirectory(root, paths.MetadataRoot);
-            var destination = PreservationArtifactPath(hash);
-            if (!File.Exists(destination))
+            var leases = new Dictionary<string, FileStream>(StringComparer.Ordinal);
+            try
             {
-                long size = content.LongLength;
+                var root = paths.GetContainedMetadataPath(paths.MetadataRoot, "preservation");
+                paths.EnsureMetadataDirectory(root, paths.MetadataRoot);
+                long size = 0;
                 var count = 0;
                 foreach (var entry in Directory.EnumerateFiles(root))
                 {
                     paths.ValidateMetadataFile(entry);
                     size += new FileInfo(entry).Length;
-                    if (++count >= 1024 || size > OutputLimits.MaximumCheckpointBytes)
-                        throw new OutputLimitExceededException("The private restoration store is full. Existing restoration data was preserved.");
+                    count++;
                 }
-                var temporary = paths.GetContainedMetadataPath(root, "." + hash + ".pending.tmp");
-                paths.ValidateMetadataFile(temporary);
-                try
+                foreach (var (hash, content) in contents)
                 {
-                    await using (var output = metadata.OpenPrivateFile(temporary, FileMode.Create, FileAccess.Write,
-                        FileShare.None, FileOptions.Asynchronous | FileOptions.WriteThrough))
-                    {
-                        await output.WriteAsync(content, token).ConfigureAwait(false);
-                        await output.FlushAsync(token).ConfigureAwait(false);
-                        output.Flush(flushToDisk: true);
-                    }
                     token.ThrowIfCancellationRequested();
-                    paths.ValidateMetadataFile(destination);
-                    OutputFileSystemDurability.Move(temporary, destination, overwrite: false);
+                    var destination = PreservationArtifactPath(hash);
+                    if (!File.Exists(destination))
+                    {
+                        if (count >= OutputLimits.MaximumPreservationArtifacts || size + content.LongLength > OutputLimits.MaximumCheckpointBytes)
+                            throw new OutputLimitExceededException("The private restoration store is full. Existing restoration data was preserved.");
+                        var temporary = paths.GetContainedMetadataPath(root, "." + hash + ".pending.tmp");
+                        paths.ValidateMetadataFile(temporary);
+                        try
+                        {
+                            await using (var output = metadata.OpenPrivateFile(temporary, FileMode.Create, FileAccess.Write,
+                                FileShare.None, FileOptions.Asynchronous | FileOptions.WriteThrough))
+                            {
+                                await output.WriteAsync(content, token).ConfigureAwait(false);
+                                await output.FlushAsync(token).ConfigureAwait(false);
+                                output.Flush(flushToDisk: true);
+                            }
+                            token.ThrowIfCancellationRequested();
+                            paths.ValidateMetadataFile(destination);
+                            OutputFileSystemDurability.Move(temporary, destination, overwrite: false);
+                            count++;
+                            size += content.LongLength;
+                        }
+                        finally
+                        {
+                            paths.ValidateMetadataFile(temporary);
+                            if (File.Exists(temporary)) File.Delete(temporary);
+                        }
+                    }
+                    await ReadPreservationArtifactCoreAsync(hash, token).ConfigureAwait(false);
+                    leases.Add(hash, metadata.OpenPrivateFile(destination, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.SequentialScan));
                 }
-                finally
-                {
-                    paths.ValidateMetadataFile(temporary);
-                    if (File.Exists(temporary)) File.Delete(temporary);
-                }
+                return leases;
             }
-            await ReadPreservationArtifactCoreAsync(hash, token).ConfigureAwait(false);
-            return metadata.OpenPrivateFile(destination, FileMode.Open, FileAccess.Read, FileShare.Read, FileOptions.SequentialScan);
+            catch
+            {
+                foreach (var lease in leases.Values) lease.Dispose();
+                throw;
+            }
         }, cancellationToken);
     }
 

@@ -13,7 +13,7 @@ public sealed partial class OutputTransactionCoordinator
         ArgumentNullException.ThrowIfNull(candidates);
         ArgumentNullException.ThrowIfNull(roots);
         ArgumentNullException.ThrowIfNull(references);
-        if (candidates.Count > 1024) throw new OutputLimitExceededException("The restoration cleanup set exceeds its supported size.");
+        if (candidates.Count > OutputLimits.MaximumPreservationArtifacts) throw new OutputLimitExceededException("The restoration cleanup set exceeds its supported size.");
         var requested = candidates.Distinct(StringComparer.Ordinal).ToArray();
         foreach (var hash in requested) _ = PreservationArtifactPath(hash);
         return ExecuteExclusiveOutputOperationAsync(async token =>
@@ -33,7 +33,7 @@ public sealed partial class OutputTransactionCoordinator
             {
                 token.ThrowIfCancellationRequested();
                 if (!retained.Add(hash)) continue;
-                if (retained.Count > 1024) throw new OutputLimitExceededException("The restoration reference graph exceeds its supported size.");
+                if (retained.Count > OutputLimits.MaximumPreservationArtifacts) throw new OutputLimitExceededException("The restoration reference graph exceeds its supported size.");
                 var bytes = await ReadPreservationArtifactCoreAsync(hash, token).ConfigureAwait(false);
                 inspected += bytes.LongLength;
                 if (inspected > OutputLimits.MaximumCheckpointBytes) throw new OutputLimitExceededException("The restoration reference graph exceeds its supported size.");

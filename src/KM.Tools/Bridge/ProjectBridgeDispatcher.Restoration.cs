@@ -238,6 +238,7 @@ public sealed partial class ProjectBridgeDispatcher
             }
             var finalState = new SwShRestorationState(1, selections.Values.OrderBy(s => s.DefinitionId, StringComparer.Ordinal).ToArray());
             var stored = SwShRestorationStateStore.Store(paths, finalState); using (stored.Lease) { }
+            finalState = SwShRestorationStateStore.ReadState(paths, stored.Hash).State;
             var files = targets.ToDictionary(p => p, p => File.Exists(view.Output(p)) ? File.ReadAllBytes(view.Output(p)) : null, StringComparer.Ordinal);
             return CapturePlan(initial with { Files = files, StateHash = stored.Hash, State = finalState, Sources = sources.ToArray() });
 

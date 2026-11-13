@@ -53,9 +53,14 @@ public sealed partial class SwShPokemonEditSessionService
     {
         var edits = session.PendingEdits.Where(IsPokemonDomainEdit).ToArray();
         var fields = edits.Select(edit => edit.Field).Concat(incomingFields ?? []);
-        // Form ownership and explicit global operations can change other rows.
-        if (fields.Any(field => field is GlobalEvYieldField or GlobalExpYieldField
-            or SwShPokemonWorkflowService.FormStatsIndexField or SwShPokemonWorkflowService.FormCountField
+        // Return every affected row when a global action is first staged so the
+        // browser also reflects it. Pending global actions need no full reload
+        // during later selected-row edits, review, or apply.
+        if (incomingFields?.Any(field => field is GlobalEvYieldField or GlobalExpYieldField) == true)
+            return pokemonWorkflowService.Load(project);
+        // Yield operations are validated and applied directly to the personal bank.
+        // Only structural form edits need the complete identity graph.
+        if (fields.Any(field => field is SwShPokemonWorkflowService.FormStatsIndexField or SwShPokemonWorkflowService.FormCountField
             or SwShPokemonWorkflowService.FormField or SwShPokemonWorkflowService.IsRegionalFormField)) return pokemonWorkflowService.Load(project);
         var ids = (incoming ?? []).ToHashSet();
         foreach (var edit in edits)
@@ -688,13 +693,16 @@ public sealed partial class SwShPokemonEditSessionService
     }
 
     public SwShEditSessionValidation Validate(ProjectPaths paths, EditSession session)
+        => Validate(paths, session, out _);
+
+    private SwShEditSessionValidation Validate(ProjectPaths paths, EditSession session, out SwShPokemonWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
         ClearMemoryCaches();
         var project = projectWorkspaceService.Open(paths);
-        var workflow = LoadForSession(project, session);
+        workflow = LoadForSession(project, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
         CanEditPokemon(project, workflow, diagnostics);
@@ -760,7 +768,7 @@ public sealed partial class SwShPokemonEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
-        var validation = Validate(paths, session);
+        var validation = Validate(paths, session, out var workflow);
         var diagnostics = validation.Diagnostics.ToList();
         var pokemonEdits = session.PendingEdits.Where(IsPokemonDomainEdit).ToArray();
 
@@ -852,7 +860,7 @@ public sealed partial class SwShPokemonEditSessionService
             DiagnosticSeverity.Info,
             $"Change plan preview contains {writes.Count} target file{(writes.Count == 1 ? string.Empty : "s")}."));
 
-        var assignmentSources = LoadForSession(projectWorkspaceService.Open(paths), session).AssignmentSources;
+        var assignmentSources = workflow.AssignmentSources;
         return SwShChangePlanSourceGuard.CaptureWithAssignmentSources(
             paths,
             new ChangePlan(session.Id, writes.Select((write, index) => index == 0

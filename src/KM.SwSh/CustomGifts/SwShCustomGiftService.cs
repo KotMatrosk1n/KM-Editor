@@ -30,7 +30,7 @@ public sealed class SwShCustomGiftService(ProjectWorkspaceService? workspace = n
     public SwShCustomGiftWorkflow Load(ProjectPaths paths)
     {
         var diagnostics = new List<ValidationDiagnostic>();
-        var state = Read(paths, diagnostics);
+        var state = Read(paths, diagnostics, forBrowsing: true);
         return Workflow(state, diagnostics);
     }
 
@@ -131,7 +131,7 @@ public sealed class SwShCustomGiftService(ProjectWorkspaceService? workspace = n
         finally { workspace.ClearMemoryCache(); }
     }
 
-    private State? Read(ProjectPaths paths, List<ValidationDiagnostic> diagnostics)
+    private State? Read(ProjectPaths paths, List<ValidationDiagnostic> diagnostics, bool forBrowsing = false)
     {
         try
         {
@@ -169,7 +169,8 @@ public sealed class SwShCustomGiftService(ProjectWorkspaceService? workspace = n
             }
             var giftMetadata = new SwShGiftPokemonWorkflowService().Load(project);
             if (giftMetadata.EditableFields.Count == 0) throw new InvalidDataException();
-            var pokemonCatalog = SwShEffectivePokemonCatalog.Load(paths);
+            var pokemonCatalog = forBrowsing ? SwShEffectivePokemonCatalog.LoadForBrowsing(paths)
+                : SwShEffectivePokemonCatalog.Load(paths);
             if (!pokemonCatalog.Available) throw new InvalidDataException();
             var dependencies = pokemonCatalog.Sources.Select(source => source.RelativePath)
                 .Concat(project.FileGraph.Entries.Where(entry => entry.RelativePath.StartsWith(SwShMoveDataFile.MoveDataRelativeDirectory + "/", StringComparison.Ordinal)

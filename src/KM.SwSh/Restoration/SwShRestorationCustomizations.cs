@@ -4,6 +4,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.SwSh.Pokemon;
 using KM.Formats.SwSh;
+using System.Security.Cryptography;
 
 namespace KM.SwSh.Restoration;
 
@@ -53,10 +54,10 @@ internal static class SwShRestorationCustomizations
     {
         // Installed dependencies and customization anchors can introduce personal
         // data. Bind its catalog now so repeated captures retain the same sources.
-        // This also includes models from restorations without installation records.
+        // Assignment writers bind their selected resource sources separately.
         if (plan.Writes.Any(w => w.Sources.Any(s => s.RelativePath == SwShRestorationComposer.PersonalPath)))
         {
-            var catalog = SwShEffectivePokemonCatalog.Load(paths);
+            var catalog = SwShEffectivePokemonCatalog.LoadForBrowsing(paths);
             if (catalog.Available)
                 plan = plan with { Writes = plan.Writes.Select((write, index) => index == 0
                     ? write with { Sources = write.Sources.Concat(catalog.Sources).Distinct().ToArray() } : write).ToArray() };
@@ -75,6 +76,17 @@ internal static class SwShRestorationCustomizations
         if (changed.Count == 0) return state;
         readOutput = path => output.GetValueOrDefault(path);
         var changedMegaItems = ChangedMegaItems(changed, original, output);
+        var affected = state.State.Selections.Where(selection => selection.Enabled && changed.Any(path =>
+            MayAffect(SwShRestorationDefinitions.Get(selection.DefinitionId), path, original.GetValueOrDefault(path), output.GetValueOrDefault(path), changedMegaItems))).ToArray();
+        SwShRestorationReadScope.Find(paths)?.PrefetchContributions(affected.Select(s => s.CustomizationHash ?? s.PreparedHash),
+            changed.IsSubsetOf(SwShRestorationStateStore.DataPaths) ? SwShRestorationStateStore.DataPaths : changed);
+        if (changed.IsSubsetOf(SwShRestorationStateStore.DataPaths) && SwShRestorationReadScope.Find(paths) is { } dataScope)
+            // The data index already contains the effective rows. Only the small
+            // overlay descriptors are needed to keep repeat edits flat; acquire
+            // them together instead of rescanning the store for every Pokemon.
+            dataScope.Prefetch(affected.Where(s => s.CustomizationHash is { } hash && !dataScope.IsPreparedBundle(hash))
+                .Select(s => s.CustomizationHash!));
+        var pendingCustomizations = new List<byte[]>();
         var selections = new List<SwShRestorationSelection>(); var any = false;
         foreach (var selection in state.State.Selections)
         {
@@ -109,20 +121,31 @@ internal static class SwShRestorationCustomizations
                 selections.Add(selection);
                 continue;
             }
-            // Only a changed family needs the complete package for publication.
-            // Merge into that complete package so untouched assets are retained.
-            var complete = SwShRestorationStateStore.ReadPrepared(paths, selection.CustomizationHash ?? selection.PreparedHash);
-            var merged = complete.Contributions.Where(item => !changed.Contains(item.Path)).Concat(items.Values).ToArray();
-            var stored = SwShRestorationStateStore.Store(paths, complete with { Contributions = merged });
-            using (stored.Lease) { }
-            selections.Add(selection with { CustomizationHash = stored.Hash,
-                AssetHashes = selection.AssetHashes.Concat(new[] { selection.PreparedHash, selection.CustomizationHash, stored.Hash }.OfType<string>()).Distinct(StringComparer.Ordinal).ToArray() });
-            any |= stored.Hash != selection.CustomizationHash;
+            string hash;
+            if (changed.All(path => path is SwShRestorationComposer.PersonalPath or SwShRestorationComposer.LearnsetPath))
+            {
+                var bytes = SwShRestorationStateStore.CreateDataCustomization(paths, selection.CustomizationHash ?? selection.PreparedHash,
+                    selection.CustomizationHash is not null, previous with { Contributions = items.Values.ToArray() });
+                hash = Convert.ToHexStringLower(SHA256.HashData(bytes));
+                pendingCustomizations.Add(bytes);
+            }
+            else
+            {
+                var complete = SwShRestorationStateStore.ReadPrepared(paths, selection.CustomizationHash ?? selection.PreparedHash);
+                var merged = complete.Contributions.Where(item => !changed.Contains(item.Path)).Concat(items.Values).ToArray();
+                var stored = SwShRestorationStateStore.Store(paths, complete with { Contributions = merged });
+                using (stored.Lease) { }
+                hash = stored.Hash;
+            }
+            selections.Add(selection with { CustomizationHash = hash,
+                AssetHashes = selection.AssetHashes.Concat(new[] { selection.PreparedHash, selection.CustomizationHash, hash }.OfType<string>()).Distinct(StringComparer.Ordinal).ToArray() });
+            any |= hash != selection.CustomizationHash;
         }
         if (!any) return state;
+        SwShRestorationStateStore.StoreCustomizations(paths, pendingCustomizations);
         var next = state.State with { Selections = selections }; var saved = SwShRestorationStateStore.Store(paths, next);
         using (saved.Lease) { }
-        return new(saved.Hash, next);
+        return SwShRestorationStateStore.ReadState(paths, saved.Hash);
     }
 
     private static bool SameBytes(byte[]? before, byte[]? after) => before is null ? after is null

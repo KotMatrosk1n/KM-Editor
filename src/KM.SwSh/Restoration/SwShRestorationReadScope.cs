@@ -19,6 +19,8 @@ public sealed class SwShRestorationReadScope : IDisposable
     private readonly ProjectPaths paths;
     private readonly string? outputRoot;
     private readonly Dictionary<string, Artifact> artifacts = new(StringComparer.Ordinal);
+    private readonly HashSet<string> dataIndexes = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (bool IsBundle, SwShPreparedRestoration Prepared)> data = new(StringComparer.Ordinal);
     private readonly object sync = new();
     private long cachedBytes;
     private bool disposed;
@@ -27,8 +29,12 @@ public sealed class SwShRestorationReadScope : IDisposable
     {
         internal byte[]? Bytes = bytes;
         internal readonly int EncodedLength = bytes.Length;
+        internal readonly bool IsBundle = bytes.Length >= 2 && bytes[0] == 'P' && bytes[1] == 'K';
         internal readonly FileStream Lease = lease;
         internal SwShPreparedRestoration? Prepared;
+        internal string? ProjectionKey;
+        internal IReadOnlySet<string>? ProjectionPaths;
+        internal SwShPreparedRestoration? Projection;
         internal long Size = bytes.LongLength;
     }
 
@@ -45,6 +51,7 @@ public sealed class SwShRestorationReadScope : IDisposable
 
     internal static SwShRestorationReadScope? Find(ProjectPaths paths)
     {
+        paths = SwShChangePlanSourceGuard.OriginalPaths(paths);
         var outputRoot = NormalizeRoot(paths.OutputRootPath);
         for (var scope = Ambient.Value; scope is not null; scope = scope.parent)
             if (!scope.disposed && !scope.owner.disposed && paths.SelectedGame == scope.paths.SelectedGame
@@ -93,6 +100,37 @@ public sealed class SwShRestorationReadScope : IDisposable
         }
     }
 
+    internal void PrefetchContributions(IEnumerable<string> hashes, IReadOnlySet<string> contributionPaths)
+    {
+        lock (sync)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            var dataOnly = contributionPaths.IsSubsetOf(SwShRestorationStateStore.DataPaths);
+            var missing = hashes.Distinct(StringComparer.Ordinal).Where(h => !artifacts.ContainsKey(h) && !(dataOnly && data.ContainsKey(h))).ToArray();
+            var key = string.Join('\n', contributionPaths.Order(StringComparer.Ordinal));
+            OutputTransactionCoordinator.ForProject(paths).VisitPreservationArtifactsAsync(missing, (hash, bytes, lease) =>
+            {
+                // Descriptors resolve their base after the outer coordinator lease
+                // has ended. Plain legacy bundles can be projected immediately.
+                if (bytes.Length < 2 || bytes[0] != 'P' || bytes[1] != 'K')
+                {
+                    artifacts.Add(hash, new(bytes, lease));
+                    cachedBytes += bytes.LongLength;
+                }
+                else
+                {
+                    var prepared = SwShPreparedRestoration.DecodeContributions(bytes, contributionPaths);
+                    if (prepared.Game != paths.SelectedGame) throw new InvalidDataException("Prepared restoration belongs to another game edition.");
+                    var size = prepared.Contributions.Sum(c => (c.Before?.LongLength ?? 0) + c.After.LongLength);
+                    artifacts.Add(hash, new(bytes, lease) { Bytes = null, Projection = prepared, ProjectionKey = key, ProjectionPaths = contributionPaths.ToHashSet(StringComparer.Ordinal), Size = size });
+                    cachedBytes += size;
+                }
+                Trim(hash);
+                return true;
+            }).GetAwaiter().GetResult();
+        }
+    }
+
     internal IReadOnlyDictionary<string, SwShPreparedRestoration> ReadPrepared(IReadOnlyCollection<string> hashes)
     {
         if (hashes.Count > 468) throw new OutputLimitExceededException("The restoration artifact set exceeds its supported size.");
@@ -111,7 +149,7 @@ public sealed class SwShRestorationReadScope : IDisposable
                     throw new OutputLimitExceededException("The restoration artifact set exceeds its supported size.");
                 if (artifact.Prepared is null)
                 {
-                    var prepared = SwShPreparedRestoration.Decode(artifact.Bytes!);
+                    var prepared = SwShRestorationStateStore.DecodePrepared(paths, ReadBytes(hash));
                     if (prepared.Game != paths.SelectedGame)
                         throw new InvalidDataException("Prepared restoration belongs to another game edition.");
                     artifact.Prepared = prepared;
@@ -126,6 +164,75 @@ public sealed class SwShRestorationReadScope : IDisposable
                 result.Add(hash, Copy(artifact.Prepared));
             }
             return result;
+        }
+    }
+
+    internal SwShPreparedRestoration ReadPreparedContributions(string hash, IReadOnlySet<string> contributionPaths)
+    {
+        lock (sync)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (contributionPaths.IsSubsetOf(SwShRestorationStateStore.DataPaths) && data.TryGetValue(hash, out var indexed))
+                return Copy(indexed.Prepared with { Contributions = indexed.Prepared.Contributions.Where(c => contributionPaths.Contains(c.Path)).ToArray() });
+            Ensure([hash]);
+            var artifact = artifacts[hash];
+            if (artifact.Prepared is not null)
+                return Copy(artifact.Prepared with { Contributions = artifact.Prepared.Contributions.Where(c => contributionPaths.Contains(c.Path)).ToArray() });
+            if (artifact.ProjectionPaths is not null && contributionPaths.IsSubsetOf(artifact.ProjectionPaths))
+                return Copy(artifact.Projection! with { Contributions = artifact.Projection!.Contributions.Where(c => contributionPaths.Contains(c.Path)).ToArray() });
+            var key = string.Join('\n', contributionPaths.Order(StringComparer.Ordinal));
+            if (artifact.ProjectionKey != key)
+            {
+                var prepared = SwShRestorationStateStore.DecodePrepared(paths, ReadBytes(hash), contributionPaths);
+                if (prepared.Game != paths.SelectedGame)
+                    throw new InvalidDataException("Prepared restoration belongs to another game edition.");
+                artifact.Projection = prepared;
+                artifact.ProjectionKey = key;
+                artifact.ProjectionPaths = contributionPaths.ToHashSet(StringComparer.Ordinal);
+                var size = prepared.Contributions.Sum(c => (c.Before?.LongLength ?? 0) + c.After.LongLength);
+                cachedBytes += size - artifact.Size;
+                artifact.Size = size;
+                artifact.Bytes = null;
+                Trim(hash);
+            }
+            return Copy(artifact.Projection!);
+        }
+    }
+
+    internal void BindDataIndex(string? hash)
+    {
+        if (hash is null) return;
+        lock (sync)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (dataIndexes.Contains(hash)) return;
+            var index = SwShRestorationStateStore.DecodeDataIndex(ReadBytes(hash));
+            foreach (var (identity, entry) in index)
+            {
+                if (entry.Prepared.Game != paths.SelectedGame) throw new InvalidDataException("Restoration data belongs to another game edition.");
+                data[identity] = entry;
+            }
+            dataIndexes.Add(hash);
+            if (data.Count > 1404) throw new InvalidDataException("Restoration data set exceeds its size limit.");
+        }
+    }
+
+    internal bool IsPreparedBundle(string hash)
+    {
+        lock (sync)
+        {
+            if (data.TryGetValue(hash, out var indexed)) return indexed.IsBundle;
+            Ensure([hash]);
+            return artifacts[hash].IsBundle;
+        }
+    }
+
+    internal SwShPreparedRestoration ReadBaseContributions(string hash, IReadOnlySet<string> contributionPaths)
+    {
+        lock (sync)
+        {
+            if (!IsPreparedBundle(hash)) throw new InvalidDataException("Restoration customization dependency is not a prepared bundle.");
+            return ReadPreparedContributions(hash, contributionPaths);
         }
     }
 
@@ -155,7 +262,9 @@ public sealed class SwShRestorationReadScope : IDisposable
     {
         foreach (var hash in artifacts.Keys.Where(h => h != retained).ToArray())
         {
-            if (cachedBytes <= MaximumCachedBytes && artifacts.Count <= 468) break;
+            // A data customization retains a small descriptor and its original
+            // bundle. Keep both for the registered set without evicting by count.
+            if (cachedBytes <= MaximumCachedBytes && artifacts.Count <= 1404) break;
             var artifact = artifacts[hash];
             artifacts.Remove(hash);
             cachedBytes -= artifact.Size;
@@ -180,6 +289,8 @@ public sealed class SwShRestorationReadScope : IDisposable
             if (owner != this) return;
             foreach (var artifact in artifacts.Values) artifact.Lease.Dispose();
             artifacts.Clear();
+            data.Clear();
+            dataIndexes.Clear();
             cachedBytes = 0;
         }
     }
