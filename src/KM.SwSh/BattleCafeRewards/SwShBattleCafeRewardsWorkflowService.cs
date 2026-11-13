@@ -114,7 +114,7 @@ public sealed class SwShBattleCafeRewardsWorkflowService
             throw new InvalidDataException("Battle Cafe Rewards requires a Sword or Shield project.");
         }
 
-        var itemWorkflow = itemsWorkflowService.Load(project);
+        var itemWorkflow = itemsWorkflowService.LoadForLookup(project);
         if (itemWorkflow.Diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             || itemWorkflow.Items.Count is 0 or > MaximumItemOptions)
         {

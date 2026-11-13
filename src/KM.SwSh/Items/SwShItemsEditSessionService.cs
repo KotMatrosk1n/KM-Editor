@@ -136,6 +136,21 @@ public sealed class SwShItemsEditSessionService
             owner);
     }
 
+    private SwShItemsWorkflow LoadForSession(OpenedProject project, EditSession session,
+        IEnumerable<SwShItemFieldUpdate>? updates = null)
+    {
+        var edits = GetItemEdits(session.PendingEdits);
+        var incoming = updates?.OfType<SwShItemFieldUpdate>().ToArray() ?? [];
+        // Linkage changes can transfer ownership to another physical row.
+        if (edits.Select(edit => edit.Field).Concat(incoming.Select(update => update.Field))
+            .Any(field => field is ItemTypeField or GroupTypeField or GroupIndexField))
+            return itemsWorkflowService.Load(project);
+        var ids = incoming.Select(update => update.ItemId).ToHashSet();
+        foreach (var edit in edits)
+            if (int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var id)) ids.Add(id);
+        return itemsWorkflowService.LoadForEditing(project, ids);
+    }
+
     public SwShItemsEditResult UpdateFields(
         ProjectPaths paths,
         EditSession? session,
@@ -155,7 +170,7 @@ public sealed class SwShItemsEditSessionService
 
         var originalSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = itemsWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, originalSession, updates);
         var originalWorkflow = CreateEffectiveWorkflow(project, loadedWorkflow, originalSession);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -279,7 +294,7 @@ public sealed class SwShItemsEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = itemsWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
         CanEditItems(project, workflow, diagnostics);
@@ -321,7 +336,7 @@ public sealed class SwShItemsEditSessionService
             DiagnosticSeverity.Info,
             $"Change plan preview contains {writes.Length} target file{(writes.Length == 1 ? string.Empty : "s")}."));
 
-        return SwShChangePlanSourceGuard.Capture(
+        return SwShChangePlanSourceGuard.CaptureWithAssignmentSources(
             paths,
             new ChangePlan(session.Id, writes, diagnostics));
     }

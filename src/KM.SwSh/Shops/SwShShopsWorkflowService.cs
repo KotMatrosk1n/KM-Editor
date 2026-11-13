@@ -531,7 +531,7 @@ public sealed class SwShShopsWorkflowService
         ICollection<ValidationDiagnostic> diagnostics,
         out ProjectFileReference? itemSemanticSource)
     {
-        var itemsWorkflow = itemsWorkflowService.Load(project);
+        var itemsWorkflow = itemsWorkflowService.LoadForLookup(project);
         var itemDataSource = SwShItemsWorkflowService.ResolveItemDataSource(project);
         itemSemanticSource = itemDataSource is null
             ? null

@@ -190,7 +190,7 @@ public sealed class SwShRoyalCandyEditSessionService
 
         AddDeferredOutputDiagnostics(workflow, selectedWorkflow, writes, diagnostics);
 
-        return SwShChangePlanSourceGuard.Capture(
+        return SwShChangePlanSourceGuard.CaptureWithAssignmentSources(
             paths,
             new ChangePlan(session.Id, writes, diagnostics));
     }

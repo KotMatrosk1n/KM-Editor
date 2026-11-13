@@ -7,7 +7,7 @@ using KM.Api.Workflows;
 
 namespace KM.Api.Placement;
 
-public sealed record LoadPlacementWorkflowRequest(ProjectPathsDto Paths);
+public sealed record LoadPlacementWorkflowRequest(ProjectPathsDto Paths, IReadOnlyList<string>? ObjectIds = null);
 
 public sealed record PlacementProvenanceDto(
     string SourceFile,

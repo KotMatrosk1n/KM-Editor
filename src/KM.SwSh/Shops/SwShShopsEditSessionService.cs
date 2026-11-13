@@ -305,7 +305,7 @@ public sealed class SwShShopsEditSessionService
             DiagnosticSeverity.Info,
             "Change plan preview contains 1 target file."));
 
-        return SwShChangePlanSourceGuard.Capture(
+        return SwShChangePlanSourceGuard.CaptureWithAssignmentSources(
             paths,
             new ChangePlan(session.Id, [write], diagnostics));
     }

@@ -216,7 +216,13 @@ internal sealed class ZaItemsWorkflowService
             WorkflowDescription);
     }
 
-    public ZaItemsWorkflow Load(OpenedProject project)
+    public ZaItemsWorkflow Load(OpenedProject project) => LoadCore(project, null);
+
+    internal ZaItemsWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<int> itemIds) => LoadCore(project, itemIds);
+
+    internal ZaItemsWorkflow LoadForLookup(OpenedProject project) => LoadCore(project, null, includeEditorMetadata: false);
+
+    private ZaItemsWorkflow LoadCore(OpenedProject project, IReadOnlySet<int>? itemIds, bool includeEditorMetadata = true)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -276,8 +282,9 @@ internal sealed class ZaItemsWorkflowService
 
             var baseItems = ReadBaseItems(
                 fileSource.ReadBase(project, ZaDataPaths.ItemDataArray).Bytes);
-            var compatibilityCounts = ReadTechnicalMachineCompatibilityCounts(
-                fileSource.Read(project, ZaDataPaths.PersonalArray).Bytes);
+            var compatibilityCounts = includeEditorMetadata
+                ? ReadTechnicalMachineCompatibilityCounts(fileSource.Read(project, ZaDataPaths.PersonalArray).Bytes)
+                : new Dictionary<int, int>();
             DetectMachineWazaLayout(source, diagnostics);
             var mintNatureRecovery = DetectMintNatureRecovery(project, source, diagnostics);
             items = LoadRecords(
@@ -287,7 +294,8 @@ internal sealed class ZaItemsWorkflowService
                     projectedRecovery,
                     baseItems,
                     compatibilityCounts,
-                    physicalItemIds)
+                    physicalItemIds,
+                    itemIds, includeEditorMetadata)
                 .ToArray();
             var inconsistentMachineCount = items.Count(item =>
                 IsTechnicalMachineRecord(item)
@@ -361,9 +369,9 @@ internal sealed class ZaItemsWorkflowService
             diagnostics.Count == 0 ? null : diagnostics);
 
         return new ZaItemsWorkflow(
-            summary,
+            summary with { IsPartial = itemIds is not null },
             items,
-            CreateEditableFields(labels, items),
+            includeEditorMetadata ? CreateEditableFields(labels, items) : [],
             new ZaItemsWorkflowStats(items.Length, source is null ? 0 : 1),
             diagnostics);
     }
@@ -637,7 +645,8 @@ internal sealed class ZaItemsWorkflowService
         ZaTechnicalMachineLegacyRecovery technicalMachineRecovery,
         IReadOnlyDictionary<int, BaseItemRecord> baseItems,
         IReadOnlyDictionary<int, int> compatibilityCounts,
-        IReadOnlySet<int> physicalItemIds)
+        IReadOnlySet<int> physicalItemIds,
+        IReadOnlySet<int>? itemIds = null, bool includeEditorMetadata = true)
     {
         var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(source.Bytes));
         fileSource.EnsureBoundedTableCount(table.ValuesLength, "The Z-A item table");
@@ -654,6 +663,11 @@ internal sealed class ZaItemsWorkflowService
                 continue;
             }
 
+            // TM numbering, projected slots and compatibility are shared invariants.
+            // Keep those rows in the closure while excluding unrelated item DTOs.
+            if (itemIds is not null && !itemIds.Contains(item.Value.Id)
+                && !ZaTechnicalMachineCatalog.IsTechnicalMachine(item.Value)
+                && !Enumerable.Range(ZaTechnicalMachineCatalog.FirstOwnedExtensionSlot, ZaTechnicalMachineCatalog.LastOwnedExtensionSlot - ZaTechnicalMachineCatalog.FirstOwnedExtensionSlot + 1).Any(slot => ZaTechnicalMachineCatalog.GetOwnedExtensionItemId(slot) == item.Value.Id)) continue;
             var record = ToRecord(
                 item.Value,
                 labels,
@@ -664,7 +678,7 @@ internal sealed class ZaItemsWorkflowService
                 item.Value.MachineWaza > 0
                     ? compatibilityCounts.GetValueOrDefault(item.Value.MachineWaza)
                     : 0,
-                physicalItemIds.Contains(item.Value.Id));
+                physicalItemIds.Contains(item.Value.Id), includeEditorMetadata);
             yield return technicalMachineRecovery.RepairItemId == item.Value.Id
                 ? WithTechnicalMachineNumber(
                     record,
@@ -681,7 +695,7 @@ internal sealed class ZaItemsWorkflowService
         string? iconNameOverride,
         BaseItemRecord? baseItem,
         int compatiblePokemonCount,
-        bool isPhysical)
+        bool isPhysical, bool includeEditorMetadata = true)
     {
         var isOwnedExtension = ZaTechnicalMachineCatalog.HasOwnedExtensionIdentity(
             item.Id,
@@ -767,7 +781,7 @@ internal sealed class ZaItemsWorkflowService
             CreateFieldValues(item, mintNature),
             metadata,
             SharedItemIds: [],
-            CreateDetailGroups(item, labels, mintNature, iconNameOverride),
+            includeEditorMetadata ? CreateDetailGroups(item, labels, mintNature, iconNameOverride) : [],
             new ZaItemProvenance(source.RelativePath, source.SourceLayer, source.FileState))
         {
             CanRevertToVanilla = canRevertToVanilla,

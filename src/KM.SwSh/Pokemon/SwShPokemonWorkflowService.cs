@@ -397,10 +397,19 @@ public sealed class SwShPokemonWorkflowService
         memoryCache.Clear();
     }
 
-    private SwShPokemonWorkflow LoadUncached(OpenedProject project)
+    internal SwShPokemonWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<int> personalIds)
+        => LoadUncached(project, personalIds);
+
+    private SwShPokemonWorkflow LoadUncached(OpenedProject project, IReadOnlySet<int>? personalIds = null)
     {
 
-        var summary = CreateSummary(project);
+        var summary = CreateSummary(project) with
+        {
+            IsPartial = personalIds is not null,
+            UnassessedDiagnosticFiles = personalIds is null ? [] : ResolveWorkflowFiles(project, EvolutionDataDirectory)
+                .Where(source => TryParseEvolutionFileSpeciesId(source.GraphEntry.RelativePath) is { } id && !personalIds.Contains(id))
+                .Select(source => source.GraphEntry.RelativePath).ToArray(),
+        };
         var diagnostics = new List<ValidationDiagnostic>(summary.Diagnostics);
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
@@ -474,7 +483,8 @@ public sealed class SwShPokemonWorkflowService
             project,
             diagnostics,
             readAllBytes,
-            maximumRecordCount);
+            maximumRecordCount,
+            personalIds);
         var displaySpeciesNames = speciesNames.Count > 0 ? speciesNames : Array.Empty<string>();
         var learnsetMoveOptions = SwShMoveAvailability.CreateMoveOptions(
             moveNames,
@@ -497,7 +507,7 @@ public sealed class SwShPokemonWorkflowService
                 var vanillaSource = ResolveBasePersonalDataSource(project);
                 if (vanillaSource is not null)
                     vanillaTable = SwShPersonalTable.Parse(Restoration.SwShRestorationBaseline.Personal(project.Paths,
-                        readAllBytes(vanillaSource.AbsolutePath)), maximumRecordCount);
+                        readAllBytes(vanillaSource.AbsolutePath), personalIds), maximumRecordCount);
             }
             catch (Exception exception) when (IsReadFailure(exception) || IsDecodeFailure(exception))
             {
@@ -523,10 +533,14 @@ public sealed class SwShPokemonWorkflowService
                 presentSpeciesIds);
             var provenance = CreateProvenance(personalSource.GraphEntry);
             var formOwners = CreateFormOwnerLookup(personalTable.Records, diagnostics);
-            var restoredAssets = maximumRecordCount is null ? SwShEffectivePokemonCatalog.Load(project.Paths).Entries
+            var selectedSpecies = personalIds is null ? null : SwShEffectivePokemonCatalog.Identities(personalTable.Records)
+                .Where(entry => personalIds.Contains(entry.PersonalId)).Select(entry => entry.Identity.Species).ToHashSet();
+            var catalog = maximumRecordCount is null ? SwShEffectivePokemonCatalog.Load(project.Paths, selectedSpecies) : null;
+            var restoredAssets = catalog is not null ? catalog.Entries
                 .Where(e => e.Origin is SwShPokemonOrigin.ManagedRestoration or SwShPokemonOrigin.ExternalRestoration
                     && e.Capabilities.HasFlag(SwShPokemonCapability.Assignment)).Select(e => e.PersonalId).ToHashSet() : [];
             var pokemon = personalTable.Records
+                .Where(record => personalIds is null || personalIds.Contains(record.PersonalId))
                 .Select(record => ToPokemonRecord(
                     record,
                     vanillaTable?.Records.ElementAtOrDefault(record.PersonalId) is { } vanilla && vanilla.Form == record.Form ? vanilla : null,
@@ -560,7 +574,7 @@ public sealed class SwShPokemonWorkflowService
                 evolutionMethodOptions,
                 learnsetMoveOptions,
                 CreateEditableFields(itemDisplayNames, abilityNames, displaySpeciesNames, presentSpeciesIds),
-                diagnostics);
+                diagnostics) with { AssignmentSources = catalog?.Sources ?? [] };
         }
         catch (Exception exception) when (IsDecodeFailure(exception))
         {
@@ -679,7 +693,8 @@ public sealed class SwShPokemonWorkflowService
         OpenedProject project,
         ICollection<ValidationDiagnostic> diagnostics,
         Func<string, byte[]> readAllBytes,
-        int? maximumRecordCount)
+        int? maximumRecordCount,
+        IReadOnlySet<int>? personalIds = null)
     {
         var sources = ResolveWorkflowFiles(project, EvolutionDataDirectory)
             .Where(source => source.GraphEntry.RelativePath.EndsWith(".bin", StringComparison.OrdinalIgnoreCase))
@@ -703,7 +718,7 @@ public sealed class SwShPokemonWorkflowService
         foreach (var source in sources)
         {
             var speciesId = TryParseEvolutionFileSpeciesId(source.GraphEntry.RelativePath);
-            if (speciesId is null)
+            if (speciesId is null || personalIds is not null && !personalIds.Contains(speciesId.Value))
             {
                 continue;
             }

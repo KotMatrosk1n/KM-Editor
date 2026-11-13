@@ -201,7 +201,7 @@ public sealed class SwShBagHookEditSessionService
             DiagnosticSeverity.Info,
             string.Create(CultureInfo.InvariantCulture, $"Bag Hook change plan preview contains {writes.Count:N0} target file(s).")));
 
-        return SwShChangePlanSourceGuard.Capture(
+        return SwShChangePlanSourceGuard.CaptureWithAssignmentSources(
             paths,
             new ChangePlan(session.Id, writes, diagnostics));
     }

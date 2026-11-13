@@ -52,7 +52,7 @@ internal sealed partial class ZaItemsEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = itemsWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [itemId], [field]);
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -124,7 +124,7 @@ internal sealed partial class ZaItemsEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = itemsWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, updates.Select(update => update.ItemId), updates.Select(update => update.Field));
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -219,7 +219,7 @@ internal sealed partial class ZaItemsEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = itemsWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [itemId]);
         var currentWorkflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -429,13 +429,23 @@ internal sealed partial class ZaItemsEditSessionService
             diagnostics);
     }
 
+    private ZaItemsWorkflow LoadForSession(OpenedProject project, EditSession session, IEnumerable<int>? incoming = null, IEnumerable<string>? fields = null)
+    {
+        var edits = session.PendingEdits.Where(edit => edit.Domain == ZaEditSessionSupport.ItemsDomain).ToArray();
+        if (edits.Select(edit => edit.Field).Concat(fields ?? []).Any(field => field is ZaItemsWorkflowService.ItemTypeField or ZaItemsWorkflowService.PocketField))
+            return itemsWorkflowService.Load(project);
+        var ids = edits.Select(edit => int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : -1)
+            .Concat(incoming ?? []).Where(id => id >= 0).ToHashSet();
+        return itemsWorkflowService.LoadForEditing(project, ids);
+    }
+
     public ZaEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = itemsWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var effectiveSession = RemoveSourceEquivalentPendingEdits(workflow, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -669,7 +679,7 @@ internal sealed partial class ZaItemsEditSessionService
         try
         {
             var project = projectWorkspaceService.Open(paths);
-            var loadedWorkflow = itemsWorkflowService.Load(project);
+            var loadedWorkflow = LoadForSession(project, session);
             var effectiveSession = RemoveSourceEquivalentPendingEdits(
                 loadedWorkflow,
                 session);
@@ -817,7 +827,7 @@ internal sealed partial class ZaItemsEditSessionService
 
             var personalBytes = ApplyTechnicalMachineMoveAssignments(
                 project,
-                itemsWorkflowService.Load(project),
+                LoadForSession(project, session),
                 effectiveSession,
                 rows,
                 currentPlan,
@@ -2422,7 +2432,6 @@ internal sealed partial class ZaItemsEditSessionService
         try
         {
             var project = projectWorkspaceService.Open(paths);
-            var workflow = itemsWorkflowService.Load(project);
             var machineMoveEdits = session.PendingEdits
                 .Where(edit => string.Equals(
                     edit.Field,
@@ -2434,6 +2443,7 @@ internal sealed partial class ZaItemsEditSessionService
                 return plan;
             }
 
+            var workflow = LoadForSession(project, session);
             var personalSource = fileSource.Read(project, ZaDataPaths.PersonalArray);
             var basePersonalSource = fileSource.ReadBase(project, ZaDataPaths.PersonalArray);
             var projectedPersonal = ZaTechnicalMachineCompatibilityMigration.ApplyBatch(

@@ -173,14 +173,19 @@ internal sealed class SvPlacementWorkflowService
         return Load(project, includeStaticEncounterObjects: false);
     }
 
-    internal SvPlacementWorkflow LoadStaticEncounterObjects(OpenedProject project)
+    internal SvPlacementWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<string> objectIds, bool includeStaticEncounterObjects = false)
+        => Load(project, includeStaticEncounterObjects, objectIds);
+
+    internal SvPlacementWorkflow LoadStaticEncounterObjects(OpenedProject project, IReadOnlySet<int>? encounterIndices = null)
     {
-        return Load(project, includeStaticEncounterObjects: true);
+        return Load(project, includeStaticEncounterObjects: true, encounterIndices: encounterIndices);
     }
 
     private SvPlacementWorkflow Load(
         OpenedProject project,
-        bool includeStaticEncounterObjects)
+        bool includeStaticEncounterObjects,
+        IReadOnlySet<string>? objectIds = null,
+        IReadOnlySet<int>? encounterIndices = null)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -200,19 +205,19 @@ internal sealed class SvPlacementWorkflowService
                 "romfs/message/dat/{language}"));
         }
 
-        var abilityResolver = SvPlacementAbilityResolver.Load(project, fileSource, labels, diagnostics);
-        var moveResolver = SvDefaultMoveResolver.Load(project, fileSource, diagnostics);
-
         if (includeStaticEncounterObjects)
         {
-            TryLoadFixedSymbols(project, labels, abilityResolver, moveResolver, objects, sourceFiles, diagnostics);
-            TryLoadCoinSymbols(project, labels, abilityResolver, moveResolver, objects, sourceFiles, diagnostics);
+            var abilityResolver = SvPlacementAbilityResolver.Load(project, fileSource, labels, diagnostics);
+            var moveResolver = SvDefaultMoveResolver.Load(project, fileSource, diagnostics);
+            var encounterIndex = 0;
+            TryLoadFixedSymbols(project, labels, abilityResolver, moveResolver, objects, sourceFiles, diagnostics, objectIds, encounterIndices, ref encounterIndex);
+            TryLoadCoinSymbols(project, labels, abilityResolver, moveResolver, objects, sourceFiles, diagnostics, objectIds, encounterIndices, ref encounterIndex);
         }
         else
         {
-            TryLoadVisibleItems(project, labels, objects, sourceFiles, diagnostics);
-            TryLoadHiddenItems(project, labels, objects, sourceFiles, diagnostics);
-            TryLoadRummaging(project, labels, objects, sourceFiles, diagnostics);
+            TryLoadVisibleItems(project, labels, objects, sourceFiles, diagnostics, objectIds);
+            TryLoadHiddenItems(project, labels, objects, sourceFiles, diagnostics, objectIds);
+            TryLoadRummaging(project, labels, objects, sourceFiles, diagnostics, objectIds);
         }
 
         var categorySeeds = includeStaticEncounterObjects ? StaticEncounterCategorySeeds : CategorySeeds;
@@ -232,7 +237,15 @@ internal sealed class SvPlacementWorkflowService
             diagnostics.Count == 0 ? null : diagnostics);
 
         return new SvPlacementWorkflow(
-            summary,
+            summary with
+            {
+                IsPartial = objectIds is not null || encounterIndices is not null,
+                UnassessedDiagnosticFiles = objectIds is null || includeStaticEncounterObjects ? []
+                    : GetVisibleItemScenePaths(project.Paths.SelectedGame).Concat(HiddenItemTablePaths)
+                        .Append(SvDataPaths.RummagingItemDataTableArray)
+                        .Where(path => !objectIds.Any(id => TryParseRecordId(id, out _, out var sourcePath, out _) && sourcePath == path))
+                        .Select(path => $"romfs/{path}").ToArray(),
+            },
             objects,
             CreateEditableFields(labels),
             categories,
@@ -247,7 +260,10 @@ internal sealed class SvPlacementWorkflowService
         SvDefaultMoveResolver moveResolver,
         ICollection<SvPlacedObjectRecord> objects,
         ISet<string> sourceFiles,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        IReadOnlySet<string>? objectIds,
+        IReadOnlySet<int>? encounterIndices,
+        ref int encounterIndex)
     {
         try
         {
@@ -262,7 +278,10 @@ internal sealed class SvPlacementWorkflowService
                     continue;
                 }
 
-                objects.Add(ToFixedSymbolObject(index, row.Value, labels, abilityResolver, moveResolver, source));
+                var ordinal = encounterIndex++;
+                if (encounterIndices is not null && !encounterIndices.Contains(ordinal)
+                    || objectIds is not null && !objectIds.Contains(CreateRecordId(FixedSymbolsCategory, source.VirtualPath, index))) continue;
+                objects.Add(ToFixedSymbolObject(index, row.Value, labels, abilityResolver, moveResolver, source) with { StaticEncounterIndex = ordinal });
             }
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
@@ -280,7 +299,10 @@ internal sealed class SvPlacementWorkflowService
         SvDefaultMoveResolver moveResolver,
         ICollection<SvPlacedObjectRecord> objects,
         ISet<string> sourceFiles,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        IReadOnlySet<string>? objectIds,
+        IReadOnlySet<int>? encounterIndices,
+        ref int encounterIndex)
     {
         try
         {
@@ -295,7 +317,10 @@ internal sealed class SvPlacementWorkflowService
                     continue;
                 }
 
-                objects.Add(ToCoinSymbolObject(index, row.Value, labels, abilityResolver, moveResolver, source));
+                var ordinal = encounterIndex++;
+                if (encounterIndices is not null && !encounterIndices.Contains(ordinal)
+                    || objectIds is not null && !objectIds.Contains(CreateRecordId(CoinSymbolsCategory, source.VirtualPath, index))) continue;
+                objects.Add(ToCoinSymbolObject(index, row.Value, labels, abilityResolver, moveResolver, source) with { StaticEncounterIndex = ordinal });
             }
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
@@ -311,10 +336,13 @@ internal sealed class SvPlacementWorkflowService
         SvTextLabelLookup labels,
         ICollection<SvPlacedObjectRecord> objects,
         ISet<string> sourceFiles,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        IReadOnlySet<string>? objectIds)
     {
         foreach (var path in GetVisibleItemScenePaths(project.Paths.SelectedGame))
         {
+            if (objectIds is not null && !objectIds.Any(id => TryParseRecordId(id, out var category, out var sourcePath, out _)
+                && category == VisibleItemsCategory && sourcePath == path)) continue;
             try
             {
                 var source = fileSource.Read(project, path);
@@ -322,6 +350,7 @@ internal sealed class SvPlacementWorkflowService
                 var scenePoints = SvVisibleItemSceneReader.Read(source.Bytes, source.VirtualPath);
                 for (var index = 0; index < scenePoints.Count; index++)
                 {
+                    if (objectIds is not null && !objectIds.Contains(CreateRecordId(VisibleItemsCategory, source.VirtualPath, index))) continue;
                     objects.Add(ToVisibleItemObject(index, scenePoints[index], labels, source));
                 }
             }
@@ -339,10 +368,13 @@ internal sealed class SvPlacementWorkflowService
         SvTextLabelLookup labels,
         ICollection<SvPlacedObjectRecord> objects,
         ISet<string> sourceFiles,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        IReadOnlySet<string>? objectIds)
     {
         foreach (var path in HiddenItemTablePaths)
         {
+            if (objectIds is not null && !objectIds.Any(id => TryParseRecordId(id, out var category, out var sourcePath, out _)
+                && category == HiddenItemsCategory && sourcePath == path)) continue;
             try
             {
                 var source = fileSource.Read(project, path);
@@ -356,6 +388,7 @@ internal sealed class SvPlacementWorkflowService
                         continue;
                     }
 
+                    if (objectIds is not null && !objectIds.Contains(CreateRecordId(HiddenItemsCategory, source.VirtualPath, index))) continue;
                     objects.Add(ToHiddenItemObject(index, row.Value, labels, source, path));
                 }
             }
@@ -373,8 +406,11 @@ internal sealed class SvPlacementWorkflowService
         SvTextLabelLookup labels,
         ICollection<SvPlacedObjectRecord> objects,
         ISet<string> sourceFiles,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        IReadOnlySet<string>? objectIds)
     {
+        if (objectIds is not null && !objectIds.Any(id => TryParseRecordId(id, out var category, out var sourcePath, out _)
+            && category == RummagingPointsCategory && sourcePath == SvDataPaths.RummagingItemDataTableArray)) return;
         try
         {
             var source = fileSource.Read(project, SvDataPaths.RummagingItemDataTableArray);
@@ -388,7 +424,8 @@ internal sealed class SvPlacementWorkflowService
                     continue;
                 }
 
-                objects.Add(ToRummagingObject(index, row.Value, labels, source));
+                if (objectIds is not null && !objectIds.Contains(CreateRecordId(RummagingPointsCategory, source.VirtualPath, index))) continue;
+                    objects.Add(ToRummagingObject(index, row.Value, labels, source));
             }
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)

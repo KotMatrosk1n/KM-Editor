@@ -189,7 +189,7 @@ public static class ZaBridgeMapper
     {
         ArgumentNullException.ThrowIfNull(workflow);
 
-        return new LoadTrainersWorkflowResponse(ToTrainersWorkflowDto(workflow));
+        return new LoadTrainersWorkflowResponse(ToTrainersWorkflowDto(workflow)) { IsPartial = workflow.Summary.IsPartial };
     }
 
     public static LoadTrainerPoolsWorkflowResponse ToDto(ZaTrainerPoolsWorkflow workflow)
@@ -719,7 +719,7 @@ public static class ZaBridgeMapper
             summary.Label,
             summary.Description,
             ToDto(summary.Availability),
-            summary.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+            summary.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray()) { IsPartial = summary.IsPartial };
     }
 
     private static PokemonWorkflowDto ToPokemonWorkflowDto(ZaPokemonWorkflow workflow)
@@ -996,7 +996,7 @@ public static class ZaBridgeMapper
                 workflow.Stats.TotalTrainerCount,
                 workflow.Stats.TotalPokemonCount,
                 workflow.Stats.SourceFileCount),
-            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray()) { IsPartial = workflow.Summary.IsPartial };
     }
 
     private static PlacementWorkflowDto ToPlacementWorkflowDto(ZaPlacementWorkflow workflow)

@@ -8,7 +8,10 @@ using System.Text.Json.Serialization;
 
 namespace KM.Api.Pokemon;
 
-public sealed record LoadPokemonWorkflowRequest(ProjectPathsDto Paths);
+public sealed record LoadPokemonWorkflowRequest(ProjectPathsDto Paths)
+{
+    public IReadOnlyList<int>? RecordIndices { get; init; }
+}
 
 public sealed record UpdatePokemonFieldRequest(
     ProjectPathsDto Paths,

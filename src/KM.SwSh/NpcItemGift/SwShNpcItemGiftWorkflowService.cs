@@ -204,7 +204,7 @@ public sealed class SwShNpcItemGiftWorkflowService
     {
         try
         {
-            var itemWorkflow = itemsWorkflowService.Load(project);
+            var itemWorkflow = itemsWorkflowService.LoadForLookup(project);
             foreach (var diagnostic in itemWorkflow.Diagnostics)
             {
                 diagnostics.Add(diagnostic with { Domain = NpcItemGiftEditDomain });

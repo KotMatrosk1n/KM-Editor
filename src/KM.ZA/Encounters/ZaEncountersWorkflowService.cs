@@ -159,6 +159,9 @@ internal sealed class ZaEncountersWorkflowService
             includeEncounterTables: true);
     }
 
+    internal ZaEncountersWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<string> recordIds) =>
+        Load(project, true, true, true, true, recordIds);
+
     internal ZaEncountersWorkflow LoadGameModuleReadOnly(
         OpenedProject project,
         bool includeScriptedBosses,
@@ -240,7 +243,8 @@ internal sealed class ZaEncountersWorkflowService
         bool includeEditorMetadata,
         bool includeVanillaRestoreAvailability,
         bool includeScriptedBosses,
-        bool includeEncounterTables)
+        bool includeEncounterTables,
+        IReadOnlySet<string>? recordIds = null)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -278,7 +282,7 @@ internal sealed class ZaEncountersWorkflowService
                     labels,
                     pokemonAvailability,
                     includeEditorMetadata,
-                    diagnostics).ToArray();
+                    diagnostics, recordIds).ToArray();
             }
         }
         catch (Exception exception) when ((exception is IOException or InvalidDataException or ArgumentException)
@@ -326,7 +330,7 @@ internal sealed class ZaEncountersWorkflowService
             diagnostics.Count == 0 ? null : diagnostics);
 
         var workflow = new ZaEncountersWorkflow(
-            summary,
+            summary with { IsPartial = recordIds is not null },
             tables,
             editableFields,
             new ZaEncountersWorkflowStats(
@@ -878,7 +882,8 @@ internal sealed class ZaEncountersWorkflowService
         ZaTextLabelLookup labels,
         ZaPokemonAvailability pokemonAvailability,
         bool includeEditorMetadata,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        IReadOnlySet<string>? recordIds = null)
     {
         var table = PokemonSpawnerDataDBArray.GetRootAsPokemonSpawnerDataDBArray(new ByteBuffer(spawnerSource.Bytes));
         EnsureBoundedSpawnerTable(table);
@@ -929,6 +934,27 @@ internal sealed class ZaEncountersWorkflowService
             }
         }
 
+        // An encounter row can be shared by several spawners. Resolve that
+        // ownership from the raw index before projecting any editable tables.
+        HashSet<string>? selectedTables = null;
+        if (recordIds is not null)
+        {
+            selectedTables = new(StringComparer.Ordinal);
+            var selectedSources = new HashSet<int>();
+            foreach (var id in recordIds)
+            {
+                if (TryParsePokemonDataRecordId(id, out var sourceIndex)) selectedSources.Add(sourceIndex);
+                else if (TryParseSlotRecordId(id, out var tableId, out _) || TryParseAppearanceRecordId(id, out tableId)) selectedTables.Add(tableId);
+                else if (TryParseTableId(id, out _, out _)) selectedTables.Add(id);
+            }
+            foreach (var spawner in scalarSpawners.Values.Where(row => selectedTables.Contains(CreateTableId(row.GroupIndex, row.SpawnerIndex))))
+                foreach (var slot in spawner.EncountDataInfoList)
+                    if (slot is not null && pokemonRows.TryGetValue(slot.EncountDataId ?? string.Empty, out var pokemon)) selectedSources.Add(pokemon.SourceIndex);
+            foreach (var spawner in scalarSpawners.Values)
+                if (spawner.EncountDataInfoList.Any(slot => slot is not null && pokemonRows.TryGetValue(slot.EncountDataId ?? string.Empty, out var pokemon) && selectedSources.Contains(pokemon.SourceIndex)))
+                    selectedTables.Add(CreateTableId(spawner.GroupIndex, spawner.SpawnerIndex));
+        }
+
         var bossBattleContextResolver = new ZaBossBattleContextResolver(
             bossBattleConsumers,
             availableSpawnerIds);
@@ -949,6 +975,8 @@ internal sealed class ZaEncountersWorkflowService
                 {
                     continue;
                 }
+
+                if (selectedTables is not null && !selectedTables.Contains(CreateTableId(groupIndex, spawnerIndex))) continue;
 
                 var displayPosition = displayOrder[(groupIndex, spawnerIndex)];
                 var locationKey = displayPosition.LocationKey;

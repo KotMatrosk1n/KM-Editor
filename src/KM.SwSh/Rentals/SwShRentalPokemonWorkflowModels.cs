@@ -96,6 +96,8 @@ public sealed record SwShRentalPokemonWorkflow(
     SwShRentalPokemonWorkflowStats Stats,
     IReadOnlyList<ValidationDiagnostic> Diagnostics)
 {
+    internal SwShEffectivePokemonCatalog? AssignmentCatalog { get; init; }
+
     internal SwShPokemonAbilityOptionResolver AbilityResolver { get; init; } =
         SwShPokemonAbilityOptionResolver.Empty;
 

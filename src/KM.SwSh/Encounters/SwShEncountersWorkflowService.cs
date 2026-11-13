@@ -128,11 +128,16 @@ public sealed class SwShEncountersWorkflowService
             : SwShWorkflowAvailability.ReadOnly);
     }
 
-    public SwShEncountersWorkflow Load(OpenedProject project)
+    public SwShEncountersWorkflow Load(OpenedProject project) => LoadCore(project, null);
+
+    internal SwShEncountersWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<string> tableIds)
+        => LoadCore(project, tableIds);
+
+    private SwShEncountersWorkflow LoadCore(OpenedProject project, IReadOnlySet<string>? tableIds)
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        var summary = CreateSummary(project);
+        var summary = CreateSummary(project) with { IsPartial = tableIds is not null };
         var diagnostics = new List<ValidationDiagnostic>(summary.Diagnostics);
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
@@ -166,7 +171,7 @@ public sealed class SwShEncountersWorkflowService
         var presentSpeciesIds = SwShSpeciesAvailability.LoadPresentSpeciesIds(
             project,
             readAllBytes,
-            maximumLookupRecordCount);
+            tableIds is null ? maximumLookupRecordCount : maximumLookupRecordCount ?? MaximumSemanticLookupRecords);
 
         try
         {
@@ -186,7 +191,7 @@ public sealed class SwShEncountersWorkflowService
                 var vanillaArchive = vanillaPack.TryGetFileByName(member.FileName, maximumArchiveMemberBytes, out var vanillaMemberData)
                     ? ParseEncounterArchive(vanillaMemberData)
                     : null;
-                tables.AddRange(FlattenArchive(archive, vanillaArchive, member, provenance, speciesNames));
+                tables.AddRange(FlattenArchive(archive, vanillaArchive, member, provenance, speciesNames, tableIds));
             }
 
             if (tables.Count == 0)
@@ -502,13 +507,16 @@ public sealed class SwShEncountersWorkflowService
         SwShWildEncounterArchive? vanillaArchive,
         WildArchiveMember member,
         SwShEncounterProvenance provenance,
-        IReadOnlyList<string> speciesNames)
+        IReadOnlyList<string> speciesNames,
+        IReadOnlySet<string>? tableIds = null)
     {
         for (var tableIndex = 0; tableIndex < archive.Tables.Count; tableIndex++)
         {
             var table = archive.Tables[tableIndex];
             for (var subTableIndex = 0; subTableIndex < table.SubTables.Count; subTableIndex++)
             {
+                var tableId = CreateTableId(member, tableIndex, table.ZoneId, subTableIndex);
+                if (tableIds is not null && !tableIds.Contains(tableId)) continue;
                 var subTable = table.SubTables[subTableIndex];
                 if (!IsVanillaSubTableAvailable(vanillaArchive, tableIndex, table.ZoneId, subTableIndex))
                 {

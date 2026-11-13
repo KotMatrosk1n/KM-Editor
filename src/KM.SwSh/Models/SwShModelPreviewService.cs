@@ -35,7 +35,7 @@ public sealed class SwShModelPreviewService
     {
         var selected = vanilla ? project with { Paths = project.Paths with { OutputRootPath = null } } : project;
         var source = new SwShModelSource(selected, 512L * 1024 * 1024, 16384,
-            vanilla ? Restoration.SwShRestorationBaseline.Models(project.Paths) : null);
+            vanilla ? Restoration.SwShRestorationBaseline.Models(project.Paths, id) : null);
         var resource = Resources(selected, source).SingleOrDefault(r => r.Entry.Id == id);
         if (resource is null)
         {

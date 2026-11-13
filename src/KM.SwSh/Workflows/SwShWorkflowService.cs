@@ -261,22 +261,28 @@ public sealed class SwShWorkflowService
                 .ToArray());
     }
 
-    public SwShItemsWorkflow LoadItems(ProjectPaths paths)
+    public SwShItemsWorkflow LoadItems(ProjectPaths paths, IReadOnlyList<int>? recordIndices = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var project = projectWorkspaceService.Open(paths);
 
-        return itemsWorkflowService.Load(project);
+        if (recordIndices is not null && (recordIndices.Count is < 1 or > 10000 || recordIndices.Any(index => index < 0)))
+            throw new ArgumentException("Record indices must contain between one and 10000 nonnegative indices.", nameof(recordIndices));
+        return recordIndices is null ? itemsWorkflowService.Load(project)
+            : itemsWorkflowService.LoadForEditing(project, recordIndices.ToHashSet());
     }
 
-    public SwShPokemonWorkflow LoadPokemon(ProjectPaths paths)
+    public SwShPokemonWorkflow LoadPokemon(ProjectPaths paths, IReadOnlyList<int>? recordIndices = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var project = projectWorkspaceService.Open(paths);
 
-        return pokemonWorkflowService.Load(project);
+        if (recordIndices is not null && (recordIndices.Count is < 1 or > 10000 || recordIndices.Any(index => index < 0)))
+            throw new ArgumentException("Record indices must contain between one and 10000 nonnegative indices.", nameof(recordIndices));
+        return recordIndices is null ? pokemonWorkflowService.Load(project)
+            : pokemonWorkflowService.LoadForEditing(project, recordIndices.ToHashSet());
     }
 
     public SwShPokemonWorkflowService SharedPokemonWorkflowService => pokemonWorkflowService;
@@ -1146,13 +1152,16 @@ public sealed class SwShWorkflowService
         hash.AppendData(bytes);
     }
 
-    public SwShMovesWorkflow LoadMoves(ProjectPaths paths)
+    public SwShMovesWorkflow LoadMoves(ProjectPaths paths, IReadOnlyList<int>? recordIndices = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var project = projectWorkspaceService.Open(paths);
 
-        return movesWorkflowService.Load(project);
+        if (recordIndices is not null && (recordIndices.Count is < 1 or > 10000 || recordIndices.Any(index => index < 0)))
+            throw new ArgumentException("Record indices must contain between one and 10000 nonnegative indices.", nameof(recordIndices));
+        return recordIndices is null ? movesWorkflowService.Load(project)
+            : movesWorkflowService.LoadForEditing(project, recordIndices.ToHashSet());
     }
 
     public SwShTextWorkflow LoadText(
@@ -1166,49 +1175,67 @@ public sealed class SwShWorkflowService
         return textWorkflowService.Load(project, query);
     }
 
-    public SwShTrainersWorkflow LoadTrainers(ProjectPaths paths)
+    public SwShTrainersWorkflow LoadTrainers(ProjectPaths paths, IReadOnlyList<int>? trainerIds = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var project = projectWorkspaceService.Open(paths);
 
-        return trainersWorkflowService.Load(project);
+        if (trainerIds is not null && (trainerIds.Count == 0 || trainerIds.Any(id => id < 0)))
+            throw new ArgumentException("Trainer IDs must be a nonempty list of nonnegative IDs.", nameof(trainerIds));
+
+        return trainerIds is null
+            ? trainersWorkflowService.Load(project)
+            : trainersWorkflowService.LoadForEditing(project, trainerIds.ToHashSet(),
+                includeClassOwnership: false, includeMoveOptions: false);
     }
 
-    public SwShGiftPokemonWorkflow LoadGiftPokemon(ProjectPaths paths)
+    public SwShGiftPokemonWorkflow LoadGiftPokemon(ProjectPaths paths, IReadOnlyList<int>? recordIndices = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var project = projectWorkspaceService.Open(paths);
 
-        return giftPokemonWorkflowService.Load(project);
+        if (recordIndices is not null && (recordIndices.Count is < 1 or > 10000 || recordIndices.Any(index => index < 0)))
+            throw new ArgumentException("Record indices must contain between one and 10000 nonnegative indices.", nameof(recordIndices));
+        return recordIndices is null ? giftPokemonWorkflowService.Load(project)
+            : giftPokemonWorkflowService.LoadForEditing(project, recordIndices.ToHashSet());
     }
 
-    public SwShStaticEncountersWorkflow LoadStaticEncounters(ProjectPaths paths)
+    public SwShStaticEncountersWorkflow LoadStaticEncounters(ProjectPaths paths, IReadOnlyList<int>? recordIndices = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var project = projectWorkspaceService.Open(paths);
 
-        return staticEncountersWorkflowService.Load(project);
+        if (recordIndices is not null && (recordIndices.Count is < 1 or > 10000 || recordIndices.Any(index => index < 0)))
+            throw new ArgumentException("Record indices must contain between one and 10000 nonnegative indices.", nameof(recordIndices));
+        return recordIndices is null ? staticEncountersWorkflowService.Load(project)
+            : staticEncountersWorkflowService.LoadForEditing(project, recordIndices.ToHashSet());
     }
 
-    public SwShTradePokemonWorkflow LoadTradePokemon(ProjectPaths paths)
+    public SwShTradePokemonWorkflow LoadTradePokemon(ProjectPaths paths, IReadOnlyList<int>? recordIndices = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var project = projectWorkspaceService.Open(paths);
 
-        return tradePokemonWorkflowService.Load(project);
+        if (recordIndices is not null && (recordIndices.Count is < 1 or > 10000 || recordIndices.Any(index => index < 0)))
+            throw new ArgumentException("Record indices must contain between one and 10000 nonnegative indices.", nameof(recordIndices));
+        return recordIndices is null ? tradePokemonWorkflowService.Load(project)
+            : tradePokemonWorkflowService.LoadForEditing(project, recordIndices.ToHashSet());
     }
 
-    public SwShRentalPokemonWorkflow LoadRentalPokemon(ProjectPaths paths)
+    public SwShRentalPokemonWorkflow LoadRentalPokemon(ProjectPaths paths, IReadOnlyList<int>? recordIndices = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var project = projectWorkspaceService.Open(paths);
 
-        return rentalPokemonWorkflowService.Load(project);
+        if (recordIndices is not null && (recordIndices.Count is < 1 or > 10000 || recordIndices.Any(index => index < 0)))
+            throw new ArgumentException("Record indices must contain between one and 10000 nonnegative indices.", nameof(recordIndices));
+        return recordIndices is null ? rentalPokemonWorkflowService.Load(project)
+            : rentalPokemonWorkflowService.LoadForEditing(project, recordIndices.ToHashSet());
     }
 
     public SwShDynamaxAdventuresWorkflow LoadDynamaxAdventures(ProjectPaths paths)
@@ -1229,13 +1256,16 @@ public sealed class SwShWorkflowService
         return shopsWorkflowService.Load(project);
     }
 
-    public SwShEncountersWorkflow LoadEncounters(ProjectPaths paths)
+    public SwShEncountersWorkflow LoadEncounters(ProjectPaths paths, IReadOnlyList<string>? tableIds = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var project = projectWorkspaceService.Open(paths);
 
-        return encountersWorkflowService.Load(project);
+        if (tableIds is not null && (tableIds.Count is < 1 or > 10000 || tableIds.Any(string.IsNullOrWhiteSpace)))
+            throw new ArgumentException("Table IDs must contain between one and 10000 nonempty IDs.", nameof(tableIds));
+        return tableIds is null ? encountersWorkflowService.Load(project)
+            : encountersWorkflowService.LoadForEditing(project, tableIds.ToHashSet(StringComparer.Ordinal));
     }
 
     public SwShRaidRewardsWorkflow LoadRaidRewards(ProjectPaths paths)
@@ -1256,13 +1286,16 @@ public sealed class SwShWorkflowService
         return raidRewardsWorkflowService.LoadBonus(project);
     }
 
-    public SwShRaidBattlesWorkflow LoadRaidBattles(ProjectPaths paths)
+    public SwShRaidBattlesWorkflow LoadRaidBattles(ProjectPaths paths, IReadOnlyList<string>? tableIds = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var project = projectWorkspaceService.Open(paths);
 
-        return raidBattlesWorkflowService.Load(project);
+        if (tableIds is { Count: 0 or > 10000 } || tableIds?.Any(string.IsNullOrWhiteSpace) == true)
+            throw new ArgumentException("Selected table IDs must contain between 1 and 10000 nonempty IDs.", nameof(tableIds));
+        return tableIds is null ? raidBattlesWorkflowService.Load(project)
+            : raidBattlesWorkflowService.LoadForEditing(project, tableIds.ToHashSet(StringComparer.Ordinal));
     }
 
     public SwShPlacementWorkflow LoadPlacement(ProjectPaths paths)
@@ -1274,13 +1307,13 @@ public sealed class SwShWorkflowService
         return placementWorkflowService.Load(project);
     }
 
-    public SwShBehaviorWorkflow LoadBehavior(ProjectPaths paths)
+    public SwShBehaviorWorkflow LoadBehavior(ProjectPaths paths, IReadOnlyList<int>? entryIndices = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var project = projectWorkspaceService.Open(paths);
 
-        return behaviorWorkflowService.Load(project);
+        return entryIndices is null ? behaviorWorkflowService.Load(project) : behaviorWorkflowService.LoadForEditing(project, entryIndices.ToHashSet());
     }
 
     public SwShFlagworkSaveWorkflow LoadFlagworkSave(ProjectPaths paths)

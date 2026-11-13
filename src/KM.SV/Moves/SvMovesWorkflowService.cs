@@ -282,7 +282,11 @@ internal sealed class SvMovesWorkflowService
             WorkflowDescription);
     }
 
-    public SvMovesWorkflow Load(OpenedProject project)
+    public SvMovesWorkflow Load(OpenedProject project) => LoadCore(project, null);
+
+    internal SvMovesWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<int> ids) => LoadCore(project, ids);
+
+    private SvMovesWorkflow LoadCore(OpenedProject project, IReadOnlySet<int>? ids)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -295,7 +299,7 @@ internal sealed class SvMovesWorkflowService
         {
             labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
             source = fileSource.Read(project, SvDataPaths.MoveDataArray);
-            moves = LoadRecords(source, labels).ToArray();
+            moves = LoadRecords(source, labels, ids).ToArray();
             moves = SvTeraBlastWorkflow.Attach(project, moves);
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
@@ -313,7 +317,7 @@ internal sealed class SvMovesWorkflowService
             diagnostics.Count == 0 ? null : diagnostics);
 
         return new SvMovesWorkflow(
-            summary,
+            summary with { IsPartial = ids is not null },
             moves,
             [.. EditableFields, .. SvTeraBlastSettings.Fields],
             new SvMovesWorkflowStats(
@@ -357,14 +361,15 @@ internal sealed class SvMovesWorkflowService
 
     private IEnumerable<SvMoveRecord> LoadRecords(
         SvWorkflowFile source,
-        SvTextLabelLookup labels)
+        SvTextLabelLookup labels,
+        IReadOnlySet<int>? ids)
     {
         var table = global::SvMoveDataArray.GetRootAsSvMoveDataArray(new ByteBuffer(source.Bytes));
         fileSource.EnsureBoundedTableCount(table.ValuesLength, "The S/V move table");
         for (var index = 0; index < table.ValuesLength; index++)
         {
             var move = table.Values(index);
-            if (move is not null)
+            if (move is not null && (ids is null || ids.Contains(move.Value.MoveId)))
             {
                 yield return ToRecord(move.Value, labels, source);
             }

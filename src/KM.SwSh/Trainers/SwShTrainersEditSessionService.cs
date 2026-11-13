@@ -89,7 +89,7 @@ public sealed partial class SwShTrainersEditSessionService
         projectWorkspaceService.ClearMemoryCache();
         var currentSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var workflow = trainersWorkflowService.Load(project);
+        var workflow = LoadForSession(project, currentSession, [new(trainerId, slot, field, value)]);
         currentSession = CanonicalizePendingTrainerEdits(workflow, currentSession);
         var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
@@ -182,7 +182,7 @@ public sealed partial class SwShTrainersEditSessionService
         projectWorkspaceService.ClearMemoryCache();
         var currentSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var workflow = trainersWorkflowService.Load(project);
+        var workflow = LoadForSession(project, currentSession, updates);
         currentSession = CanonicalizePendingTrainerEdits(workflow, currentSession);
         var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
@@ -289,6 +289,66 @@ public sealed partial class SwShTrainersEditSessionService
             : new SwShTrainersEditResult(projectedWorkflow, updatedSession, diagnostics);
     }
 
+    private SwShTrainersWorkflow LoadForSession(
+        OpenedProject project, EditSession session, IReadOnlyList<SwShTrainerFieldUpdate>? updates = null)
+    {
+        var trainerIds = new HashSet<int>();
+        var classIds = new HashSet<int>();
+        foreach (var edit in session.PendingEdits.Where(IsTrainerEdit))
+        {
+            if (edit.Field == SwShTrainersWorkflowService.ClassBallIdField)
+            {
+                if (int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var classId))
+                    classIds.Add(classId);
+            }
+            else if (SwShTrainersWorkflowService.TryParseTeamRecordId(edit.RecordId, out var trainerId, out _))
+                trainerIds.Add(trainerId);
+            else if (int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out trainerId))
+                trainerIds.Add(trainerId);
+        }
+
+        if (updates is not null)
+            foreach (var update in updates) trainerIds.Add(update.TrainerId);
+
+        // Class balls are shared. Only those edits require the global header ownership scan;
+        // ordinary trainer and party edits read the selected and already pending records.
+        var needsOwnership = classIds.Count > 0
+            || updates?.Any(update => update.Field?.Trim() == SwShTrainersWorkflowService.ClassBallIdField) == true;
+        var includeMoveOptions = session.PendingEdits.Where(IsTrainerEdit).Select(edit => edit.Field)
+            .Concat(updates?.Select(update => update.Field?.Trim()) ?? [])
+            .Any(field => field is SwShTrainersWorkflowService.Move1IdField
+                or SwShTrainersWorkflowService.Move2IdField
+                or SwShTrainersWorkflowService.Move3IdField
+                or SwShTrainersWorkflowService.Move4IdField);
+        var classBallTrainerIds = updates?.Where(update => update.Field?.Trim() == SwShTrainersWorkflowService.ClassBallIdField)
+            .Select(update => update.TrainerId).ToHashSet();
+        var workflow = trainersWorkflowService.LoadForEditing(project, trainerIds, needsOwnership, classIds, includeMoveOptions, classBallTrainerIds);
+        var identityEdits = session.PendingEdits.Where(IsTrainerEdit)
+            .Where(edit => edit.Field is SwShTrainersWorkflowService.SpeciesIdField or SwShTrainersWorkflowService.FormField)
+            .Where(edit => SwShTrainersWorkflowService.TryParseTeamRecordId(edit.RecordId, out _, out _))
+            .Select(edit => { SwShTrainersWorkflowService.TryParseTeamRecordId(edit.RecordId, out var id, out var slot);
+                return new SwShTrainerFieldUpdate(id, slot, edit.Field!, edit.NewValue!); })
+            .Concat(updates?.Where(update => update.Field?.Trim() is SwShTrainersWorkflowService.SpeciesIdField or SwShTrainersWorkflowService.FormField) ?? [])
+            .ToArray();
+        if (identityEdits.Length == 0) return workflow;
+        var speciesIds = identityEdits.GroupBy(edit => (edit.TrainerId, edit.Slot)).Select(group =>
+        {
+            var replacement = group.LastOrDefault(edit => edit.Field.Trim() == SwShTrainersWorkflowService.SpeciesIdField);
+            return replacement is not null && int.TryParse(replacement.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var species)
+                ? species : workflow.Trainers.FirstOrDefault(t => t.TrainerId == group.Key.TrainerId)?.Team
+                    .FirstOrDefault(p => p.Slot == group.Key.Slot)?.SpeciesId ?? 0;
+        }).Where(species => species > 0).ToHashSet();
+        var catalog = SwShEffectivePokemonCatalog.Load(project.Paths, speciesIds);
+        var available = catalog.SpeciesFor(SwShPokemonCapability.Assignment);
+        return workflow with
+        {
+            AssignmentCatalog = catalog,
+            EditableFields = workflow.EditableFields.Select(field => field.Field == SwShTrainersWorkflowService.SpeciesIdField
+                ? field with { Options = field.Options.Where(option => option.Value == 0 || available.Contains(option.Value)).ToArray() }
+                : field).ToArray(),
+        };
+    }
+
     public SwShEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -301,7 +361,7 @@ public sealed partial class SwShTrainersEditSessionService
 
     private SwShEditSessionValidation Validate(OpenedProject project, EditSession session)
     {
-        var workflow = trainersWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         return Validate(project, workflow, session);
     }
 
@@ -416,7 +476,7 @@ public sealed partial class SwShTrainersEditSessionService
 
         projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
-        var workflow = trainersWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var validation = Validate(project, workflow, session);
         var diagnostics = validation.Diagnostics.ToList();
         var effectiveSession = validation.Session;
@@ -502,7 +562,7 @@ public sealed partial class SwShTrainersEditSessionService
         using var verifiedApply = applyScope!;
         paths = verifiedApply.ApplyPaths;
         var project = projectWorkspaceService.Open(paths);
-        var workflow = trainersWorkflowService.Load(project);
+        var workflow = LoadForSession(project, effectiveSession);
         var trainerEdits = effectiveSession.PendingEdits.Where(IsTrainerEdit).ToArray();
         var applyEdits = trainerEdits
             .Concat(CreateImpliedPokemonCountEdits(workflow, trainerEdits))
@@ -2075,7 +2135,10 @@ public sealed partial class SwShTrainersEditSessionService
                 continue;
             }
 
-            if (identityRecords.Contains(identity) && !personal!.IsPresentInGame)
+            if (identityRecords.Contains(identity) && (!personal!.IsPresentInGame
+                || workflow.AssignmentCatalog is { } catalog && !catalog.Entries.Any(entry =>
+                    entry.Identity.Species == pokemon.SpeciesId && entry.Identity.Form == pokemon.Form
+                    && entry.Capabilities.HasFlag(SwShPokemonCapability.Assignment))))
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
@@ -2317,7 +2380,7 @@ public sealed partial class SwShTrainersEditSessionService
             .Concat(CreateImpliedPokemonCountEdits(workflow, edits))
             .ToArray();
 
-        return allEdits
+        var writes = allEdits
             .GroupBy(edit => GetTargetRelativePath(workflow, edit), StringComparer.OrdinalIgnoreCase)
             .Select(group =>
             {
@@ -2372,6 +2435,13 @@ public sealed partial class SwShTrainersEditSessionService
             .Select(write => write!)
             .OrderBy(write => write.TargetRelativePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        if (writes.Length > 0 && workflow.AssignmentCatalog is { Available: true } catalog)
+            writes[0] = writes[0] with
+            {
+                Sources = writes[0].Sources.Concat(catalog.Sources).Distinct().ToArray(),
+                Reason = writes[0].Reason + $" Pokemon assignment revision {catalog.Revision}.",
+            };
+        return writes;
     }
 
     private static IReadOnlyList<PendingEdit> CreateImpliedPokemonCountEdits(

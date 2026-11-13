@@ -185,7 +185,12 @@ internal sealed class SvTrainersWorkflowService
             WorkflowDescription);
     }
 
-    public SvTrainersWorkflow Load(OpenedProject project)
+    public SvTrainersWorkflow Load(OpenedProject project) => LoadCore(project, null);
+
+    internal SvTrainersWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<int> trainerIds)
+        => LoadCore(project, trainerIds);
+
+    private SvTrainersWorkflow LoadCore(OpenedProject project, IReadOnlySet<int>? trainerIds)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -202,7 +207,7 @@ internal sealed class SvTrainersWorkflowService
             var abilityResolver = SvTrainerAbilityResolver.Load(project, fileSource, labels, diagnostics);
             var moveResolver = SvDefaultMoveResolver.Load(project, fileSource, diagnostics);
             source = fileSource.Read(project, SvDataPaths.TrainerDataArray);
-            trainers = LoadRecords(source, labels, spriteLabels, abilityResolver, moveResolver).ToArray();
+            trainers = LoadRecords(source, labels, spriteLabels, abilityResolver, moveResolver, trainerIds).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException
             && !fileSource.IsBoundedSemanticLimit(exception))
@@ -220,7 +225,7 @@ internal sealed class SvTrainersWorkflowService
             diagnostics.Count == 0 ? null : diagnostics);
 
         return new SvTrainersWorkflow(
-            summary,
+            summary with { IsPartial = trainerIds is not null },
             trainers,
             CreateEditableFields(labels),
             new SvTrainersWorkflowStats(
@@ -235,12 +240,14 @@ internal sealed class SvTrainersWorkflowService
         SvTextLabelLookup labels,
         SvTextLabelLookup spriteLabels,
         SvTrainerAbilityResolver abilityResolver,
-        SvDefaultMoveResolver moveResolver)
+        SvDefaultMoveResolver moveResolver,
+        IReadOnlySet<int>? trainerIds = null)
     {
         var table = global::trainer.TrdataMainArray.GetRootAsTrdataMainArray(new ByteBuffer(source.Bytes));
         fileSource.EnsureBoundedTableCount(table.ValuesLength, "The S/V trainer table");
         for (var index = 0; index < table.ValuesLength; index++)
         {
+            if (trainerIds is not null && !trainerIds.Contains(index)) continue;
             var trainer = table.Values(index);
             if (trainer is null)
             {

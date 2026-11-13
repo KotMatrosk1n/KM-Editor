@@ -7,7 +7,7 @@ using KM.Api.Workflows;
 
 namespace KM.Api.Behavior;
 
-public sealed record LoadBehaviorWorkflowRequest(ProjectPathsDto Paths);
+public sealed record LoadBehaviorWorkflowRequest(ProjectPathsDto Paths, IReadOnlyList<int>? EntryIndices = null);
 
 public sealed record BehaviorProvenanceDto(
     string SourceFile,

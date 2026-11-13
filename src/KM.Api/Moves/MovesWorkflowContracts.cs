@@ -9,7 +9,10 @@ using System.Text.Json.Serialization;
 
 namespace KM.Api.Moves;
 
-public sealed record LoadMovesWorkflowRequest(ProjectPathsDto Paths);
+public sealed record LoadMovesWorkflowRequest(ProjectPathsDto Paths)
+{
+    public IReadOnlyList<int>? RecordIndices { get; init; }
+}
 
 public sealed record UpdateMoveFieldRequest(
     ProjectPathsDto Paths,

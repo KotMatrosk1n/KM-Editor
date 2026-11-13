@@ -47,7 +47,11 @@ internal sealed class SvEncountersWorkflowService
             WorkflowDescription);
     }
 
-    public SvEncountersWorkflow Load(OpenedProject project)
+    public SvEncountersWorkflow Load(OpenedProject project) => LoadCore(project, null);
+
+    internal SvEncountersWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<string> tableIds) => LoadCore(project, tableIds);
+
+    private SvEncountersWorkflow LoadCore(OpenedProject project, IReadOnlySet<string>? tableIds)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -56,7 +60,7 @@ internal sealed class SvEncountersWorkflowService
         var labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
         var sourceFileCount = 0;
 
-        foreach (var region in SvEncounterRegion.All)
+        foreach (var region in SvEncounterRegion.All.Where(region => tableIds is null || tableIds.Any(id => SvEncounterRegion.FromTableId(id) == region)))
         {
             try
             {
@@ -65,7 +69,7 @@ internal sealed class SvEncountersWorkflowService
                     continue;
 
                 var source = fileSource.Read(project, region.VirtualPath);
-                var regionTables = LoadTables(source, labels, project.Paths.SelectedGame, region).ToArray();
+                var regionTables = LoadTables(source, labels, project.Paths.SelectedGame, region, tableIds).ToArray();
                 tables.AddRange(regionTables);
                 sourceFileCount++;
             }
@@ -86,7 +90,7 @@ internal sealed class SvEncountersWorkflowService
             diagnostics.Count == 0 ? null : diagnostics);
 
         return new SvEncountersWorkflow(
-            summary,
+            summary with { IsPartial = tableIds is not null },
             tables,
             CreateEditableFields(labels),
             new SvEncountersWorkflowStats(
@@ -100,7 +104,8 @@ internal sealed class SvEncountersWorkflowService
         SvWorkflowFile source,
         SvTextLabelLookup labels,
         ProjectGame? selectedGame,
-        SvEncounterRegion region)
+        SvEncounterRegion region,
+        IReadOnlySet<string>? tableIds)
     {
         var table = global::EncountPokeDataArray.GetRootAsEncountPokeDataArray(new ByteBuffer(source.Bytes));
         fileSource.EnsureBoundedTableCount(table.ValuesLength, "The S/V encounter table");
@@ -116,6 +121,7 @@ internal sealed class SvEncountersWorkflowService
 
         foreach (var group in rows.GroupBy(row => SvEncounterGrouping.CreateGroupKey(row.Data), StringComparer.Ordinal))
         {
+            if (tableIds is not null && !tableIds.Contains(region.TableId(group.Key))) continue;
             var first = group.First().Data;
             var slots = group
                 .Select((row, slotIndex) => ToSlot(slotIndex, row.Data, labels))

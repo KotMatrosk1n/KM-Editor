@@ -15,7 +15,8 @@ public sealed partial class SwShGiftPokemonEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
-        var workflow = giftPokemonWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session ?? StartSession(),
+            [new SwShGiftPokemonFieldUpdate(giftIndex, RestoreVanillaField, "vanilla")]);
         var original = RebindDeletedOutputEdits(project, workflow, session ?? StartSession());
         var diagnostics = new List<ValidationDiagnostic>();
         var gift = ResolveGift(workflow, giftIndex, diagnostics, RestoreVanillaField);

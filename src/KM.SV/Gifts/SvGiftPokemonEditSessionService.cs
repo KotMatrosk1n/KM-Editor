@@ -27,6 +27,14 @@ internal sealed class SvGiftPokemonEditSessionService
         this.giftPokemonWorkflowService = giftPokemonWorkflowService ?? new SvGiftPokemonWorkflowService(this.fileSource);
     }
 
+    private SvGiftPokemonWorkflow LoadForSession(OpenedProject project, EditSession session, IEnumerable<int>? incoming = null)
+    {
+        var indices = session.PendingEdits.Where(edit => edit.Domain == SvEditSessionSupport.GiftPokemonDomain)
+            .Select(edit => SvGiftPokemonWorkflowService.TryParseGiftRecordId(edit.RecordId, out var index) ? index : -1)
+            .Concat(incoming ?? []).Where(index => index >= 0).ToHashSet();
+        return giftPokemonWorkflowService.LoadForEditing(project, indices);
+    }
+
     public SvGiftPokemonEditResult UpdateField(
         ProjectPaths paths,
         EditSession? session,
@@ -40,7 +48,7 @@ internal sealed class SvGiftPokemonEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = giftPokemonWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [giftIndex]);
         var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -89,7 +97,7 @@ internal sealed class SvGiftPokemonEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = giftPokemonWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, updates.Select(update => update.GiftIndex));
         var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -150,7 +158,7 @@ internal sealed class SvGiftPokemonEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = giftPokemonWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
         SvEditSessionSupport.CanEdit(
@@ -406,7 +414,7 @@ internal sealed class SvGiftPokemonEditSessionService
 
             var overlaySource = source with { Bytes = WriteRows(rows) };
             var giftsByIndex = SvGiftPokemonWorkflowService
-                .LoadRecords(overlaySource, labels, abilityResolver, moveResolver)
+                .LoadRecords(overlaySource, labels, abilityResolver, moveResolver, workflow.Gifts.Select(row => row.GiftIndex).ToHashSet())
                 .ToDictionary(gift => gift.GiftIndex);
 
             return workflow with

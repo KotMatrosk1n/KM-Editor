@@ -72,7 +72,7 @@ public sealed class SwShStaticEncountersEditSessionService
         projectWorkspaceService.ClearMemoryCache();
         var originalSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var workflow = staticEncountersWorkflowService.Load(project);
+        var workflow = LoadForSession(project, originalSession, updates);
         var originalWorkflow = OverlayPendingEdits(workflow, originalSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -155,6 +155,54 @@ public sealed class SwShStaticEncountersEditSessionService
             diagnostics);
     }
 
+
+    private SwShStaticEncountersWorkflow LoadForSession(OpenedProject project, EditSession session,
+        IReadOnlyList<SwShStaticEncounterFieldUpdate>? updates = null)
+    {
+        var edits = session.PendingEdits.Where(edit => edit.Domain == SwShStaticEncountersWorkflowService.StaticEncountersEditDomain).ToArray();
+        var indices = edits.Select(edit => SwShStaticEncountersWorkflowService.TryParseEncounterRecordId(edit.RecordId, out var index) ? index : -1)
+            .Concat(updates?.Where(update => update is not null).Select(update => update.EncounterIndex) ?? []).Where(index => index >= 0).ToHashSet();
+        var workflow = staticEncountersWorkflowService.LoadForEditing(project, indices);
+        var identities = edits.Where(edit => edit.Field is "species" or "form" or "canGigantamax")
+            .Select(edit => (SwShStaticEncountersWorkflowService.TryParseEncounterRecordId(edit.RecordId, out var index) ? index : -1, edit.Field, edit.NewValue))
+            .Concat(updates?.Where(update => update is not null && update.Field?.Trim() is "species" or "form" or "canGigantamax")
+                .Select(update => (update.EncounterIndex, (string?)update.Field.Trim(), (string?)update.Value)) ?? []).ToArray();
+        if (identities.Length == 0) return workflow;
+        var identityIndices = identities.Select(edit => edit.Item1).ToHashSet();
+        var speciesIds = workflow.Encounters.Where(row => identityIndices.Contains(row.EncounterIndex)).Select(row => row.SpeciesId).ToHashSet();
+        foreach (var edit in identities.Where(edit => edit.Item2 is "species" or "requiredSpecies"))
+            if (int.TryParse(edit.Item3, NumberStyles.Integer, CultureInfo.InvariantCulture, out var species)) speciesIds.Add(species);
+        var catalog = SwShEffectivePokemonCatalog.Load(project.Paths, speciesIds);
+        var available = catalog.SpeciesFor(SwShPokemonCapability.Assignment);
+        return workflow with { AssignmentCatalog = catalog,
+            EditableFields = workflow.EditableFields.Select(field => field.Field is "species" or "requiredSpecies"
+                ? field with { Options = field.Options.Where(option => option.Value == 0 || available.Contains(option.Value)).ToArray() } : field).ToArray() };
+    }
+
+    private static ChangePlan BindAssignmentSources(ChangePlan plan, SwShStaticEncountersWorkflow workflow)
+        => workflow.AssignmentCatalog is { Available: true } catalog
+            ? plan with { Writes = plan.Writes.Select((write, index) => index == 0
+                ? write with { Sources = write.Sources.Concat(catalog.Sources).Distinct().ToArray() } : write).ToArray() } : plan;
+
+    private static void ValidateAssignmentSources(SwShStaticEncountersWorkflow workflow, EditSession session,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (workflow.AssignmentCatalog is not { Available: true } catalog) return;
+        var identityIndices = session.PendingEdits.Where(edit => edit.Domain == SwShStaticEncountersWorkflowService.StaticEncountersEditDomain
+                && edit.Field is "species" or "form" or "canGigantamax")
+            .Select(edit => SwShStaticEncountersWorkflowService.TryParseEncounterRecordId(edit.RecordId, out var index) ? index : -1).ToHashSet();
+        var effective = OverlayPendingEdits(workflow, session.PendingEdits);
+        foreach (var row in effective.Encounters.Where(row => identityIndices.Contains(row.EncounterIndex)))
+            ValidateIdentity(row.SpeciesId, row.Form);
+        void ValidateIdentity(int species, int form)
+        {
+            if (species > 0 && (!catalog.Available || !catalog.Entries.Any(entry => entry.Identity.Species == species
+                && entry.Identity.Form == form && entry.Capabilities.HasFlag(SwShPokemonCapability.Assignment))))
+                diagnostics.Add(CreateDiagnostic(DiagnosticSeverity.Error,
+                    "Assigned Pokemon form does not have complete installed assets.", field: "species"));
+        }
+    }
+
     public SwShEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -163,7 +211,7 @@ public sealed class SwShStaticEncountersEditSessionService
         projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         session = RebindDeletedOutputEdits(project, session);
-        var workflow = staticEncountersWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
         CanEditStaticEncounters(project, workflow, diagnostics);
@@ -221,6 +269,7 @@ public sealed class SwShStaticEncountersEditSessionService
 
         var presentation = BuildPresentation(project, session.PendingEdits, diagnostics);
         if (diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error)) return new ChangePlan(session.Id, [], diagnostics);
+        var assignmentWorkflow = LoadForSession(project, session);
         var sources = session.PendingEdits.SelectMany(edit => edit.Sources)
             .Concat(presentation?.Files.Sources ?? []).Distinct().ToArray();
         var write = new PlannedFileWrite(
@@ -239,9 +288,9 @@ public sealed class SwShStaticEncountersEditSessionService
             DiagnosticSeverity.Info,
             $"Change plan preview contains {writes.Count} target file(s)."));
 
-        return SwShChangePlanSourceGuard.Capture(
+        return SwShChangePlanSourceGuard.CaptureWithAssignmentSources(
             paths,
-            new ChangePlan(session.Id, writes, diagnostics));
+            BindAssignmentSources(new ChangePlan(session.Id, writes, diagnostics), assignmentWorkflow));
     }
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
@@ -602,6 +651,7 @@ public sealed class SwShStaticEncountersEditSessionService
         ICollection<ValidationDiagnostic> diagnostics,
         bool addSuccessDiagnostic)
     {
+        ValidateAssignmentSources(workflow, session, diagnostics);
         var staticEncounterEdits = session.PendingEdits
             .Where(edit => string.Equals(
                 edit.Domain,

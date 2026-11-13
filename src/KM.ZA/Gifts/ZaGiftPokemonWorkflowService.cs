@@ -154,7 +154,11 @@ internal sealed class ZaGiftPokemonWorkflowService
             WorkflowDescription);
     }
 
-    public ZaGiftPokemonWorkflow Load(OpenedProject project)
+    public ZaGiftPokemonWorkflow Load(OpenedProject project) => LoadCore(project, null);
+
+    internal ZaGiftPokemonWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<int> giftIndices) => LoadCore(project, giftIndices);
+
+    private ZaGiftPokemonWorkflow LoadCore(OpenedProject project, IReadOnlySet<int>? giftIndices)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -170,7 +174,7 @@ internal sealed class ZaGiftPokemonWorkflowService
             pokemonAvailability = ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel);
             var abilityResolver = ZaGiftAbilityResolver.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, ZaDataPaths.PokemonDataArray);
-            gifts = LoadRecords(source, labels, abilityResolver)
+            gifts = LoadRecords(source, labels, abilityResolver, giftIndices)
                 .Select(gift => WithFormOptions(gift, pokemonAvailability))
                 .ToArray();
 
@@ -215,7 +219,7 @@ internal sealed class ZaGiftPokemonWorkflowService
             diagnostics.Count == 0 ? null : diagnostics);
 
         return new ZaGiftPokemonWorkflow(
-            summary,
+            summary with { IsPartial = giftIndices is not null },
             gifts,
             CreateEditableFields(labels, pokemonAvailability),
             new ZaGiftPokemonWorkflowStats(
@@ -287,11 +291,14 @@ internal sealed class ZaGiftPokemonWorkflowService
     internal static IReadOnlyList<ZaGiftPokemonEntry> LoadRecords(
         ZaWorkflowFile source,
         ZaTextLabelLookup labels,
-        ZaGiftAbilityResolver abilityResolver)
+        ZaGiftAbilityResolver abilityResolver,
+        IReadOnlySet<int>? giftIndices = null)
     {
         var document = ZaPokemonDataDocument.Parse(source.Bytes);
         return CreateGiftSourceGroups(document)
-            .Select((group, giftIndex) => ToRecord(giftIndex, group, source, labels, abilityResolver))
+            .Select((group, giftIndex) => (group, giftIndex))
+            .Where(row => giftIndices is null || giftIndices.Contains(row.giftIndex))
+            .Select(row => ToRecord(row.giftIndex, row.group, source, labels, abilityResolver))
             .ToArray();
     }
 

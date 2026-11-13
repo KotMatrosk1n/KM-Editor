@@ -818,7 +818,23 @@ public sealed class SwShDynamaxAdventuresEditSessionService
                 CultureInfo.InvariantCulture,
                 $"Change plan preview contains {writes.Count:N0} target file(s).")));
 
-        return SwShChangePlanSourceGuard.Capture(
+        var identityRows = session.PendingEdits
+            .Where(edit => edit.Field is SwShDynamaxAdventuresWorkflowService.SpeciesField or SwShDynamaxAdventuresWorkflowService.FormField)
+            .Select(edit => SwShDynamaxAdventuresWorkflowService.TryParseEncounterRecordId(edit.RecordId, out var index) ? index : -1)
+            .Where(index => index >= 0).ToHashSet();
+        if (identityRows.Count > 0)
+        {
+            var assigned = applyState.FinalArchive.Entries.Where(entry => identityRows.Contains(entry.EntryIndex)).ToArray();
+            var catalog = SwShEffectivePokemonCatalog.Load(paths, assigned.Select(entry => entry.Species).ToHashSet());
+            foreach (var entry in assigned)
+                if (!catalog.Available || !catalog.Entries.Any(candidate => candidate.Identity.Species == entry.Species
+                    && candidate.Identity.Form == entry.Form && candidate.Capabilities.HasFlag(SwShPokemonCapability.Assignment)))
+                    diagnostics.Add(CreateDiagnostic(DiagnosticSeverity.Error,
+                        "Assigned Pokemon form does not have complete installed assets.", field: SwShDynamaxAdventuresWorkflowService.SpeciesField));
+            if (catalog.Available && writes.Count > 0)
+                writes[0] = writes[0] with { Sources = writes[0].Sources.Concat(catalog.Sources).Distinct().ToArray() };
+        }
+        return SwShChangePlanSourceGuard.CapturePreparedPlan(
             paths,
             new ChangePlan(session.Id, writes, diagnostics),
             preserveExplicitSourceLayers: true);

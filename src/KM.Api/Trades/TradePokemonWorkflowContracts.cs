@@ -8,7 +8,10 @@ using System.Text.Json.Serialization;
 
 namespace KM.Api.Trades;
 
-public sealed record LoadTradePokemonWorkflowRequest(ProjectPathsDto Paths);
+public sealed record LoadTradePokemonWorkflowRequest(ProjectPathsDto Paths)
+{
+    public IReadOnlyList<int>? RecordIndices { get; init; }
+}
 
 public sealed record UpdateTradePokemonFieldRequest(
     ProjectPathsDto Paths,

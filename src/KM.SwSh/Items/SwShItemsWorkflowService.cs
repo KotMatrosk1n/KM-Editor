@@ -446,11 +446,17 @@ public sealed class SwShItemsWorkflowService
             : SwShWorkflowAvailability.ReadOnly);
     }
 
-    public SwShItemsWorkflow Load(OpenedProject project)
+    public SwShItemsWorkflow Load(OpenedProject project) => LoadCore(project, null);
+
+    internal SwShItemsWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<int> itemIds) => LoadCore(project, itemIds);
+
+    internal SwShItemsWorkflow LoadForLookup(OpenedProject project) => LoadCore(project, null, includeEditorMetadata: false);
+
+    private SwShItemsWorkflow LoadCore(OpenedProject project, IReadOnlySet<int>? itemIds, bool includeEditorMetadata = true)
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        var summary = CreateSummary(project);
+        var summary = CreateSummary(project) with { IsPartial = itemIds is not null };
         var diagnostics = new List<ValidationDiagnostic>(summary.Diagnostics);
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
@@ -486,11 +492,11 @@ public sealed class SwShItemsWorkflowService
         var moveNames = moveNamesSource is null
             ? Array.Empty<string>()
             : LoadMoveNames(moveNamesSource, diagnostics, readAllBytes, maximumTextLineCount);
-        var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(
+        var usableMoveIds = !includeEditorMetadata ? new HashSet<int>() : SwShMoveAvailability.LoadUsableMoveIds(
             project,
             readAllBytes,
             maximumRecordCount);
-        var editableFields = CreateEditableFields(moveNames, usableMoveIds);
+        var editableFields = includeEditorMetadata ? CreateEditableFields(moveNames, usableMoveIds) : [];
 
         try
         {
@@ -498,9 +504,15 @@ public sealed class SwShItemsWorkflowService
                 readAllBytes(itemDataSource.AbsolutePath),
                 maximumRecordCount);
             var provenance = CreateProvenance(itemDataSource.GraphEntry);
+            // Aliased rows and all owners of a TM/TR slot are part of the selected edit.
+            var selected = itemTable.Records.Where(item => itemIds is null || itemIds.Contains(item.ItemId)).ToArray();
+            var aliases = selected.SelectMany(item => item.SharedItemIds).ToHashSet();
+            var slots = selected.Where(item => item.MachineSlot is not null).Select(item => item.MachineSlot).ToHashSet();
             var items = itemTable.Records
+                .Where(item => itemIds is null || itemIds.Contains(item.ItemId) || aliases.Contains(item.ItemId)
+                    || item.MachineSlot is not null && slots.Contains(item.MachineSlot))
                 .OrderBy(item => item.ItemId)
-                .Select(item => ToItemRecord(item, itemNames, moveNames, provenance))
+                .Select(item => ToItemRecord(item, itemNames, moveNames, provenance, includeEditorMetadata))
                 .ToArray();
             var sourceFileCount = 1
                 + (itemNamesSource is null ? 0 : 1)
@@ -905,7 +917,8 @@ public sealed class SwShItemsWorkflowService
         SwShItemTableRecord item,
         IReadOnlyList<string> itemNames,
         IReadOnlyList<string> moveNames,
-        SwShItemProvenance provenance)
+        SwShItemProvenance provenance,
+        bool includeEditorMetadata = true)
     {
         var metadata = CreateMetadata(item, moveNames);
 
@@ -919,7 +932,7 @@ public sealed class SwShItemsWorkflowService
             checked((int)item.AlternatePrice),
             metadata,
             item.SharedItemIds,
-            CreateDetailGroups(metadata),
+            includeEditorMetadata ? CreateDetailGroups(metadata) : [],
             provenance)
         {
             BaseName = GetItemName(item.ItemId, itemNames),

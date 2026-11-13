@@ -185,7 +185,7 @@ public sealed class SwShTypeChartEditSessionService
             DiagnosticSeverity.Info,
             "Type Chart change plan preview contains 1 target file."));
 
-        return SwShChangePlanSourceGuard.Capture(
+        return SwShChangePlanSourceGuard.CaptureWithAssignmentSources(
             paths,
             new ChangePlan(session.Id, [write], diagnostics));
     }

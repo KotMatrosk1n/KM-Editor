@@ -82,7 +82,7 @@ public sealed class SwShRentalPokemonEditSessionService
         projectWorkspaceService.ClearMemoryCache();
         var originalSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var workflow = rentalPokemonWorkflowService.Load(project);
+        var workflow = LoadForSession(project, originalSession, updates);
         originalSession = RebindDeletedOutputEdits(project, workflow, originalSession);
         var originalWorkflow = OverlayPendingEdits(workflow, originalSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
@@ -178,6 +178,54 @@ public sealed class SwShRentalPokemonEditSessionService
             diagnostics);
     }
 
+
+    private SwShRentalPokemonWorkflow LoadForSession(OpenedProject project, EditSession session,
+        IReadOnlyList<SwShRentalPokemonFieldUpdate?>? updates = null)
+    {
+        var edits = session.PendingEdits.Where(edit => edit.Domain == SwShRentalPokemonWorkflowService.RentalPokemonEditDomain).ToArray();
+        var indices = edits.Select(edit => SwShRentalPokemonWorkflowService.TryParseRentalRecordId(edit.RecordId, out var index) ? index : -1)
+            .Concat(updates?.OfType<SwShRentalPokemonFieldUpdate>().Select(update => update.RentalIndex) ?? []).Where(index => index >= 0).ToHashSet();
+        var workflow = rentalPokemonWorkflowService.LoadForEditing(project, indices);
+        var identities = edits.Where(edit => edit.Field is "species" or "form" or "canGigantamax")
+            .Select(edit => (SwShRentalPokemonWorkflowService.TryParseRentalRecordId(edit.RecordId, out var index) ? index : -1, edit.Field, edit.NewValue))
+            .Concat(updates?.OfType<SwShRentalPokemonFieldUpdate>().Where(update => update.Field?.Trim() is "species" or "form" or "canGigantamax")
+                .Select(update => (update.RentalIndex, (string?)update.Field.Trim(), (string?)update.Value)) ?? []).ToArray();
+        if (identities.Length == 0) return workflow;
+        var identityIndices = identities.Select(edit => edit.Item1).ToHashSet();
+        var speciesIds = workflow.Rentals.Where(row => identityIndices.Contains(row.RentalIndex)).Select(row => row.SpeciesId).ToHashSet();
+        foreach (var edit in identities.Where(edit => edit.Item2 is "species" or "requiredSpecies"))
+            if (int.TryParse(edit.Item3, NumberStyles.Integer, CultureInfo.InvariantCulture, out var species)) speciesIds.Add(species);
+        var catalog = SwShEffectivePokemonCatalog.Load(project.Paths, speciesIds);
+        var available = catalog.SpeciesFor(SwShPokemonCapability.Assignment);
+        return workflow with { AssignmentCatalog = catalog,
+            EditableFields = workflow.EditableFields.Select(field => field.Field is "species" or "requiredSpecies"
+                ? field with { Options = field.Options.Where(option => option.Value == 0 || available.Contains(option.Value)).ToArray() } : field).ToArray() };
+    }
+
+    private static ChangePlan BindAssignmentSources(ChangePlan plan, SwShRentalPokemonWorkflow workflow)
+        => workflow.AssignmentCatalog is { Available: true } catalog
+            ? plan with { Writes = plan.Writes.Select((write, index) => index == 0
+                ? write with { Sources = write.Sources.Concat(catalog.Sources).Distinct().ToArray() } : write).ToArray() } : plan;
+
+    private static void ValidateAssignmentSources(SwShRentalPokemonWorkflow workflow, EditSession session,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (workflow.AssignmentCatalog is not { Available: true } catalog) return;
+        var identityIndices = session.PendingEdits.Where(edit => edit.Domain == SwShRentalPokemonWorkflowService.RentalPokemonEditDomain
+                && edit.Field is "species" or "form" or "canGigantamax")
+            .Select(edit => SwShRentalPokemonWorkflowService.TryParseRentalRecordId(edit.RecordId, out var index) ? index : -1).ToHashSet();
+        var effective = OverlayPendingEdits(workflow, session.PendingEdits);
+        foreach (var row in effective.Rentals.Where(row => identityIndices.Contains(row.RentalIndex)))
+            ValidateIdentity(row.SpeciesId, row.Form);
+        void ValidateIdentity(int species, int form)
+        {
+            if (species > 0 && (!catalog.Available || !catalog.Entries.Any(entry => entry.Identity.Species == species
+                && entry.Identity.Form == form && entry.Capabilities.HasFlag(SwShPokemonCapability.Assignment))))
+                diagnostics.Add(CreateDiagnostic(DiagnosticSeverity.Error,
+                    "Assigned Pokemon form does not have complete installed assets.", field: "species"));
+        }
+    }
+
     public SwShEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -185,7 +233,7 @@ public sealed class SwShRentalPokemonEditSessionService
 
         projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
-        var workflow = rentalPokemonWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
         if (CanEditRentalPokemon(project, workflow, diagnostics))
@@ -206,7 +254,7 @@ public sealed class SwShRentalPokemonEditSessionService
 
         projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
-        var workflow = rentalPokemonWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         session = RebindDeletedOutputEdits(project, workflow, session);
         var diagnostics = new List<ValidationDiagnostic>();
         if (CanEditRentalPokemon(project, workflow, diagnostics))
@@ -259,9 +307,9 @@ public sealed class SwShRentalPokemonEditSessionService
             DiagnosticSeverity.Info,
             "Change plan preview contains 1 target file."));
 
-        return SwShChangePlanSourceGuard.Capture(
+        return SwShChangePlanSourceGuard.CaptureWithAssignmentSources(
             paths,
-            new ChangePlan(session.Id, [write], diagnostics));
+            BindAssignmentSources(new ChangePlan(session.Id, [write], diagnostics), workflow));
     }
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
@@ -289,7 +337,7 @@ public sealed class SwShRentalPokemonEditSessionService
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
         var currentProject = projectWorkspaceService.Open(paths);
-        session = RebindDeletedOutputEdits(currentProject, rentalPokemonWorkflowService.Load(currentProject), session);
+        session = RebindDeletedOutputEdits(currentProject, LoadForSession(currentProject, session), session);
         var currentPlan = CreateChangePlan(paths, session);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
@@ -539,6 +587,7 @@ public sealed class SwShRentalPokemonEditSessionService
         ICollection<ValidationDiagnostic> diagnostics,
         bool addSuccessDiagnostic)
     {
+        ValidateAssignmentSources(workflow, session, diagnostics);
         session = RebindDeletedOutputEdits(project, workflow, session);
         var rentalEdits = GetRentalEdits(session).ToArray();
         var effectiveWorkflow = workflow;

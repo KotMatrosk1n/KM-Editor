@@ -192,7 +192,11 @@ internal sealed class SvTradePokemonWorkflowService
             WorkflowDescription);
     }
 
-    public SvTradePokemonWorkflow Load(OpenedProject project)
+    public SvTradePokemonWorkflow Load(OpenedProject project) => LoadCore(project, null);
+
+    internal SvTradePokemonWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<int> indices) => LoadCore(project, indices);
+
+    private SvTradePokemonWorkflow LoadCore(OpenedProject project, IReadOnlySet<int>? indices)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -209,7 +213,7 @@ internal sealed class SvTradePokemonWorkflowService
             var moveResolver = SvDefaultMoveResolver.Load(project, fileSource, diagnostics);
             tradeListSource = fileSource.Read(project, SvDataPaths.EventTradeListArray);
             tradePokemonSource = fileSource.Read(project, SvDataPaths.EventTradePokemonArray);
-            trades = LoadRecords(tradeListSource, tradePokemonSource, labels, abilityResolver, moveResolver).ToArray();
+            trades = LoadRecords(tradeListSource, tradePokemonSource, labels, abilityResolver, moveResolver, indices).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -236,7 +240,7 @@ internal sealed class SvTradePokemonWorkflowService
         }
 
         return new SvTradePokemonWorkflow(
-            summary,
+            summary with { IsPartial = indices is not null },
             trades,
             CreateEditableFields(labels),
             new SvTradePokemonWorkflowStats(
@@ -322,7 +326,8 @@ internal sealed class SvTradePokemonWorkflowService
         SvWorkflowFile tradePokemonSource,
         SvTextLabelLookup labels,
         SvTradeAbilityResolver abilityResolver,
-        SvDefaultMoveResolver moveResolver)
+        SvDefaultMoveResolver moveResolver,
+        IReadOnlySet<int>? indices = null)
     {
         var tradeListRows = ReadTradeListRows(tradeListSource).ToArray();
         var tradeListByReceivePoke = tradeListRows
@@ -333,6 +338,7 @@ internal sealed class SvTradePokemonWorkflowService
         var table = global::EventTradePokemonArray.GetRootAsEventTradePokemonArray(new ByteBuffer(tradePokemonSource.Bytes));
         for (var index = 0; index < table.ValuesLength; index++)
         {
+            if (indices is not null && !indices.Contains(index)) continue;
             var trade = table.Values(index);
             if (trade?.PokeData is not { } pokeData)
             {

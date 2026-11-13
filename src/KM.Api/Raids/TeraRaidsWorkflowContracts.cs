@@ -7,7 +7,7 @@ using KM.Api.Workflows;
 
 namespace KM.Api.Raids;
 
-public sealed record LoadTeraRaidsWorkflowRequest(ProjectPathsDto Paths);
+public sealed record LoadTeraRaidsWorkflowRequest(ProjectPathsDto Paths, IReadOnlyList<string>? RecordIds = null);
 
 public sealed record UpdateTeraRaidFieldRequest(
     ProjectPathsDto Paths,

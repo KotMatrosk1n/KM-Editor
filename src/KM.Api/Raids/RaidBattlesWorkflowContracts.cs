@@ -7,7 +7,7 @@ using KM.Api.Workflows;
 
 namespace KM.Api.Raids;
 
-public sealed record LoadRaidBattlesWorkflowRequest(ProjectPathsDto Paths);
+public sealed record LoadRaidBattlesWorkflowRequest(ProjectPathsDto Paths, IReadOnlyList<string>? TableIds = null);
 
 public sealed record UpdateRaidBattleSlotFieldRequest(
     ProjectPathsDto Paths,

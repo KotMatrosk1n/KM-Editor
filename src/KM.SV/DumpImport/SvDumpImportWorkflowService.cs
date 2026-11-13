@@ -54,7 +54,7 @@ internal sealed class SvDumpImportWorkflowService
             return CreateWorkflow(summary, Array.Empty<SvDumpImportProfileRecord>(), sourceFileCount: 0, diagnostics);
         }
 
-        var itemsWorkflow = itemsWorkflowService.Load(project);
+        var itemsWorkflow = itemsWorkflowService.LoadForLookup(project);
         var itemErrors = itemsWorkflow.Diagnostics
             .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             .ToArray();

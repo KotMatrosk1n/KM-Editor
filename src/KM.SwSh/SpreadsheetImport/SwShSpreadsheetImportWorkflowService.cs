@@ -50,7 +50,7 @@ public sealed class SwShSpreadsheetImportWorkflowService
             return CreateWorkflow(summary, Array.Empty<SwShSpreadsheetImportProfileRecord>(), sourceFileCount: 0, diagnostics);
         }
 
-        var itemsWorkflow = itemsWorkflowService.Load(project);
+        var itemsWorkflow = itemsWorkflowService.LoadForLookup(project);
         var itemDataSource = SwShItemsWorkflowService.ResolveItemDataSource(project);
         var itemErrors = itemsWorkflow.Diagnostics
             .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)

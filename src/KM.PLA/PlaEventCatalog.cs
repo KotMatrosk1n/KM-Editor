@@ -179,7 +179,7 @@ internal sealed class PlaEventCatalog
         var b = edited is null ? resource.Current : new PlaFlatBuffer(resource.Archive ? new PlaFieldArchive(edited).Read(entry.Path, catalog.Scope.Compression) : edited);
         return Record(entry, b);
     }
-    internal IReadOnlyList<PlaRecord> Records(string kind, IReadOnlyDictionary<string, byte[]> files)
+    internal IReadOnlyList<PlaRecord> Records(string kind, IReadOnlyDictionary<string, byte[]> files, string? selectedId = null)
     {
         var cache = new Dictionary<string, PlaFlatBuffer>(StringComparer.Ordinal);
         var archive = files.TryGetValue(PlaWildCatalog.ArchivePath, out var pending) ? new PlaFieldArchive(pending) : null;
@@ -191,7 +191,7 @@ internal sealed class PlaEventCatalog
             if (!cache.TryGetValue(path, out var buffer)) cache[path] = buffer = new(archive!.Read(path, catalog.Scope.Compression));
             return labels[(path, hash)] = catalog.Wild.EncounterLabel(buffer, hash);
         }
-        return entries.Values.Where(entry => entry.Kind == kind).Select(entry =>
+        return entries.Values.Where(entry => entry.Kind == kind && (selectedId is null || entry.Id == selectedId)).Select(entry =>
         {
             if (!cache.TryGetValue(entry.Path, out var b))
             {

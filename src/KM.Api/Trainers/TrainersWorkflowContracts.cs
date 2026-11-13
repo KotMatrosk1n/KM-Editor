@@ -8,7 +8,10 @@ using System.Text.Json.Serialization;
 
 namespace KM.Api.Trainers;
 
-public sealed record LoadTrainersWorkflowRequest(ProjectPathsDto Paths);
+public sealed record LoadTrainersWorkflowRequest(ProjectPathsDto Paths)
+{
+    public IReadOnlyList<int>? TrainerIds { get; init; }
+}
 
 public sealed record TrainerProvenanceDto(
     string SourceFile,
@@ -176,9 +179,17 @@ public sealed record TrainersWorkflowDto(
 public sealed record TrainersWorkflowDeltaDto(
     IReadOnlyList<TrainerRecordDto> Trainers,
     TrainersWorkflowStatsDto Stats,
-    IReadOnlyList<ApiDiagnostic> Diagnostics);
+    IReadOnlyList<ApiDiagnostic> Diagnostics)
+{
+    public bool IsPartial { get; init; }
+    public bool PreserveClassBallScope { get; init; }
+}
 
-public sealed record LoadTrainersWorkflowResponse(TrainersWorkflowDto Workflow);
+public sealed record LoadTrainersWorkflowResponse(TrainersWorkflowDto Workflow)
+{
+    public bool IsPartial { get; init; }
+    public bool PreserveClassBallScope { get; init; }
+}
 
 public sealed record UpdateTrainerFieldRequest(
     ProjectPathsDto Paths,

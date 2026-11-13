@@ -187,7 +187,10 @@ internal sealed class ZaTrainersWorkflowService
         return Load(project, includeEditorMetadata: false);
     }
 
-    private ZaTrainersWorkflow Load(OpenedProject project, bool includeEditorMetadata)
+    internal ZaTrainersWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<int> trainerIds)
+        => Load(project, includeEditorMetadata: true, trainerIds);
+
+    private ZaTrainersWorkflow Load(OpenedProject project, bool includeEditorMetadata, IReadOnlySet<int>? trainerIds = null)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -211,8 +214,9 @@ internal sealed class ZaTrainersWorkflowService
                         labels,
                         spriteLabels,
                         abilityResolver,
-                        fileSource.BoundedTableRecordLimit)
-                    .Select(trainer => WithPokemonFormOptions(trainer, pokemonAvailability))
+                        fileSource.BoundedTableRecordLimit, trainerIds)
+                    .Select(trainer => trainerIds is null || trainerIds.Contains(trainer.TrainerId)
+                        ? WithPokemonFormOptions(trainer, pokemonAvailability) : trainer)
                     .ToArray();
             }
             else
@@ -247,8 +251,10 @@ internal sealed class ZaTrainersWorkflowService
             : (Array.Empty<ZaTrainerClassPairOption>(),
                 (IReadOnlyDictionary<string, (ulong Primary, ulong Secondary)>)new Dictionary<string, (ulong, ulong)>(StringComparer.Ordinal));
 
+        if (trainerIds is not null)
+            annotatedTrainers = annotatedTrainers.Where(trainer => trainerIds.Contains(trainer.TrainerId)).ToArray();
         return new ZaTrainersWorkflow(
-            summary,
+            summary with { IsPartial = trainerIds is not null },
             annotatedTrainers,
             includeEditorMetadata
                 ? CreateEditableFields(labels, pokemonAvailability)
@@ -397,7 +403,8 @@ internal sealed class ZaTrainersWorkflowService
         ZaTextLabelLookup labels,
         ZaTextLabelLookup spriteLabels,
         ZaTrainerAbilityResolver abilityResolver,
-        int? maximumTableRecords = null)
+        int? maximumTableRecords = null,
+        IReadOnlySet<int>? trainerIds = null)
     {
         var table = ZaTrainerTable.GetRootAsZaTrainerTable(new ByteBuffer(source.Bytes));
         if (maximumTableRecords is not null
@@ -414,7 +421,8 @@ internal sealed class ZaTrainersWorkflowService
                 continue;
             }
 
-            yield return ToRecord(index, trainer.Value, source, labels, spriteLabels, abilityResolver);
+            yield return ToRecord(index, trainer.Value, source, labels, spriteLabels, abilityResolver,
+                includeTeam: trainerIds is null || trainerIds.Contains(index));
         }
     }
 
@@ -450,10 +458,11 @@ internal sealed class ZaTrainersWorkflowService
         ZaWorkflowFile source,
         ZaTextLabelLookup labels,
         ZaTextLabelLookup spriteLabels,
-        ZaTrainerAbilityResolver abilityResolver)
+        ZaTrainerAbilityResolver abilityResolver,
+        bool includeTeam = true)
     {
         var aiFlags = PackAiFlags(trainer);
-        var team = ReadTeam(trainer, labels, spriteLabels, abilityResolver).ToArray();
+        var team = includeTeam ? ReadTeam(trainer, labels, spriteLabels, abilityResolver).ToArray() : [];
         var displayIdentity = ZaTrainerDisplayIdentityResolver.Resolve(trainerId, trainer, labels);
         var location = string.IsNullOrWhiteSpace(trainer.TrainerId)
             ? $"Trainer {trainerId.ToString(CultureInfo.InvariantCulture)}"

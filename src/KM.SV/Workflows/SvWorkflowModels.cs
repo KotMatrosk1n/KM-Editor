@@ -39,7 +39,11 @@ public sealed record SvWorkflowSummary(
     string Label,
     string Description,
     SvWorkflowAvailability Availability,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    public bool IsPartial { get; init; }
+    public IReadOnlyList<string> UnassessedDiagnosticFiles { get; init; } = [];
+}
 
 public sealed record SvWorkflowList(IReadOnlyList<SvWorkflowSummary> Workflows);
 

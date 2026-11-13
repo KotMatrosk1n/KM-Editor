@@ -19,6 +19,10 @@ public sealed record WorkflowSummaryDto(
     string Label,
     string Description,
     WorkflowAvailabilityDto Availability,
-    IReadOnlyList<ApiDiagnostic> Diagnostics);
+    IReadOnlyList<ApiDiagnostic> Diagnostics)
+{
+    public bool IsPartial { get; init; }
+    public IReadOnlyList<string> UnassessedDiagnosticFiles { get; init; } = [];
+}
 
 public sealed record ListWorkflowsResponse(IReadOnlyList<WorkflowSummaryDto> Workflows);

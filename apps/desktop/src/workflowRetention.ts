@@ -374,7 +374,8 @@ export function selectWorkflowSectionsToRefresh(
   entries: readonly LoadedWorkflowRetentionEntry[],
   recency: readonly RetainedWorkflowSection[],
   preferredSections: ReadonlySet<WorkbenchSection>,
-  recentCount = workflowRetentionMinimumRecent
+  recentCount = workflowRetentionMinimumRecent,
+  includeInactiveDependents = true
 ) {
   const loadedSections = new Set(entries.map((entry) => entry.section));
   const selected = new Set<RetainedWorkflowSection>();
@@ -386,7 +387,9 @@ export function selectWorkflowSectionsToRefresh(
     ) {
       selected.add(section);
 
-      for (const dependentSection of refreshDependentsBySection[section] ?? []) {
+      for (const dependentSection of (includeInactiveDependents
+        ? refreshDependentsBySection[section] ?? []
+        : section === 'encounters' ? ['pokemon', 'heldItemChance'] as const : [])) {
         if (loadedSections.has(dependentSection)) {
           selected.add(dependentSection);
         }

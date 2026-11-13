@@ -51,7 +51,7 @@ internal sealed class ZaEncountersEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = encountersWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [tableId]);
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -161,7 +161,7 @@ internal sealed class ZaEncountersEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = encountersWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, updates.Select(update => update.TableId));
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -279,7 +279,7 @@ internal sealed class ZaEncountersEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = encountersWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [tableId]);
         var currentWorkflow = OverlayPendingEdits(
             loadedWorkflow,
             currentSession.PendingEdits);
@@ -794,13 +794,26 @@ internal sealed class ZaEncountersEditSessionService
         return new ZaEncounterVanillaFieldValue(field, baseValue, currentValue != baseValue);
     }
 
+    private ZaEncountersWorkflow LoadForSession(OpenedProject project, EditSession session, IEnumerable<string>? incoming = null)
+    {
+        var ids = session.PendingEdits.Where(edit => edit.Domain == ZaEditSessionSupport.EncountersDomain)
+            .Select(edit => edit.RecordId ?? string.Empty).Concat(incoming ?? []).ToHashSet(StringComparer.Ordinal);
+        // Boss and partner operations keep their complete ownership projection.
+        if (ids.Any(id => !ZaEncountersWorkflowService.TryParseSlotRecordId(id, out _, out _)
+            && !ZaEncountersWorkflowService.TryParseAppearanceRecordId(id, out _)
+            && !ZaEncountersWorkflowService.TryParsePokemonDataRecordId(id, out _)
+            && !ZaEncountersWorkflowService.TryParseTableId(id, out _, out _)))
+            return encountersWorkflowService.Load(project);
+        return encountersWorkflowService.LoadForEditing(project, ids);
+    }
+
     public ZaEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = encountersWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
         ZaEditSessionSupport.CanEdit(
@@ -1550,7 +1563,7 @@ internal sealed class ZaEncountersEditSessionService
         OpenedProject project,
         EditSession session)
     {
-        var currentWorkflow = encountersWorkflowService.Load(project);
+        var currentWorkflow = LoadForSession(project, session);
         var effectiveWorkflow = OverlayPendingEdits(
             currentWorkflow,
             session.PendingEdits);

@@ -347,12 +347,15 @@ internal sealed class ZaPokemonWorkflowService
         return LoadUncached(project, includeDexEditor, includeAlphaSizes: false);
     }
 
+    internal ZaPokemonWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<int> ids)
+        => LoadUncached(project, includeDexEditor: false, ids: ids);
+
     public void ClearMemoryCache()
     {
         memoryCache.Clear();
     }
 
-    private ZaPokemonWorkflow LoadUncached(OpenedProject project, bool includeDexEditor, bool includeAlphaSizes = true)
+    private ZaPokemonWorkflow LoadUncached(OpenedProject project, bool includeDexEditor, bool includeAlphaSizes = true, IReadOnlySet<int>? ids = null)
     {
 
         var diagnostics = new List<ValidationDiagnostic>();
@@ -369,6 +372,7 @@ internal sealed class ZaPokemonWorkflowService
         try
         {
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
+            if (labels.MoveNameCount <= 1 && ids is not null) { ids = null; includeDexEditor = true; }
             var spriteLabels = ZaTextLabelLookup.Load(project, fileSource, new List<ValidationDiagnostic>());
             evolutionItemArgumentLabels = LoadEvolutionItemArgumentLabels(project, labels, diagnostics);
             tmCatalog = ZaTechnicalMachineCatalog.Load(project, fileSource, labels, diagnostics);
@@ -427,7 +431,7 @@ internal sealed class ZaPokemonWorkflowService
                     labels,
                     spriteLabels,
                     tmCatalog,
-                    evolutionItemArgumentLabels).ToArray();
+                    evolutionItemArgumentLabels, ids).ToArray();
             }
             catch (Exception exception) when (
                 exception is IndexOutOfRangeException
@@ -556,7 +560,7 @@ internal sealed class ZaPokemonWorkflowService
                     .SelectMany(size => size.EditSources).Select(reference => reference.RelativePath).Distinct().Count());
 
         return new ZaPokemonWorkflow(
-            summary,
+            summary with { IsPartial = ids is not null },
             pokemon,
             stats,
             CreateEvolutionOptions(pokemon, labels, evolutionItemArgumentLabels),
@@ -1265,7 +1269,8 @@ internal sealed class ZaPokemonWorkflowService
         ZaTextLabelLookup labels,
         ZaTextLabelLookup spriteLabels,
         IReadOnlyList<ZaTechnicalMachineMove> tmCatalog,
-        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels,
+        IReadOnlySet<int>? ids)
     {
         var table = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(source.Bytes));
         var hasLegacyByteDexOrderLayout = table.HasLegacyByteZADexOrderLayout;
@@ -1310,6 +1315,8 @@ internal sealed class ZaPokemonWorkflowService
                 throw new InvalidDataException(
                     $"Legacy Pokemon personal row {index} cannot recover its missing data from the configured base table.");
             }
+
+            if (ids is not null && !ids.Contains(index)) continue;
 
             yield return ToRecord(
                 index,

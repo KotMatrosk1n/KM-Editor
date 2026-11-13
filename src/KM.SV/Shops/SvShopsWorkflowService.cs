@@ -120,7 +120,7 @@ internal sealed class SvShopsWorkflowService
         try
         {
             labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
-            var itemWorkflow = itemsWorkflowService.Load(project);
+            var itemWorkflow = itemsWorkflowService.LoadForLookup(project);
             itemRecords = itemWorkflow.Items.ToArray();
             var itemLookup = itemRecords
                 .GroupBy(item => item.ItemId)

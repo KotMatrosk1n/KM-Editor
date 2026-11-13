@@ -1298,20 +1298,25 @@ public sealed class ZaWorkflowService
         ]);
     }
 
-    public ZaItemsWorkflow LoadItems(ProjectPaths paths)
+    public ZaItemsWorkflow LoadItems(ProjectPaths paths, IReadOnlyList<int>? recordIndices = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var project = projectWorkspaceService.Open(paths);
-        return itemsWorkflowService.Load(project);
+        if (recordIndices is not null && (recordIndices.Count is < 1 or > 10000 || recordIndices.Any(id => id < 0)))
+            throw new ArgumentException("Item IDs must contain between one and 10000 nonnegative IDs.", nameof(recordIndices));
+        return recordIndices is null ? itemsWorkflowService.Load(project) : itemsWorkflowService.LoadForEditing(project, recordIndices.ToHashSet());
     }
 
-    public ZaPokemonWorkflow LoadPokemon(ProjectPaths paths)
+    public ZaPokemonWorkflow LoadPokemon(ProjectPaths paths, IReadOnlyList<int>? recordIndices = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var project = projectWorkspaceService.Open(paths);
-        return pokemonWorkflowService.Load(project);
+        if (recordIndices is { Count: 0 or > 10000 } || recordIndices?.Any(id => id < 0) == true)
+            throw new ArgumentException("Selected record IDs must contain between 1 and 10000 nonnegative IDs.", nameof(recordIndices));
+        return recordIndices is null ? pokemonWorkflowService.Load(project)
+            : pokemonWorkflowService.LoadForEditing(project, recordIndices.ToHashSet());
     }
 
     public ZaBehaviorWorkflow LoadBehavior(ProjectPaths paths) => behaviorWorkflowService.LoadState(projectWorkspaceService.Open(paths)).Workflow;
@@ -1319,12 +1324,14 @@ public sealed class ZaWorkflowService
     public ZaBehaviorEditResult UpdateBehavior(ProjectPaths paths, EditSession? session, IReadOnlyList<ZaBehaviorUpdate?>? updates) =>
         behaviorEditSessionService.Update(paths, session, updates);
 
-    public ZaMovesWorkflow LoadMoves(ProjectPaths paths)
+    public ZaMovesWorkflow LoadMoves(ProjectPaths paths, IReadOnlyList<int>? recordIndices = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var project = projectWorkspaceService.Open(paths);
-        return movesWorkflowService.Load(project);
+        if (recordIndices is not null && (recordIndices.Count is < 1 or > 10000 || recordIndices.Any(id => id < 0)))
+            throw new ArgumentException("Move IDs must contain between one and 10000 nonnegative IDs.", nameof(recordIndices));
+        return recordIndices is null ? movesWorkflowService.Load(project) : movesWorkflowService.LoadForEditing(project, recordIndices.ToHashSet());
     }
 
     public ZaTextWorkflow LoadText(ProjectPaths paths, ZaTextWorkflowQuery? query = null)
@@ -1369,12 +1376,15 @@ public sealed class ZaWorkflowService
         return shopsWorkflowService.Load(project);
     }
 
-    public ZaTrainersWorkflow LoadTrainers(ProjectPaths paths)
+    public ZaTrainersWorkflow LoadTrainers(ProjectPaths paths, IReadOnlyList<int>? trainerIds = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var project = projectWorkspaceService.Open(paths);
-        return trainersWorkflowService.Load(project);
+        if (trainerIds is not null && (trainerIds.Count is < 1 or > 10000 || trainerIds.Any(id => id < 0)))
+            throw new ArgumentException("Trainer IDs must contain between one and 10000 nonnegative IDs.", nameof(trainerIds));
+        return trainerIds is null ? trainersWorkflowService.Load(project)
+            : trainersWorkflowService.LoadForEditing(project, trainerIds.ToHashSet());
     }
 
     public ZaTrainerPoolsWorkflow LoadTrainerPools(ProjectPaths paths)
@@ -1393,28 +1403,32 @@ public sealed class ZaWorkflowService
         return fashionCatalogWorkflowService.Load(project);
     }
 
-    public ZaPlacementWorkflow LoadPlacement(ProjectPaths paths)
+    public ZaPlacementWorkflow LoadPlacement(ProjectPaths paths, IReadOnlyList<string>? objectIds = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var project = projectWorkspaceService.Open(paths);
-        return placementWorkflowService.Load(project);
+        return objectIds is null ? placementWorkflowService.Load(project) : placementWorkflowService.LoadForEditing(project, objectIds.ToHashSet(StringComparer.Ordinal));
     }
 
-    public ZaGiftPokemonWorkflow LoadGiftPokemon(ProjectPaths paths)
+    public ZaGiftPokemonWorkflow LoadGiftPokemon(ProjectPaths paths, IReadOnlyList<int>? recordIndices = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var project = projectWorkspaceService.Open(paths);
-        return giftPokemonWorkflowService.Load(project);
+        if (recordIndices is not null && (recordIndices.Count is < 1 or > 10000 || recordIndices.Any(id => id < 0)))
+            throw new ArgumentException("Gift IDs must contain between one and 10000 nonnegative IDs.", nameof(recordIndices));
+        return recordIndices is null ? giftPokemonWorkflowService.Load(project) : giftPokemonWorkflowService.LoadForEditing(project, recordIndices.ToHashSet());
     }
 
-    public ZaEncountersWorkflow LoadEncounters(ProjectPaths paths)
+    public ZaEncountersWorkflow LoadEncounters(ProjectPaths paths, IReadOnlyList<string>? tableIds = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var project = projectWorkspaceService.Open(paths);
-        return encountersWorkflowService.Load(project);
+        if (tableIds is not null && (tableIds.Count is < 1 or > 10000 || tableIds.Any(id => !ZaEncountersWorkflowService.TryParseTableId(id, out _, out _))))
+            throw new ArgumentException("Encounter table IDs must contain between one and 10000 supported identities.", nameof(tableIds));
+        return tableIds is null ? encountersWorkflowService.Load(project) : encountersWorkflowService.LoadForEditing(project, tableIds.ToHashSet(StringComparer.Ordinal));
     }
 
     public ZaStaticEncountersWorkflow LoadStaticEncounters(ProjectPaths paths)
@@ -1425,12 +1439,15 @@ public sealed class ZaWorkflowService
         return staticEncountersWorkflowService.Load(project);
     }
 
-    public ZaTradePokemonWorkflow LoadTradePokemon(ProjectPaths paths)
+    public ZaTradePokemonWorkflow LoadTradePokemon(ProjectPaths paths, IReadOnlyList<int>? recordIndices = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var project = projectWorkspaceService.Open(paths);
-        return tradePokemonWorkflowService.Load(project);
+        if (recordIndices is { Count: 0 or > 10000 } || recordIndices?.Any(index => index < 0) == true)
+            throw new ArgumentException("Selected record indices must contain between 1 and 10000 nonnegative indices.", nameof(recordIndices));
+        return recordIndices is null ? tradePokemonWorkflowService.Load(project)
+            : tradePokemonWorkflowService.LoadForEditing(project, recordIndices.ToHashSet());
     }
 
     public ZaTypeChartWorkflow LoadTypeChart(ProjectPaths paths)

@@ -13,7 +13,7 @@ public sealed partial class SwShTrainersEditSessionService
     {
         projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
-        var source = trainersWorkflowService.Load(project);
+        var source = LoadForSession(project, StartSession(), updates);
         var diagnostics = new List<ValidationDiagnostic>();
         var empty = StartSession();
         if (!CanEditTrainers(project, source, diagnostics)) return new(source, empty, diagnostics);

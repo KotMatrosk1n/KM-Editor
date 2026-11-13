@@ -53,7 +53,11 @@ internal sealed class ZaPlacementWorkflowService
             WorkflowDescription);
     }
 
-    public ZaPlacementWorkflow Load(OpenedProject project)
+    public ZaPlacementWorkflow Load(OpenedProject project) => LoadCore(project, null);
+
+    internal ZaPlacementWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<string> objectIds) => LoadCore(project, objectIds);
+
+    private ZaPlacementWorkflow LoadCore(OpenedProject project, IReadOnlySet<string>? objectIds)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -61,8 +65,10 @@ internal sealed class ZaPlacementWorkflowService
         var objects = new List<ZaPlacedObjectRecord>();
         var sourceFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
-        var pokemonContext = LoadPokemonSpawnerContext(project, diagnostics, sourceFiles);
-        var itemBallContext = LoadItemBallSpawnerContext(project, diagnostics, sourceFiles, labels);
+        var pokemonContext = objectIds is null || objectIds.Any(id => id.StartsWith(PokemonSpawnersCategory + "|", StringComparison.Ordinal))
+            ? LoadPokemonSpawnerContext(project, diagnostics, sourceFiles) : [];
+        var itemBallContext = objectIds is null || objectIds.Any(id => id.StartsWith(ItemBallSpawnersCategory + "|", StringComparison.Ordinal))
+            ? LoadItemBallSpawnerContext(project, diagnostics, sourceFiles, labels) : [];
 
         TryLoadTransformCategory(
             project,
@@ -73,7 +79,7 @@ internal sealed class ZaPlacementWorkflowService
             pokemonContext,
             objects,
             sourceFiles,
-            diagnostics);
+            diagnostics, objectIds);
         TryLoadTransformCategory(
             project,
             ZaDataPaths.ItemBallSpawnerTransformArray,
@@ -83,7 +89,7 @@ internal sealed class ZaPlacementWorkflowService
             itemBallContext,
             objects,
             sourceFiles,
-            diagnostics);
+            diagnostics, objectIds);
 
         if (sourceFiles.Count == 0)
         {
@@ -108,7 +114,7 @@ internal sealed class ZaPlacementWorkflowService
             diagnostics.Count == 0 ? null : diagnostics);
 
         return new ZaPlacementWorkflow(
-            summary,
+            summary with { IsPartial = objectIds is not null },
             objects,
             CreateEditableFields(),
             categories,
@@ -169,8 +175,11 @@ internal sealed class ZaPlacementWorkflowService
         IReadOnlyDictionary<string, ZaPlacementSpawnerContext> contextByObjectName,
         ICollection<ZaPlacedObjectRecord> objects,
         ISet<string> sourceFiles,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        IReadOnlySet<string>? objectIds)
     {
+        if (objectIds is not null && !objectIds.Any(id => TryParseRecordId(id, out var selectedCategory, out var sourcePath, out _, out _)
+            && selectedCategory == category && sourcePath == path)) return;
         try
         {
             var source = fileSource.Read(project, path);
@@ -180,6 +189,7 @@ internal sealed class ZaPlacementWorkflowService
             {
                 foreach (var row in group.Rows)
                 {
+                    if (objectIds is not null && !objectIds.Contains(CreateRecordId(category, source.VirtualPath, row.GroupIndex, row.RowIndex))) continue;
                     contextByObjectName.TryGetValue(row.Name, out var context);
                     objects.Add(ToObjectRecord(source, category, objectType, row, context, labels));
                 }

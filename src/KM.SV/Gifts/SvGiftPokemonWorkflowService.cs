@@ -188,7 +188,11 @@ internal sealed class SvGiftPokemonWorkflowService
             WorkflowDescription);
     }
 
-    public SvGiftPokemonWorkflow Load(OpenedProject project)
+    public SvGiftPokemonWorkflow Load(OpenedProject project) => LoadCore(project, null);
+
+    internal SvGiftPokemonWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<int> indices) => LoadCore(project, indices);
+
+    private SvGiftPokemonWorkflow LoadCore(OpenedProject project, IReadOnlySet<int>? indices)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -203,7 +207,7 @@ internal sealed class SvGiftPokemonWorkflowService
             var abilityResolver = SvGiftAbilityResolver.Load(project, fileSource, labels, diagnostics);
             var moveResolver = SvDefaultMoveResolver.Load(project, fileSource, diagnostics);
             source = fileSource.Read(project, SvDataPaths.EventAddPokemonArray);
-            gifts = LoadRecords(source, labels, abilityResolver, moveResolver).ToArray();
+            gifts = LoadRecords(source, labels, abilityResolver, moveResolver, indices).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -220,7 +224,7 @@ internal sealed class SvGiftPokemonWorkflowService
             diagnostics.Count == 0 ? null : diagnostics);
 
         return new SvGiftPokemonWorkflow(
-            summary,
+            summary with { IsPartial = indices is not null },
             gifts,
             CreateEditableFields(labels),
             new SvGiftPokemonWorkflowStats(
@@ -306,11 +310,13 @@ internal sealed class SvGiftPokemonWorkflowService
         SvWorkflowFile source,
         SvTextLabelLookup labels,
         SvGiftAbilityResolver abilityResolver,
-        SvDefaultMoveResolver moveResolver)
+        SvDefaultMoveResolver moveResolver,
+        IReadOnlySet<int>? indices = null)
     {
         var table = global::EventAddPokemonArray.GetRootAsEventAddPokemonArray(new ByteBuffer(source.Bytes));
         for (var index = 0; index < table.ValuesLength; index++)
         {
+            if (indices is not null && !indices.Contains(index)) continue;
             var gift = table.Values(index);
             if (gift?.PokeData is not { } pokeData)
             {

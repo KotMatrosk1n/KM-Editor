@@ -59,6 +59,10 @@ public sealed record SwShWorkflowSummary(
     string Label,
     string Description,
     SwShWorkflowAvailability Availability,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    public bool IsPartial { get; init; }
+    public IReadOnlyList<string> UnassessedDiagnosticFiles { get; init; } = [];
+}
 
 public sealed record SwShWorkflowList(IReadOnlyList<SwShWorkflowSummary> Workflows);

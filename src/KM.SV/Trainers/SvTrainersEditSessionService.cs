@@ -46,7 +46,7 @@ internal sealed partial class SvTrainersEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = trainersWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, [trainerId]);
         currentSession = CanonicalizePendingTrainerEdits(loadedWorkflow, currentSession);
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
@@ -117,7 +117,7 @@ internal sealed partial class SvTrainersEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = trainersWorkflowService.Load(project);
+        var loadedWorkflow = LoadForSession(project, currentSession, updates.Select(update => update.TrainerId));
         currentSession = CanonicalizePendingTrainerEdits(loadedWorkflow, currentSession);
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
@@ -196,13 +196,22 @@ internal sealed partial class SvTrainersEditSessionService
             : new SvTrainersEditResult(projectedWorkflow, updatedSession, diagnostics);
     }
 
+    private SvTrainersWorkflow LoadForSession(OpenedProject project, EditSession session, IEnumerable<int>? incoming = null)
+    {
+        var ids = session.PendingEdits.Where(edit => edit.Domain == SvEditSessionSupport.TrainersDomain)
+            .Select(edit => TryParseTeamRecordId(edit.RecordId, out var id, out _) ? id
+                : int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out id) ? id : -1)
+            .Concat(incoming ?? []).Where(id => id >= 0).ToHashSet();
+        return trainersWorkflowService.LoadForEditing(project, ids);
+    }
+
     public SvEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = trainersWorkflowService.Load(project);
+        var workflow = LoadForSession(project, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
         SvEditSessionSupport.CanEdit(

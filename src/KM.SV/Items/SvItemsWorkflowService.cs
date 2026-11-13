@@ -117,7 +117,13 @@ internal sealed class SvItemsWorkflowService
             WorkflowDescription);
     }
 
-    public SvItemsWorkflow Load(OpenedProject project)
+    public SvItemsWorkflow Load(OpenedProject project) => LoadCore(project, null);
+
+    internal SvItemsWorkflow LoadForEditing(OpenedProject project, IReadOnlySet<int> ids) => LoadCore(project, ids);
+
+    internal SvItemsWorkflow LoadForLookup(OpenedProject project) => LoadCore(project, null, includeEditorMetadata: false);
+
+    private SvItemsWorkflow LoadCore(OpenedProject project, IReadOnlySet<int>? ids, bool includeEditorMetadata = true)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -132,7 +138,7 @@ internal sealed class SvItemsWorkflowService
             labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
             source = fileSource.Read(project, SvDataPaths.ItemDataArray);
             tmCatalog = SvTechnicalMachineCatalog.Read(source.Bytes, labels, fileSource).ToArray();
-            items = LoadRecords(source, labels, tmCatalog).ToArray();
+            items = LoadRecords(source, labels, tmCatalog, ids, includeEditorMetadata).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -149,9 +155,9 @@ internal sealed class SvItemsWorkflowService
             diagnostics.Count == 0 ? null : diagnostics);
 
         return new SvItemsWorkflow(
-            summary,
+            summary with { IsPartial = ids is not null },
             items,
-            CreateEditableFields(labels, items, tmCatalog),
+            includeEditorMetadata ? CreateEditableFields(labels, items, tmCatalog) : [],
             new SvItemsWorkflowStats(items.Length, source is null ? 0 : 1),
             diagnostics);
     }
@@ -159,7 +165,9 @@ internal sealed class SvItemsWorkflowService
     private IEnumerable<SvItemRecord> LoadRecords(
         SvWorkflowFile source,
         SvTextLabelLookup labels,
-        IReadOnlyList<SvTechnicalMachineMove> tmCatalog)
+        IReadOnlyList<SvTechnicalMachineMove> tmCatalog,
+        IReadOnlySet<int>? ids,
+        bool includeEditorMetadata = true)
     {
         var table = global::ItemDataArray.GetRootAsItemDataArray(new ByteBuffer(source.Bytes));
         fileSource.EnsureBoundedTableCount(table.ValuesLength, "The S/V item table");
@@ -167,12 +175,12 @@ internal sealed class SvItemsWorkflowService
         for (var index = 0; index < table.ValuesLength; index++)
         {
             var item = table.Values(index);
-            if (item is null)
+            if (item is null || ids is not null && !ids.Contains(item.Value.Id))
             {
                 continue;
             }
 
-            yield return ToRecord(item.Value, source, labels, tmCatalogByItemId);
+            yield return ToRecord(item.Value, source, labels, tmCatalogByItemId, includeEditorMetadata);
         }
     }
 
@@ -180,7 +188,7 @@ internal sealed class SvItemsWorkflowService
         global::ItemData item,
         SvWorkflowFile source,
         SvTextLabelLookup labels,
-        IReadOnlyDictionary<int, SvTechnicalMachineMove> tmCatalogByItemId)
+        IReadOnlyDictionary<int, SvTechnicalMachineMove> tmCatalogByItemId, bool includeEditorMetadata = true)
     {
         var machineMoveId = (int)item.MachineWaza;
         var machine = tmCatalogByItemId.GetValueOrDefault(item.Id);
@@ -218,7 +226,7 @@ internal sealed class SvItemsWorkflowService
             MachineMoveId: machineMoveId > 0 ? machineMoveId : null,
             MachineMoveName: machineMoveId > 0 ? labels.Move(machineMoveId) : null);
 
-        var detailGroups = new[]
+        var detailGroups = !includeEditorMetadata ? [] : new[]
         {
             new SvItemDetailGroup(
                 "Scarlet/Violet",
@@ -243,7 +251,7 @@ internal sealed class SvItemsWorkflowService
             CreateFieldValues(item),
             metadata,
             SharedItemIds: [],
-            detailGroups,
+            includeEditorMetadata ? detailGroups : [],
             new SvItemProvenance(source.RelativePath, source.SourceLayer, source.FileState));
     }
 
