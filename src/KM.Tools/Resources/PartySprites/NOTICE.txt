@@ -22,7 +22,13 @@ pixels respectively. The artwork is centered on the 68 by 56 canvas with its
 bottom row at 51, preserving binary transparency and the sampled colors.
 
 Artwork copyright: Nintendo/Creatures Inc./GAME FREAK Inc.
-Ursaluna, Basculegion (both genders), Overqwil, and Enamorus (both forms) use
+Ursaluna, Basculegion (both genders), Overqwil, Enamorus (both forms),
+Farigiraf, Kingambit, Great Tusk, Scream Tail, Brute Bonnet, Flutter Mane,
+Slither Wing, Sandy Shocks, Iron Treads, Iron Bundle, Iron Hands, Iron Jugulis,
+Iron Moth, Iron Thorns, Frigibax, Arctibax, Baxcalibur, Gholdengo, Wo-Chien,
+Chien-Pao, Ting-Lu, Chi-Yu, Roaring Moon, Iron Valiant, Koraidon, Miraidon,
+Walking Wake, Iron Leaves, Archaludon, Gouging Fire, Raging Bolt, Iron Boulder,
+and Iron Crown use
 unchanged 68 by 56 regular sprites from bamq/pokemon-sprites at revision
 c1958e7260a4bce93bd104e79966a27fb333c7aa:
 https://github.com/bamq/pokemon-sprites/tree/c1958e7260a4bce93bd104e79966a27fb333c7aa/pokemon/regular
@@ -36,7 +42,7 @@ Raichu X, Raichu Y, Absol Z, Staraptor, Garchomp Z, Lucario Z, Darkrai,
 Excadrill, Scolipede, Pyroar, Floette, Barbaracle, Golisopod, Drampa, Magearna
 (including Original Color), Zeraora, Falinks, Clefable, Starmie, Dragonite,
 Heatran, Emboar, Eelektross, Chandelure, Delphox, Greninja, both Meowstic
-genders, Malamar, Zygarde, and Crabominable, plus Primal Kyogre and Primal
+genders, Malamar, Zygarde, Crabominable, and Baxcalibur, plus Primal Kyogre and Primal
 Groudon, use Legends Z-A
 icon sprites credited by Pokemon Workshop to Batin, ezerart, and Luis779:
 https://github.com/PokemonWorkshop/GameDataPacks/tree/d430fb553df98ccde5f9f90ece78e36b07d8083c/Gen%209/Legends%20Z-A/graphics/pokedex/pokeicon

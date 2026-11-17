@@ -59,7 +59,8 @@ public static class ZaSwShMaterialBaker
         Func<string, byte[]> readTexture, CancellationToken cancellationToken = default, bool layeredEyes = false,
         bool authoredAlpha = false, ModelTextureMipCache? encodingCache = null, Vector2? normalUvScale = null,
         Vector2? colorUvScale = null, bool unlit = false, ZaSwShNormalAtlas? normalAtlas = null,
-        int maximumTextureDimension = 2048, bool secondaryMask = false)
+        int maximumTextureDimension = 2048, bool secondaryMask = false, bool svParadoxSurface = false,
+        Action<SwShNormalConflict>? normalConflict = null)
     {
         if (maximumTextureDimension is < 64 or > 2048 || (maximumTextureDimension & (maximumTextureDimension - 1)) != 0)
             throw new ArgumentOutOfRangeException(nameof(maximumTextureDimension));
@@ -69,7 +70,14 @@ public static class ZaSwShMaterialBaker
         var tables = source.Tables(source.Root, 1, 128).Where(t => source.Text(t, 0) == primitive.Material.Name).ToArray();
         if (tables.Length != 1) throw new InvalidDataException("Source material identity is ambiguous.");
         var table = tables[0];
+        if (svParadoxSurface)
+        {
+            KM.Formats.SV.SvSwShParadoxSurface.RequireMaterial(sourceMaterials, primitive.Material.Name);
+            if (layeredEyes || authoredAlpha || unlit || normalAtlas is not null || normalUvScale is not null || colorUvScale is not null)
+                throw new InvalidDataException("Native S/V surfaces require independent untransformed baked normals and ambient.");
+        }
         var textures = source.Tables(table, 2, 64).ToDictionary(t => source.Text(t, 0)!, t => source.Text(t, 1)!, StringComparer.Ordinal);
+        if (svParadoxSurface && textures.Remove("AOMap", out var sourceAo)) textures.Add("OcclusionMap", sourceAo);
         var eye = primitive.Material.Name.Contains("eye", StringComparison.Ordinal);
         var template = ZaSwShTextureTemplate.Convert(primitive, textureTemplate, templateName);
         _ = new ModelTextureDocument(template);
@@ -85,7 +93,7 @@ public static class ZaSwShMaterialBaker
         {
             uint.MaxValue => uvTransform,
             0 => new Vector4(1, 1, 0, 0),
-            1 when secondaryMask => new Vector4(1, 1, 0, 0),
+            1 when secondaryMask || svParadoxSurface => new Vector4(1, 1, 0, 0),
             _ => throw new InvalidDataException("Z-A layer mask UV set needs another material adapter."),
         };
         var normalUv = parameters.GetValueOrDefault("UVScaleOffsetNormal", new(1, 1, 0, 0));
@@ -123,11 +131,13 @@ public static class ZaSwShMaterialBaker
         }
         // This source shader has no normal input. Its lighting-independent native
         // program ignores the neutral object normal; other missing maps still fail.
-        var normalSource = unlit
+        var nativeFrame = svParadoxSurface && (KM.Formats.SV.SvSwShParadoxSurface.GeometricNormals(sourceMaterials, primitive.Material.Name)
+            || KM.Formats.SV.SvSwShParadoxSurface.TangentNormals(sourceMaterials, primitive.Material.Name));
+        var normalSource = unlit || nativeFrame
             ? new Image(4, 4, false, Enumerable.Range(0, 16).SelectMany(_ => new byte[] { 128, 128, 255, 255 }).ToArray())
             : Read(readTexture(textures["NormalMap"]));
         if (!unlit && (normalSource.Width < 4 || normalSource.Height < 4))
-            normalSource = Read(SwShMaterialBaker.PromoteConstantImage(readTexture(textures["NormalMap"])));
+            normalSource = Read(SwShMaterialBaker.PromoteConstantImage(readTexture(textures["NormalMap"]), cancellationToken, encodingCache));
         // Object normal images are unique to each primitive. Bound those
         // repeated allocations independently of the layered color detail.
         var width = Math.Min(512, normalSource.Width); var height = Math.Min(512, normalSource.Height);
@@ -145,7 +155,8 @@ public static class ZaSwShMaterialBaker
                     tangentNormals[offset] = Channel(sample.X); tangentNormals[offset + 1] = Channel(sample.Y);
                 }
         }
-        var (normalPixels, coverage, conflicts) = ObjectNormalPixels(normalGeometry, tangentNormals, width, height, cancellationToken);
+        var (normalPixels, coverage, conflicts) = nativeFrame ? (normalSource.Pixels, 1d, 0)
+            : ObjectNormalPixels(normalGeometry, tangentNormals, width, height, cancellationToken, normalConflict);
         if (normalAtlas is not null && conflicts != 0)
             throw new InvalidDataException("Shared Z-A object-normal atlas contains incompatible overlapping sections.");
         var ambientWidth = 4; var ambientHeight = 4;
@@ -193,6 +204,19 @@ public static class ZaSwShMaterialBaker
         var colorName = ModelTextureIdentity.MaterialName(templateName, materialIndex, 'z', shiny ? 's' : 'n', lowerCase: true);
         var normalName = ModelTextureIdentity.MaterialName(templateName, materialIndex, 'n', 'n', lowerCase: true);
         var ambientName = ModelTextureIdentity.MaterialName(templateName, materialIndex, 'a', 'n', lowerCase: true);
+        if (svParadoxSurface)
+        {
+            // Color and layer masks are sampled by the native source shader.
+            // Only its object-normal and ambient inputs need generated images.
+            byte[] Container(string name, int w, int h) => ModelTextureIdentity.Rename(
+                SwShTextureAllocation.Create(template, w, h, false), templateName, name);
+            var empty = new ModelTextureDocument(Container(colorName, 4, 4));
+            var normal = new ModelTextureDocument(Container(normalName, width, height));
+            var ambient = new ModelTextureDocument(Container(ambientName, ambientWidth, ambientHeight));
+            return new(colorName, empty.EncodeMipImages(SwShTextureFiltering.Mips(new byte[64], 4, 4, empty.MipCount), cancellationToken, encodingCache),
+                normalName, normal.EncodeMipImages(SwShTextureFiltering.Mips(normalPixels, width, height, normal.MipCount, normals: true), cancellationToken, encodingCache),
+                ambientName, ambient.EncodeMipImages(SwShTextureFiltering.Mips(ambientPixels, ambientWidth, ambientHeight, ambient.MipCount), cancellationToken, encodingCache), coverage, conflicts);
+        }
         var baseImage = Read(readTexture(textures["BaseColorMap"]));
         var maskImage = !secondaryMask && textures.TryGetValue("LayerMaskMap", out var layerMaskPath) ? Read(readTexture(layerMaskPath)) : null;
         var highlightImage = textures.TryGetValue("HighlightMaskMap", out var highlightPath) ? Read(readTexture(highlightPath)) : null;
@@ -308,9 +332,11 @@ public static class ZaSwShMaterialBaker
         pixels = block; width = height = 4;
     }
 
-    private static (byte[] Pixels, double Coverage, int Conflicts) ObjectNormalPixels(PreviewPrimitive primitive, byte[] tangentNormals, int width, int height, CancellationToken cancellationToken)
+    private static (byte[] Pixels, double Coverage, int Conflicts) ObjectNormalPixels(PreviewPrimitive primitive, byte[] tangentNormals, int width, int height, CancellationToken cancellationToken,
+        Action<SwShNormalConflict>? normalConflict)
     {
         var normals = new Vector3[width * height]; var covered = new bool[normals.Length]; var conflicts = 0;
+        var owners = normalConflict is null ? null : new int[normals.Length];
         var vertices = primitive.Vertices;
         Vector3 Position(int i) => new(vertices[i * 16], vertices[i * 16 + 1], vertices[i * 16 + 2]);
         Vector3 Normal(int i) => new(vertices[i * 16 + 3], vertices[i * 16 + 4], vertices[i * 16 + 5]);
@@ -324,10 +350,12 @@ public static class ZaSwShMaterialBaker
             var u = uvB - uvA; var v = uvC - uvA; var determinant = Cross(u, v);
             if (MathF.Abs(determinant) < 1e-12f) continue;
             var e1 = Position(b) - Position(a); var e2 = Position(c) - Position(a);
+            if (Vector3.Cross(e1, e2).LengthSquared() < 1e-20f) continue;
             var tangent = (e1 * v.Y - e2 * u.Y) / determinant; var bitangent = (e2 * u.X - e1 * v.X) / determinant;
             Vector2 ImagePoint(Vector2 uv) => new(uv.X * width, (1 - uv.Y) * height);
             var p = ImagePoint(uvA); var q = ImagePoint(uvB); var r = ImagePoint(uvC); var ab = q - p; var ac = r - p;
             var area = Cross(ab, ac);
+            if (MathF.Abs(area) < 1e-12f) continue;
             var left = Math.Max(0, (int)MathF.Floor(MathF.Min(p.X, MathF.Min(q.X, r.X))));
             var right = Math.Min(width - 1, (int)MathF.Ceiling(MathF.Max(p.X, MathF.Max(q.X, r.X))));
             var top = Math.Max(0, (int)MathF.Floor(MathF.Min(p.Y, MathF.Min(q.Y, r.Y))));
@@ -341,8 +369,13 @@ public static class ZaSwShMaterialBaker
                 if (Vector3.Dot(bt, bitangent) < 0) bt = -bt;
                 var index = y * width + x; var nx = tangentNormals[index * 4] / 127.5f - 1; var ny = tangentNormals[index * 4 + 1] / 127.5f - 1;
                 var value = Unit(t * nx + bt * ny + normal * MathF.Sqrt(MathF.Max(0, 1 - nx * nx - ny * ny)));
-                if (covered[index] && Vector3.Dot(normals[index], value) < .8f) conflicts++;
+                if (covered[index] && Vector3.Dot(normals[index], value) < .8f)
+                {
+                    conflicts++;
+                    normalConflict?.Invoke(new(owners![index], triangle / 3, x, y, Vector3.Dot(normals[index], value)));
+                }
                 normals[index] = value; covered[index] = true;
+                if (owners is not null) owners[index] = triangle / 3;
             }
         }
         var coverage = covered.Count(v => v);

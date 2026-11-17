@@ -46,7 +46,9 @@ public sealed partial class SwShRestorationPreparationService
         }
 
         private SwShBakedMaterial?[] BakePalette(PreviewScene scene, byte[] materialBytes, bool rare, string sourcePath,
-            RestorationTexturePool textures, bool nativeFlames = false, IReadOnlySet<string>? sourceColorMaterials = null)
+            RestorationTexturePool textures, bool nativeFlames = false, IReadOnlySet<string>? sourceColorMaterials = null,
+            IReadOnlySet<string>? nativeSurfaceMaterials = null,
+            IReadOnlyDictionary<string, KM.Formats.ZA.ZaSwShLayerSurface.Contract>? sourceSurfaces = null)
         {
             if (Profile(currentIdentity).SourceLayeredAlbedo && (sourceColorMaterials is null || sourceColorMaterials.Count == 0))
                 throw new InvalidDataException("Source albedo has no qualified native layer consumer.");
@@ -56,14 +58,18 @@ public sealed partial class SwShRestorationPreparationService
                 .Select(material => sourceMaterials.Text(material, 0)!).ToHashSet(StringComparer.Ordinal);
             var groups = Profile(currentIdentity).NormalSharingGroups;
             if (groups is not null && groups.Any(pair => pair.Value is < 0 or > 127
-                || scene.Primitives.Count(p => p.Name == pair.Key) != 1))
+                || !scene.Primitives.Any(p => p.Name == pair.Key)
+                || scene.Primitives.Where(p => p.Name == pair.Key).Any(p => !p.Vertices.AsSpan().SequenceEqual(
+                    scene.Primitives.First(s => s.Name == pair.Key).Vertices))))
                 throw new InvalidDataException("Normal sharing group has missing or ambiguous geometry.");
             int Group(PreviewPrimitive primitive) => groups?.GetValueOrDefault(primitive.Name, -1) ?? -1;
             var shared = new Dictionary<(string Material, int Group), SwShBakedMaterial>();
             return scene.Primitives.Select((primitive, index) =>
             {
                 if (nativeFlames && primitive.Material.Name == "fire") return null;
+                if (nativeSurfaceMaterials?.Contains(primitive.Material.Name) == true) return null;
                 var eye = eyeMaterials.Contains(primitive.Material.Name);
+                if (sourceSurfaces?.ContainsKey(primitive.Material.Name) == true) eye = false;
                 var cornealHeights = Profile(currentIdentity).CornealEyes && eye
                     ? KM.Formats.SV.SvSwShCornealMaterial.SourceNormalHeights(sourceMaterials,
                         sourceMaterials.Tables(sourceMaterials.Root, 1, 128).Single(m => sourceMaterials.Text(m, 0) == primitive.Material.Name))
@@ -90,7 +96,14 @@ public sealed partial class SwShRestorationPreparationService
                     bakingPrimitive = primitive with { Vertices = vertices.ToArray(), Indices = indices.ToArray() };
                 }
                 Report("textures", (rare ? scene.Primitives.Count : 0) + index, scene.Primitives.Count * 2);
-                var material = SwShMaterialBaker.Bake(bakingPrimitive, materialBytes, index,
+                var sourceSurface = sourceSurfaces?.GetValueOrDefault(primitive.Material.Name);
+                var baseTexture = sourceSurface?.Textures.Single(t => t.SourceRole == "BaseColorMap").FileName;
+                var material = sourceSurfaces?.ContainsKey(primitive.Material.Name) == true
+                    ? KM.Formats.ZA.ZaSwShMaterialBaker.Bake(bakingPrimitive, materialBytes, index, rare,
+                        Donor(TrinityPreviewReader.Resolve(sourcePath, baseTexture!)), Path.GetFileNameWithoutExtension(baseTexture!),
+                        name => Donor(TrinityPreviewReader.Resolve(sourcePath, name)), token,
+                        maximumTextureDimension: 512, svParadoxSurface: true, encodingCache: textureEncoding)
+                    : SwShMaterialBaker.Bake(bakingPrimitive, materialBytes, index,
                     name => Donor(TrinityPreviewReader.Resolve(sourcePath, name)), token, sourceNormalDimensions: Profile(currentIdentity).CompactResources,
                     opaqueEyeSurface: Profile(currentIdentity).OpaqueEyeSurface && eye,
                     cornealEye: Profile(currentIdentity).CornealEyes && eye,
@@ -101,14 +114,16 @@ public sealed partial class SwShRestorationPreparationService
                         && !eye
                         || Profile(currentIdentity).AuthoredAlpha && primitive.Material.Name is "l_eye_b" or "l_highlight",
                     staticUvAtlas: StaticAtlas(bakingPrimitive),
-                    encodingCache: textureEncoding,
+                    sourceTangentNormals: currentIdentity.Species == 1018 && currentIdentity.Form == 0
+                        && KM.Formats.SV.SvSwShArchaludonNormals.IsBody(primitive.Material.Name),
                     unlitSurface: Profile(currentIdentity).LavaLayers && primitive.Material.Name == "fire",
                     cornealPrimaryNormalHeight: Profile(currentIdentity).CornealPrimaryNormalHeights?.GetValueOrDefault(primitive.Material.Name, cornealHeights.Primary) ?? cornealHeights.Primary,
                     preserveSourceColor: sourceColorMaterials?.Contains(primitive.Material.Name) == true
                         || currentIdentity.Species == 733 && currentIdentity.Form == 0
-                            && KM.Formats.SV.SvSwShLayerEmission.PreservesToucannonUnlayeredAlbedo(materialBytes, primitive));
+                            && KM.Formats.SV.SvSwShLayerEmission.PreservesToucannonUnlayeredAlbedo(materialBytes, primitive),
+                    encodingCache: textureEncoding);
                 if ((share || Profile(currentIdentity).SeparateNormalSections) && material.ConflictingSamples != 0)
-                    throw new InvalidDataException("Shared material normal coordinates require another target adapter.");
+                    throw new InvalidDataException($"Shared material normal coordinates require another target adapter: {primitive.Name}/{primitive.Material.Name} ({material.ConflictingSamples} samples).");
                 // Eyes can share a layer mask while having different palette colors.
                 // Give each material and palette its own native texture identity.
                 (string Name, byte[] Bytes) Add(string original, byte[] bytes, char prefix)

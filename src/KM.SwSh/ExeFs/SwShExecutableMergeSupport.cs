@@ -56,13 +56,19 @@ public static class SwShExecutableMergeSupport
             .Select(r => new SwShExecutableMergeRegion(r.Owner, r.StartOffset!.Value, r.Length!.Value)).ToArray();
     }
 
-    public static IReadOnlyList<SwShExecutableMergeRegion> RoRegions(string build) => GameForBuild(build) is null ? [] :
+    public static IReadOnlyList<SwShExecutableMergeRegion> RoRegions(string build) => GameForBuild(build) is not { } game ? [] :
         [new("Held Item Chance", SwShHeldItemChancePatcher.RateOffset, 6),
-         new("Game Options", SwShGameOptionsPatcher.DescriptorsOffset, 16 * 56)];
+         new("Game Options", SwShGameOptionsPatcher.DescriptorsOffset, 16 * 56),
+         .. ModelMemoryRegions(game, "main.ro")];
 
-    public static IReadOnlyList<SwShExecutableMergeRegion> DataRegions(string build) => GameForBuild(build) is null ? [] :
-        KM.SwSh.Restoration.SwShRestorationSoundMemoryPatcher.Reservations().Where(r => r.Area == "main.data")
-            .Select(r => new SwShExecutableMergeRegion(r.Owner, r.StartOffset!.Value, r.Length!.Value)).ToArray();
+    public static IReadOnlyList<SwShExecutableMergeRegion> DataRegions(string build) => GameForBuild(build) is not { } game ? [] :
+        [.. KM.SwSh.Restoration.SwShRestorationSoundMemoryPatcher.Reservations().Where(r => r.Area == "main.data")
+            .Select(r => new SwShExecutableMergeRegion(r.Owner, r.StartOffset!.Value, r.Length!.Value)),
+         .. ModelMemoryRegions(game, "main.data")];
+
+    private static IEnumerable<SwShExecutableMergeRegion> ModelMemoryRegions(ProjectGame game, string area) =>
+        KM.SwSh.Restoration.SwShRestorationModelMemoryPatcher.Reservations(game).Where(r => r.Area == area)
+            .Select(r => new SwShExecutableMergeRegion(r.Owner, r.StartOffset!.Value, r.Length!.Value));
 
     public static int? HyperLevel(string path, byte[] bytes)
     {
@@ -97,6 +103,13 @@ public static class SwShExecutableMergeSupport
         if (GameForBuild(Convert.ToHexString(NsoFile.Parse(original).BuildId)) is not { } game) return true;
         var beforeOptions = NsoFile.Parse(original);
         var afterOptions = NsoFile.Parse(merged);
+        if (KM.SwSh.Restoration.SwShRestorationModelMemoryPatcher.Reservations(game).Any(region =>
+            !Segment(beforeOptions, region.Area).AsSpan(region.StartOffset!.Value, region.Length!.Value)
+                .SequenceEqual(Segment(afterOptions, region.Area).AsSpan(region.StartOffset.Value, region.Length.Value))))
+        {
+            try { _ = KM.SwSh.Restoration.SwShRestorationModelMemoryPatcher.Read(merged, game); }
+            catch (InvalidDataException) { return false; }
+        }
         if (KM.SwSh.Restoration.SwShRestorationTableMemoryPatcher.Reservations().Any(region =>
             !beforeOptions.Text.DecompressedData.AsSpan(region.StartOffset!.Value, region.Length!.Value)
                 .SequenceEqual(afterOptions.Text.DecompressedData.AsSpan(region.StartOffset!.Value, region.Length!.Value))))
@@ -187,4 +200,7 @@ public static class SwShExecutableMergeSupport
         }
         return HyperLevel("exefs/main", original) is null || HyperLevel("exefs/main", merged) is not null;
     }
+
+    private static byte[] Segment(NsoFile main, string area) =>
+        (area == "main.text" ? main.Text : area == "main.ro" ? main.Ro : main.Data).DecompressedData;
 }

@@ -25,7 +25,9 @@ public sealed partial class SwShRestorationPreparationService
             var names = prepared.Contributions.Where(c => c.Writer == SwShRestorationWriter.SpeciesText).Select(c => c.Path).Distinct().Count();
             var additionalModels = SwShRestorationDefinitions.Get(prepared.DefinitionId).AdditionalModelVariants.Count;
             var additionalIcons = SwShRestorationDefinitions.Get(prepared.DefinitionId).Identities.Sum(i => SwShRestorationComposer.IconGenders(i.Species).Count - 1);
-            if (files.Count != 6 + 5 * speciesCount + extraPalettes + names + 3 * additionalModels + additionalIcons + nativeParentEvolutionPaths.Count
+            var abilityFiles = prepared.Contributions.Where(c => c.Writer == SwShRestorationWriter.AbilityText).Select(c => c.Path).Distinct().Count();
+            var cameraFiles = prepared.Contributions.Where(c => c.Writer == SwShRestorationWriter.BattleCamera).Select(c => c.Path).Distinct().Count();
+            if (files.Count != 6 + 5 * speciesCount + extraPalettes + names + 3 * additionalModels + additionalIcons + nativeParentEvolutionPaths.Count + abilityFiles + cameraFiles
                 || nativeParentEvolutionPaths.Any(path => !files.ContainsKey(path)) || files.Values.Any(v => v is null))
                 throw new InvalidDataException("Prepared restoration output set is incomplete.");
             var catalog = new SwShPokemonResourceCatalog(files[SwShRestorationComposer.CatalogPath]!);

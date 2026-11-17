@@ -30,16 +30,17 @@ public static partial class ZaSwShAnimationWriter
     }
 
     public static byte[] Controller(byte[] nativeController, string donorStem, string targetStem,
-        IReadOnlyList<string> materialNames, IReadOnlyDictionary<string, string[]> facialBones, bool layeredEyes = false, bool independentHighlights = false, bool layerEmission = false, bool layerTint = false)
+        IReadOnlyList<string> materialNames, IReadOnlyDictionary<string, string[]> facialBones, bool layeredEyes = false, bool independentHighlights = false, bool layerEmission = false, bool layerTint = false,
+        IReadOnlySet<string>? eyeMaterials = null)
     {
-        var bytes = SwShAnimationWriter.Controller(nativeController, donorStem, targetStem, materialNames, facialBones, compactMaterials: true);
+        var bytes = SwShAnimationWriter.Controller(nativeController, donorStem, targetStem, materialNames, facialBones, compactMaterials: true, eyeMaterials: eyeMaterials);
         var source = new ModelBuffer(bytes); var writer = new ModelTableBuilder(bytes);
         foreach (var layer in source.Tables(source.Table(source.Root, 0), 0, 128))
         {
             var masks = source.Table(source.Table(layer, 2), 1);
             foreach (var material in source.Tables(masks, 1, 128))
             {
-                if (!(source.Text(material, 0) ?? "").Contains("eye", StringComparison.Ordinal)) continue;
+                if (eyeMaterials?.Contains(source.Text(material, 0) ?? "") != true && !(source.Text(material, 0) ?? "").Contains("eye", StringComparison.Ordinal)) continue;
                 var floats = source.Table(material, 2);
                 var names = source.Tables(floats, 1, 256).Select(t => source.Text(t, 0)!).ToArray();
                 if (!names.Contains("ColorUVTranslateU", StringComparer.Ordinal)) continue;
@@ -120,7 +121,7 @@ public static partial class ZaSwShAnimationWriter
                 {
                     var parameter = source.Text(entry, 0);
                     if (parameter != "LayerMaskScale5" && !(parameter == "EmissionIntensityLayer2" && name == emissionMaterial))
-                        throw new InvalidDataException($"Z-A scalar material animation needs another adapter: {parameter}");
+                        throw new InvalidDataException($"Z-A scalar material animation needs another adapter: {name}/{parameter}");
                     var curve = source.Table(entry, 1);
                     var keys = source.Tables(curve, 0, 18000).Select(key =>
                     {

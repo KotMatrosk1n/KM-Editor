@@ -55,7 +55,7 @@ public static class SwShMaterialBaker
         var minimumImages = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         readTexture = name => minimumImages.TryGetValue(name, out var image) ? image
             : originalRead(name);
-        void PromoteMinimum(string name) => minimumImages[name] = PromoteConstantImage(originalRead(name));
+        void PromoteMinimum(string name) => minimumImages[name] = PromoteConstantImage(originalRead(name), cancellationToken, encodingCache);
         var eye = IsEyeMaterial(source, table);
         if (staticLitEyeSurface)
         {
@@ -181,10 +181,16 @@ public static class SwShMaterialBaker
             var u = uvB - uvA; var v = uvC - uvA; var determinant = Cross(u, v);
             if (MathF.Abs(determinant) < 1e-12f) continue;
             var e1 = Position(b) - Position(a); var e2 = Position(c) - Position(a);
+            // Collapsed source triangles cover no model surface and have no
+            // tangent frame. They must not claim pixels in the normal atlas.
+            if (Vector3.Cross(e1, e2).LengthSquared() < 1e-20f) continue;
             var tangent = (e1 * v.Y - e2 * u.Y) / determinant; var bitangent = (e2 * u.X - e1 * v.X) / determinant;
             Vector2 ImagePoint(Vector2 uv) => new(uv.X * width, (1 - uv.Y) * height);
             var p = ImagePoint(uvA); var q = ImagePoint(uvB); var r = ImagePoint(uvC); var ab = q - p; var ac = r - p;
             var area = Cross(ab, ac);
+            // Distinct source UVs can collapse when scaled to float pixel
+            // coordinates. Such a triangle cannot own a normal-atlas sample.
+            if (MathF.Abs(area) < 1e-12f) continue;
             var left = Math.Max(0, (int)MathF.Floor(MathF.Min(p.X, MathF.Min(q.X, r.X))));
             var right = Math.Min(width - 1, (int)MathF.Ceiling(MathF.Max(p.X, MathF.Max(q.X, r.X))));
             var top = Math.Max(0, (int)MathF.Floor(MathF.Min(p.Y, MathF.Min(q.Y, r.Y))));
@@ -193,8 +199,10 @@ public static class SwShMaterialBaker
             {
                 var point = new Vector2(x + .5f, y + .5f) - p; var beta = Cross(point, ac) / area; var gamma = Cross(ab, point) / area; var alpha = 1 - beta - gamma;
                 if (MathF.Min(alpha, MathF.Min(beta, gamma)) < -.00001f) continue;
-                var normal = Unit(Normal(a) * alpha + Normal(b) * beta + Normal(c) * gamma);
-                var t = Unit(tangent - normal * Vector3.Dot(normal, tangent)); var bt = Unit(Vector3.Cross(normal, t));
+                Vector3 FrameUnit(Vector3 value, string component) => value.LengthSquared() > 1e-20f
+                    ? Vector3.Normalize(value) : throw new InvalidDataException($"Material tangent frame is degenerate: {primitive.Name}/{primitive.Material.Name}, triangle {triangle / 3}, pixel {x},{y}, {component}, vertices {a},{b},{c}.");
+                var normal = FrameUnit(Normal(a) * alpha + Normal(b) * beta + Normal(c) * gamma, "normal");
+                var t = FrameUnit(tangent - normal * Vector3.Dot(normal, tangent), "tangent"); var bt = FrameUnit(Vector3.Cross(normal, t), "bitangent");
                 if (Vector3.Dot(bt, bitangent) < 0) bt = -bt;
                 var index = y * width + x; var nx = tangentNormals is null ? 0 : tangentNormals[index * 4] / 127.5f - 1;
                 var ny = tangentNormals is null ? 0 : tangentNormals[index * 4 + 1] / 127.5f - 1;
@@ -382,7 +390,8 @@ public static class SwShMaterialBaker
         }
         if (preserveSourceColor)
         {
-            if (eye || atlas is not null || unlitSurface || (authoredAlpha || primitive.Material.Alpha != "Opaque"))
+            if (eye || atlas is not null || unlitSurface || (authoredAlpha || primitive.Material.Alpha != "Opaque")
+                && !SvSwShLayerEmission.PreservesParadoxTransparentColor(sourceMaterials, primitive))
                 throw new InvalidDataException("Source albedo requires a qualified untransformed layered surface.");
             var original = originalRead(textures["BaseColorMap"]);
             // The qualified scalar mapping above is sampled as (R,R,R,1).
@@ -436,7 +445,7 @@ public static class SwShMaterialBaker
         for (var row = 0; row < source.Height; row++) source.Pixels.AsSpan(row * source.Width * 4, source.Width * 4).CopyTo(pixels.AsSpan(((row + y) * target.Width + x) * 4));
         return target.EncodeMipImages(Mips(pixels, target.Width, target.Height, target.MipCount), cancellationToken, encodingCache);
     }
-    internal static byte[] PromoteConstantImage(byte[] bytes)
+    internal static byte[] PromoteConstantImage(byte[] bytes, CancellationToken cancellationToken = default, ModelTextureMipCache? encodingCache = null)
     {
         var texture = PreviewTexture.ReadBaseLevel(bytes);
         if (texture.Width >= 4 && texture.Height >= 4) return bytes;
@@ -460,7 +469,7 @@ public static class SwShMaterialBaker
         var allocated = new ModelTextureDocument(SwShTextureAllocation.Create(bytes, 4, 4, (texture.Format & 255) == 6, compressed: false));
         return allocated.EncodeMipImages(Enumerable.Range(0, allocated.MipCount)
             .Select(mip => Enumerable.Range(0, Math.Max(1, 4 >> mip) * Math.Max(1, 4 >> mip))
-                .SelectMany(_ => first).ToArray()).ToArray());
+                .SelectMany(_ => first).ToArray()).ToArray(), cancellationToken, encodingCache);
     }
 
     private static Image Read(byte[] bytes) => Read(PreviewTexture.ReadBaseLevel(bytes));

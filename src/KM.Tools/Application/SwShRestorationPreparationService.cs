@@ -41,6 +41,7 @@ public sealed partial class SwShRestorationPreparationService
                 context.ReportPhase("models", unavailableMoves.Count, identity.Species);
                 contributions.AddRange(context.Assets(identity));
                 context.ReportPhase("gameplay", unavailableMoves.Count, identity.Species);
+                contributions.AddRange(context.AbilityText(identity));
                 var gameplay = context.Gameplay(identity); contributions.AddRange(gameplay.Contributions); unavailableMoves.Add(identity.Species, gameplay.ExcludedMoves);
                 contributions.AddRange(context.Names(identity));
             }

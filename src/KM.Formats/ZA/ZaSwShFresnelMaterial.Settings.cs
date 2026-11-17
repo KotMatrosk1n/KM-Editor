@@ -42,7 +42,8 @@ public static partial class ZaSwShFresnelMaterial
         var masked = QualifiesCrabominableEmissionMask(bytes, materialName)
             || QualifiesFroslassEmissionMask(bytes, materialName)
             || QualifiesGlalieEmissionMask(bytes, materialName)
-            || QualifiesAbomasnowEmissionMask(bytes, materialName);
+            || QualifiesAbomasnowEmissionMask(bytes, materialName)
+            || QualifiesBaxcaliburFamilyEmissionMask(bytes, materialName);
         var required = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["EnableBaseColorMap"] = "True", ["EnableEmissionColorMap"] = "False",

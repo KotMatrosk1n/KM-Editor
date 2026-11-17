@@ -60,10 +60,11 @@ public sealed partial class SwShRestorationPreparationService
             Put16(row, 10, ev); row.AsSpan(12, 6).Clear(); row[18] = profile.GenderThreshold; row[19] = checked((byte)Scalar(16)); row[20] = checked((byte)Scalar(17));
             row[21] = checked((byte)Scalar(10)); row[22] = checked((byte)Scalar(13)); row[23] = checked((byte)Scalar(14));
             var abilities = Enumerable.Range(0, 3).Select(i => Scalar(7 + i, true)).ToArray();
-            var fallbackAbility = abilities.FirstOrDefault(ability => ability is >= 1 and <= 267);
-            if (fallbackAbility == 0) throw new InvalidDataException("This Pokemon has no ability supported by Sword and Shield in its source data.");
+            if (abilities.Any(ability => !SwShRestorationAbilities.IsSourceAbilitySupported(ability)
+                || ability > 267 && !SwShRestorationAbilities.IsAbilityFor(identity, ability)))
+                throw new InvalidDataException("A source ability still requires its own native restoration handler.");
             for (var i = 0; i < abilities.Length; i++)
-                Put16(row, 24 + i * 2, abilities[i] is >= 1 and <= 267 ? abilities[i] : fallbackAbility);
+                Put16(row, 24 + i * 2, abilities[i]);
             Put16(row, 30, 0); row[32] = 1; row[33] = (byte)((source.U8(detail + 6) & 63) | 64);
             Put16(row, 34, profile.Experience); Put16(row, 36, source.U16(detail + 8)); Put16(row, 38, source.U16(detail + 10));
             var excluded = new HashSet<int>();
@@ -110,10 +111,10 @@ public sealed partial class SwShRestorationPreparationService
             for (var i = 0; i < evolutionCount; i++)
             {
                 var at = evolutionStart + i * 16; var form = source.U16(at + 14);
-                // Resolve the known Farigiraf route so it can be skipped without making it a supported target.
+                // The donor move condition identifies Farigiraf; the evolution policy
+                // replaces Twin Beam with the documented Sword/Shield level route.
                 var isTwinBeamRoute = species == 203 && form == 0 && source.U16(at + 2) == 21 && source.U16(at + 4) == 888;
                 var destination = NationalSpecies(source.U16(at + 12), form, isTwinBeamRoute ? 981 : null);
-                if (isTwinBeamRoute && destination == 981) continue;
                 if (!TryProfile(new(destination, form), out var evolved) || evolved.HatchedSpecies != profile.HatchedSpecies || evolved.HatchedForm != profile.HatchedForm) throw new InvalidDataException("Evolution needs an undeclared restoration dependency.");
                 var original = new SwShEvolutionRecord(i, source.U16(at + 2), source.U16(at + 4), destination, form, source.U16(at));
                 var converted = SwShRestorationEvolutionPolicy.Convert(identity, original);
@@ -141,8 +142,7 @@ public sealed partial class SwShRestorationPreparationService
                 evolution[i * 8 + 6] = checked((byte)form); evolution[i * 8 + 7] = checked((byte)level);
             }
             result.Add(File($"bin/pml/evolution/evo_{personalId:000}.bin", evolution));
-            // Native parents keep every native route. Only the two explicitly
-            // requested regional branches add a new route to their table.
+            // Add the registered route while retaining every native parent route.
             if (SwShRestorationEvolutionPolicy.NativeParent(identity) is { } parentSpecies)
             {
                 var parentTables = source.Tables(source.Root, 0, 4096).Where(t => source.Field(t, 0) is var at && at != 0
@@ -157,9 +157,10 @@ public sealed partial class SwShRestorationPreparationService
                 if (freeSlot < 0) throw new InvalidDataException("The native parent's evolution table is full.");
                 var route = SwShRestorationEvolutionPolicy.Convert(new(parentSpecies, 0),
                     new(freeSlot, 0, 0, species, identity.Form, 0));
-                if (route.Method != 8 || route.Argument != SwShRestorationEvolutionPolicy.DuskStone
-                    || !SwShItemTable.Parse(Native(SwShItemTable.ItemDataRelativePath[6..]), 4096).Records.Any(r => r.ItemId == route.Argument))
-                    throw new InvalidDataException("Regional evolution replacement has no native item.");
+                if (!(route.Method == 4 && route.Argument == 0 && route.Level > 0)
+                    && !(route.Method == 8 && route.Argument == SwShRestorationEvolutionPolicy.DuskStone
+                        && SwShItemTable.Parse(Native(SwShItemTable.ItemDataRelativePath[6..]), 4096).Records.Any(r => r.ItemId == route.Argument)))
+                    throw new InvalidDataException("The registered evolution replacement has no supported native condition.");
                 nativeRows.Add(route);
                 result.Add(File(parentPath, SwShEvolutionSet.Write(nativeRows)));
                 nativeParentEvolutionPaths.Add("romfs/" + parentPath);
@@ -182,7 +183,8 @@ public sealed partial class SwShRestorationPreparationService
                 var folder = $"bin/pokemon_data/pokecamp/{group}/";
                 // The native legendary templates have no ball table. Their new
                 // forms retain their other metadata and use the standard ball row.
-                var campTemplate = species is 483 or 484 && identity.Form == 1 && group == "ball" ? 1 : profile.NativeTemplate;
+                var missingBallTable = species is 483 or 484 && identity.Form == 1 || species == 1005;
+                var campTemplate = missingBallTable && group == "ball" ? 1 : profile.NativeTemplate;
                 var data = camp.ReadFileByHash(SwShGfPackFile.HashMemberPath(folder + Name(campTemplate)), 1024 * 1024);
                 if (group == "common")
                 {

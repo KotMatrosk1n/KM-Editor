@@ -47,6 +47,7 @@ public static partial class SvSwShLayerEmission
         public bool InnerPass { get; init; } = true;
         public bool DynamicSource { get; init; }
         public Vector4 GlobalBaseColor { get; init; } = Vector4.One;
+        public Vector3 SourceOpacity { get; init; } = new(1, 1, 0);
         public bool ColorMap { get; init; }
         public bool BaseColorMap { get; init; }
         public bool MaskUnused { get; init; }
@@ -56,6 +57,7 @@ public static partial class SvSwShLayerEmission
         public IReadOnlyDictionary<string, Vector2>? FresnelWraps { get; init; }
         public bool Lava { get; init; }
         public bool MirroredMask { get; init; }
+        public bool IndependentBaseAddressing { get; init; }
         public bool AnimatedColors { get; init; }
         public Vector3[]? BaseColors { get; init; }
         public Vector4 SourceBaseAlphas { get; init; } = Vector4.One;
@@ -90,6 +92,7 @@ public static partial class SvSwShLayerEmission
             return MalamarContracts(bytes, scene);
         if (scene.Primitives.Any(p => p.Name.StartsWith("pm0383_51_00_", StringComparison.Ordinal)))
             return GroudonContracts(bytes, scene);
+        if (ParadoxTransparentContracts(bytes, scene) is { } paradoxTransparent) return paradoxTransparent;
         if (DialgaContracts(bytes, scene) is { } dialga) return dialga;
         if (PalkiaContracts(bytes, scene) is { } palkia) return palkia;
         if (BodyDonorContracts(bytes, scene) is { } bodyDonors) return bodyDonors;
@@ -233,19 +236,27 @@ public static partial class SvSwShLayerEmission
             return (name, bytes);
         }
         if (contract.MaskUv == new Vector4(1, 1, 0, 0)) return (name, bytes);
-        var image = ZaSwShMaterialBaker.Read(bytes); var pixels = new byte[image.Pixels.Length];
-        for (var y = 0; y < image.Height; y++)
+        var image = ZaSwShMaterialBaker.Read(bytes);
+        // Hands' transformed glass mask must fit the same 512px texture budget
+        // as its body maps. Bake directly at that size, retaining linear RGBA
+        // coverage rather than allocating a full-size uncompressed duplicate.
+        var handsGlass = (contract.Name, contract.Mask, contract.Transparent, contract.DynamicSource)
+            is ("body_b_01", "pm1093_00_00_body_b_lym.bntx", true, true);
+        var width = handsGlass ? Math.Min(image.Width, 512) : image.Width;
+        var height = handsGlass ? Math.Min(image.Height, 512) : image.Height;
+        var pixels = new byte[checked(width * height * 4)];
+        for (var y = 0; y < height; y++)
         {
             token.ThrowIfCancellationRequested();
-            for (var x = 0; x < image.Width; x++)
+            for (var x = 0; x < width; x++)
             {
-                var value = ZaSwShMaterialBaker.Sample(image, new((x + .5f) / image.Width, (y + .5f) / image.Height), contract.MaskUv, TrinityTextureAddressing.Preview(contract.MaskWrap));
-                for (var c = 0; c < 4; c++) pixels[(y * image.Width + x) * 4 + c] = (byte)Math.Clamp((int)MathF.Round(value[c] * 255), 0, 255);
+                var value = ZaSwShMaterialBaker.Sample(image, new((x + .5f) / width, (y + .5f) / height), contract.MaskUv, TrinityTextureAddressing.Preview(contract.MaskWrap));
+                for (var c = 0; c < 4; c++) pixels[(y * width + x) * 4 + c] = (byte)Math.Clamp((int)MathF.Round(value[c] * 255), 0, 255);
             }
         }
         var target = "e" + name[1..];
-        var document = new ModelTextureDocument(ModelTextureIdentity.Rename(SwShTextureAllocation.Create(bytes, image.Width, image.Height, false, compressed: false), name, target));
-        return (target, document.EncodeMipImages(SwShTextureFiltering.Mips(pixels, image.Width, image.Height, document.MipCount), token, encodingCache));
+        var document = new ModelTextureDocument(ModelTextureIdentity.Rename(SwShTextureAllocation.Create(bytes, width, height, false, compressed: false), name, target));
+        return (target, document.EncodeMipImages(SwShTextureFiltering.Mips(pixels, width, height, document.MipCount), token, encodingCache));
     }
 
     private static void ValidateMaskScale(Contract contract)
@@ -272,6 +283,25 @@ public static partial class SvSwShLayerEmission
         var originals = source.Tables(source.Root, 6, 128);
         var (programStart, _) = source.Vector(source.Root, 3, 4, 256);
         var original = sourceProgram is null ? originals[0] : originals.Single(m => source.StringAt(programStart + checked((int)source.Value(m, 8)) * 4) == sourceProgram);
+        var renderState = original;
+        if (SvSwShFlipbookEye.Recognizes(programName))
+        {
+            // The display shader is derived from Body00. Keep that complete
+            // uniform/texture interface and depth write while blending the
+            // authored eye opacity with the transparent front draw state.
+            // The cell shader's different scalar order makes Body00 read zero
+            // for OnGameAlpha and hides every eye pixel.
+            if (sourceProgram != "Body00") throw new InvalidDataException("Display eyes require the Body00 shader interface.");
+            RequireNativeBaseSlots(source, original);
+            renderState = originals.Single(m => source.StringAt(programStart + checked((int)source.Value(m, 8)) * 4) == SvSwShTransparentMaterial.Programs[0]);
+            if (source.Text(renderState, 0) != SvSwShTransparentMaterial.NativePrograms[0]
+                || source.Value(renderState, 6) != 5
+                || (source.Field(renderState, 3) is var depth && depth != 0 ? source.U8(depth) : 0) != 0)
+                throw new InvalidDataException("Display eyes require the qualified transparent front draw state.");
+            var bodyDepth = source.Field(original, 3);
+            if (bodyDepth == 0 || source.U8(bodyDepth) != 1)
+                throw new InvalidDataException("Display eyes require the qualified Body00 depth write.");
+        }
         if (programName is FiveLayerProgramName or BaseProgramName or UnlitBaseProgramName or OpaqueCoverageProgramName or SvSwShSourceCoverage.OpaqueProgramName or SvSwShSourceBase.ProgramName or SvSwShSourceBase.MirroredProgramName or SvSwShSourceBase.SharedUvProgramName or SvSwShSourceBase.MatteMirrorProgramName or SvSwShSourceBase.UnlitProgramName or SvSwShSourceBase.DynamicProgram) RequireNativeBaseSlots(source, original);
         if (programName is FiveLayerProgramName or OpaqueCoverageProgramName or SvSwShSourceCoverage.OpaqueProgramName) RequireNativeCoverageSlots(source, original);
         if (programName == FiveLayerProgramName)
@@ -317,10 +347,11 @@ public static partial class SvSwShLayerEmission
         }
         var slotsMaterials = writer.Vector(source.Root, 6, originals.Length + 1);
         var fields = Enumerable.Range(2, 9).Concat(Enumerable.Range(15, 5));
-        var absent = fields.Where(f => f is not (8 or 10) && source.Field(original, f) == 0).ToHashSet();
+        int State(int field) => SvSwShFlipbookEye.Recognizes(programName) && field == 3 ? original : renderState;
+        var absent = fields.Where(f => f is not (8 or 10) && source.Field(State(f), f) == 0).ToHashSet();
         var values = fields.Where(f => !absent.Contains(f)).ToDictionary(f => f, f => f is 8 or 10
             ? ModelTableBuilder.Integer(source.Vector(source.Root, f == 8 ? 3 : 5, 4, 256).Count)
-            : source.Slice(source.Field(original, f), f is 3 or 4 or >= 15 ? 1 : 4).ToArray());
+            : source.Slice(source.Field(State(f), f), f is 3 or 4 or >= 15 ? 1 : 4).ToArray());
         var target = writer.Table(21, values, absent: absent); writer.Pointer(slotsMaterials[^1], target);
         var copy = writer.Append(bytes);
         for (var i = 0; i < originals.Length; i++) writer.Pointer(slotsMaterials[i], copy + originals[i]);
@@ -368,7 +399,7 @@ public static partial class SvSwShLayerEmission
             if (contract.MirroredMask)
             {
                 ValidateMirroredMask(contract);
-                foreach (var role in contract.BaseColors is null || SvSwShSourceBase.IsToucannon(contract)
+                foreach (var role in contract.BaseColors is null || SvSwShSourceBase.IsToucannon(contract) || contract.IndependentBaseAddressing
                     ? new[] { "EmissionMaskTex" } : ["EmissionMaskTex", "Col0Tex"])
                 {
                     var texture = source.Tables(material, 11, 64).Single(t => source.Text(t, 0) == role);
@@ -499,7 +530,7 @@ public static partial class SvSwShLayerEmission
                         return new PreviewKey(Value(0) * skeleton.Rate / rate, [Value(1)]);
                     }).ToArray();
                     if (keys.Length == 0 || keys.Any(k => !float.IsFinite(k.Frame) || k.Frame < 0 || !float.IsFinite(k.Value[0]) || k.Value[0] < 0 || k.Value[0] > maximum)
-                        || keys.Zip(keys.Skip(1)).Any(p => p.First.Frame >= p.Second.Frame)) throw new InvalidDataException("Source emission keys are invalid.");
+                        || keys.Zip(keys.Skip(1)).Any(p => p.First.Frame >= p.Second.Frame)) throw new InvalidDataException($"Source emission keys are invalid: {name}/{parameter}, maximum {maximum}, values {string.Join(',', keys.Select(k => k.Value[0]).Distinct())}.");
                     if (bound) additional.Add(new(name, coverage ? CoverageTrack : fresnel || uniform ? "EmissionIntensityLayer" + (layer + 1) : parameter, [keys]));
                 }
                 if (scalars.Length != 0) writer.Vector(material, 1, 0);

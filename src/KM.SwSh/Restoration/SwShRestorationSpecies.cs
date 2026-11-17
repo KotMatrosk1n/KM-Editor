@@ -17,7 +17,7 @@ public static class SwShRestorationSpecies
     public const int AnnihilapeIconId = 1010;
     // Keep the established extended dispatch mapping beyond native egg files 1192..1250.
     private const int AppendedRowOffset = 352;
-    private static readonly int[] AdditionalSpecies = [901, 902, 904, 905];
+    private static readonly int[] AdditionalSpecies = [901, 902, 904, 905, 981, 983, 984, 985, 986, 987, 988, 989, 990, 991, 992, 993, 994, 995, 996, 997, 998, 1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010, 1018, 1020, 1021, 1022, 1023];
     public static int IconSpecies(int species) => species == Annihilape ? AnnihilapeIconId
         : AdditionalSpecies.Contains(species) ? 1011 + species - 899 : species;
     public static IEnumerable<int> BaseSpecies => Enumerable.Range(1, SwShEffectivePokemonCatalog.MaximumSpecies).Append(Annihilape).Concat(AdditionalSpecies);
@@ -31,6 +31,39 @@ public static class SwShRestorationSpecies
     public static string? DisplayName(int species) => species switch
     {
         901 => "Ursaluna", 902 => "Basculegion", 904 => "Overqwil", 905 => "Enamorus",
+        981 => "Farigiraf",
+        983 => "Kingambit",
+        984 => "Great Tusk",
+        985 => "Scream Tail",
+        986 => "Brute Bonnet",
+        987 => "Flutter Mane",
+        988 => "Slither Wing",
+        989 => "Sandy Shocks",
+        990 => "Iron Treads",
+        991 => "Iron Bundle",
+        992 => "Iron Hands",
+        993 => "Iron Jugulis",
+        994 => "Iron Moth",
+        995 => "Iron Thorns",
+        996 => "Frigibax",
+        997 => "Arctibax",
+        998 => "Baxcalibur",
+        1000 => "Gholdengo",
+        1001 => "Wo-Chien",
+        1002 => "Chien-Pao",
+        1003 => "Ting-Lu",
+        1004 => "Chi-Yu",
+        1005 => "Roaring Moon",
+        1006 => "Iron Valiant",
+        1007 => "Koraidon",
+        1008 => "Miraidon",
+        1009 => "Walking Wake",
+        1010 => "Iron Leaves",
+        1018 => "Archaludon",
+        1020 => "Gouging Fire",
+        1021 => "Raging Bolt",
+        1022 => "Iron Boulder",
+        1023 => "Iron Crown",
         Annihilape => "Annihilape", _ => null,
     };
 
@@ -83,6 +116,15 @@ public static class SwShRestorationSpecies
         foreach (var data in new[] { native, current })
         {
             var records = SwShPersonalTable.Parse(data, 4096).Records;
+            foreach (var species in AdditionalSpecies)
+            {
+                var icon = IconSpecies(species);
+                var alternate = SwShRestorationFormSlots.Blocks.SingleOrDefault(block => block.Species == species);
+                if (records.Where((record, row) => row != BaseRow(species)
+                        && !(alternate is not null && row >= alternate.FirstRow && row < alternate.FirstRow + alternate.AlternateCount))
+                    .Any(record => record.ModelId == icon))
+                    throw new InvalidDataException("Another Pokemon claims an appended species icon resource.");
+            }
             if (records.Where((record, row) => row != AnnihilapeRow).Any(record => record.ModelId == AnnihilapeIconId))
                 throw new InvalidDataException("Another Pokemon claims the reserved new species icon resource.");
             for (var species = 1; species <= SwShEffectivePokemonCatalog.MaximumSpecies; species++)

@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using KM.Formats.Models;
+using KM.Formats.SwSh;
 
 namespace KM.Formats.SV;
 
@@ -80,14 +81,14 @@ public static class SvSwShArchaludonNormals
         if (preview.Format != 0x1e01 || preview.Width != 1024 || preview.Height != 1024 || preview.Mips.Length != 10
             || BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(info + 88, 4)) != 0x05040302)
             throw new InvalidDataException("Authored tangent normal storage changed.");
-        return bytes;
+        return SwShTextureAllocation.TangentNormalMipTail(bytes, 1);
     }
     public static byte[] Bind(byte[] bytes)
     {
         var source = new ModelBuffer(bytes); var writer = new ModelTableBuilder(bytes);
         var (programs, count) = source.Vector(source.Root, 3, 4, 256);
-        var program = Enumerable.Range(0, count).Single(i => source.StringAt(programs + i * 4) == ProgramName);
-        var materials = source.Tables(source.Root, 6, 128).Where(m => source.Value(m, 8) == program).ToArray();
+        var selected = Enumerable.Range(0, count).Where(i => source.StringAt(programs + i * 4) is ProgramName or SvSwShSourceBase.ProgramName).ToHashSet();
+        var materials = source.Tables(source.Root, 6, 128).Where(m => selected.Contains(checked((int)source.Value(m, 8)))).ToArray();
         if (materials.Length != Geometry.Count) throw new InvalidDataException("Authored tangent native consumers changed.");
         foreach (var material in materials)
         {

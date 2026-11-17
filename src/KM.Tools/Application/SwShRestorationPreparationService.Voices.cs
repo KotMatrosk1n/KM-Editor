@@ -36,12 +36,19 @@ public sealed partial class SwShRestorationPreparationService
                 foreach (var item in SoundPackageIndex.Read(package, token).Where(m => m.Group == 1 && m.Language == 0))
                     if (!packages.TryAdd(item.Id, (path, item))) throw new InvalidDataException("Donor voice media identity exists in multiple packages.");
             }
+            SvRestorationVoiceContext? normalContext = null;
+            if (identities.Any(identity => Profile(identity).SourceSpecies is 978 or 986))
+            {
+                var init = Path.GetRelativePath(donorRoot, Path.Combine(directory, "Init.bnk")).Replace('\\', '/');
+                var initBytes = archive.Read(init, 16 * 1024 * 1024); Fingerprint("donor", init, initBytes);
+                normalContext = SvRestorationVoiceContext.ReadNormal(initBytes);
+            }
             var result = new List<SwShRestorationContribution>();
             foreach (var identity in identities)
             {
                 var sourceForm = Profile(identity).SourceVoiceForm ?? identity.Form;
                 var states = SvRestorationVoiceGraph.ResolvePlayback(source, Profile(identity).SourceSpecies ?? identity.Species, sourceForm,
-                    requireSharedForm: identity.Form != 0 && sourceForm == 0);
+                    requireSharedForm: identity.Form != 0 && sourceForm == 0, normalContext: normalContext);
                 var media = new Dictionary<string, byte[]>(StringComparer.Ordinal);
                 foreach (var state in SwShVoiceWriter.States)
                 {

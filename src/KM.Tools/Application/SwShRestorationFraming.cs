@@ -7,6 +7,23 @@ namespace KM.Tools.Application;
 
 internal static class SwShRestorationFraming
 {
+    internal static void BattleClearance(IDictionary<string, byte[]> members, string controllerPath, float clearance)
+    {
+        var source = new ModelBuffer(members[controllerPath]);
+        var writer = new ModelTableBuilder(members[controllerPath]);
+        foreach (var binding in source.Tables(source.Table(source.Root, 6), 0, 2048))
+        {
+            if (source.Text(binding, 0)?.StartsWith("ba", StringComparison.Ordinal) != true) continue;
+            var original = source.Text(binding, 1) ?? throw new InvalidDataException("Battle animation is unnamed.");
+            var path = TrinityPreviewReader.Resolve(controllerPath, original);
+            var shifted = path[..^7] + "_clearance.gfbanm";
+            if (!members.ContainsKey(shifted))
+                members.Add(shifted, SwShAnimationWriter.VerticalOffset(members[path], "Waist", clearance));
+            writer.Text(binding, 1, Path.GetRelativePath(Path.GetDirectoryName(controllerPath)!, shifted).Replace('\\', '/'));
+        }
+        members[controllerPath] = writer.Finish(source.Root);
+    }
+
     internal static byte[] CompensateSummaryClearance(byte[] configuration, float worldClearance, float referenceHeight)
     {
         // Summary plays the battle idle at its own scale. Cancel only the extra
@@ -34,6 +51,14 @@ internal static class SwShRestorationFraming
         // dimensions intact, including airborne poses and authored crouches.
         var adjustment = definition switch
         {
+            "great-tusk" => (0.5f, 0f),
+            "scream-tail" => (1.5f, 0f),
+            "flutter-mane" => (1f, 100f),
+            "sandy-shocks" => (1.6f, 40f),
+            "iron-treads" => (0.5f, 0f),
+            "iron-hands" => (0.8f, 0f),
+            "iron-moth" => (0.9f, 0f),
+            "roaring-moon" => (1.25f, 300f),
             "qwilfish-hisui" => (1f, 106f),
             "hoopa" => (1f, -70f),
             "bidoof" => (0.5f, 0f),

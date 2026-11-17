@@ -10,6 +10,14 @@ public static partial class ZaRestorationVoiceGraph
     // bank objects and are unreachable. EX1/2/3 are explicitly empty states.
     private static readonly uint[] StaraptorOrphanedVoiceConfigurations = [1067512234, 359177528, 19807028];
     private static readonly uint[] ZeraoraOrphanedVoiceConfigurations = [628673065];
+    private static readonly uint[] GholdengoOrphanedVoiceConfigurations = [632992955];
+
+    // Gholdengo has twelve reachable cries and an explicitly silent ENV state.
+    // Its thirteenth neutral transition names no object in the source bank.
+    private static bool QualifiedGholdengoSwitch(byte[] bytes, SoundBankDocument bank)
+        => bytes.Length == 457
+            && Convert.ToHexString(SHA256.HashData(bytes)) == "16DCE97DDEB6F0CF2EE7062CF060DCB7D1A19C24564C052105FFBB6565D2559E"
+            && !bank.Objects.Any(o => GholdengoOrphanedVoiceConfigurations.Contains(o.Id));
 
     // Mega Zeraora declares thirteen children and thirteen populated states,
     // plus one neutral transition for an identity absent from the entire bank.

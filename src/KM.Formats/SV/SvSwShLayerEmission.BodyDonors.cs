@@ -16,6 +16,9 @@ public static partial class SvSwShLayerEmission
         var layouts = new BodyLayout[]
         {
             new("pm1004_11_00", "body_a_01", ["tail"], false),
+            new("pm1089_00_00", "body_a_02", ["body"], true, Initial: [0, 0, 1, 1]),
+            new("pm1127_00_00", "body_b_01", ["hair_a", "hair_b"], false, Program: "Standard", Initial: [0, 0, 0, 1]),
+            new("pm1132_00_00", "body_b_01", ["body_a", "body_b", "left_leg", "right_leg", "left_hand", "right_hand"], true, Program: "Standard"),
             new("pm0523_00_00", "body_a_00", ["eyelid", "body"], false),
             new("pm0523_00_00", "body_b_00", ["hair", "body"], true),
             new("pm0160_51_00", "body_b", ["arm_a", "arm_b", "body"], true, 2, "IkCharacter"),
@@ -90,7 +93,8 @@ public static partial class SvSwShLayerEmission
         var wrap = new Vector2(source.Value(samplers[sampler], 9), source.Value(samplers[sampler], 10));
         if (uvIndex != uint.MaxValue || wrap != new Vector2(layout.Mirror ? 6 : 1, 1))
             throw new InvalidDataException("Body emission mask coordinates require another adapter.");
-        var sourcePalette = layout.Stem is "pm0373_51_00" or "pm0491_51_00" or "pm0888_51_00" or "pm0923_51_00"
+        if (layout.Stem == "pm1132_00_00") SvSwShArchaludonNormals.RequireSource(bytes, scene);
+        var sourcePalette = layout.Stem is "pm0373_51_00" or "pm0491_51_00" or "pm0888_51_00" or "pm0923_51_00" or "pm1089_00_00" or "pm1127_00_00" or "pm1132_00_00"
             || layout.Stem == "pm0705_51_00" && name.StartsWith("body_a_", StringComparison.Ordinal);
         var bases = sourcePalette ? Enumerable.Range(1, 4).Select(i => vectors["BaseColorLayer" + i]).ToArray() : null;
         var matteCrescent = layout.Stem == "pm0373_51_00" && name == "body_b";
@@ -101,14 +105,15 @@ public static partial class SvSwShLayerEmission
                 || scalars["SpecularLayer1Intensity"] != .01f)
                 throw new InvalidDataException("Salamence's crescent no longer has its qualified matte source response.");
         }
-        if (bases is not null && (vectors["BaseColor"] != Vector4.One
+        if (bases is not null && (vectors.GetValueOrDefault("BaseColor", Vector4.One) != Vector4.One
             || bases.Any(c => !float.IsFinite(c.X + c.Y + c.Z + c.W) || c.X is < 0 or > 2 || c.Y is < 0 or > 2 || c.Z is < 0 or > 2)))
             throw new InvalidDataException("Body source palette requires its qualified white global tint and finite layer colors.");
         if (sourcePalette)
         {
             var baseMap = source.Tables(material, 2, 64).Single(t => source.Text(t, 0) == "BaseColorMap");
             var baseSampler = checked((int)source.Value(baseMap, 2));
-            if ((uint)baseSampler >= samplers.Length || source.Value(samplers[baseSampler], 9) != wrap.X || source.Value(samplers[baseSampler], 10) != wrap.Y)
+            var baseWrap = layout.Stem == "pm1089_00_00" ? Vector2.One : wrap;
+            if ((uint)baseSampler >= samplers.Length || source.Value(samplers[baseSampler], 9) != baseWrap.X || source.Value(samplers[baseSampler], 10) != baseWrap.Y)
                 throw new InvalidDataException("Body source palette addressing differs from its layer mask.");
         }
         string? occlusion = null;
@@ -127,8 +132,9 @@ public static partial class SvSwShLayerEmission
         }
         return new(name, source.Text(texture, 1)!, colors.Select(c => new Vector3(c.X, c.Y, c.Z)).ToArray())
             { SourceOcclusion = occlusion, MaskWrap = wrap, MaskUv = new(layout.UvX, 1, 0, 0), MirroredMask = layout.Mirror,
+                IndependentBaseAddressing = layout.Stem == "pm1089_00_00",
                 Initial = layout.Initial ?? new float[4], AnimatedColors = layout.AnimatedColors,
-                MaximumIntensity = layout.Stem == "pm0160_51_00" ? 2 : 1,
+                MaximumIntensity = layout.Stem is "pm0160_51_00" or "pm1089_00_00" ? 2 : 1,
                 BaseColors = bases?.Select(c => new Vector3(c.X, c.Y, c.Z)).ToArray(),
                 SharedColorUv = sourcePalette && layout.Mirror && layout.UvX == 2,
                 MatteCrescent = matteCrescent };

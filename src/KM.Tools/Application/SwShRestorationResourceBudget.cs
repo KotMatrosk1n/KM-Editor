@@ -9,7 +9,25 @@ internal static class SwShRestorationResourceBudget
     {
         if (Path.GetFileName(modelPath) is not ("pm0623_01.gfbmdl" or "pm0623_01_rare.gfbmdl"
             or "pm0652_01.gfbmdl" or "pm0652_01_rare.gfbmdl"
-            or "pm0870_01.gfbmdl" or "pm0870_01_rare.gfbmdl"))
+            or "pm0870_01.gfbmdl" or "pm0870_01_rare.gfbmdl"
+            or "pm0998_01.gfbmdl" or "pm0998_01_rare.gfbmdl"
+            or "pm1000_00.gfbmdl" or "pm1000_00_rare.gfbmdl"
+            or "pm1001_00.gfbmdl" or "pm1001_00_rare.gfbmdl"
+            or "pm1002_00.gfbmdl" or "pm1002_00_rare.gfbmdl"
+            or "pm1005_00.gfbmdl" or "pm1005_00_rare.gfbmdl"
+            or "pm0992_00.gfbmdl" or "pm0992_00_rare.gfbmdl"
+            or "pm0993_00.gfbmdl" or "pm0993_00_rare.gfbmdl"
+            or "pm0990_00.gfbmdl" or "pm0990_00_rare.gfbmdl"
+            or "pm0991_00.gfbmdl" or "pm0991_00_rare.gfbmdl"
+            or "pm0994_00.gfbmdl" or "pm0994_00_rare.gfbmdl"
+            or "pm0995_00.gfbmdl" or "pm0995_00_rare.gfbmdl"
+            or "pm1006_00.gfbmdl" or "pm1006_00_rare.gfbmdl"
+            or "pm1007_00.gfbmdl" or "pm1007_00_rare.gfbmdl"
+            or "pm1008_00.gfbmdl" or "pm1008_00_rare.gfbmdl"
+            or "pm1010_00.gfbmdl" or "pm1010_00_rare.gfbmdl"
+            or "pm1022_00.gfbmdl" or "pm1022_00_rare.gfbmdl"
+            or "pm1023_00.gfbmdl" or "pm1023_00_rare.gfbmdl"
+            or "pm1009_00.gfbmdl" or "pm1009_00_rare.gfbmdl"))
             return;
 
         // Keep the stored BC7 mip tail of each large map to fit the model loader.

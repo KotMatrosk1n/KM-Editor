@@ -59,6 +59,13 @@ public static class SwShRestorationSoundMemoryPatcher
             : "5E831A3E28FEB2EA7B15F5882A53FB0FF4ADE550BCBF4C75B96633CE672D5048";
         var constants = data.AsSpan(ParentOffset, 0x40).ToArray();
         Put(constants, 0, OriginalParent); Put(constants, SoundOffset - ParentOffset, OriginalSound);
+        if (Word(data, SwShRestorationModelMemoryPatcher.SceneBudgetOffset) == SwShRestorationModelMemoryPatcher.ExpandedSceneBudget)
+        {
+            if (!SwShRestorationModelMemoryPatcher.Read(bytes, game).Installed)
+                throw new InvalidDataException("The neighboring model memory budgets are incomplete.");
+            Put(constants, SwShRestorationModelMemoryPatcher.SceneBudgetOffset - ParentOffset,
+                SwShRestorationModelMemoryPatcher.OriginalSceneBudget);
+        }
         if (Convert.ToHexString(SHA256.HashData(startup)) != startupHash
             || Convert.ToHexString(SHA256.HashData(constants)) != "50B0ACFD0F51FA4490D4C942E095EFA74C91B96625A38AA19732653659317D20")
             throw new InvalidDataException("The sound memory initialization contains incompatible changes.");

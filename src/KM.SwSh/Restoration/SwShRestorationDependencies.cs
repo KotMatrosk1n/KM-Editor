@@ -90,6 +90,16 @@ internal static class SwShRestorationDependencies
         else
         {
             if (bytes.Length % 8 != 0) throw new InvalidDataException("Restored evolution dependency length is invalid.");
+            // Earlier prepared Girafarig assets intentionally omitted Twin Beam.
+            // Supply the new default for that exact empty canonical file; edits
+            // are retained by the field comparisons in Reconcile and Retain.
+            if (item.Path == "romfs/bin/pml/evolution/evo_203.bin" && bytes.Length == 72
+                && !bytes.AsSpan().ContainsAnyExcept((byte)0) && enabled.Contains(new(981, 0)))
+            {
+                BinaryPrimitives.WriteUInt16LittleEndian(bytes, 4);
+                BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(4), 981);
+                bytes[7] = 32;
+            }
             for (var at = 0; at < bytes.Length; at += 8)
             {
                 var destination = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(at + 4));

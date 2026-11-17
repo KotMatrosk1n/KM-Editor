@@ -28,7 +28,8 @@ public static partial class ZaSwShFresnelMaterial
         if (masked) maps.Add(((QualifiesCrabominableEmissionMask(bytes, materialName)
             || QualifiesFroslassEmissionMask(bytes, materialName)
             || QualifiesGlalieEmissionMask(bytes, materialName)
-            || QualifiesAbomasnowEmissionMask(bytes, materialName))
+            || QualifiesAbomasnowEmissionMask(bytes, materialName)
+            || QualifiesBaxcaliburFamilyEmissionMask(bytes, materialName))
             ? "FresnelMaskMap" : "MaskedEmissionMap", "SourceGemMaskTex", 14));
         var textures = source.Tables(material, 2, 32); var samplers = source.Tables(material, 3, 32);
         if (!textures.Select(t => source.Text(t, 0)).Order(StringComparer.Ordinal)
