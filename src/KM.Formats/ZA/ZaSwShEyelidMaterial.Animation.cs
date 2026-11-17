@@ -34,9 +34,29 @@ public static partial class ZaSwShEyelidMaterial
             scalars["Layer1UVTranslateU"] = scalars["Layer1UVTranslateU"] * 2 - half;
         }
         var vectors = new Dictionary<string, Vector3>(StringComparer.Ordinal);
+        if (contract.ReflectedIrisU)
+        {
+            // Reflect the qualified iris atlas after its animated transform.
+            // Keep the independently addressed normal map unchanged.
+            scalars["ColorUVScaleU"] = -basis.X;
+            scalars["ColorBaseU"] = 1 - center.X;
+        }
+        if (contract.CornealReflectionStrength is { } reflection)
+        {
+            if (!float.IsFinite(reflection) || reflection is < 0 or > 1)
+                throw new InvalidDataException("Eye reflection strength must remain within its native range.");
+            scalars.Add("SphereMapColorVal", reflection);
+        }
         // Each authored addressing mode is supplied by its native sampler.
         if (contract.LayerEmission)
+        {
             scalars.Add("ScaleUV", 0);
+        }
+        if (contract.CornealEmission)
+        {
+            var tint = Vector("EmissionColorLayer5") * (sample("EmissionIntensityLayer5", 0) ?? contract.Scalars["EmissionIntensityLayer5"]);
+            vectors.Add("SphereMapColor", new(tint.X, tint.Y, tint.Z));
+        }
         if (contract.LayerTint)
             for (var layer = 0; layer < 4; layer++)
             {
@@ -56,6 +76,17 @@ public static partial class ZaSwShEyelidMaterial
             {
                 var intensity = sample("EmissionIntensityLayer" + (layer + 1), 0)
                     ?? contract.Scalars["EmissionIntensityLayer" + (layer + 1)];
+                if (contract.ReflectedIrisU)
+                {
+                    // These qualified irises have white layer tints. Their
+                    // animated mask scale therefore changes emission alone;
+                    // within [0,1], multiplying intensity is exactly equivalent.
+                    var maskScale = sample("LayerMaskScale" + (layer + 1), 0)
+                        ?? contract.Scalars["LayerMaskScale" + (layer + 1)];
+                    if (!float.IsFinite(maskScale) || maskScale is < 0 or > 1)
+                        throw new InvalidDataException("Iris mask animation is outside its qualified range.");
+                    intensity *= maskScale;
+                }
                 var color = Vector("EmissionColorLayer" + (layer + 1));
                 if (intensity < 0 || color.X < 0 || color.Y < 0 || color.Z < 0)
                     throw new InvalidDataException("Eye emission animation must remain nonnegative.");
@@ -132,7 +163,7 @@ public static partial class ZaSwShEyelidMaterial
         foreach (var scalar in source.Tables(material, 1, 256))
         {
             var parameter = source.Text(scalar, 0)!;
-            if (parameter is not ("UVRotation2" or "UVRotation3" or "UVRotation4" or "LayerMaskScale5"
+            if (parameter is not ("UVRotation2" or "UVRotation3" or "UVRotation4" or "LayerMaskScale1" or "LayerMaskScale2" or "LayerMaskScale3" or "LayerMaskScale4" or "LayerMaskScale5"
                 or "EmissionIntensityLayer1" or "EmissionIntensityLayer2" or "EmissionIntensityLayer3" or "EmissionIntensityLayer4" or "EmissionIntensityLayer5"))
                 throw new InvalidDataException($"Eye scalar animation needs another adapter: {parameter}.");
             result.Add(new(name, parameter, [Keys(source.Table(scalar, 1))]));
@@ -149,6 +180,8 @@ public static partial class ZaSwShEyelidMaterial
         if (frames is < 1 or > 18000 || source.GroupBy(track => track.Parameter).Any(group => group.Count() != 1))
             throw new InvalidDataException("Eye animation timing or identity is invalid.");
         var raw = source.ToDictionary(track => track.Parameter, StringComparer.Ordinal);
+        if (!contract.ReflectedIrisU && source.Any(track => track.Parameter is "LayerMaskScale1" or "LayerMaskScale2" or "LayerMaskScale3" or "LayerMaskScale4"))
+            throw new InvalidDataException("Eye mask animation requires a qualified iris contract.");
         if (!contract.LayerEmission && source.Any(track => track.Parameter.StartsWith("Emission", StringComparison.Ordinal)
                 && !(contract.LayerTint && track.Parameter.StartsWith("EmissionIntensityLayer", StringComparison.Ordinal))))
             throw new InvalidDataException("Eye emission animation requires a qualified material contract.");
@@ -174,12 +207,13 @@ public static partial class ZaSwShEyelidMaterial
         return ScalarNames.Take(10).Concat(ScalarNames.Skip(16)).Concat(contract.IndependentHighlights ? HighlightScalarNames : [])
             .Concat(contract.LayerEmission || contract.LayerTint ? EmissionScalarNames : [])
             .Select(name => new PreviewMaterialTrack(contract.Name, "EyeScalar:" + name, [Curve(frame => states[frame].Scalars[name])]))
-            .Concat(VectorNames.Concat(contract.LayerEmission || contract.LayerTint ? EmissionVectorNames : []).Select(name => new PreviewMaterialTrack(contract.Name, "EyeVector:" + name,
+            .Concat(VectorNames.Concat(contract.LayerEmission || contract.LayerTint ? EmissionVectorNames : [])
+                .Concat(contract.CornealEmission ? ["SphereMapColor"] : []).Select(name => new PreviewMaterialTrack(contract.Name, "EyeVector:" + name,
                 Enumerable.Range(0, 3).Select(component => Curve(frame => states[frame].Vectors[name][component])).ToArray())))
             .Concat(source.Where(track => track.Parameter == "LayerMaskScale5")).ToArray();
     }
 
-    public static byte[] KeepAnimationLocal(byte[] animation, IReadOnlySet<string> materials, bool independentHighlights = false, bool layerEmission = false, bool layerTint = false)
+    public static byte[] KeepAnimationLocal(byte[] animation, IReadOnlySet<string> materials, bool independentHighlights = false, bool layerEmission = false, bool layerTint = false, bool cornealEmission = false)
     {
         var source = new ModelBuffer(animation); var writer = new ModelTableBuilder(animation);
         var references = new List<(int Slot, int Target)>();
@@ -196,6 +230,7 @@ public static partial class ZaSwShEyelidMaterial
                             && source.Text(track, 0) != "ScaleUV")
                         && (!(layerEmission || layerTint) || !EmissionScalarNames.Contains(source.Text(track, 0), StringComparer.Ordinal))
                     : !VectorNames.Contains(source.Text(track, 0), StringComparer.Ordinal)
+                        && (!cornealEmission || source.Text(track, 0) != "SphereMapColor")
                         && (!independentHighlights || source.Text(track, 0) != (layerEmission ? "SphereMapColor" : "EffectColor01"))
                         && (!(layerEmission || layerTint) || !EmissionVectorNames.Contains(source.Text(track, 0), StringComparer.Ordinal))).ToArray();
                 if (retained.Length == tracks.Length) continue;

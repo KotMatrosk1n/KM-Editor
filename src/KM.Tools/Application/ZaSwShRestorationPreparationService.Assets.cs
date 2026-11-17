@@ -423,13 +423,13 @@ public sealed partial class ZaSwShRestorationPreparationService
                         ? ZaSwShFlameMaterial.Bake(sourceMaterialBytes, rare, name => Donor(TrinityPreviewReader.Resolve(sourceFolder + sourceStem + ".trmtr", name)), token, textureEncoding)
                         : ZaSwShMaterialBaker.Bake(primitive, sourceMaterialBytes, index, rare,
                             template, templateName, name => Donor(TrinityPreviewReader.Resolve(sourceFolder + sourceStem + ".trmtr", name)), token, paletteEyes?.ContainsKey(primitive.Material.Name) == true,
-                            authoredAlpha: transparentPack is not null && !primalGroudon && !sourceTransparentEmission && (primitive.Material.Alpha is "Blend" or "BlendPreMultiAlpha"), encodingCache: textureEncoding,
+                            authoredAlpha: transparentPack is not null && !primalGroudon && !sourceTransparentEmission && (primitive.Material.Alpha is "Blend" or "BlendPreMultiAlpha"),
                             normalUvScale: profile.BakeNormalTiles ? normalTileScales[index] : null,
                             colorUvScale: colorTileScales[index],
                             unlit: paletteEmission?.GetValueOrDefault(primitive.Material.Name)?.Unlit == true,
                             normalAtlas: paletteTangent.ContainsKey(primitive.Material.Name) ? null : normalAtlases?.GetValueOrDefault(primitive.Material.Name),
                             maximumTextureDimension: HasCalibratedCampForm(species, form) || species is 655 or 687 && form == 1 || layerSurfaceContracts.Count != 0 ? 512 : 2048,
-                            secondaryMask: paletteSurface?.ContainsKey(primitive.Material.Name) == true || paletteLayerSurface.Contracts.ContainsKey(primitive.Material.Name));
+                            secondaryMask: paletteSurface?.ContainsKey(primitive.Material.Name) == true || paletteLayerSurface.Contracts.ContainsKey(primitive.Material.Name), encodingCache: textureEncoding);
                     if (paletteTangent.TryGetValue(primitive.Material.Name, out var tangentBody))
                         materialBake = materialBake with { NormalName = Path.GetFileNameWithoutExtension(tangentBody.Normal),
                             Normal = Donor(TrinityPreviewReader.Resolve(sourceFolder + sourceStem + ".trmtr", tangentBody.Normal)), NormalUvScale = Vector2.One,
@@ -2407,7 +2407,7 @@ public sealed partial class ZaSwShRestorationPreparationService
                     continue;
                 }
                 // These donors encode their centered vertical camera offset as the FlatBuffer default.
-                var defaultOffset = field == 5 && (species is 358 or 433 or 485 or 491 or 739
+                var defaultOffset = field == 5 && (species is 358 or 433 or 485 or 491 or 739 or 1000
                     || form == 1 && species is 248 or 380 or 381 or 382 or 807 or 998);
                 if ((at == 0 && field <= 6 && !defaultOffset) || destination == 0) throw new InvalidDataException("Z-A model framing is incomplete.");
                 var value = (at == 0 ? 0 : framing.Float(at)) * (field <= 6 ? 100 : 1);

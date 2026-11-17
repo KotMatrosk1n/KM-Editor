@@ -57,8 +57,11 @@ public static partial class ZaRestorationVoiceGraph
                 throw new InvalidDataException($"Z-A cry state requires another conversion adapter: {state}");
             if (children.Length == 0)
             {
-                if (species != 398 || form != 1 || state is not ("EX1" or "EX2" or "EX3")
-                    || !QualifiedStaraptorMegaSwitch(Object(6, selector).Payload, bank))
+                var staraptor = species == 398 && form == 1 && state is "EX1" or "EX2" or "EX3"
+                    && QualifiedStaraptorMegaSwitch(Object(6, selector).Payload, bank);
+                var gholdengo = species == 977 && form == 0 && state == "ENV"
+                    && QualifiedGholdengoSwitch(Object(6, selector).Payload, bank);
+                if (!staraptor && !gholdengo)
                     throw new InvalidDataException($"Z-A empty cry state is not qualified: {state}");
                 result.Add(state, []);
                 continue;
@@ -200,7 +203,8 @@ public static partial class ZaRestorationVoiceGraph
         if (!states.ContainsKey(defaultState)) throw new InvalidDataException("Z-A voice default state is missing.");
         var parameterCount = Count(); var configured = new HashSet<uint>();
         var orphaned = QualifiedStaraptorMegaSwitch(bytes, bank) ? StaraptorOrphanedVoiceConfigurations
-            : QualifiedZeraoraMegaSwitch(bytes, bank) ? ZeraoraOrphanedVoiceConfigurations : [];
+            : QualifiedZeraoraMegaSwitch(bytes, bank) ? ZeraoraOrphanedVoiceConfigurations
+            : QualifiedGholdengoSwitch(bytes, bank) ? GholdengoOrphanedVoiceConfigurations : [];
         for (var i = 0; i < parameterCount; i++)
         {
             var id = Word();

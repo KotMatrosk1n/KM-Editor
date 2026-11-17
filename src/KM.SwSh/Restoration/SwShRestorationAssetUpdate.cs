@@ -10,7 +10,7 @@ internal static class SwShRestorationAssetUpdate
 
     // Even unedited gameplay defaults belong to the installation, not an asset update.
     internal static bool IsAsset(SwShRestorationContribution item) => item.Writer is
-        SwShRestorationWriter.Icons or SwShRestorationWriter.ModelCatalog or SwShRestorationWriter.Camp or SwShRestorationWriter.Voices
+        SwShRestorationWriter.Icons or SwShRestorationWriter.ModelCatalog or SwShRestorationWriter.Camp or SwShRestorationWriter.Voices or SwShRestorationWriter.BattleCamera
         || item.Writer == SwShRestorationWriter.File && IsAssetPath(item.Path);
 
     internal static bool IsAssetPath(string path) => path.StartsWith("romfs/bin/archive/pokemon/", StringComparison.Ordinal)
@@ -18,7 +18,7 @@ internal static class SwShRestorationAssetUpdate
         || path.StartsWith("romfs/bin/pokemon/", StringComparison.Ordinal)
         || path.StartsWith("romfs/bin/appli/icon_pokemon/", StringComparison.Ordinal)
         || path.StartsWith("romfs/bin/appli/icon_item/", StringComparison.Ordinal)
-        || path is SwShRestorationComposer.CampPath or SwShRestorationComposer.VoicesPath;
+        || path is SwShRestorationComposer.CampPath or SwShRestorationComposer.VoicesPath or SwShRestorationComposer.BattleCameraPath;
 
     internal static IEnumerable<SwShRestorationContribution> Inputs(SwShPreparedRestoration package) =>
         package.Contributions.Where(item => IsAsset(item) || item.Writer == SwShRestorationWriter.Personal);
@@ -50,7 +50,10 @@ internal static class SwShRestorationAssetUpdate
             return new(merged, repairs);
         }
         var changes = merged.Contributions.Where(IsAsset).Select(item => item with {
-            Before = captured.TryGetValue((item.Path, item.Key), out var current) ? current.After : item.Before }).ToArray();
+            Before = captured.TryGetValue((item.Path, item.Key), out var current) ? current.After : item.Before })
+            // Rebuilding an unchanged shared table can reorder unrelated entries.
+            // Only compose assets whose effective payload actually changes.
+            .Where(item => !Equal(item.Before, item.After)).ToArray();
         var files = changes.Length == 0 ? new Dictionary<string, byte[]?>()
             : SwShRestorationComposer.Compose(changes, read, true).Files.ToDictionary();
         var retainedPaths = merged.Contributions.Select(item => item.Path).ToHashSet(StringComparer.Ordinal);

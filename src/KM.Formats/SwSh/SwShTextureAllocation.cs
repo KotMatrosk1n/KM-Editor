@@ -22,6 +22,9 @@ public static class SwShTextureAllocation
         if (dimension <= maxDimension) return template;
         var firstMip = 1;
         while ((dimension >> firstMip) > maxDimension) firstMip++;
+        // Native shared effect maps can contain only their base image. Leave
+        // those intact; the model's aggregate budget remains mandatory.
+        if (firstMip >= data.U16(info + 22)) return template;
         return MipTail(template, firstMip);
     }
 
@@ -35,6 +38,29 @@ public static class SwShTextureAllocation
             mipCount: source.MipCount - firstMip);
         return new ModelTextureDocument(allocated).WithMipBlocks(Enumerable.Range(firstMip, source.MipCount - firstMip)
             .Select(source.EncodedMipBlocks).ToArray());
+    }
+
+    /// <summary>Retains authored BC5 tangent-normal blocks and their stored mip tail.</summary>
+    public static byte[] TangentNormalMipTail(byte[] template, int firstMip)
+    {
+        var source = PreviewTexture.Read(template);
+        if (source.Format != 0x1e01 || firstMip < 1 || firstMip > source.Mips.Length)
+            throw new InvalidDataException("Converted normal requires a stored BC5 mip tail.");
+        // BC5 and BC7 use identical sixteen-byte block storage. Allocate and
+        // copy blocks without decoding them, then restore the BC5 format tag.
+        var allocated = Create(template, source.Width >> firstMip, source.Height >> firstMip, false,
+            mipCount: source.Mips.Length + 1 - firstMip);
+        var blocks = source.Mips.Skip(firstMip - 1).ToArray();
+        var output = new ModelTextureDocument(allocated).WithMipBlocks(blocks);
+        var data = new ModelBuffer(output);
+        var info = checked((int)BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(
+            checked((int)BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(40, 8))), 8)));
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(info + 28), source.Format);
+        var retained = PreviewTexture.Read(output);
+        if (retained.Width != source.Width >> firstMip || retained.Height != source.Height >> firstMip
+            || !new[] { retained.Blocks }.Concat(retained.Mips).Zip(blocks).All(pair => pair.First.AsSpan().SequenceEqual(pair.Second)))
+            throw new InvalidDataException("Authored normal mip blocks were not preserved.");
+        return output;
     }
 
     public static byte[] Create(byte[] template, int width, int height, bool srgb, bool compressed = true, int? mipCount = null)

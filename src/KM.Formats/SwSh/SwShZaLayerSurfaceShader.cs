@@ -17,7 +17,16 @@ public static class SwShZaLayerSurfaceShader
         var blend = program.EndsWith("Blend", StringComparison.Ordinal);
         var displaced = program.EndsWith("Displaced", StringComparison.Ordinal);
         var iep = program.Contains("Iep", StringComparison.Ordinal);
+        var svIep = program.StartsWith("SvLayerSurface", StringComparison.Ordinal);
+        var one = program == "SvLayerSurface1Iep";
+        var premultipliedEye = program == "SvLayerSurface5EyeMask0";
+        var geometricNormal = program == "SvLayerSurface5GeometricMask0";
+        var transparentIep = program == "SvLayerSurface5IepTangentTransparentMask0";
+        var tangentNormal = program == "SvLayerSurface5TangentMask0" || transparentIep;
+        var nativeNormal = geometricNormal || tangentNormal;
+        var frameTangent = iep || tangentNormal;
         var noise = program.EndsWith("Noise", StringComparison.Ordinal);
+        var effectFrame = iep || noise || nativeNormal;
         var fresnel = program.Contains("Fresnel", StringComparison.Ordinal);
         var mask1 = program.EndsWith("Mask1", StringComparison.Ordinal);
         var mask0 = program.EndsWith("Mask0", StringComparison.Ordinal);
@@ -94,10 +103,10 @@ public static class SwShZaLayerSurfaceShader
             {
                 var v = columns[c]; Mul(50 + c, v[0], v[0]); Fma(50 + c, v[1], v[1], 50 + c); Fma(50 + c, v[2], v[2], 50 + c);
                 Reciprocal(50 + c, 50 + c); Load(40 + c, 0x90 + c * 4);
-                if (iep) Load(43 + c, 0xa0 + c * 4);
+                if (frameTangent) Load(43 + c, 0xa0 + c * 4);
             }
-            if (iep) Load(67, 0xac);
-            for (var t = 0; t < (iep ? 2 : 1); t++)
+            if (frameTangent) Load(67, 0xac);
+            for (var t = 0; t < (frameTangent ? 2 : 1); t++)
             {
                 for (var c = 0; c < 3; c++)
                 {
@@ -107,6 +116,15 @@ public static class SwShZaLayerSurfaceShader
                     Mul(66, columns[2][c], 52); Fma(first + c, 66, input + 2, first + c);
                 }
                 Normalize(60 + t * 3, 66);
+            }
+            if (nativeNormal)
+            {
+                Constant(48, 511); Constant(49, 1f / 511);
+                for (var r = 60; r < (frameTangent ? 66 : 63); r++)
+                {
+                    Mul(r, r, 48); Emit(0x5cb0118000071a00UL | (ulong)r << 20 | (uint)r);
+                    Emit(0x5cb8000000072a00UL | (ulong)r << 20 | (uint)r); Mul(r, r, 49);
+                }
             }
         }
         void Interpolate(int destination, int attribute) => Emit(0xe043ff800007ff00UL & ~(255UL << 30)
@@ -127,8 +145,31 @@ public static class SwShZaLayerSurfaceShader
             Mul(75, 96, 104); Fma(75, 97, 105, 75); Fma(75, 98, 106, 75);
             Mul(75, 75, 99); Mul(75, 75, 107); Constant(88, 0); Maximum(75, 75, 88); Constant(88, 1); Minimum(75, 75, 88);
         }
+        void SourceNormal()
+        {
+            for (var c = 0; c < (tangentNormal ? 7 : 3); c++) Interpolate(112 + c, 0x120 + c * 4);
+            Normalize(112, 132);
+            if (!tangentNormal) { for (var c = 0; c < 3; c++) Move(144 + c, 112 + c); return; }
+            Normalize(115, 132);
+            Mul(119, 113, 117); Mul(132, 114, 116); Add(119, 119, 132, true);
+            Mul(120, 114, 115); Mul(132, 112, 117); Add(120, 120, 132, true);
+            Mul(121, 112, 116); Mul(132, 113, 115); Add(121, 121, 132, true);
+            for (var c = 0; c < 3; c++) Mul(119 + c, 119 + c, 118);
+            // Body00 forwards the primary UV (ALD 0xb0/0xb4) to 0x110/0x114.
+            Interpolate(138, 0x110); Interpolate(139, 0x114);
+            Uv(138, 139, ZA.ZaSwShLayerSurface.Word("UVScaleOffset")); Sample(128, transparentIep ? 32 : 28);
+            Constant(132, 2); Constant(133, -1);
+            Fma(128, 128, 132, 133); Fma(129, 129, 132, 133);
+            Constant(130, 1); Mul(132, 128, 128); Add(130, 130, 132, true);
+            Mul(132, 129, 129); Add(130, 130, 132, true);
+            Constant(132, 0); Maximum(130, 130, 132); Emit(0x5080000000870000UL | 130UL << 8 | 130);
+            for (var c = 0; c < 3; c++)
+            { Mul(144 + c, 115 + c, 128); Fma(144 + c, 119 + c, 129, 144 + c); Fma(144 + c, 112 + c, 130, 144 + c); }
+            Normalize(144, 132);
+        }
         void Palette(int u, int v)
         {
+            if (svIep) { Move(140, u); Move(141, v); }
             Uv(u, v, ZA.ZaSwShLayerSurface.Word("UVScaleOffset")); Sample(56, 24);
             if (secondary) { Interpolate(76, 0x118); Interpolate(77, 0x11c); }
             if (mask1) Uv(76, 77, ZA.ZaSwShLayerSurface.Word("UVScaleOffsetLayerMask"), sourceVertex: true);
@@ -137,10 +178,12 @@ public static class SwShZaLayerSurfaceShader
             else if (mask0) Uv(u, v, ZA.ZaSwShLayerSurface.Word("UVScaleOffsetLayerMask"));
             Sample(60, 26);
             if (six) { Uv(76, 77, ZA.ZaSwShLayerSurface.Word("UVScaleOffset5"), sourceVertex: true); Sample(64, 28); } else Constant(64, 0);
+            if (one) for (var l = 0; l < 4; l++) Constant(60 + l, 0);
             for (var l = 0; l < 5; l++) { Parameter(88, "LayerMaskScale" + (l + 1)); Mul(60 + l, 60 + l, 88); }
             Add(89, 60, 61); Add(89, 89, 62); Add(89, 89, 63); Add(89, 89, 64); Constant(88, 1);
             Add(78, 88, 89, true); Constant(89, 0); Maximum(78, 78, 89);
             Parameter(84, "EmissionIntensity"); Add(85, 88, 84, true); Maximum(85, 85, 89);
+            if (premultipliedEye) { Parameter(149, "BaseColor", 3); Mul(148, 59, 149); Mul(148, 148, 78); }
             for (var c = 0; c < 3; c++)
             {
                 Parameter(88, "BaseColor", c); Mul(68 + c, 56 + c, 88); Mul(68 + c, 68 + c, 85); Mul(68 + c, 68 + c, 78);
@@ -170,9 +213,21 @@ public static class SwShZaLayerSurfaceShader
                     Mul(87, 87, 84); Add(87, 87, 72 + c, true); Fma(72 + c, 60 + l, 87, 72 + c);
                 }
                 Constant(88, 1); Add(89, 88, 78, true); Fma(78, 60 + l, 89, 78);
+                if (premultipliedEye)
+                {
+                    Parameter(149, "BaseColorLayer" + layer, 3); Mul(149, 149, 59);
+                    Add(149, 149, 148, true); Fma(148, 60 + l, 149, 148);
+                }
             }
             Constant(88, 1e-5f); Maximum(78, 78, 88); Emit(0x5080000000470000UL | 78UL << 8 | 79);
             for (var c = 0; c < 3; c++) { Mul(68 + c, 68 + c, 79); Mul(72 + c, 72 + c, 79); }
+            if (premultipliedEye) Mul(148, 148, 79);
+            if (one)
+            {
+                Uv(140, 141, ZA.ZaSwShLayerSurface.Word("UVScaleOffset3")); Sample(124, 32);
+                Parameter(88, "EmissionIntensity");
+                for (var c = 0; c < 3; c++) Mul(72 + c, 124 + c, 88);
+            }
             if (iep) InsideEmission();
             if (noise) UpwardNoise();
         }
@@ -189,7 +244,7 @@ public static class SwShZaLayerSurfaceShader
             for (var c = 0; c < 3; c++) { Mul(119 + c, 119 + c, 118); Mul(96 + c, 96 + c, 99); }
             Mul(122, 96, 115); Fma(122, 97, 116, 122); Fma(122, 98, 117, 122);
             Mul(123, 96, 119); Fma(123, 97, 120, 123); Fma(123, 98, 121, 123);
-            Uv(76, 77, ZA.ZaSwShLayerSurface.Word("UVScaleOffsetInsideEmissionParallaxHeight"), true); Sample(124, 30);
+            Uv(svIep ? 140 : 76, svIep ? 141 : 77, ZA.ZaSwShLayerSurface.Word("UVScaleOffsetInsideEmissionParallaxHeight"), !svIep); Sample(124, 30);
             Parameter(88, "InsideEmissionParallaxHeight"); Parameter(89, "InsideEmissionParallaxOffset"); Fma(124, 124, 88, 89);
             Uv(76, 77, ZA.ZaSwShLayerSurface.Word("UVScaleOffsetInsideEmissionParallaxIntensity"), true);
             Move(125, 80); Move(126, 81); Fma(80, 122, 124, 80);
@@ -215,7 +270,8 @@ public static class SwShZaLayerSurfaceShader
             for (var c = 0; c < 3; c++) { Parameter(131, "EmissionRimColor", c); Mul(72 + c, 72 + c, 130); Fma(72 + c, 129, 131, 72 + c); }
             Parameter(129, "InsideEmissionParallaxF0"); Parameter(130, "InsideEmissionParallaxF90"); Add(130, 130, 129, true); Fma(129, 128, 130, 129); Constant(88, 0); Maximum(129, 129, 88);
             Constant(130, 0);
-            for (var l = 0; l < 4; l++) { Parameter(131, "EnableIEPTexture" + (l + 1)); Fma(130, 60 + l, 131, 130); }
+            if (one) Constant(130, 1);
+            else for (var l = 0; l < 4; l++) { Parameter(131, "EnableIEPTexture" + (l + 1)); Fma(130, 60 + l, 131, 130); }
             Parameter(131, "InsideEmissionParallaxIntensity"); Mul(129, 129, 131); Mul(129, 129, 130);
             for (var c = 0; c < 3; c++) Fma(72 + c, 124 + c, 129, 72 + c);
         }
@@ -280,6 +336,7 @@ public static class SwShZaLayerSurfaceShader
         var normalMask = 0;
         var sampled = 0; var positions = new HashSet<int>();
         var blendAo = 0; var blendSpecular = 0;
+        var nativeNormalComponents = 0;
         var emission = new Dictionary<int, (int Channel, int Diffuse)>(); var outputs = new HashSet<int>();
         for (var block = 0x80; block < end; block += 32)
         {
@@ -288,21 +345,22 @@ public static class SwShZaLayerSurfaceShader
             {
                 var w = BinaryPrimitives.ReadUInt64LittleEndian(template.AsSpan(data + block + 8 + lane * 8, 8));
                 var prefix = w >> 48; var d = (int)(w & 255); var buffer = (int)(w >> 34 & 31); var word = (int)(w >> 20 & 16383);
-                if (vertex && (iep || noise) && w == 0xefd87f800807ff07UL) { EffectFrame(); effectFrames++; }
-                if (vertex && (iep || noise) && w == 0xE30000000007000FUL)
+                if (vertex && effectFrame && w == 0xefd87f800807ff07UL) { EffectFrame(); effectFrames++; }
+                if (vertex && effectFrame && w == 0xE30000000007000FUL)
                 {
-                    if (iep)
+                    if (iep || nativeNormal)
                     {
-                        for (var t = 0; t < 2; t++) for (var c = 0; c < 3; c++)
+                        for (var t = 0; t < (frameTangent ? 2 : 1); t++) for (var c = 0; c < 3; c++)
                         {
                             var r = 112 + t * 3 + c; var input = 60 + t * 3;
                             Emit(0x4c68100000070000UL | 3UL << 34 | (ulong)(16 + c) << 20 | (ulong)input << 8 | (uint)r);
                             Emit(0x49a0000000070000UL | (ulong)r << 39 | 3UL << 34 | (ulong)(20 + c) << 20 | (ulong)(input + 1) << 8 | (uint)r);
                             Emit(0x49a0000000070000UL | (ulong)r << 39 | 3UL << 34 | (ulong)(24 + c) << 20 | (ulong)(input + 2) << 8 | (uint)r);
                         }
-                        Normalize(112, 128); Normalize(115, 128);
-                        for (var c = 0; c < 6; c++) Store(112 + c, 0x120 + c * 4);
-                        Store(67, 0x138);
+                        Normalize(112, 128); if (frameTangent) Normalize(115, 128);
+                        for (var c = 0; c < (frameTangent ? 6 : 3); c++) Store(112 + c, 0x120 + c * 4);
+                        if (frameTangent) Store(67, 0x138);
+                        else { Constant(128, 0); for (var c = 3; c < 6; c++) Store(128, 0x120 + c * 4); }
                     }
                     else for (var c = 0; c < 3; c++) Store(60 + c, 0x12c + c * 4);
                 }
@@ -318,7 +376,8 @@ public static class SwShZaLayerSurfaceShader
                     // Native Body00 completes X immediately after its albedo
                     // sample; its exact X operands are already live here.
                     if (normalMask != 6) throw new InvalidDataException("Source layer surface normal boundary changed.");
-                    if (hash == "1EAC62E9112F11530759B7F8FD91C53ED73EF5C4B2195591282EC4E354C07D37") Mul(104, 11, 1);
+                    if (nativeNormal) Move(104, 144);
+                    else if (hash == "1EAC62E9112F11530759B7F8FD91C53ED73EF5C4B2195591282EC4E354C07D37") Mul(104, 11, 1);
                     else Mul(104, 42, 15);
                     Palette((int)(w >> 8 & 255), (int)(w >> 20 & 255));
                 }
@@ -335,7 +394,7 @@ public static class SwShZaLayerSurfaceShader
                 // and glow without the native Body00's achromatic specular tint.
                 // Keep a neutral lighting factor for shape and leave the native
                 // metal materials on their original lighting path.
-                if (!vertex && mask0 && w == 0xE30000000007000FUL)
+                if (!vertex && mask0 && !svIep && w == 0xE30000000007000FUL)
                 {
                     if (iep)
                     {
@@ -346,7 +405,34 @@ public static class SwShZaLayerSurfaceShader
                     for (var channel = 0; channel < 3; channel++)
                         Fma(channel, 68 + channel, 90, 72 + channel);
                 }
-                SwShShaderScheduling.Original(code, ref boundary, w, scheduling >> (lane * 21) & 0x1ffff);
+                if (!vertex && premultipliedEye && w == 0xE30000000007000FUL)
+                {
+                    for (var channel = 0; channel < 3; channel++) Mul(channel, channel, 148);
+                    Move(3, 148);
+                }
+                if (!vertex && transparentIep && w == 0xE30000000007000FUL)
+                {
+                    // S/V InsideEmissionParallaxTransparent variant 17 returns
+                    // BaseColor.a (CB8[39]) independently of its color map.
+                    // Express straight source blending with native blend 5.
+                    Parameter(148, "BaseColor", 3);
+                    for (var channel = 0; channel < 3; channel++) Mul(channel, channel, 148);
+                    Move(3, 148);
+                }
+                var normalComponent = w switch
+                {
+                    0x5C68100000170B20UL or 0x5C68100000F72A2AUL => 0,
+                    0x5C68100000170824UL or 0x5C68100000F70D29UL => 1,
+                    0x5C68100000170023UL or 0x5C68100000F70928UL => 2,
+                    _ => -1,
+                };
+                if (!vertex && nativeNormal && normalComponent >= 0)
+                {
+                    if (!perspective) throw new InvalidDataException("Source normal perspective is absent.");
+                    if (nativeNormalComponents++ == 0) SourceNormal();
+                    Move(d, 144 + normalComponent);
+                }
+                else SwShShaderScheduling.Original(code, ref boundary, w, scheduling >> (lane * 21) & 0x1ffff);
                 if (!vertex && blend && w is 0xD83200AFF0072500UL or 0xD83200AFF0570404UL)
                 {
                     // AmbientTex red is native occlusion, rather than visibility.
@@ -393,7 +479,8 @@ public static class SwShZaLayerSurfaceShader
         }
         if (vertex && displaced && !positions.SetEquals([0, 1, 2])) throw new InvalidDataException("Source surface displacement is incomplete.");
         if (!vertex && blend && (blendAo != 1 || blendSpecular != 1)) throw new InvalidDataException("Source Fresnel blend lighting boundary changed.");
-        if (vertex && (iep || noise) && (effectFrames != 1 || noise && objectPositions != 1)) throw new InvalidDataException("Source effect geometry boundary changed.");
+        if (vertex && effectFrame && (effectFrames != 1 || noise && objectPositions != 1)) throw new InvalidDataException("Source effect geometry boundary changed.");
+        if (!vertex && nativeNormal && nativeNormalComponents != 3) throw new InvalidDataException("Source normal components are incomplete.");
         if (!vertex && (sampled != 1 || !outputs.SetEquals([0, 1, 2])))
             throw new InvalidDataException("Source six-layer surface stage conversion is incomplete.");
         while (code.Count % 3 != 0) code.Add((0x50b0000000070f00UL, 0x7ff));
@@ -408,14 +495,14 @@ public static class SwShZaLayerSurfaceShader
             payload[0x30 + 52 + 9 / 2] |= 0xc0;
         }
         if (!vertex && secondary) payload[0x30 + 24 + 9] |= 0xa0;
-        if (iep || noise)
+        if (effectFrame)
         {
             if (vertex)
             {
-                if (iep) payload[0x30 + 24 + 1] |= 15;
-                for (var c = 0; c < (iep ? 7 : 6); c++) { var attribute = 10 * 4 + c; payload[0x30 + 52 + attribute / 8] |= (byte)(1 << (attribute % 8)); }
+                if (frameTangent) payload[0x30 + 24 + 1] |= 15;
+                for (var c = 0; c < (frameTangent ? 7 : 6); c++) { var attribute = 10 * 4 + c; payload[0x30 + 52 + attribute / 8] |= (byte)(1 << (attribute % 8)); }
             }
-            else for (var c = 0; c < (iep ? 7 : 6); c++) { var attribute = 10 * 4 + c; payload[0x30 + 24 + attribute / 4] |= (byte)(2 << (attribute % 4 * 2)); }
+            else for (var c = 0; c < (frameTangent ? 7 : 6); c++) { var attribute = 10 * 4 + c; payload[0x30 + 24 + attribute / 4] |= (byte)(2 << (attribute % 4 * 2)); }
         }
         if (!vertex && cutout) payload[0x31] |= 0x80;
         template.AsSpan(data + constants, constantLength).CopyTo(payload.AsSpan(newConstants));
@@ -425,13 +512,16 @@ public static class SwShZaLayerSurfaceShader
             BinaryPrimitives.WriteUInt64LittleEndian(payload.AsSpan(at, 8), code[i].Control | code[i + 1].Control << 21 | code[i + 2].Control << 42);
             for (var lane = 0; lane < 3; lane++) BinaryPrimitives.WriteUInt64LittleEndian(payload.AsSpan(at + 8 + lane * 8, 8), code[i + lane].Instruction);
         }
-        var output = SwShAuthoredProgramAllocation.Replace(template, stage, control, data, payload, newEnd, newConstants, blend ? 192 : iep || noise ? 144 : 112);
+        var output = SwShAuthoredProgramAllocation.Replace(template, stage, control, data, payload, newEnd, newConstants, blend ? 192 : one || svIep ? 160 : iep || noise ? 144 : 112);
         return SV.SvSwShPointLightReflection.Add(output, vertex, authored: new(secondary,
             vertex ? displaced ? [("SourceLayerDisplacementMap", 10)] : []
             : blend ? [("SourceLayerBaseColorMap", 8), ("SourceLayerLayerMaskMap", 9), ("SourceLayerHighlightMaskMap", 10), ("SourceLayerMetallicMap", 11), ("SourceLayerRoughnessMap", 12), ("SourceLayerAOMap", 13)]
             : six ? [("SourceLayerBaseColorMap", 8), ("SourceLayerLayerMaskMap", 9), ("SourceLayerOpacityMap1", 10)]
+            : one ? [("SourceLayerBaseColorMap", 8), ("SourceLayerLayerMaskMap", 9), ("SourceLayerInsideEmissionParallaxIntensityMap", 10), ("SourceLayerParallaxMap", 11), ("SourceLayerEmissionColorMap", 12)]
+            : transparentIep ? [("SourceLayerBaseColorMap", 8), ("SourceLayerLayerMaskMap", 9), ("SourceLayerInsideEmissionParallaxIntensityMap", 10), ("SourceLayerParallaxMap", 11), ("SourceLayerNormalMap", 12)]
             : iep ? [("SourceLayerBaseColorMap", 8), ("SourceLayerLayerMaskMap", 9), ("SourceLayerInsideEmissionParallaxIntensityMap", 10), ("SourceLayerParallaxMap", 11)]
             : noise ? [("SourceLayerBaseColorMap", 8), ("SourceLayerLayerMaskMap", 9), ("SourceLayerNoiseSourceMap", 10)]
-            : [("SourceLayerBaseColorMap", 8), ("SourceLayerLayerMaskMap", 9)], EffectFrame: iep || noise, Tangent: iep));
+            : tangentNormal ? [("SourceLayerBaseColorMap", 8), ("SourceLayerLayerMaskMap", 9), ("SourceLayerNormalMap", 10)]
+            : [("SourceLayerBaseColorMap", 8), ("SourceLayerLayerMaskMap", 9)], EffectFrame: effectFrame, Tangent: frameTangent));
     }
 }

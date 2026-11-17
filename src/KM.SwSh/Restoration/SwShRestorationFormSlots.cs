@@ -15,6 +15,7 @@ public static class SwShRestorationFormSlots
 {
     public static IReadOnlyList<SwShRestorationFormBlock> Blocks { get; } = Array.AsReadOnly(new SwShRestorationFormBlock[]
     {
+        new(998, 1534, 1, 0, 0),
         new(3, 981, 1, 0, 0),
         new(6, 899, 2, 0, 0),
         new(9, 1028, 1, 0, 0),

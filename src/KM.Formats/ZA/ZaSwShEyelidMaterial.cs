@@ -38,9 +38,13 @@ public static partial class ZaSwShEyelidMaterial
         public bool IndependentHighlights { get; init; }
         public bool LayerEmission { get; init; }
         public bool LayerTint { get; init; }
+        public bool WhiteBaseEmission { get; init; }
+        public bool CornealEmission { get; init; }
         public bool StaticNormalCoverage { get; init; }
         public bool SourceEyelidTintIdentity { get; init; }
         public bool MirroredColor { get; init; }
+        public bool ReflectedIrisU { get; init; }
+        public float? CornealReflectionStrength { get; init; }
     }
 
     public static IReadOnlyDictionary<string, Contract> Materials(byte[] sourceMaterials, PreviewScene scene,
@@ -52,7 +56,8 @@ public static partial class ZaSwShEyelidMaterial
         foreach (var material in source.Tables(source.Root, 1, 128))
         {
             var name = source.Text(material, 0) ?? throw new InvalidDataException("Eye material is unnamed.");
-            if (!name.Contains("eye", StringComparison.Ordinal)) continue;
+            if (!name.Contains("eye", StringComparison.Ordinal) && !(name == "body_b"
+                && scene.Primitives.Any(p => p.Material.Name == name && ParadoxEmissionEye(sourceMaterials, p, name)))) continue;
             var primitives = scene.Primitives.Where(primitive => primitive.Material.Name == name).ToArray();
             var tadbulbPair = KM.Formats.SV.SvSwShCornealSections.IsTadbulbPair(name, primitives);
             var belliboltPair = KM.Formats.SV.SvSwShCornealSections.IsBelliboltPair(name, primitives);
@@ -64,6 +69,9 @@ public static partial class ZaSwShEyelidMaterial
             if (primitives.Length != 1 && !FalinksSharedEyeGeometry(name, primitives) && !splitCorneal)
                 throw new InvalidDataException("Eye material geometry is ambiguous.");
             var primitive = primitives[0];
+            var paradoxEye = ParadoxEmissionEye(sourceMaterials, primitive, name);
+            var cornealEmission = paradoxEye && primitive.Name is "pm1099_00_00_eye_mesh_shape" or "pm1101_00_00_eyeball_mesh_shape";
+            var whiteBaseEmission = cornealEmission && primitive.Name == "pm1101_00_00_eyeball_mesh_shape";
             var banetteEye = primitive.Name is "pm0354_51_00_eye_a_mesh_shape" or "pm0354_51_00_eye_b_mesh_shape";
             var gengarEye = primitive.Name is "pm0094_51_00_eye_mesh_shape" or "pm0094_51_00_body_mesh_shape"
                 && name is "r_eye_a" or "l_eye_a" or "eye_b"
@@ -103,7 +111,8 @@ public static partial class ZaSwShEyelidMaterial
                 if ((uint)slot >= samplers.Length) throw new InvalidDataException("Eye sampler is missing.");
                 wraps.Add(role, new(source.Value(samplers[slot], 9), source.Value(samplers[slot], 10)));
             }
-            var pairedPrimary = cornealPrimaryNormalHeights?.TryGetValue(name, out var requestedHeight) == true ? requestedHeight : (float?)null;
+            var pairedPrimary = cornealPrimaryNormalHeights?.TryGetValue(name, out var requestedHeight) == true ? requestedHeight
+                : paradoxEye && name == "body_b" ? 0 : (float?)null;
             if (pairedPrimary is not null && !layerEmission && (scalars.GetValueOrDefault("EmissionIntensity") != 0
                 || Enumerable.Range(1, 4).Any(layer => scalars.GetValueOrDefault("EmissionIntensityLayer" + layer) != 0)))
                 throw new InvalidDataException("Paired eye emission requires its layered emission adapter.");
@@ -177,13 +186,14 @@ public static partial class ZaSwShEyelidMaterial
                         or "pm1070_00_00_eye_mesh_shape" or "pm1071_00_00_eye_mesh_shape" or "pm1036_00_00_eye_mesh_shape"
                     // Both Mega Magearna palettes and forms retain this mesh
                     // identity, with independent animated iris emission layers.
-                    || part.Name.StartsWith("pm0882_51_00_", StringComparison.Ordinal) || part.Name == "pm0160_51_00_eye_mesh_shape" || splitCorneal || farigirafInner || banetteEye || gengarEye)
+                    || part.Name.StartsWith("pm0882_51_00_", StringComparison.Ordinal) || part.Name == "pm0160_51_00_eye_mesh_shape" || splitCorneal || farigirafInner || banetteEye || gengarEye || paradoxEye)
                 || textures.ContainsKey("OpacityMap1") || !textures.ContainsKey("LayerMaskMap")
                 || (wraps.GetValueOrDefault("LayerMaskMap") is var emissionWrap
                     && emissionWrap != Vector2.One
                     && !(emissionWrap == new Vector2(7) && primitives.All(part => part.Name.StartsWith("pm0855_00_00_", StringComparison.Ordinal)
-                        || part.Name == "pm0807_00_00_eye_mesh_shape" || banetteEye)))
-                || scalars.GetValueOrDefault("EmissionIntensity") != 0
+                        || part.Name == "pm0807_00_00_eye_mesh_shape" || banetteEye || paradoxEye)))
+                || scalars.GetValueOrDefault("EmissionIntensity") != (whiteBaseEmission ? 1 : 0)
+                || whiteBaseEmission && vectors.GetValueOrDefault("EmissionColor") != Vector4.One
                 || Enumerable.Range(1, 4).Any(layer => scalars.GetValueOrDefault("LayerMaskScale" + layer) != 1
                     || !scalars.TryGetValue("EmissionIntensityLayer" + layer, out var intensity) || intensity < 0
                     || !vectors.TryGetValue("EmissionColorLayer" + layer, out var color)
@@ -205,7 +215,14 @@ public static partial class ZaSwShEyelidMaterial
                 throw new InvalidDataException("Layered eye tint contract is unsupported.");
             var contract = new Contract(name, origin, vectors, scalars, textures, wraps)
                 { IndependentHighlights = independentHighlights, LayerEmission = layerEmission, LayerTint = layerTint,
-                    StaticNormalCoverage = staticNormalCoverage, MirroredColor = banetteEye };
+                    StaticNormalCoverage = staticNormalCoverage, MirroredColor = banetteEye,
+                    ReflectedIrisU = paradoxEye && primitive.Name == "pm1095_00_00_eye_mesh_shape",
+                    WhiteBaseEmission = whiteBaseEmission, CornealEmission = cornealEmission };
+            // Flutter Mane's necklace shares the eye shader but has a black
+            // authored clear coat. The native eye's white reflection otherwise
+            // covers the red beads. Keep its separate normal maps and eyes.
+            if (paradoxEye && primitive.Name == "pm1087_00_00_jewel_mesh_shape" && name == "body_b")
+                contract = contract with { CornealReflectionStrength = 0 };
             if (primitive.Name == "pm1100_00_00_body_a_mesh_shape" && name is "l_eye" or "r_eye"
                 && System.Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(sourceMaterials))
                     == "20580F028D7AEB856FD70B6DDC07E3632E00D632F13AB43E2EFB2EF85B5CABBF")

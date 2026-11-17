@@ -7,9 +7,11 @@ namespace KM.Formats.SV;
 public static class SvSwShDynamicSource
 {
     public static readonly string[] Names = ["SourceMaskScale1", "SourceMaskScale2", "SourceMaskScale3", "SourceMaskScale4",
-        "SourceBaseColor0", "SourceBaseColor1", "SourceBaseColor2", "SourceBaseColor3"];
+        "SourceBaseColor0", "SourceBaseColor1", "SourceBaseColor2", "SourceBaseColor3",
+        "SourceFresnelMin", "SourceFresnelMax", "SourceFresnelAngleBias"];
     private static float[] Values(SvSwShLayerEmission.Contract c) => [c.MaskScale.X, c.MaskScale.Y, c.MaskScale.Z, c.MaskScale.W,
-        c.GlobalBaseColor.X, c.GlobalBaseColor.Y, c.GlobalBaseColor.Z, c.GlobalBaseColor.W];
+        c.GlobalBaseColor.X, c.GlobalBaseColor.Y, c.GlobalBaseColor.Z, c.GlobalBaseColor.W,
+        c.SourceOpacity.X, c.SourceOpacity.Y, c.SourceOpacity.Z];
 
     public static byte[] Template(byte[] bytes, string program)
     {
@@ -37,7 +39,7 @@ public static class SvSwShDynamicSource
         {
             if (!contracts.TryGetValue(originals[source.Text(material, 0)!], out var contract) || !contract.DynamicSource) continue;
             var rows = source.Tables(material, 13, 256);
-            if (rows.Length != 60 || !rows.Skip(52).Select(t => source.Text(t, 0)).SequenceEqual(Names))
+            if (rows.Length != 52 + Names.Length || !rows.Skip(52).Select(t => source.Text(t, 0)).SequenceEqual(Names))
                 throw new InvalidDataException("Dynamic source scalar interface changed.");
             var values = Values(contract);
             for (var i = 0; i < values.Length; i++) writer.Single(writer.Field(rows[52 + i], 1), values[i]);
@@ -81,6 +83,11 @@ public static class SvSwShDynamicSource
                 {
                     var parameterName = source.Text(parameter, 0)!;
                     var index = field == 1 ? Array.IndexOf(new[] { "LayerMaskScale1", "LayerMaskScale2", "LayerMaskScale3", "LayerMaskScale4" }, parameterName) : parameterName == "BaseColor" ? 4 : -1;
+                    if (field == 1 && index < 0)
+                    {
+                        var opacity = Array.IndexOf(new[] { "FresnelAlphaMin", "FresnelAlphaMax", "FresnelAngleBias" }, parameterName);
+                        if (opacity >= 0) index = 8 + opacity;
+                    }
                     if (index < 0) { kept.Add(parameter); continue; }
                     var curve = source.Table(parameter, 1);
                     if (field == 1) Add(name, index, curve);

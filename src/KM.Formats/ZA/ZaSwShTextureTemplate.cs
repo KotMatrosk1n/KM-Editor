@@ -10,6 +10,19 @@ public static class ZaSwShTextureTemplate
 {
     public static byte[] Convert(PreviewPrimitive primitive, byte[] bytes, string name)
     {
+        if (primitive.Name.StartsWith("pm1096_00_00_", StringComparison.Ordinal)
+            && primitive.Material.Name is "body_02" or "body_04" && name == "pm1096_00_00_body_msk")
+        {
+            var metadata = new ModelBuffer(bytes);
+            int At(int offset) => checked((int)BinaryPrimitives.ReadUInt64LittleEndian(metadata.Slice(offset, 8)));
+            var infoAt = At(At(40));
+            if (metadata.U32(infoAt + 28) != 0x1d01 || metadata.U32(infoAt + 88) != 0x01020202)
+                throw new InvalidDataException("Iron Bundle scalar albedo requires its authored channel mapping.");
+            var sampled = PreviewTexture.Read(bytes);
+            if (sampled.Format != 0x0b01)
+                throw new InvalidDataException("Iron Bundle scalar albedo decoding changed.");
+            return SwShTextureAllocation.Create(bytes, sampled.Width, sampled.Height, srgb: false);
+        }
         if (primitive.Name.StartsWith("pm0485_51_00_", StringComparison.Ordinal)
             && primitive.Material.Name is "l_eye" or "r_eye" && name == "pm0485_51_00_white_msk")
         {

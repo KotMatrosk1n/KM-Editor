@@ -39,6 +39,15 @@ public static class SvSwShSourceBase
         ("body_a_00" or "body_a_01" or "body_a_02" or "body_a_03", "pm0824_11_00_body_a_lym.bntx" or "../pm0824_11_00/pm0824_11_00_body_a_lym.bntx", false, false) => true,
         ("eye", "pm0824_11_00_eye_lym.bntx" or "../pm0824_11_00/pm0824_11_00_eye_lym.bntx", false, false) => true,
         ("body_a_00" or "body_a_01", "pm1062_00_00_body_a_lym.bntx", false, false) => true,
+        ("body_a_02", "pm1089_00_00_body_a_lym.bntx", false, false) => true,
+        ("body_b_01", "pm1127_00_00_body_b_lym.bntx", false, false) => true,
+        ("body_b_01", "pm1132_00_00_body_b_01_lym.bntx", false, false) => true,
+        ("body_a_02", "pm1094_00_00_lym.bntx", true, false) => true,
+        ("body_e", "pm1090_00_00_body_d_lym.bntx", true, false) => true,
+        ("body_03", "pm1096_00_00_body_lym.bntx", true, false) => true,
+        ("body_b_01", "pm1093_00_00_body_b_lym.bntx", true, false) => true,
+        ("body_c", "pm1092_00_00_body_c_lym.bntx", true, false) => true,
+        ("body_c", "pm1099_00_00_body_b_lym.bntx", true, false) => true,
         ("body_b_01", "pm1036_00_00_body_b_lym.bntx", true, false) => true,
         ("ring", "pm1037_00_00_body_01_lym.bntx" or "pm1038_11_00_body_01_lym.bntx", true, false) => true,
         _ => false,
@@ -59,6 +68,9 @@ public static class SvSwShSourceBase
                 throw new InvalidDataException("The matte mirrored response requires the qualified crescent.");
             return MatteMirrorProgramName;
         }
+        if (c.IndependentBaseAddressing && (c.Name != "body_a_02" || c.Mask != "pm1089_00_00_body_a_lym.bntx"
+            || !c.MirroredMask || c.MaskUv.X != 1 || c.Transparent || c.Unlit))
+            throw new InvalidDataException("Independent source addressing requires Roaring Moon's qualified body palette.");
         return c.DynamicSource ? c.Transparent ? DynamicTransparentPrograms[inner ? 1 : 0] : DynamicProgram
             : c.MirroredMask && c.MaskUv.X == 2 ? (c.SharedColorUv ? SharedUvProgramName : MirroredProgramName)
             : c.Transparent ? TransparentPrograms[inner ? 1 : 0] : c.Unlit ? UnlitProgramName : ProgramName;

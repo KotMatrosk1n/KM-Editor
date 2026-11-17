@@ -8,6 +8,10 @@ public sealed partial class ZaSwShRestorationPreparationService
     private static readonly IReadOnlyDictionary<SwShPokemonIdentity, SpeciesProfile> MegaProfiles =
         new Dictionary<SwShPokemonIdentity, SpeciesProfile>
         {
+        [new(998, 1)] = new(612, 996, 300, 210, 210, "_body_alb",
+            SourceFraming: true, IdleFraming: true, MeshVisibility: true,
+            ResourceStem: "pm1055_51_00", OutputStem: "pm0998_01", SourceSpecies: 951,
+            MotionOverrides: new Dictionary<string, string> { ["mouth01"] = "00001", ["ba10_waitB01"] = "00001" }),
         [new(382, 1)] = new(382, 382, 335, 80, 980, "_body_alb",
                 SourceFraming: true, IdleFraming: true, MeshVisibility: true, LayerEmission: true, FemalePercent: 0, GenderThreshold: 255,
                 ResourceStem: "pm0382_51_00", OutputStem: "pm0382_01", GenderKind: 3,
@@ -429,7 +433,7 @@ public sealed partial class ZaSwShRestorationPreparationService
                 SourceFraming: true, IdleFraming: true, MeshVisibility: true, AnimationOffset: 10000,
                 ResourceStem: "pm0710_51_00", OutputStem: "pm0691_01", SourceSpecies: 691),
             [new(701, 1)] = new(701, 701, 175, 100, 100, "_body_alb",
-                SourceFraming: true, IdleFraming: true, MeshVisibility: true,
+                SourceFraming: true, IdleFraming: true, MeshVisibility: true, NativeBattleAttackRouting: true,
                 ResourceStem: "pm0761_51_00", OutputStem: "pm0701_01", SourceSpecies: 701,
                 BakeNormalTiles: true, NormalTiles: [new("body_b_01", new(1, 2)), new("body_a_00", new(1, 2)),
                     new("body_b_02", new(1, 2), "pm0761_51_00_waistfur_mesh_shape")]),

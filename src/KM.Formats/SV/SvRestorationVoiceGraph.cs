@@ -13,7 +13,8 @@ public static class SvRestorationVoiceGraph
     public static IReadOnlyDictionary<string, uint> Resolve(SoundBankDocument bank, int species, int form = 0)
         => ResolvePlayback(bank, species, form).ToDictionary(p => p.Key, p => p.Value.MediaId, StringComparer.Ordinal);
 
-    public static IReadOnlyDictionary<string, SvRestorationVoice> ResolvePlayback(SoundBankDocument bank, int species, int form = 0, bool requireSharedForm = false)
+    public static IReadOnlyDictionary<string, SvRestorationVoice> ResolvePlayback(SoundBankDocument bank, int species, int form = 0, bool requireSharedForm = false,
+        SvRestorationVoiceContext? normalContext = null)
     {
         if (bank.Version != 140 || species is < 1 or > 1025 || form is < 0 or > 99)
             throw new InvalidDataException("S/V voice bank version or identity is unsupported.");
@@ -57,16 +58,27 @@ public static class SvRestorationVoiceGraph
         {
             if (!choice.States.TryGetValue(SwShVoiceWriter.Hash(state), out var children) || children.Length != 1)
                 throw new InvalidDataException($"S/V cry state requires another conversion adapter: {state}");
-            var sound = Object(2, children[0]).Payload;
+            var child = children[0];
+            if (state == "INDEX" && species is 978 or 986)
+            {
+                if (normalContext is null) throw new InvalidDataException("S/V Paradox cry requires its verified normal source context.");
+                var context = Switch(Object(6, child).Payload);
+                if (context.Group != SvRestorationVoiceContext.NormalContext || context.Default != SvRestorationVoiceContext.NormalState
+                    || context.States.Count != 2 || !context.States.TryGetValue(SvRestorationVoiceContext.NormalState, out var normal)
+                    || normal.Length != 1 || !context.States.TryGetValue(927871640, out var alternate) || alternate.Length != 1)
+                    throw new InvalidDataException("S/V Paradox INDEX context changed.");
+                child = normal[0];
+            }
+            var sound = Object(2, child).Payload;
             if (sound.Length < 9 || U32(sound, 0) != 0x00020001 || sound[4] != 2)
                 throw new InvalidDataException("S/V cry codec or streaming layout is unsupported.");
-            var playback = SoundPlayback(sound);
+            var playback = SoundPlayback(sound, species is 978 or 986 && normalContext is not null);
             result.Add(state, new(U32(sound, 5), gain + playback.Gain, playback.Minimum, playback.Maximum));
         }
         return result;
     }
 
-    private static (float Gain, float Minimum, float Maximum) SoundPlayback(byte[] bytes)
+    private static (float Gain, float Minimum, float Maximum) SoundPlayback(byte[] bytes, bool normalContext)
     {
         // Streaming version 140 sounds have a bounded local property bundle.
         // Keep gain separate from PCM so the native mixer still controls volume.
@@ -87,7 +99,31 @@ public static class SvRestorationVoiceGraph
                 throw new InvalidDataException("S/V cry random pitch exceeds native limits.");
         }
         ReadOnlySpan<byte> inherited = [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0];
-        if (!float.IsFinite(gain) || gain is < -96 or > 24 || !bytes.AsSpan(at).SequenceEqual(inherited))
+        if (normalContext && bytes.Length == 62)
+        {
+            // The normal INDEX sound stores inherited source buses. Override
+            // flags are clear; the native parent supplies environment routing.
+            var routed = Convert.FromHexString("0008892E1DC19371EDAA00000000000000000000000000010000010400000000");
+            if (!bytes.AsSpan(at).SequenceEqual(routed)) throw new InvalidDataException("S/V normal INDEX routing changed.");
+        }
+        else if (normalContext && bytes.Length == 93)
+        {
+            // The donor's two-point volume curve is exactly neutral at NORMAL=0.
+            // Retain the sound's independent random pitch range parsed above.
+            var prefix = Convert.FromHexString("00000000000000010000000000000100");
+            var curve = at + prefix.Length;
+            if (!bytes.AsSpan(at, prefix.Length).SequenceEqual(prefix) || U32(bytes, curve) != SvRestorationVoiceContext.NormalContext
+                || bytes[curve + 4] != 0 || bytes[curve + 5] != 2 || bytes[curve + 6] is not (0 or 2)
+                || bytes[curve + 11] != (bytes[curve + 6] == 0 ? 2 : 0) || BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(curve + 12)) != 2
+                || BitConverter.UInt32BitsToSingle(U32(bytes, curve + 14)) != 0 || BitConverter.UInt32BitsToSingle(U32(bytes, curve + 18)) != 0
+                || U32(bytes, curve + 22) != 4 || BitConverter.UInt32BitsToSingle(U32(bytes, curve + 26)) != 1
+                || !float.IsFinite(BitConverter.UInt32BitsToSingle(U32(bytes, curve + 30))) || U32(bytes, curve + 34) != 4
+                || curve + 38 != bytes.Length)
+                throw new InvalidDataException("S/V normal cry volume curve changed.");
+        }
+        else if (!bytes.AsSpan(at).SequenceEqual(inherited))
+            throw new InvalidDataException("S/V cry has unsupported playback modulation.");
+        if (!float.IsFinite(gain) || gain is < -96 or > 24)
             throw new InvalidDataException("S/V cry has unsupported playback modulation.");
         return (gain, minimum, maximum);
     }

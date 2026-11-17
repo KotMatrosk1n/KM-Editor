@@ -14,6 +14,7 @@ public static class SwShZaDisplacedUnlitShader
     {
         if (!ZA.ZaSwShDisplacedUnlit.Recognizes(program)) throw new InvalidDataException("Unknown source Unlit program.");
         var six = ZA.ZaSwShDisplacedUnlit.SixLayers(program);
+        var flipbook = SV.SvSwShFlipbookEye.Recognizes(program);
         var displacementUv1 = program.EndsWith("Uv1", StringComparison.Ordinal);
         var secondary = six || displacementUv1;
         var cutout = program.EndsWith("Cutout", StringComparison.Ordinal);
@@ -33,6 +34,8 @@ public static class SwShZaDisplacedUnlitShader
             || end > constants || constants + constantLength > length || I(control + 0x704) != length
             || !template.AsSpan(relocation, 4).SequenceEqual("_RLT"u8) || I(relocation + 8) != 6)
             throw new InvalidDataException("Source Unlit native stage layout changed.");
+        // Display eyes have no displacement or extra vertex inputs.
+        if (vertex && flipbook) return template.ToArray();
         var section = Enumerable.Range(0, 6).Select(i => relocation + 16 + i * 24).Single(s => I(s + 8) == data);
         var capacity = I(section + 12);
         if (length > capacity || data + capacity > template.Length || template.AsSpan(data + length, capacity - length).ContainsAnyExcept((byte)0))
@@ -57,9 +60,42 @@ public static class SwShZaDisplacedUnlitShader
         }
         void Sample(int d, int binding, bool lod0 = false) => Emit((lod0 ? 0xd850000000070000UL : 0xd830000000070000UL)
             | (ulong)binding << 36 | (ulong)(d + 2) << 28 | 81UL << 20 | 80UL << 8 | (uint)d);
+        void Floor(int d, int s) => Emit(0x5ca8148000070a00UL | (ulong)s << 20 | (uint)d);
+        void Reciprocal(int d, int s) => Emit(0x5080000000470000UL | (ulong)s << 8 | (uint)d);
+        void Bound(int d, int a, int b, bool maximum) => Emit((maximum ? 0x5c60178000070000UL : 0x5c60138000070000UL)
+            | (ulong)b << 20 | (ulong)a << 8 | (uint)d);
         void Palette(int u, int v)
         {
+            if (flipbook)
+            {
+                // Source Unlit variant 24 (static key 0xa2c): wrap the authored
+                // frame, select its cell, then clamp opacity coordinates to it.
+                Move(92, u); Move(95, v); Constant(89, 1); Add(93, 89, 95, true);
+                Uniform(96, 96); Uniform(97, 97); Reciprocal(98, 96); Reciprocal(99, 97); Uniform(100, 98);
+                Mul(101, 96, 97); Reciprocal(102, 101); Mul(102, 100, 102); Floor(102, 102);
+                Mul(102, 102, 101); Add(102, 100, 102, true);
+                Mul(103, 102, 98); Floor(103, 103); Mul(104, 103, 96); Add(104, 102, 104, true); Floor(104, 104);
+                Mul(105, 104, 98); Constant(89, 1); Add(106, 104, 89); Mul(106, 106, 98);
+                Add(108, 97, 103, true); Add(107, 108, 89, true); Mul(107, 107, 99); Mul(108, 108, 99);
+                Uniform(88, 80); Mul(88, 88, 98); Add(80, 92, 105); Add(80, 80, 88, true);
+                Bound(80, 80, 105, true); Bound(80, 80, 106, false);
+                Mul(88, 103, 99); Add(81, 93, 88, true); Uniform(88, 81); Mul(88, 88, 99); Add(81, 81, 88, true);
+                Bound(81, 81, 107, true); Bound(81, 81, 108, false); Add(81, 89, 81, true);
+                Sample(56, 24); Move(94, 56);
+                Uv(92, 95, 82); Sample(60, 26);
+                Uniform(88, 54); Mul(60, 60, 88); Constant(89, 1); Add(60, 89, 60, true); Mul(59, 94, 60);
+                Uniform(88, 52); Constant(89, 0); Bound(88, 88, 89, true); Constant(89, 1); Bound(88, 88, 89, false); Mul(59, 59, 88);
+                for (var c = 0; c < 3; c++) Uniform(56 + c, 58 + c);
+                return;
+            }
             Uv(u, v, 78); Sample(56, 24); Sample(60, 26);
+            if (cutout && !six)
+            {
+                // The pinned SV effect tests base alpha before global opacity.
+                Uniform(95, 95);
+                Emit(0x5bb1838000070037UL | 95UL << 20 | 59UL << 8);
+                Emit(0xe33000000006000fUL);
+            }
             if (six)
             {
                 Emit(0xE043FF918157FF4CUL); Emit(0xE043FF91C157FF4DUL);
@@ -109,6 +145,22 @@ public static class SwShZaDisplacedUnlitShader
             {
                 var w = BinaryPrimitives.ReadUInt64LittleEndian(template.AsSpan(data + block + 8 + lane * 8, 8));
                 var prefix = w >> 48; var d = (int)(w & 255); var buffer = (int)(w >> 34 & 31); var word = (int)(w >> 20 & 16383);
+                if (!vertex && flipbook && w == 0xE30000000007000FUL)
+                {
+                    Uniform(88, 61); Mul(3, 59, 88);
+                    // Native rim and lighting operations follow the emission
+                    // boundary. Display panels must output their authored unlit
+                    // color, independent of those native body effects.
+                    Uniform(88, 52);
+                    for (var c = 0; c < 3; c++) Mul(c, 56 + c, 88);
+                    // Source display eyes use straight alpha; this native
+                    // transparent pass expects premultiplied RGB.
+                    Mul(0, 0, 3); Mul(1, 1, 3); Mul(2, 2, 3);
+                    // Preserve the dark display backing beneath separate glass.
+                    // The masks modulate illumination, not panel coverage.
+                    // Keep authored alpha so material fades still apply.
+                    if (program == SV.SvSwShFlipbookEye.PanelProgram) Uniform(3, 61);
+                }
                 if (vertex && secondary && w == 0xE30000000007000FUL)
                 {
                     Load(76, 0xc0); Load(77, 0xc4);
@@ -169,7 +221,7 @@ public static class SwShZaDisplacedUnlitShader
         template.AsSpan(data + constants, constantLength).CopyTo(output.AsSpan(data + newConstants));
         void Write(int at, int value) => BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(at, 4), value);
         Write(stage + 24, newLength); Write(control + 0x6f8, newEnd - 0x30); Write(control + 0x700, newConstants);
-        Write(control + 0x704, newLength); Write(control + 0x70c, 96);
+        Write(control + 0x704, newLength); Write(control + 0x70c, flipbook ? 112 : 96);
         for (var i = 0; i < code.Count; i += 3)
         {
             var at = data + 0x80 + i / 3 * 32;
@@ -178,6 +230,7 @@ public static class SwShZaDisplacedUnlitShader
         }
         return SV.SvSwShPointLightReflection.Add(output, vertex, authored: new(secondary,
             vertex ? [("SourceUnlitDisplacementMap", 10)]
+            : flipbook ? [("SourceUnlitOpacityMap", 8), ("SourceUnlitOpacityMap1", 9)]
             : six ? [("SourceUnlitBaseColorMap", 8), ("SourceUnlitLayerMaskMap", 9), ("SourceUnlitOpacityMap", 11)]
             : [("SourceUnlitBaseColorMap", 8), ("SourceUnlitLayerMaskMap", 9)]));
     }

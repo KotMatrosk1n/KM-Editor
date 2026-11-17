@@ -6,7 +6,8 @@ namespace KM.Formats.SwSh;
 public static partial class SwShAnimationWriter
 {
     public static byte[] Controller(byte[] nativeController, string donorStem, string targetStem,
-        IReadOnlyList<string> materialNames, IReadOnlyDictionary<string, string[]> facialBones, bool compactMaterials = false)
+        IReadOnlyList<string> materialNames, IReadOnlyDictionary<string, string[]> facialBones, bool compactMaterials = false,
+        IReadOnlySet<string>? eyeMaterials = null)
     {
         if (materialNames.Count is < 1 or > 128 || materialNames.Distinct(StringComparer.Ordinal).Count() != materialNames.Count)
             throw new InvalidDataException("Controller material targets are invalid.");
@@ -32,7 +33,7 @@ public static partial class SwShAnimationWriter
             foreach (var layer in layers)
             {
                 var masks = source.Table(source.Table(layer, 2), 1);
-                var entries = source.Tables(masks, 1, 128).Where(t => source.Text(t, 0) == (name.Contains("eye", StringComparison.Ordinal) ? "Eye" : "Body01Vco")).ToArray();
+                var entries = source.Tables(masks, 1, 128).Where(t => source.Text(t, 0) == (eyeMaterials?.Contains(name) == true || name.Contains("eye", StringComparison.Ordinal) ? "Eye" : "Body01Vco")).ToArray();
                 if (entries.Length != 1) throw new InvalidDataException("Native controller material mask cannot be resolved.");
                 if (compactMaterials)
                 {

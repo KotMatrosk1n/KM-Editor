@@ -75,6 +75,15 @@ public sealed partial class ZaSwShRestorationPreparationService
 
     private static readonly IReadOnlyDictionary<int, SpeciesProfile> Profiles = new Dictionary<int, SpeciesProfile>
     {
+        [996] = new(610, 996, 64, 50, 50, "_body_alb", SourceFraming: true, IdleFraming: true,
+            MeshVisibility: true, ResourceStem: "pm1053_00_00", SourceSpecies: 949),
+        [997] = new(611, 996, 148, 80, 80, "_body_alb", SourceFraming: true, IdleFraming: true,
+            MeshVisibility: true, ResourceStem: "pm1054_00_00", SourceSpecies: 950),
+        [998] = new(612, 996, 300, 170, 210, "_body_alb", SourceFraming: true, IdleFraming: true,
+            MeshVisibility: true, ResourceStem: "pm1055_00_00", SourceSpecies: 951),
+        [1000] = new(681, 0, 275, 120, 120, "_body_alb", SourceFraming: true, IdleFraming: true,
+            MeshVisibility: true, FemalePercent: 0, GenderThreshold: 255, GenderKind: 3,
+            ResourceStem: "pm1081_00_00", SourceSpecies: 977),
         [720] = new(150, 720, 270, 50, 50, "_body_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, FemalePercent: 0, GenderThreshold: 255, GenderKind: 3, ResourceStem: "pm0774_11_00", AnimationOffset: 20000, LayeredEyes: true),
         [399] = new(819, 399, 50, 50, 50, "_body_a_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, PlaAssets: true, ConventionalCatchRate: 255, SeparateFemale: true),
         [400] = new(660, 399, 144, 100, 100, "_body_b_alb", SourceFraming: true, MeshVisibility: true, IdleFraming: true, PlaAssets: true, ConventionalCatchRate: 127, SeparateFemale: true),

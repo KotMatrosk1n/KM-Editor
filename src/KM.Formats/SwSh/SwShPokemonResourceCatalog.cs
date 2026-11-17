@@ -58,6 +58,14 @@ public sealed class SwShPokemonResourceCatalog
         writer.Reference(root, 0, writer.Table(2, headerFields, absent: Enumerable.Range(0, 2).Except(headerFields.Keys).ToHashSet()));
         var slots = writer.Vector(root, 1, ordered.Length);
         var added = additions.ToDictionary(row => row.Identity);
+        // Emit strings after their referencing tables so repeated native paths
+        // and controller names share storage without backward object offsets.
+        var textReferences = new Dictionary<string, List<int>>(StringComparer.Ordinal);
+        void Text(int table, int field, string value)
+        {
+            if (!textReferences.TryGetValue(value, out var references)) textReferences.Add(value, references = []);
+            references.Add(writer.Field(table, field));
+        }
         for (var i = 0; i < ordered.Length; i++)
         {
             var identity = ordered[i];
@@ -70,13 +78,18 @@ public sealed class SwShPokemonResourceCatalog
                 [0] = ModelTableBuilder.Integer(identity.Species), [1] = ModelTableBuilder.Integer(identity.Form),
                 [2] = ModelTableBuilder.Integer(identity.Gender), [3] = ModelTableBuilder.Integer(identity.Shiny ? 1 : 0),
             });
-            writer.Reference(table, 0, id); writer.Text(table, 1, row.Model); writer.Text(table, 2, row.Configuration); writer.Text(table, 3, row.Archive);
+            writer.Reference(table, 0, id); Text(table, 1, row.Model); Text(table, 2, row.Configuration); Text(table, 3, row.Archive);
             var controllers = writer.Vector(table, 4, row.Controllers.Count);
             var n = 0;
             foreach (var (name, path) in row.Controllers.OrderBy(pair => pair.Key, StringComparer.Ordinal))
             {
-                var binding = writer.Table(2); writer.Pointer(controllers[n++], binding); writer.Text(binding, 0, name); writer.Text(binding, 1, path);
+                var binding = writer.Table(2); writer.Pointer(controllers[n++], binding); Text(binding, 0, name); Text(binding, 1, path);
             }
+        }
+        foreach (var (value, references) in textReferences.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            var text = writer.String(value);
+            foreach (var reference in references) writer.Pointer(reference, text);
         }
         var result = writer.Finish(root);
         _ = new SwShPokemonResourceCatalog(result);

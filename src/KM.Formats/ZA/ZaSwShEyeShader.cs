@@ -5,7 +5,7 @@ namespace KM.Formats.ZA;
 
 public static class ZaSwShEyeShader
 {
-    public static byte[] Convert(byte[] template, bool objectNormals = false, bool lava = false, bool independentHighlights = false, bool layerEmission = false, bool layerTint = false, bool mirrorEmissionColor = false)
+    public static byte[] Convert(byte[] template, bool objectNormals = false, bool lava = false, bool independentHighlights = false, bool layerEmission = false, bool layerTint = false, bool mirrorEmissionColor = false, bool whiteBaseEmission = false)
     {
         if (mirrorEmissionColor && !layerEmission)
             throw new InvalidDataException("Mirrored emission eye color requires its layer consumer.");
@@ -157,6 +157,13 @@ public static class ZaSwShEyeShader
                     }
                     Constant(85, 1); Add(85, 85, 88 + layer, true); Multiply(84, 84, 85);
                 }
+            }
+            if (layerEmission)
+            {
+                // The base surface contributes only outside the ordered mask
+                // layers. Qualified emitting base palettes are neutral white.
+                if (whiteBaseEmission)
+                    for (var c = 0; c < 3; c++) Add(80 + c, 80 + c, 84);
             }
             if (independentHighlights)
             {

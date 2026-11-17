@@ -132,6 +132,8 @@ public sealed record SwShPreparedRestoration(string DefinitionId, int Definition
                     stones.Any(stone => item.Key == stone.ItemId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
                 SwShRestorationWriter.Personal or SwShRestorationWriter.Learnset =>
                     int.TryParse(item.Key, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id) && rows.Contains(id),
+                SwShRestorationWriter.BattleCamera => definition.Identities.Any(i =>
+                    item.Key == SwShRestorationBattleCamera.Key(new(i.Species, i.Form, 0, 0))),
                 SwShRestorationWriter.Icons => definition.Identities.Any(i => SwShRestorationComposer.IconGenders(i.Species).Any(g => item.Key == SwShRestorationComposer.IconKey(i.Species, i.Form, g))
                     || i.Species == SwShRestorationSpecies.Annihilape && i.Form == 0 && item.Key == "979"),
                 SwShRestorationWriter.File => item.Key.Length == 0 && (SwShRestorationEvolutionPolicy.IsNativeParentFile(definition, item)

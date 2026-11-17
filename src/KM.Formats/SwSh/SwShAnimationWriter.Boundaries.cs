@@ -12,7 +12,7 @@ public static partial class SwShAnimationWriter
         var source = new ModelBuffer(landing);
         var entry = PreviewRigReader.Animation(source, "entry", bones);
         var wait = PreviewRigReader.Animation(new(idle), "idle", bones);
-        if (entry.Loop || !wait.Loop || entry.Rate != wait.Rate || bones.Length is < 1 or > 255)
+        if (entry.Loop || !wait.Loop || entry.Rate != wait.Rate || bones.Length is < 1 or > 256)
             throw new InvalidDataException("Battle entry recovery needs compatible landing and combat idle timing.");
         var duration = Math.Max(2, checked((int)Math.Ceiling(entry.Rate * .2)));
         var frames = checked(entry.Frames + duration);

@@ -84,6 +84,7 @@ public static class SvSwShTransparentMaterial
 
     public static void RequireSource(byte[] bytes, PreviewScene scene, bool deoxys = false)
     {
+        if (SvSwShLayerEmission.ParadoxTransparentContracts(bytes, scene) is not null) return;
         var source = new ModelBuffer(bytes);
         var dialga = scene.Primitives.Any(p => p.Name.StartsWith("pm0483_12_00_", StringComparison.Ordinal));
         var palkia = scene.Primitives.Any(p => p.Name.StartsWith("pm0484_12_00_", StringComparison.Ordinal));

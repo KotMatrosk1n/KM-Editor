@@ -64,6 +64,7 @@ internal static class SwShExeFsReservedRegionLedger
     [
         .. KM.SwSh.Restoration.SwShRestorationSoundMemoryPatcher.Reservations(),
         .. KM.SwSh.Restoration.SwShRestorationTableMemoryPatcher.Reservations(),
+        .. KM.SwSh.Restoration.SwShRestorationModelMemoryPatcher.Reservations(),
         .. KM.SwSh.Restoration.SwShRestorationMegaItemProtection.Reservations(),
         .. KM.SwSh.Restoration.SwShRestorationSpeciesPatcher.Reservations(),
         .. KM.SwSh.Restoration.SwShRestorationCryPatcher.Reservations(),
@@ -433,7 +434,8 @@ internal static class SwShExeFsReservedRegionLedger
                 || string.Equals(owner, OwnerGameOptions, StringComparison.Ordinal)
                 || string.Equals(owner, OwnerObedience, StringComparison.Ordinal)
                 || string.Equals(owner, OwnerYComm, StringComparison.Ordinal)
-                || string.Equals(owner, KM.SwSh.ShakingTrees.SwShTreeQuantityPatcher.Owner, StringComparison.Ordinal))
+                || string.Equals(owner, KM.SwSh.ShakingTrees.SwShTreeQuantityPatcher.Owner, StringComparison.Ordinal)
+                || string.Equals(owner, KM.SwSh.Restoration.SwShRestorationModelMemoryPatcher.Owner, StringComparison.Ordinal))
             && game is ProjectGame.Sword or ProjectGame.Shield)
         {
             var inactiveGameToken = game == ProjectGame.Sword ? "-shield-" : "-sword-";
@@ -518,7 +520,8 @@ internal static class SwShExeFsReservedRegionLedger
                         && !string.Equals(region.Owner, KM.SwSh.HyperTraining.SwShHyperTrainingItemsPatcher.Owner, StringComparison.Ordinal)
                         && !string.Equals(region.Owner, OwnerObedience, StringComparison.Ordinal)
                         && !string.Equals(region.Owner, OwnerYComm, StringComparison.Ordinal)
-                        && !string.Equals(region.Owner, KM.SwSh.ShakingTrees.SwShTreeQuantityPatcher.Owner, StringComparison.Ordinal))
+                        && !string.Equals(region.Owner, KM.SwSh.ShakingTrees.SwShTreeQuantityPatcher.Owner, StringComparison.Ordinal)
+                        && !string.Equals(region.Owner, KM.SwSh.Restoration.SwShRestorationModelMemoryPatcher.Owner, StringComparison.Ordinal))
                     || !region.FeatureId.Contains(inactiveDynamaxGameToken, StringComparison.Ordinal))
                 .ToArray();
         }

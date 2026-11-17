@@ -78,6 +78,7 @@ public static class SvSwShLayerEmissionShader
 
     public static byte[] TransparentSourceBase(byte[] template) => Convert(template, 22);
     public static byte[] DynamicSourceBase(byte[] template, bool transparent) => Convert(template, transparent ? 22 : 20, dynamicSource: true);
+    public static byte[] ParadoxTransparent(byte[] template) => Convert(template, 22, dynamicSource: true, sourceFresnel: true);
 
     /// <summary>Five-layer Unlit color with the source coverage normalization.</summary>
     public static byte[] DisplacedUnlit(byte[] template)
@@ -90,7 +91,7 @@ public static class SvSwShLayerEmissionShader
     public static byte[] Additive(byte[] template)
         => Convert(template, 11);
 
-    private static byte[] Convert(byte[] template, int mode, bool sourceCutout = false, bool sourceOcclusion = false, bool dynamicSource = false, bool sharedColorUv = false)
+    private static byte[] Convert(byte[] template, int mode, bool sourceCutout = false, bool sourceOcclusion = false, bool dynamicSource = false, bool sharedColorUv = false, bool sourceFresnel = false)
     {
         int Integer(int offset) => BinaryPrimitives.ReadInt32LittleEndian(template.AsSpan(offset, 4));
         int Pointer(int offset) => checked((int)BinaryPrimitives.ReadUInt64LittleEndian(template.AsSpan(offset, 8)));
@@ -104,6 +105,7 @@ public static class SvSwShLayerEmissionShader
         var controlLength = Integer(stage + 28);
         var identity = System.Convert.ToHexString(SHA256.HashData(template.AsSpan(data, length)));
         var transparent = identity is "CB0AB209AA69541813F7395E6D3355608E047E5D1D4C66617D66E7ACF8055276" or "A01BA67B64010C74E9A8D1C7FB3CEDC5EFAD07F18049F57D1595B26B45A4B699";
+        var ordinaryTransparent = identity == "CB0AB209AA69541813F7395E6D3355608E047E5D1D4C66617D66E7ACF8055276";
         if (mode is 12 or 13 or 18 or 22 && !transparent)
             throw new InvalidDataException("Transparent base palette requires its pinned cell shader.");
         if (mode is 14 or 15 or 16 or 17 or 19 or 20 or 21 or 23 or 24 or 26 && transparent)
@@ -140,6 +142,7 @@ public static class SvSwShLayerEmissionShader
         var alphaInputs = 0; var alphaOutputs = 0; var additiveExits = 0;
         var baseAlphaInputs = 0; var baseAlphaOutputs = 0;
         var cutoutInputs = 0; var opaqueOutputs = 0;
+        var sourceNormals = 0; var sourceOpacityOutputs = 0; var sourcePerspective = 0;
         var unlitEmissionResults = new Dictionary<int, (int Channel, int Diffuse)>();
         var unlitOutputs = new HashSet<int>();
         void Emit(ulong word, bool asynchronous = false) => code.Add((word, KM.Formats.SwSh.SwShShaderScheduling.Serial(word)));
@@ -238,6 +241,45 @@ public static class SvSwShLayerEmissionShader
                 var prefix = instruction >> 48; var destination = (int)(instruction & 255);
                 var buffer = (int)(instruction >> 34 & 31); var word = (int)(instruction >> 20 & 16383);
                 var uniform = prefix is 0x4c98 or 0x4c68 || prefix is >= 0x49a0 and <= 0x49a3;
+                if (sourceFresnel && instruction == (ordinaryTransparent ? 0x5080000000471717UL : 0x5080000000471616UL))
+                {
+                    KM.Formats.SwSh.SwShShaderScheduling.Original(code, ref originalBoundary, instruction, scheduling >> (lane * 21) & 0x1ffff);
+                    Move(110, ordinaryTransparent ? 23 : 22); sourcePerspective++;
+                    continue;
+                }
+                if (sourceFresnel && instruction == (ordinaryTransparent ? 0x5C6810000007091EUL : 0x5C68100000F70827UL))
+                {
+                    // The pinned cell programs finish their world-space perturbed
+                    // normal before sampling the albedo. Ordinary and giant
+                    // programs use R25/R29/R30 and R42/R41/R39 respectively.
+                    KM.Formats.SwSh.SwShShaderScheduling.Original(code, ref originalBoundary, instruction, scheduling >> (lane * 21) & 0x1ffff);
+                    Move(96, ordinaryTransparent ? 25 : 42); Move(97, ordinaryTransparent ? 29 : 41);
+                    Move(98, ordinaryTransparent ? 30 : 39); sourceNormals++;
+                    continue;
+                }
+                if (sourceFresnel && instruction == 0xE30000000007000FUL)
+                {
+                    // Source Transparent variant 299: min + (max-min) *
+                    // abs(1-clamp(dot(N,V),0,1)+angleBias)^5. Its final RGB
+                    // and alpha share this factor after premultiplication.
+                    for (var c = 0; c < 3; c++)
+                    {
+                        Emit(0xe043ff8e06e7ff00UL | (ulong)c << 30 | (uint)(99 + c));
+                        Uniform(102, 3, 76 + c); Add(99 + c, 102, 99 + c, true);
+                    }
+                    Multiply(102, 99, 99); Fma(102, 100, 100, 102); Fma(102, 101, 101, 102);
+                    Emit(0x5080000000570000UL | 102UL << 8 | 102);
+                    Multiply(103, 96, 99); Fma(103, 97, 100, 103); Fma(103, 98, 101, 103);
+                    Multiply(103, 103, 102); Constant(104, 0); Maximum(103, 103, 104);
+                    Constant(104, 1); Emit(0x5c60138000070000UL | 104UL << 20 | 103UL << 8 | 103);
+                    Add(103, 104, 103, true); Uniform(104, 5, 62); Add(103, 103, 104);
+                    Emit(0x5c5810000007ff00UL | 1UL << 49 | 103UL << 20 | 103);
+                    Multiply(104, 103, 103); Multiply(104, 104, 104); Multiply(103, 103, 104);
+                    Uniform(104, 5, 60); Uniform(105, 5, 61); Add(105, 105, 104, true);
+                    Fma(103, 103, 105, 104);
+                    for (var c = 0; c < 4; c++) Multiply(c, c, 103);
+                    sourceOpacityOutputs++;
+                }
                 if (sourceOcclusion && instruction >> 56 == 0xd8 && (instruction >> 36 & 8191) == 14)
                 {
                     var blue = (int)(instruction >> 28 & 255);
@@ -500,7 +542,7 @@ public static class SvSwShLayerEmissionShader
                             UnlitPalette(destination, second); emissionCaptured = true;
                             continue;
                         }
-                        if (mode is 13 or 15 or 16 or 18 or 19 or 24)
+                        if (mode is 13 or 15 or 16 or 18 or 19 or 24 || sourceFresnel)
                         {
                             if (mode == 16) { Move(90, 80); Move(91, 81); }
                             CoveragePalette(destination, second); emissionCaptured = true;
@@ -604,7 +646,7 @@ public static class SvSwShLayerEmissionShader
                         emissionCaptured = true;
                     }
                 }
-                if (mode is 4 or 10 or 13 or 14 or 15 or 16 or 17 or 18 or 19 or 24) continue;
+                if (mode is 4 or 10 or 13 or 14 or 15 or 16 or 17 or 18 or 19 or 24 || sourceFresnel) continue;
                 if (slot != 10) continue;
                 if (!colorCaptured || emissionCaptured) throw new InvalidDataException("Layer emission mask input is ambiguous.");
                 if (mode is 6 or 23)
@@ -653,6 +695,8 @@ public static class SvSwShLayerEmissionShader
             }
         }
         if (sourceOcclusion && occlusionSamples != 1) throw new InvalidDataException("Source occlusion input is incomplete.");
+        if (sourceFresnel && (sourceNormals != 1 || sourceOpacityOutputs != 1 || sourcePerspective != 1))
+            throw new InvalidDataException("Source transparent normal or opacity flow changed.");
         if (mode == 11 && additiveExits != 1) throw new InvalidDataException("Additive native output is missing.");
         if (sourceCutout && (cutoutInputs != 1 || opaqueOutputs != 1))
             throw new InvalidDataException("Unlit cutout input or opaque output is ambiguous.");
@@ -675,7 +719,7 @@ public static class SvSwShLayerEmissionShader
         template.AsSpan(data + constants, constantLength).CopyTo(output.AsSpan(data + newConstants));
         void Write(int offset, int value) => BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(offset, 4), value);
         Write(stage + 24, newLength); Write(control + 0x6f8, newEnd - 0x30);
-        Write(control + 0x700, newConstants); Write(control + 0x704, newLength); Write(control + 0x70c, mode is 4 or 5 or 10 ? 112 : mode is 1 or 2 or 6 or 8 or 9 or 12 or 13 or 15 or 16 or 17 or 18 or 19 or 20 or 21 or 22 or 23 or 24 or 25 or 26 ? 96 : 80);
+        Write(control + 0x700, newConstants); Write(control + 0x704, newLength); Write(control + 0x70c, sourceFresnel || mode is 4 or 5 or 10 ? 112 : mode is 1 or 2 or 6 or 8 or 9 or 12 or 13 or 15 or 16 or 17 or 18 or 19 or 20 or 21 or 22 or 23 or 24 or 25 or 26 ? 96 : 80);
         for (var index = 0; index < code.Count; index += 3)
         {
             var offset = data + 0x80 + index / 3 * 32;

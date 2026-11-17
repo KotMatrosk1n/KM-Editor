@@ -42,16 +42,19 @@ public static class ZaSwShDisplacedUnlitAnimation
             foreach (var material in source.Tables(timeline, 2, 128))
             {
                 var name = source.Text(material, 0)!;
-                if (!contracts.ContainsKey(name)) continue;
+                if (!contracts.TryGetValue(name, out var contract)) continue;
+                var flipbook = SV.SvSwShFlipbookEye.Recognizes(contract.Shader);
                 foreach (var scalar in source.Tables(material, 1, 256))
                 {
                     var parameter = source.Text(scalar, 0)!;
-                    if (!ZaSwShDisplacedUnlit.Scalars.Contains(parameter) && parameter is not ("LayerMaskScale5" or "DiscardValue")) throw new InvalidDataException("Unknown source Unlit scalar animation.");
+                    if (!ZaSwShDisplacedUnlit.Scalars.Contains(parameter) && parameter is not ("LayerMaskScale5" or "DiscardValue")
+                        && !(flipbook && parameter is "FlipBookWidth" or "FlipBookHeight" or "FlipBookFrame")) throw new InvalidDataException("Unknown source Unlit scalar animation.");
                     Add(name, ZaSwShDisplacedUnlit.Name(parameter), Keys(source.Table(scalar, 1)));
                 }
                 foreach (var vector in source.Tables(material, 2, 256))
                 {
                     var parameter = source.Text(vector, 0)!;
+                    if (flipbook && parameter == "UVScaleOffset1") parameter = "UVScaleOffset3";
                     if (!ZaSwShDisplacedUnlit.Vectors.Contains(parameter) && parameter is not ("BaseColorLayer5" or "UVScaleOffset5")) throw new InvalidDataException("Unknown source Unlit vector animation.");
                     var channels = source.Table(vector, 1);
                     for (var c = 0; c < 4; c++)
@@ -65,10 +68,10 @@ public static class ZaSwShDisplacedUnlitAnimation
         }
         var decoded = decode(writer.Finish(source.Root));
         foreach (var (name, contract) in contracts)
-            foreach (var parameter in ResetParameters)
+            foreach (var parameter in ResetParameters.Concat(SV.SvSwShFlipbookEye.Recognizes(contract.Shader) ? ["FlipBookWidth", "FlipBookHeight", "FlipBookFrame", "BaseColor", "LayerMaskScale1"] : Array.Empty<string>()))
             {
-                var scalar = Array.IndexOf(ZaSwShDisplacedUnlit.Scalars, parameter);
-                if (scalar >= 0) tracks.TryAdd((name, ZaSwShDisplacedUnlit.Name(parameter)), [new(0, [contract.Values[scalar]])]);
+                var scalar = ZaSwShDisplacedUnlit.ParameterIndex(parameter);
+                if (!ZaSwShDisplacedUnlit.Vectors.Contains(parameter)) tracks.TryAdd((name, ZaSwShDisplacedUnlit.Name(parameter)), [new(0, [contract.Values[scalar]])]);
                 else for (var c = 0; c < 4; c++)
                 {
                     var index = ZaSwShDisplacedUnlit.ParameterIndex(parameter, c);

@@ -7,7 +7,7 @@ using KM.Formats.SwSh;
 
 namespace KM.SwSh.Restoration;
 
-public enum SwShRestorationWriter { File, Personal, Learnset, Icons, ModelCatalog, Camp, Voices, Items, ItemText, SpeciesText, AbilityText }
+public enum SwShRestorationWriter { File, Personal, Learnset, Icons, ModelCatalog, Camp, Voices, Items, ItemText, SpeciesText, AbilityText, BattleCamera }
 public sealed record SwShRestorationContribution(string Path, SwShRestorationWriter Writer, string Key, byte[]? Before, byte[] After);
 public sealed record SwShRestorationComposition(IReadOnlyDictionary<string, byte[]?> Files,
     IReadOnlyList<SwShRestorationContribution> RetainedCustomizations);
@@ -22,6 +22,7 @@ public static class SwShRestorationComposer
     public const string CatalogPath = "romfs/bin/pokemon/table/poke_resource_table.gfbpmcatalog";
     public const string CampPath = "romfs/bin/archive/pokemon_data/pokecamp.gfpak";
     public const string VoicesPath = "romfs/bin/sound/NX64/wwise/bank/Common.bnk";
+    public const string BattleCameraPath = "romfs/bin/battle/data_table/poke_data.prmb";
 
     /// <summary>Checks presence against immutable source buffers owned by one catalog load.</summary>
     internal sealed class PresenceValidator
@@ -122,6 +123,20 @@ public static class SwShRestorationComposer
             if (current is null) throw new InvalidDataException($"Shared restoration source is missing: {group.Key}");
             switch (kind)
             {
+                case SwShRestorationWriter.BattleCamera:
+                {
+                    var table = new SwShBattleCameraTable(current);
+                    var changes = new Dictionary<SwShBattleCameraIdentity, SwShBattleCameraAdjustment?>();
+                    foreach (var item in items)
+                    {
+                        var after = SwShRestorationBattleCamera.Decode(item.After, item.Key);
+                        if (item.Before is not null) _ = SwShRestorationBattleCamera.Decode(item.Before, item.Key);
+                        var existing = table.Read(after.Identity);
+                        var selected = Select(item, existing is null ? null : JsonSerializer.SerializeToUtf8Bytes(existing));
+                        changes.Add(after.Identity, selected is null ? null : SwShRestorationBattleCamera.Decode(selected, item.Key));
+                    }
+                    outputs.Add(group.Key, captureOnly ? current : table.Compose(changes)); break;
+                }
                 case SwShRestorationWriter.SpeciesText:
                 {
                     var table = SwShGameTextFile.Parse(current, 2048); var lines = table.Lines.ToList(); var minimum = lines.Count;
@@ -353,7 +368,8 @@ public static class SwShRestorationComposer
     // the native genderless lookup used by these registered identities.
     public static IReadOnlyList<int> IconGenders(int species) => species is
         100 or 101 or 121 or 150 or 376 or 382 or 383 or 384 or 386 or 483 or 484 or 491
-        or 623 or 718 or 719 or 720 or 774 or 801 or 807 or 870 ? [0, 3] : [0];
+        or 623 or 718 or 719 or 720 or 774 or 801 or 807 or 870
+        or >= 984 and <= 995 or >= 1000 and <= 1010 or >= 1020 and <= 1023 ? [0, 3] : [0];
     public static string IconPath(int species, int form = 0, int gender = 0) =>
         $"romfs/bin/appli/icon_pokemon/poke_icon_{SwShRestorationSpecies.IconSpecies(species):0000}_{form:00}{(gender == 3 ? "n" : "s")}_n.bntx";
     public static string IconKey(int species, int form = 0, int gender = 0) => form == 0 && gender == 0 ? SwShRestorationSpecies.IconSpecies(species).ToString(CultureInfo.InvariantCulture)
@@ -385,7 +401,9 @@ public static class SwShRestorationComposer
         {
             SwShRestorationWriter.Personal => PersonalPath, SwShRestorationWriter.Learnset => LearnsetPath, SwShRestorationWriter.Icons => IconsPath,
             SwShRestorationWriter.ModelCatalog => CatalogPath, SwShRestorationWriter.Camp => CampPath, SwShRestorationWriter.Voices => VoicesPath,
-            SwShRestorationWriter.Items => SwShItemTable.ItemDataRelativePath, _ => null,
+            SwShRestorationWriter.Items => SwShItemTable.ItemDataRelativePath,
+            SwShRestorationWriter.BattleCamera => BattleCameraPath,
+            _ => null,
         };
         if (expected is not null && path != expected) throw new InvalidDataException("Restoration writer cannot address this output.");
         if (kind == SwShRestorationWriter.ItemText && !SwShRestorationMegaItems.IsTextPath(path))

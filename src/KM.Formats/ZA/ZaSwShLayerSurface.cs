@@ -12,7 +12,8 @@ public static class ZaSwShLayerSurface
     public const string Program = "ZaLayerSurface6";
     public static readonly string[] Programs = [Program, "ZaLayerSurface6Mask1", "ZaLayerSurface6Fresnel", "ZaLayerSurface6FresnelMask1",
         "ZaLayerSurface5", "ZaLayerSurface5Displaced", "ZaLayerSurface5Blend", "ZaLayerSurface5Noise", "ZaLayerSurface5Iep",
-        "ZaLayerSurface5Mask0", "ZaLayerSurface5IepMask0"];
+        "ZaLayerSurface5Mask0", "ZaLayerSurface5IepMask0", "SvLayerSurface5IepMask0", "SvLayerSurface1Iep", "SvLayerSurface5EyeMask0", "SvLayerSurface5Mask0",
+        "SvLayerSurface5GeometricMask0", "SvLayerSurface5TangentMask0", "SvLayerSurface5IepTangentTransparentMask0"];
     public static bool Recognizes(string? name) => name is not null && Programs.Contains(name);
     public static bool SixLayers(string name) => name.StartsWith("ZaLayerSurface6", StringComparison.Ordinal);
     public static readonly string[] Scalars = ["EmissionIntensity", .. Enumerable.Range(1, 5).Select(i => "EmissionIntensityLayer" + i),
@@ -40,7 +41,10 @@ public static class ZaSwShLayerSurface
     {
         public string Shader { get; init; } = Program;
         public bool DisableNativeSecondaryLayer { get; init; }
+        public bool MissingSecondaryUvIsZero { get; init; }
         public bool SecondaryUv => SixLayers(Shader) || Shader.Contains("Iep", StringComparison.Ordinal);
+        public bool SourceFrame => Shader.Contains("Iep", StringComparison.Ordinal) || Shader.Contains("Tangent", StringComparison.Ordinal) || Shader.Contains("Geometric", StringComparison.Ordinal);
+        public bool SourceTangent => Shader.Contains("Iep", StringComparison.Ordinal) || Shader.Contains("Tangent", StringComparison.Ordinal);
     }
     public static IReadOnlyDictionary<string, Contract> Contracts(byte[] bytes)
     {
@@ -109,6 +113,9 @@ public static class ZaSwShLayerSurface
     public static PreviewScene Geometry(PreviewScene scene, IReadOnlyDictionary<string, Contract> contracts)
     {
         if (contracts.Count == 0) return scene;
+        scene = scene with { Primitives = scene.Primitives.Select(p => p.SecondaryUv is null
+            && contracts.TryGetValue(p.Material.Name, out var contract) && contract.MissingSecondaryUvIsZero
+                ? p with { SecondaryUv = new float[p.Vertices.Length / 16 * 2] } : p).ToArray() };
         // The original Zygarde head shares body_e with the energy mesh but
         // declares no TEXCOORD1. Preserve its zero generic attribute value.
         if (contracts.ContainsKey("body_e") && contracts.ContainsKey("body_d_01"))
@@ -123,7 +130,7 @@ public static class ZaSwShLayerSurface
 
     public static byte[] Template(byte[] bytes, Contract contract, IReadOnlyDictionary<string, string> images)
     {
-        bytes = SvSwShLayerEmission.Template(bytes, contract.Shader, "Body00");
+        bytes = SvSwShLayerEmission.Template(bytes, contract.Shader, contract.Shader is "SvLayerSurface5EyeMask0" or "SvLayerSurface5IepTangentTransparentMask0" ? "TransparentFront" : "Body00");
         var source = new ModelBuffer(bytes); var material = Material(source, contract.Shader);
         var writer = new ModelTableBuilder(bytes); var rows = source.Tables(material, 13, 256);
         if (rows.Length != 52 || source.Tables(material, 14, 256).Length != 19)

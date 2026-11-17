@@ -21,7 +21,10 @@ public sealed record SwShEffectLocator(string Name, string Parent, Vector3 Trans
     public Quaternion Rotation { get; init; } = Quaternion.Identity;
     public Vector3 Scale { get; init; } = Vector3.One;
 }
-public sealed record SwShConvertedGeometry(byte[] Model, PreviewBone[] Bones, Vector3 Minimum, Vector3 Maximum);
+public sealed record SwShConvertedGeometry(byte[] Model, PreviewBone[] Bones, Vector3 Minimum, Vector3 Maximum)
+{
+    public IReadOnlyDictionary<string, string[]> VisibilityTargets { get; init; } = new Dictionary<string, string[]>();
+}
 
 /// <summary>Encodes skinned geometry against an explicitly selected native shader contract.</summary>
 public static class SwShModelWriter
@@ -29,10 +32,10 @@ public static class SwShModelWriter
     public static SwShConvertedGeometry Convert(PreviewScene scene, byte[] nativeModel,
         IReadOnlyList<SwShMaterialBinding> bindings, IReadOnlyDictionary<string, string> boneAliases,
         IReadOnlyList<SwShEffectLocator> locators, float scale = 100, CancellationToken cancellationToken = default,
-        bool preserveMeshNames = false)
+        bool preserveMeshNames = false, bool separateMeshNodes = false)
     {
         if (!float.IsFinite(scale) || scale <= 0 || scene.Primitives.Count is < 1 or > 128
-            || scene.Rig.Bones.Length is < 1 or > 255 || bindings.Count != scene.Primitives.Count)
+            || scene.Rig.Bones.Length is < 1 or > 256 || bindings.Count != scene.Primitives.Count)
             throw new InvalidDataException("Model conversion inputs are outside the supported limits.");
         var native = new ModelBuffer(nativeModel);
         var materials = native.Tables(native.Root, 6, 128);
@@ -57,16 +60,19 @@ public static class SwShModelWriter
             bones.Add(new(locator.Name, parent, -1, false, [locator.Scale.X, locator.Scale.Y, locator.Scale.Z], [rotation.X, rotation.Y, rotation.Z, rotation.W],
                 [locator.Translation.X, locator.Translation.Y, locator.Translation.Z], []));
         }
+        if (separateMeshNodes && !preserveMeshNames) throw new InvalidDataException("Separate mesh nodes require named visibility targets.");
+        var meshNodeNames = scene.Primitives.Select((p, i) => separateMeshNodes ? p.Name + "_section" + i : p.Name).ToArray();
         var meshBones = new Dictionary<string, int>(StringComparer.Ordinal);
         if (preserveMeshNames)
-            foreach (var name in scene.Primitives.Select(p => p.Name).Distinct(StringComparer.Ordinal))
+            foreach (var name in meshNodeNames.Distinct(StringComparer.Ordinal))
             {
                 if (string.IsNullOrWhiteSpace(name) || bones.Any(b => b.Name == name))
                     throw new InvalidDataException("Converted mesh node identity is invalid.");
                 meshBones.Add(name, bones.Count);
                 bones.Add(new(name, 0, -1, false, [1, 1, 1], [0, 0, 0, 1], [0, 0, 0], []));
             }
-        if (bones.Count > 255) throw new InvalidDataException("Converted skeleton exceeds the native joint limit.");
+        // Joint indices are bytes: 256 nodes occupy indices 0 through 255.
+        if (bones.Count > 256) throw new InvalidDataException("Converted skeleton exceeds the native joint limit.");
         var joints = scene.Rig.Bones.Select((bone, index) => (bone.Joint, Index: index)).Where(b => b.Joint >= 0)
             .ToDictionary(b => b.Joint, b => b.Index);
         var bounds = scene.Primitives.Select(p => Bounds(p, scale)).ToArray();
@@ -118,7 +124,15 @@ public static class SwShModelWriter
                     && ZA.ZaSwShFresnelMaterial.RequiresClampRuntime(nativeModel);
                 var body = vertex is not null && vertex == fragment && SwShZaTangentBodyShader.Recognizes(vertex)
                     && binding.UseSourceNormalComponents && !binding.UseSecondaryUv && binding.NormalUvScale == Vector2.One;
-                if (binding.SourceTangentSet != 0 || !gem && !body)
+                var interior = vertex == fragment && vertex is "SvLayerSurface5IepMask0" or "SvLayerSurface1Iep" or "SvLayerSurface5IepTangentTransparentMask0"
+                    && binding.UseSourceNormalComponents && binding.UseSecondaryUv;
+                var paradoxEye = vertex == fragment && vertex == "SvLayerSurface5TangentMask0"
+                    && scene.Primitives[i].Name.StartsWith("pm1094_00_00_", StringComparison.Ordinal)
+                    && binding.UseSourceNormalComponents && !binding.UseSecondaryUv && binding.NormalUvScale == Vector2.One;
+                var archaludon = vertex == fragment && vertex is SV.SvSwShArchaludonNormals.ProgramName or SV.SvSwShSourceBase.ProgramName
+                    && scene.Primitives[i].Name.StartsWith("pm1132_00_00_", StringComparison.Ordinal)
+                    && binding.UseSourceNormalComponents && !binding.UseSecondaryUv && binding.NormalUvScale == Vector2.One;
+                if (binding.SourceTangentSet != 0 || !gem && !body && !interior && !paradoxEye && !archaludon)
                     throw new InvalidDataException("Authored tangent geometry requires its qualified UV0 vertex and fragment consumers.");
                 preserveSourceSamplers = true;
             }
@@ -128,7 +142,7 @@ public static class SwShModelWriter
         for (var i = 0; i < slots.Length; i++)
             writer.Pointer(slots[i], writer.Table(4, new Dictionary<int, byte[]>
             {
-                [0] = ModelTableBuilder.Integer(preserveMeshNames ? meshBones[scene.Primitives[i].Name] : 0), [1] = ModelTableBuilder.Integer(i),
+                [0] = ModelTableBuilder.Integer(preserveMeshNames ? meshBones[meshNodeNames[i]] : 0), [1] = ModelTableBuilder.Integer(i),
                 [2] = BoundsBytes(bounds[i].Min, bounds[i].Max), [3] = ModelTableBuilder.Integer(0),
             }, new Dictionary<int, int> { [2] = 24 }));
         slots = writer.Vector(root, 8, scene.Primitives.Count);
@@ -174,7 +188,12 @@ public static class SwShModelWriter
             writer.Pointer(slots[i], table); writer.Text(table, 0, bone.Name);
         }
         writer.Vector(root, 10, 0); writer.Vector(root, 11, 0);
-        return new(writer.Finish(root), bones.ToArray(), minimum, maximum);
+        return new(writer.Finish(root), bones.ToArray(), minimum, maximum)
+        {
+            VisibilityTargets = separateMeshNodes ? scene.Primitives.Select((p, i) => (p.Name, Target: meshNodeNames[i]))
+                .GroupBy(p => p.Name, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Select(p => p.Target).ToArray(), StringComparer.Ordinal)
+                : new Dictionary<string, string[]>(),
+        };
     }
 
     public static byte[] Configuration(byte[] nativeConfiguration, int species, SwShConvertedGeometry geometry,

@@ -9,11 +9,14 @@ public static class SwShRestorationEvolutionPolicy
 {
     public const int DuskStone = 108;
     private static readonly (int Parent, SwShPokemonIdentity Target)[] NativeBranches =
-        [(704, new(705, 1)), (723, new(724, 1))];
+        [(704, new(705, 1)), (723, new(724, 1)), (625, new(983, 0)), (884, new(1018, 0))];
 
     public static SwShEvolutionRecord Convert(SwShPokemonIdentity parent, SwShEvolutionRecord source) =>
         (parent.Species, parent.Form, source.Species, source.Form) switch
         {
+            (203, 0, 981, 0) => source with { Method = 4, Argument = 0, Level = 32 },
+            (625, 0, 983, 0) => source with { Method = 4, Argument = 0, Level = 60 },
+            (884, 0, 1018, 0) => source with { Method = 4, Argument = 0, Level = 40 },
             (211, 1, 904, 0) => source with { Method = 4, Argument = 0, Level = 36 },
             (217, 0, 901, 0) => source with { Method = 4, Argument = 0, Level = 40 },
             (550, 2, 902, 0) => source with { Method = 23, Argument = 0, Level = 40 },

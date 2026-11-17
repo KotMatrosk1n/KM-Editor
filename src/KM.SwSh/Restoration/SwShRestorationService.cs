@@ -413,15 +413,22 @@ public sealed partial class SwShRestorationService
                 if (!aligned.Learnset.AsSpan().SequenceEqual(learnset)) outputs[SwShRestorationComposer.LearnsetPath] = aligned.Learnset;
             }
         }
-        if (needsSoundMemory) AddSoundMemory(paths, outputs, sources, voices?.Length ?? 0);
+        if (needsSoundMemory && (!assetsOnly || outputs.ContainsKey(SwShRestorationComposer.VoicesPath)))
+            AddSoundMemory(paths, outputs, sources, voices?.Length ?? 0);
         if (!assetsOnly)
         {
             AddMegaItemProtection(paths, state, outputs, sources);
             AddSpeciesSupport(paths, state, outputs, sources);
             AddAbilitySupport(paths, state, outputs, sources, owned);
-            if (SwShRestorationDependencies.Enabled(state).Count != 0) AddTableMemory(paths, outputs, sources);
+            if (SwShRestorationDependencies.Enabled(state).Count != 0)
+            {
+                AddTableMemory(paths, outputs, sources);
+                AddModelMemory(paths, outputs, sources);
+            }
             AddCryRouting(paths, state, outputs, sources);
         }
+        else if (edits.Any(edit => Parse(edit).Enabled))
+            AddModelMemory(paths, outputs, sources);
         AddSamplerSupport(paths, state, outputs, sources);
         var storedState = SwShRestorationStateStore.Store(paths, state); using (storedState.Lease) { }
         state = SwShRestorationStateStore.ReadState(paths, storedState.Hash).State;
@@ -530,6 +537,19 @@ public sealed partial class SwShRestorationService
         var current = baseline;
         if (System.IO.File.Exists(output)) { current = BoundedRead(output); sources.Add(new(ProjectFileLayer.Layered, relative)); }
         var patched = SwShRestorationSoundMemoryPatcher.Apply(baseline, current, paths.SelectedGame!.Value, bankBytes);
+        if (!patched.AsSpan().SequenceEqual(current)) outputs[relative] = patched;
+    }
+
+    private static void AddModelMemory(ProjectPaths paths, IDictionary<string, byte[]?> outputs, ISet<ProjectFileReference> sources)
+    {
+        if (string.IsNullOrWhiteSpace(paths.BaseExeFsPath))
+            throw new InvalidDataException("Select the game's Base ExeFS folder to apply the memory required by restored Pokemon models.");
+        const string relative = SwShRestorationModelMemoryPatcher.MainPath;
+        var baseline = BoundedRead(Path.Combine(paths.BaseExeFsPath, "main")); sources.Add(new(ProjectFileLayer.Base, relative));
+        var current = baseline; var output = Output(paths, relative, includeExecutable: true);
+        if (outputs.TryGetValue(relative, out var pending) && pending is not null) current = pending;
+        else if (System.IO.File.Exists(output)) { current = BoundedRead(output); sources.Add(new(ProjectFileLayer.Layered, relative)); }
+        var patched = SwShRestorationModelMemoryPatcher.Apply(baseline, current, paths.SelectedGame!.Value);
         if (!patched.AsSpan().SequenceEqual(current)) outputs[relative] = patched;
     }
 
