@@ -468,7 +468,6 @@ public sealed class SwShPokemonWorkflowService
         var itemDisplayNames = CreateItemDisplayNames(itemNames, moveNames, itemRecords);
         var machineMoves = CreateMachineCompatibilityMoveCatalog(itemRecords, diagnostics);
         var itemOptions = CreateIndexedOptions(itemDisplayNames, "Item");
-        var evolutionItemOptions = CreateEvolutionItemOptions(itemRecords, itemDisplayNames);
         var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(
             project,
             readAllBytes,
@@ -485,6 +484,8 @@ public sealed class SwShPokemonWorkflowService
             readAllBytes,
             maximumRecordCount,
             personalIds);
+        var evolutionItemOptions = CreateEvolutionItemOptions(
+            itemRecords, itemDisplayNames, evolutions.Values.SelectMany(rows => rows));
         var displaySpeciesNames = speciesNames.Count > 0 ? speciesNames : Array.Empty<string>();
         var learnsetMoveOptions = SwShMoveAvailability.CreateMoveOptions(
             moveNames,
@@ -1308,13 +1309,18 @@ public sealed class SwShPokemonWorkflowService
 
     private static IReadOnlyList<SwShPokemonEditableFieldOption> CreateEvolutionItemOptions(
         IReadOnlyList<SwShItemTableRecord> itemRecords,
-        IReadOnlyList<string> itemDisplayNames)
+        IReadOnlyList<string> itemDisplayNames,
+        IEnumerable<SwShEvolutionRecord> evolutions)
     {
         return itemRecords
             .Where(IsUsableEvolutionItem)
-            .Select(item => CreateOption(
-                item.ItemId,
-                FormatIndexedOption(item.ItemId, itemDisplayNames, "Item")))
+            .Select(item => item.ItemId)
+            // Existing routes remain selectable even when item metadata omits the evolution flag.
+            .Concat(evolutions.Where(evolution => IsUseItemEvolutionMethod(evolution.Method))
+                .Select(evolution => evolution.Argument))
+            .Distinct()
+            .Order()
+            .Select(itemId => CreateOption(itemId, FormatIndexedOption(itemId, itemDisplayNames, "Item")))
             .ToArray();
     }
 
