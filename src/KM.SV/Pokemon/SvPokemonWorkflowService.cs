@@ -955,7 +955,8 @@ internal sealed partial class SvPokemonWorkflowService
         IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
         var itemOptions = CreateIndexedOptions(labels.ItemNameCount, labels.Item, includeNone: true);
-        var evolutionItemOptions = CreateEvolutionItemArgumentOptions(labels, evolutionItemArgumentLabels);
+        var evolutionItemOptions = CreateEvolutionItemArgumentOptions(
+            labels, evolutionItemArgumentLabels, pokemon.SelectMany(record => record.Evolutions));
         var moveOptions = CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: false);
         var speciesOptions = CreateIndexedOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true);
 
@@ -1060,11 +1061,16 @@ internal sealed partial class SvPokemonWorkflowService
 
     private static IReadOnlyList<SvPokemonEditableFieldOption> CreateEvolutionItemArgumentOptions(
         SvTextLabelLookup labels,
-        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels,
+        IEnumerable<SvPokemonEvolutionRecord> evolutions)
     {
         return evolutionItemArgumentLabels.Keys
+            // Existing routes remain selectable even when item metadata omits the evolution flag.
+            .Concat(evolutions.Where(evolution => IsUseItemEvolutionMethod(evolution.Method))
+                .Select(evolution => evolution.Argument))
+            .Append(0)
+            .Distinct()
             .OrderBy(value => value)
-            .Prepend(0)
             .Select(value => new SvPokemonEditableFieldOption(
                 value,
                 $"{value.ToString(CultureInfo.InvariantCulture)} {FormatEvolutionItemArgument(value, labels, evolutionItemArgumentLabels)}"))

@@ -1811,7 +1811,8 @@ internal sealed class ZaPokemonWorkflowService
         IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
         var itemOptions = CreateIndexedOptions(labels.ItemNameCount, labels.Item, includeNone: true);
-        var evolutionItemOptions = CreateEvolutionItemArgumentOptions(labels, evolutionItemArgumentLabels);
+        var evolutionItemOptions = CreateEvolutionItemArgumentOptions(
+            labels, evolutionItemArgumentLabels, pokemon.SelectMany(record => record.Evolutions));
         var moveOptions = CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: false);
         var speciesOptions = CreateIndexedOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true);
 
@@ -1910,11 +1911,16 @@ internal sealed class ZaPokemonWorkflowService
 
     private static IReadOnlyList<ZaPokemonEditableFieldOption> CreateEvolutionItemArgumentOptions(
         ZaTextLabelLookup labels,
-        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels,
+        IEnumerable<ZaPokemonEvolutionRecord> evolutions)
     {
         return evolutionItemArgumentLabels.Keys
+            // Existing routes remain selectable even when item metadata omits the evolution flag.
+            .Concat(evolutions.Where(evolution => IsUseItemEvolutionMethod(evolution.Method))
+                .Select(evolution => evolution.Argument))
+            .Append(0)
+            .Distinct()
             .OrderBy(value => value)
-            .Prepend(0)
             .Select(value => new ZaPokemonEditableFieldOption(
                 value,
                 $"{value.ToString(CultureInfo.InvariantCulture)} {FormatEvolutionItemArgument(value, labels, evolutionItemArgumentLabels)}"))

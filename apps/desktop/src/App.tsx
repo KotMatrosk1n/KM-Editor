@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 import { appliedPlacementObjectIds, appliedRecordIndices, appliedNumericRecordIds, appliedEncounterTableIds, appliedRaidTableIds, appliedTrainerPartyIds, appliedTeraRaidRecordIds, appliedZaEncounterTableIds } from './partialWorkflow';
 import { evolutionDraftFields, evolutionDraftsEqual, orderEvolutionDraftRows, planEvolutionDraftStage, projectEvolutionDraftRows, replaceEvolutionDraftRecord, settleEvolutionDrafts, type PokemonEvolutionLocalDraft } from './features/pokemon/evolutionDrafts';
+import { createEvolutionArgumentOptions, evolutionArgumentUsesGameText } from './features/pokemon/evolutionArgumentOptions';
 import { learnsetDraftsEqual, projectLearnsetDraftRows, replaceLearnsetDraftRecord, replaceLearnsetDrafts, settleLearnsetDrafts, stagedLearnsetSlotMap, type PokemonLearnsetLocalDraft } from './features/pokemon/learnsetDrafts';
 import { LearnsetClipboardActions } from './features/pokemon/LearnsetClipboardActions';
 import { InteractiveTableRow, VirtualTableBody } from './components/VirtualTable';
@@ -25456,15 +25457,19 @@ function SelectedPokemonPanel({
   );
   const selectedEvolutionUsesLevel = selectedEvolutionMethodOption?.usesLevel ?? true;
   const selectedEvolutionArgumentOptions = useMemo(
-    () => addCurrentPokemonFieldOption(
-      selectedEvolutionMethodOption?.argumentOptions ?? [],
+    () => createEvolutionArgumentOptions(
+      selectedEvolutionMethodOption,
       evolutionArgumentDraft,
-      selectedEvolutionMethodOption?.argumentLabel ?? 'Argument'
+      evolutionMethodOptions,
+      selectedEvolution,
+      translateLiteral(selectedEvolutionMethodOption?.argumentLabel ?? 'Argument')
     ),
     [
       evolutionArgumentDraft,
-      selectedEvolutionMethodOption?.argumentLabel,
-      selectedEvolutionMethodOption?.argumentOptions
+      evolutionMethodOptions,
+      selectedEvolution,
+      selectedEvolutionMethodOption,
+      translateLiteral
     ]
   );
   const newEvolutionMethodOptions = useMemo(
@@ -25477,15 +25482,18 @@ function SelectedPokemonPanel({
   );
   const newEvolutionUsesLevel = newEvolutionMethodOption?.usesLevel ?? true;
   const newEvolutionArgumentOptions = useMemo(
-    () => addCurrentPokemonFieldOption(
-      newEvolutionMethodOption?.argumentOptions ?? [],
+    () => createEvolutionArgumentOptions(
+      newEvolutionMethodOption,
       newEvolutionArgumentDraft,
-      newEvolutionMethodOption?.argumentLabel ?? 'Argument'
+      evolutionMethodOptions,
+      null,
+      translateLiteral(newEvolutionMethodOption?.argumentLabel ?? 'Argument')
     ),
     [
       newEvolutionArgumentDraft,
-      newEvolutionMethodOption?.argumentLabel,
-      newEvolutionMethodOption?.argumentOptions
+      evolutionMethodOptions,
+      newEvolutionMethodOption,
+      translateLiteral
     ]
   );
   const [selectedLearnsetSlot, setSelectedLearnsetSlot] = useState(
@@ -27847,6 +27855,7 @@ function SelectedPokemonPanel({
                         )}
                         disabled={!canEditEvolutionFields}
                         id="pokemon-evolution-argument"
+                        localizeOptions={!evolutionArgumentUsesGameText(selectedEvolutionMethodOption?.argumentKind)}
                         onChange={(value) => {
                           setEvolutionArgumentDraft(value);
                           updateSelectedEvolutionDraft({ argument: value });
@@ -28073,6 +28082,7 @@ function SelectedPokemonPanel({
                       )}
                       disabled={!canEditEvolution}
                       id="pokemon-new-evolution-argument"
+                      localizeOptions={!evolutionArgumentUsesGameText(newEvolutionMethodOption?.argumentKind)}
                       onChange={setNewEvolutionArgumentDraft}
                       options={newEvolutionArgumentOptions}
                       value={newEvolutionArgumentDraft}
