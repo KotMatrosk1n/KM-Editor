@@ -12,7 +12,8 @@ namespace KM.ZA.Behavior;
 public sealed record ZaBehaviorResource(string EntryId, int SpeciesId, string SpeciesName, int Form,
     int Gender, string SourceFile, string SourceLayer, string Profile, bool IsInitialized,
     IReadOnlyList<string> Tags, IReadOnlyDictionary<string, string> Fields,
-    IReadOnlyList<string> VanillaTags, IReadOnlyDictionary<string, string> VanillaFields, string VanillaProfile);
+    IReadOnlyList<string> VanillaTags, IReadOnlyDictionary<string, string> VanillaFields, string VanillaProfile,
+    string CityRoaming);
 public sealed record ZaBehaviorField(string Field, string Label, double Minimum, double Maximum,
     double StockMinimum, double StockMaximum);
 public sealed record ZaBehaviorProfile(string Value, string Label);
@@ -49,6 +50,19 @@ internal static class ZaBehaviorSettings
     [new("aggressive", "Aggressive"), new("gentle1", "Gentle (variant 1)"),
      new("gentle2", "Gentle (variant 2)"), new("gentle4", "Gentle (variant 4)"),
      new("timid", "Timid"), new("sluggish", "Sluggish")];
+    internal static readonly Dictionary<string, string> CityProfiles = new(StringComparer.Ordinal)
+    {
+        ["aggressive"] = "wp_oz_warlike",
+        ["gentle"] = "wp_oz_gentle",
+        ["timid"] = "wp_oz_cowardice",
+        ["sluggish"] = "wp_oz_torpor",
+    };
+    internal static string CityProfile(IEnumerable<string> tags)
+    {
+        var overrides = tags.Where(CityProfiles.ContainsValue).ToArray();
+        return overrides.Length == 0 ? "default" : overrides.Length == 1
+            ? CityProfiles.Single(p => p.Value == overrides[0]).Key : "custom";
+    }
     internal static bool IsTemperament(string tag) => tag is "Warlike" or "Gentle" or "Cowardice" or "Torpor"
         || Enumerable.Range(1, 10).Any(i => tag == $"Gentle{i}" || tag == $"Torpor{i}");
     internal static string Profile(IEnumerable<string> tags)
@@ -107,7 +121,19 @@ internal sealed class ZaBehaviorWorkflowService(ZaWorkflowFileSource files)
         { diagnostics.Add(ZaBehaviorSettings.Error("SOURCE-UNAVAILABLE", "Behavior data could not be loaded.")); }
         if (resources.Count == 0 && diagnostics.All(d => d.Severity != DiagnosticSeverity.Error))
             diagnostics.Add(ZaBehaviorSettings.Error("SOURCE-UNAVAILABLE", "No readable Behavior resources are available."));
-        return new(new(summary, resources, ZaBehaviorSettings.Fields, ZaBehaviorSettings.Options, diagnostics), sources, catalog);
+        var citySources = new Dictionary<string, ZaWorkflowFile>(StringComparer.Ordinal);
+        ZaCityRoamingDocument? city = null;
+        try
+        {
+            foreach (var path in new[] { ZaCityRoamingDocument.TemplatePath, ZaCityRoamingDocument.ScenarioPath })
+                citySources.Add(path, files.Read(project, path));
+            city = new(citySources[ZaCityRoamingDocument.TemplatePath].Bytes, citySources[ZaCityRoamingDocument.ScenarioPath].Bytes);
+        }
+        catch (Exception e) when (ZaBehaviorSettings.SourceFailure(e)) { citySources.Clear(); }
+        var cityStatus = resources.Select(r => r.SpeciesId).Distinct().ToDictionary(s => s,
+            s => city?.Status(s) ?? (ZaCityRoamingDocument.Profiles.Any(p => p.Species == s) ? "unavailable" : "unsupported"));
+        return new(new(summary, resources.Select(r => r with { CityRoaming = cityStatus[r.SpeciesId] }).ToArray(),
+            ZaBehaviorSettings.Fields, ZaBehaviorSettings.Options, diagnostics), sources, catalog, citySources, city);
     }
 
     internal static ZaBehaviorResource Project(string id, string name, ZaWorkflowFile source, ZaBehaviorDocument doc, ZaBehaviorDocument vanilla) =>
@@ -115,7 +141,7 @@ internal sealed class ZaBehaviorWorkflowService(ZaWorkflowFileSource files)
             int.Parse(id.AsSpan(5, 2), CultureInfo.InvariantCulture), int.Parse(id.AsSpan(8, 2), CultureInfo.InvariantCulture),
             source.RelativePath, source.SourceLayer.ToString(), ZaBehaviorSettings.Profile(doc.Tags),
             doc.Tags.Contains("State_usually") && doc.Tags.Contains("WildTeam"), doc.Tags,
-            ToFields(doc), vanilla.Tags, ToFields(vanilla), ZaBehaviorSettings.Profile(vanilla.Tags));
+            ToFields(doc), vanilla.Tags, ToFields(vanilla), ZaBehaviorSettings.Profile(vanilla.Tags), "unsupported");
 
     private static IReadOnlyDictionary<string, string> ToFields(ZaBehaviorDocument doc) =>
         ZaBehaviorSettings.Fields.Select((f, i) => (f.Field, Value: ZaBehaviorSettings.Format(doc.Values[i])))
@@ -123,4 +149,5 @@ internal sealed class ZaBehaviorWorkflowService(ZaWorkflowFileSource files)
 }
 
 internal sealed record ZaBehaviorState(ZaBehaviorWorkflow Workflow,
-    Dictionary<string, ZaWorkflowFile> Sources, ZaWorkflowFile? Catalog);
+    Dictionary<string, ZaWorkflowFile> Sources, ZaWorkflowFile? Catalog,
+    Dictionary<string, ZaWorkflowFile>? CitySources = null, ZaCityRoamingDocument? City = null);

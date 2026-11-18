@@ -35,10 +35,20 @@ internal sealed class ZaBehaviorEditSessionService(ProjectWorkspaceService works
             try
             {
                 var value = Normalize(update.Field, update.Value);
-                if (update.Field == "restoreVanilla") pending.RemoveAll(e => Owns(e, update.EntryId));
+                var species = state.Workflow.Resources.Single(r => r.EntryId == update.EntryId).SpeciesId;
+                if (update.Field == "cityRoaming")
+                {
+                    if (state.City?.Status(species) is not ("enabled" or "disabled")) throw new InvalidDataException();
+                    // AI routines belong to the species, including all its resource variants.
+                    pending.RemoveAll(e => e.Domain == ZaBehaviorSettings.Domain && e.Field == "cityRoaming"
+                        && e.RecordId is not null && e.RecordId.StartsWith(update.EntryId[..4] + "_", StringComparison.Ordinal));
+                }
+                if (update.Field == "restoreVanilla") pending.RemoveAll(e => Owns(e, update.EntryId) && e.Field != "cityRoaming");
                 pending.RemoveAll(e => Owns(e, update.EntryId) && e.Field == update.Field);
                 var baseline = new ZaBehaviorDocument(source.Bytes);
-                var equivalent = update.Field == "profile" ? value == ZaBehaviorSettings.Profile(baseline.Tags)
+                var equivalent = update.Field == "cityRoaming" ? (value == "true") == (state.City?.Status(species) == "enabled")
+                    : update.Field == "cityProfile" ? value == ZaBehaviorSettings.CityProfile(baseline.Tags)
+                    : update.Field == "profile" ? value == ZaBehaviorSettings.Profile(baseline.Tags)
                     : Array.FindIndex(ZaBehaviorSettings.Fields, f => f.Field == update.Field) is var i && i >= 0
                         && value == ZaBehaviorSettings.Format(baseline.Values[i]);
                 // A scalar/profile override after restore is compared to the restored state during compilation.
@@ -47,6 +57,7 @@ internal sealed class ZaBehaviorEditSessionService(ProjectWorkspaceService works
                     var references = new List<ProjectFileReference> { new(source.SourceLayer, source.RelativePath) };
                     if (state.Catalog is not null) references.Add(new(state.Catalog.SourceLayer, state.Catalog.RelativePath));
                     if (update.Field == "restoreVanilla") references.Add(new(ProjectFileLayer.Base, source.RelativePath));
+                    if (update.Field == "cityRoaming") references.AddRange(state.CitySources!.Values.Select(s => new ProjectFileReference(s.SourceLayer, s.RelativePath)));
                     pending.Add(new(ZaBehaviorSettings.Domain, $"Behavior {update.EntryId}: {update.Field} = {value}",
                         references, update.EntryId, update.Field, value));
                 }
@@ -80,11 +91,15 @@ internal sealed class ZaBehaviorEditSessionService(ProjectWorkspaceService works
         {
             var validation = Validate(paths, session);
             if (!validation.IsValid) return new(session.Id, [], validation.Diagnostics);
+            var project = workspace.Open(paths); var state = workflow.LoadState(project);
+            var diagnostics = validation.Diagnostics.ToList();
+            var outputs = Compile(project, state, session, diagnostics);
+            if (diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error)) return new(session.Id, [], diagnostics);
             var writes = new List<PlannedFileWrite>();
-            foreach (var group in session.PendingEdits.GroupBy(e => e.RecordId, StringComparer.Ordinal))
+            foreach (var path in outputs.Keys)
             {
-                var info = ZaWorkflowFileSource.CreatePlannedWrite(paths, ZaBehaviorSettings.Prefix + group.Key + ".bin",
-                    group.SelectMany(e => e.Sources).Distinct().ToArray(), mode);
+                var info = ZaWorkflowFileSource.CreatePlannedWrite(paths, path,
+                    session.PendingEdits.SelectMany(e => e.Sources).Distinct().ToArray(), mode);
                 writes.Add(new(info.TargetRelativePath, info.Sources, info.ReplacesExistingOutput, "Apply reviewed Behavior settings."));
             }
             if (mode == ZaOutputMode.Standalone)
@@ -112,9 +127,9 @@ internal sealed class ZaBehaviorEditSessionService(ProjectWorkspaceService works
                 if (diagnostics.All(d => d.Severity != DiagnosticSeverity.Error))
                 {
                     transaction = ZaWorkflowFileSource.WriteBatch(paths,
-                        outputs.Select(p => new ZaWorkflowFileWrite(ZaBehaviorSettings.Prefix + p.Key + ".bin", p.Value)).ToArray(), mode,
+                        outputs.Select(p => new ZaWorkflowFileWrite(p.Key, p.Value)).ToArray(), mode,
                         revalidateReviewedState: () => ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(reviewed, CreateChangePlan(paths, session, mode)));
-                    written.AddRange(outputs.Keys.Select(id => ZaEditSessionSupport.GeneratedReference(ZaBehaviorSettings.Prefix + id + ".bin", mode)));
+                    written.AddRange(outputs.Keys.Select(path => ZaEditSessionSupport.GeneratedReference(path, mode)));
                     if (mode == ZaOutputMode.Standalone) written.Add(ZaEditSessionSupport.GeneratedDescriptorReference());
                 }
             }
@@ -137,14 +152,23 @@ internal sealed class ZaBehaviorEditSessionService(ProjectWorkspaceService works
                 if (group.Key is null || !state.Sources.TryGetValue(group.Key, out var source)
                     || group.Select(e => e.Field).Distinct().Count() != group.Count()) throw new InvalidDataException();
                 var edits = group.ToArray();
+                foreach (var edit in edits) _ = Normalize(edit.Field ?? "", edit.NewValue ?? "");
+                if (edits.All(e => e.Field == "cityRoaming")) continue;
                 var bytes = edits.Any(e => e.Field == "restoreVanilla") ? files.ReadBase(project, source.VirtualPath).Bytes : source.Bytes;
                 var doc = new ZaBehaviorDocument(bytes); var tags = doc.Tags.ToList(); var values = doc.Values.ToArray();
                 foreach (var edit in edits.OrderBy(e => e.Field == "initialize" ? 1 : 0))
                 {
                     var value = Normalize(edit.Field ?? "", edit.NewValue ?? "");
-                    if (edit.Field == "restoreVanilla") continue;
+                    if (edit.Field is "restoreVanilla" or "cityRoaming") continue;
                     if (edit.Field == "profile")
                     { tags.RemoveAll(ZaBehaviorSettings.IsTemperament); tags.AddRange(ZaBehaviorSettings.Profiles[value]); }
+                    else if (edit.Field == "cityProfile")
+                    {
+                        // Retail city AI can replace Warlike with Gentle. Use its native, per-resource
+                        // override instead of changing the shared conversion or combat routines.
+                        tags.RemoveAll(ZaBehaviorSettings.CityProfiles.ContainsValue);
+                        if (value != "default") tags.Add(ZaBehaviorSettings.CityProfiles[value]);
+                    }
                     else if (edit.Field == "initialize")
                     {
                         foreach (var tag in new[] { "State_usually", "WildTeam" }) if (!tags.Contains(tag)) tags.Add(tag);
@@ -152,17 +176,39 @@ internal sealed class ZaBehaviorEditSessionService(ProjectWorkspaceService works
                     }
                     else values[Array.FindIndex(ZaBehaviorSettings.Fields, f => f.Field == edit.Field)] = float.Parse(value, CultureInfo.InvariantCulture);
                 }
-                outputs.Add(group.Key, doc.Write(tags.ToArray(), values));
+                outputs.Add(source.VirtualPath, doc.Write(tags.ToArray(), values));
             }
             catch (Exception e) when (ZaBehaviorSettings.SourceFailure(e))
             { diagnostics.Add(Error("SESSION-INVALID", "A staged Behavior change cannot be resolved against the current source.")); }
+        }
+        var cityEdits = session.PendingEdits.Where(e => e.Domain == ZaBehaviorSettings.Domain && e.Field == "cityRoaming").ToArray();
+        if (cityEdits.Length != 0)
+        {
+            try
+            {
+                var changes = new Dictionary<int, bool>();
+                foreach (var edit in cityEdits)
+                {
+                    var resource = state.Workflow.Resources.Single(r => r.EntryId == edit.RecordId);
+                    var enable = Normalize("cityRoaming", edit.NewValue ?? "") == "true";
+                    if (!changes.TryAdd(resource.SpeciesId, enable) && changes[resource.SpeciesId] != enable) throw new InvalidDataException();
+                }
+                if (state.City is null) throw new InvalidDataException();
+                var result = state.City.Write(changes);
+                outputs.Add(ZaCityRoamingDocument.TemplatePath, result.Templates);
+                outputs.Add(ZaCityRoamingDocument.ScenarioPath, result.Scenarios);
+            }
+            catch (Exception e) when (ZaBehaviorSettings.SourceFailure(e))
+            { diagnostics.Add(Error("CITY-ROAMING-UNAVAILABLE", "City roaming cannot be changed with the current AI data. Review the sources and stage again.", "cityRoaming")); }
         }
         return outputs;
     }
     private static string Normalize(string field, string value)
     {
         if (field == "profile" && ZaBehaviorSettings.Profiles.ContainsKey(value)) return value;
+        if (field == "cityProfile" && (value == "default" || ZaBehaviorSettings.CityProfiles.ContainsKey(value))) return value;
         if (field is "initialize" or "restoreVanilla" && value == "true") return value;
+        if (field == "cityRoaming" && value is "true" or "false") return value;
         if (ZaBehaviorSettings.Fields.Any(f => f.Field == field)
             && float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
             && float.IsFinite(number) && number >= 0) return ZaBehaviorSettings.Format(number);
