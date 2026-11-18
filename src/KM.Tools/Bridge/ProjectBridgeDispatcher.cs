@@ -4957,7 +4957,9 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
     {
         var request = DeserializeRequest<LoadFashionUnlockWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
+        var response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadFashionUnlock(paths))
+            : IsScarletViolet(paths)
             ? SvBridgeMapper.ToDto(svWorkflowService.LoadFashionUnlock(paths))
             : SwShBridgeMapper.ToDto(swShWorkflowService.LoadFashionUnlock(paths));
 
@@ -4971,7 +4973,9 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var response = IsScarletViolet(paths)
+        var response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToFashionUnlockInstallDto(zaWorkflowService.StageFashionUnlockInstall(paths, session))
+            : IsScarletViolet(paths)
             ? SvBridgeMapper.ToFashionUnlockInstallDto(svWorkflowService.StageFashionUnlockInstall(paths, session))
             : SwShBridgeMapper.ToDto(fashionUnlockEditSessionService.StageInstall(paths, session));
 
@@ -4985,7 +4989,9 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var response = IsScarletViolet(paths)
+        var response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToFashionUnlockUninstallDto(zaWorkflowService.StageFashionUnlockUninstall(paths, session))
+            : IsScarletViolet(paths)
             ? SvBridgeMapper.ToFashionUnlockUninstallDto(svWorkflowService.StageFashionUnlockUninstall(paths, session))
             : SwShBridgeMapper.ToFashionUnlockUninstallDto(fashionUnlockEditSessionService.StageUninstall(paths, session));
 
@@ -8857,6 +8863,9 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.StageTrainerPoolFixedCountSwap or
             KmCommandNames.LoadFashionCatalogWorkflow or
             KmCommandNames.StageFashionCatalogFieldEdit or
+            KmCommandNames.LoadFashionUnlockWorkflow or
+            KmCommandNames.StageFashionUnlockInstall or
+            KmCommandNames.StageFashionUnlockUninstall or
             KmCommandNames.LoadPlacementWorkflow or
             KmCommandNames.UpdatePlacementObjectField or
             KmCommandNames.UpdatePlacementObjectFields or

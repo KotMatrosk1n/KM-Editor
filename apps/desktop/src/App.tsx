@@ -12140,7 +12140,9 @@ export function App({
             ? 'sv'
             : draftPaths.selectedGame === 'sword' || draftPaths.selectedGame === 'shield'
               ? 'swsh'
-              : null;
+              : draftPaths.selectedGame === 'za'
+                ? 'za'
+                : null;
           const returnedAction = getCanonicalFashionUnlockPendingAction(
             response.session,
             response.workflow

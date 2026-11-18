@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Editing;
+using KM.Api.FashionUnlock;
+using KM.ZA.FashionUnlock;
 using KM.Api.Behavior;
 using KM.ZA.Behavior;
 using KM.Api.AngeFight;
@@ -47,6 +49,30 @@ namespace KM.Tools.Bridge;
 
 public static class ZaBridgeMapper
 {
+    public static LoadFashionUnlockWorkflowResponse ToDto(ZaFashionUnlockWorkflow workflow)
+        => new(ToFashionUnlockWorkflowDto(workflow));
+
+    public static StageFashionUnlockInstallResponse ToFashionUnlockInstallDto(ZaFashionUnlockEditResult result)
+        => new(ToFashionUnlockWorkflowDto(result.Workflow), EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+
+    public static StageFashionUnlockUninstallResponse ToFashionUnlockUninstallDto(ZaFashionUnlockEditResult result)
+        => new(ToFashionUnlockWorkflowDto(result.Workflow), EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+
+    private static FashionUnlockWorkflowDto ToFashionUnlockWorkflowDto(ZaFashionUnlockWorkflow workflow)
+        => new(ToDto(workflow.Summary), workflow.InstallStatus, workflow.InstallMessage,
+            workflow.CanUninstall, "za", workflow.BuildId, string.Empty, string.Empty,
+            workflow.OwnershipCheckOffsetHex, workflow.StubKind,
+            workflow.DetectedGame is null ? null : ProjectBridgeMapper.ToDto(workflow.DetectedGame.Value),
+            workflow.ReservedRegions.Select(region => new FashionUnlockReservedRegionDto(
+                region.RegionId, region.Label, region.OffsetLabel, region.StartOffset, region.Length, region.Rule)).ToArray(),
+            new FashionUnlockProvenanceDto(workflow.Provenance.SourceFile,
+                ProjectBridgeMapper.ToDto(workflow.Provenance.SourceLayer), ProjectBridgeMapper.ToDto(workflow.Provenance.FileState)),
+            new FashionUnlockWorkflowStatsDto(workflow.Stats.ReservedMainTextRegionCount,
+                workflow.Stats.SourceFileCount, workflow.Stats.OwnedByteCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+
     public static LoadZaBehaviorWorkflowResponse ToDto(ZaBehaviorWorkflow workflow) => new(ToBehaviorDto(workflow));
     public static UpdateZaBehaviorResponse ToDto(ZaBehaviorEditResult result) => new(ToBehaviorDto(result.Workflow),
         EditSessionBridgeMapper.ToDto(result.Session), result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());

@@ -9343,6 +9343,22 @@
     "Windows permissions for an output metadata directory could not be read or updated.": "Die Windows-Berechtigungen eines Ordners für Ausgabemetadaten konnten nicht gelesen oder aktualisiert werden.",
     "A private output metadata directory could not be created or verified.": "Ein privater Ordner für Ausgabemetadaten konnte nicht erstellt oder überprüft werden.",
     "Windows permissions for an output metadata file could not be read or updated.": "Die Windows-Berechtigungen einer Datei mit Ausgabemetadaten konnten nicht gelesen oder aktualisiert werden.",
-    "The workspace storage path contains an unsafe or inaccessible filesystem entry.": "Der Speicherpfad des Arbeitsbereichs enthält einen unsicheren oder unzugänglichen Dateisystemeintrag."
+    "The workspace storage path contains an unsafe or inaccessible filesystem entry.": "Der Speicherpfad des Arbeitsbereichs enthält einen unsicheren oder unzugänglichen Dateisystemeintrag.",
+    "Fashion Unlock makes Z-A clothing available in the wardrobe from opening field gameplay. Normal cutscene and context restrictions still apply.": "Fashion Unlock macht Z-A-Kleidung ab dem ersten frei steuerbaren Spielabschnitt in der Garderobe verfügbar. Die üblichen Einschränkungen durch Zwischensequenzen und Spielsituationen gelten weiterhin.",
+    "Removing Fashion Unlock restores the wardrobe checks. Outfit changes saved during gameplay remain in the save file.": "Das Entfernen von Fashion Unlock stellt die Garderobenprüfungen wieder her. Im Spiel gespeicherte Kleidungswechsel bleiben im Spielstand erhalten.",
+    "Wardrobe clothing ownership check": "Besitzprüfung für Garderobenkleidung",
+    "Wardrobe menu availability": "Verfügbarkeit des Garderobenmenüs",
+    "Wardrobe screen story gate": "Handlungsbedingte Sperre der Garderobe",
+    "Wardrobe main menu entry gate": "Sperre des Garderobeneintrags im Hauptmenü",
+    "vanilla wardrobe checks": "ursprüngliche Garderobenprüfungen",
+    "wardrobe access patches": "Patches für den Garderobenzugriff",
+    "Fashion Unlock is installed. Clothing is available in the wardrobe with its opening story gates bypassed.": "Fashion Unlock ist installiert. Kleidung ist in der Garderobe ohne die anfänglichen Handlungssperren verfügbar.",
+    "Fashion Unlock is not installed. Install to make clothing available in the wardrobe from the opening field gameplay.": "Fashion Unlock ist nicht installiert. Nach der Installation ist Kleidung ab dem ersten frei steuerbaren Spielabschnitt in der Garderobe verfügbar.",
+    "Advanced ExeFS editor that makes Z-A clothing available in the wardrobe from opening field gameplay.": "Erweiterter ExeFS-Editor, der Z-A-Kleidung ab dem ersten frei steuerbaren Spielabschnitt in der Garderobe verfügbar macht.",
+    "Fashion Unlock supports Pokemon Legends Z-A 2.0.2 exefs/main files. This build ID is not recognized.": "Fashion Unlock unterstützt exefs/main aus Pokemon Legends Z-A 2.0.2. Diese Build-ID wird nicht erkannt.",
+    "Fashion Unlock requires a Pokemon Legends Z-A project.": "Fashion Unlock benötigt ein Projekt für Pokemon Legends Z-A.",
+    "Fashion Unlock found conflicting or partially installed wardrobe instructions. Restore the competing changes before installing or removing it.": "Fashion Unlock hat widersprüchliche oder teilweise installierte Garderobenanweisungen gefunden. Setze die kollidierenden Änderungen vor der Installation oder Entfernung zurück.",
+    "Removed Fashion Unlock while preserving other generated ExeFS edits.": "Fashion Unlock wurde entfernt. Andere erzeugte ExeFS-Änderungen bleiben erhalten.",
+    "Install or refresh Fashion Unlock wardrobe access instructions in exefs/main.": "Garderobenzugriff von Fashion Unlock in exefs/main installieren oder aktualisieren."
   }
 }

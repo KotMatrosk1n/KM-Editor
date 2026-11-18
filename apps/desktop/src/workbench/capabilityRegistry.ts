@@ -516,7 +516,7 @@ export const workbenchCapabilityRegistry = [
   workflow({
     description:
       'Advanced ExeFS editor that unlocks fashion ownership checks without editing the save file.',
-    games: ['sword', 'shield', 'scarlet', 'violet'],
+    games: ['sword', 'shield', 'scarlet', 'violet', 'za'],
     icon: Shirt,
     id: 'fashionUnlock',
     label: 'Fashion Unlock'

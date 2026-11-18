@@ -9343,6 +9343,22 @@
     "Windows permissions for an output metadata directory could not be read or updated.": "无法读取或更新输出元数据文件夹的 Windows 权限。",
     "A private output metadata directory could not be created or verified.": "无法创建或验证私有输出元数据文件夹。",
     "Windows permissions for an output metadata file could not be read or updated.": "无法读取或更新输出元数据文件的 Windows 权限。",
-    "The workspace storage path contains an unsafe or inaccessible filesystem entry.": "工作区存储路径中存在不安全或无法访问的文件系统项。"
+    "The workspace storage path contains an unsafe or inaccessible filesystem entry.": "工作区存储路径中存在不安全或无法访问的文件系统项。",
+    "Fashion Unlock makes Z-A clothing available in the wardrobe from opening field gameplay. Normal cutscene and context restrictions still apply.": "Fashion Unlock 可从最初能自由控制角色时起，在衣橱中使用 Z-A 服装。过场动画和特定场景的正常限制仍然有效。",
+    "Removing Fashion Unlock restores the wardrobe checks. Outfit changes saved during gameplay remain in the save file.": "移除 Fashion Unlock 会恢复衣橱检查。游玩时保存的穿搭更改会保留在存档中。",
+    "Wardrobe clothing ownership check": "衣橱服装拥有状态检查",
+    "Wardrobe menu availability": "衣橱菜单可用性",
+    "Wardrobe screen story gate": "衣橱界面剧情限制",
+    "Wardrobe main menu entry gate": "主菜单衣橱入口限制",
+    "vanilla wardrobe checks": "原版衣橱检查",
+    "wardrobe access patches": "衣橱访问补丁",
+    "Fashion Unlock is installed. Clothing is available in the wardrobe with its opening story gates bypassed.": "Fashion Unlock 已安装。衣橱中的服装可用，初期剧情限制已跳过。",
+    "Fashion Unlock is not installed. Install to make clothing available in the wardrobe from the opening field gameplay.": "Fashion Unlock 未安装。安装后，即可从最初能自由控制角色时起在衣橱中使用服装。",
+    "Advanced ExeFS editor that makes Z-A clothing available in the wardrobe from opening field gameplay.": "高级 ExeFS 编辑器，可从最初能自由控制角色时起在衣橱中使用 Z-A 服装。",
+    "Fashion Unlock supports Pokemon Legends Z-A 2.0.2 exefs/main files. This build ID is not recognized.": "Fashion Unlock 支持 Pokemon Legends Z-A 2.0.2 的 exefs/main 文件。无法识别此构建 ID。",
+    "Fashion Unlock requires a Pokemon Legends Z-A project.": "Fashion Unlock 需要 Pokemon Legends Z-A 项目。",
+    "Fashion Unlock found conflicting or partially installed wardrobe instructions. Restore the competing changes before installing or removing it.": "Fashion Unlock 检测到冲突或部分安装的衣橱指令。安装或移除前，请先还原冲突的更改。",
+    "Removed Fashion Unlock while preserving other generated ExeFS edits.": "已移除 Fashion Unlock，并保留其他已生成的 ExeFS 更改。",
+    "Install or refresh Fashion Unlock wardrobe access instructions in exefs/main.": "在 exefs/main 中安装或更新 Fashion Unlock 衣橱访问指令。"
   }
 }
