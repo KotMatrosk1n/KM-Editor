@@ -37,11 +37,20 @@ internal static class ZaExeFsReservedRegionLedger
 {
     public const string OwnerDexLayout = "Dex Layout";
     public const string OwnerNativeGameplayMenu = "Native Gameplay Menu";
+    public const string OwnerFashionUnlock = "Fashion Unlock";
     public const string OwnerTypeChart = "Type Chart";
     public const string ExeFsMainPath = "exefs/main";
 
     private static readonly ZaExeFsReservedRegion[] regions =
     [
+        new(OwnerFashionUnlock, "fashion-unlock-za-ownership", ExeFsMainPath, "main.text",
+            0x02BB2A44, 4, "Wardrobe clothing ownership check", "do-not-overwrite"),
+        new(OwnerFashionUnlock, "fashion-unlock-za-menu", ExeFsMainPath, "main.text",
+            0x0041125C, 4, "Wardrobe menu availability", "do-not-overwrite"),
+        new(OwnerFashionUnlock, "fashion-unlock-za-screen", ExeFsMainPath, "main.text",
+            0x02BC3F0C, 4, "Wardrobe screen story gate", "do-not-overwrite"),
+        new(OwnerFashionUnlock, "fashion-unlock-za-entry", ExeFsMainPath, "main.text",
+            0x00183D70, 4, "Wardrobe main menu entry gate", "do-not-overwrite"),
         new(
             OwnerNativeGameplayMenu,
             "native-gameplay-menu-share-hook-a",

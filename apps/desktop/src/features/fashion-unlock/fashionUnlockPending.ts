@@ -73,8 +73,8 @@ function hasCanonicalSources(
   action: FashionUnlockAction,
   sources: EditSession['pendingEdits'][number]['sources']
 ) {
-  const expectedSources = workflow.editorFamily === 'swsh'
-    ? getSwShSources(workflow, action)
+  const expectedSources = workflow.editorFamily === 'swsh' || workflow.editorFamily === 'za'
+    ? getVerifiedBaseSources(workflow, action)
     : getSvSources(workflow, action);
 
   return (
@@ -88,8 +88,8 @@ function hasCanonicalSources(
   );
 }
 
-function getSwShSources(
-  workflow: Extract<FashionUnlockWorkflow, { editorFamily: 'swsh' }>,
+function getVerifiedBaseSources(
+  workflow: Extract<FashionUnlockWorkflow, { editorFamily: 'swsh' | 'za' }>,
   action: FashionUnlockAction
 ) {
   if (

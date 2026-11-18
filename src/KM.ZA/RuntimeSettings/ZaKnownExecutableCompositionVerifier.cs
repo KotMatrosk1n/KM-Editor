@@ -2,6 +2,7 @@
 
 using KM.Core.Projects;
 using KM.Formats.Executable;
+using KM.ZA.FashionUnlock;
 using KM.ZA.Pokemon;
 using KM.ZA.TypeChart;
 
@@ -74,6 +75,17 @@ public static class ZaKnownExecutableCompositionVerifier
                 recognizedTransformation = true;
             }
             else if (typeChart.Kind != ZaTypeChartMainKind.Vanilla)
+            {
+                return false;
+            }
+
+            var fashion = ZaFashionUnlockMainPatcher.Analyze(normalized, expectedGame);
+            if (fashion.Kind == ZaFashionUnlockInstallKind.Installed)
+            {
+                normalized = ZaFashionUnlockMainPatcher.RestoreFromBase(normalized, retail, expectedGame);
+                recognizedTransformation = true;
+            }
+            else if (fashion.Kind != ZaFashionUnlockInstallKind.NotInstalled)
             {
                 return false;
             }

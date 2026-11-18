@@ -19,6 +19,7 @@ using KM.ZA.DumpImport;
 using KM.ZA.Encounters;
 using KM.ZA.ExeFs;
 using KM.ZA.FashionCatalog;
+using KM.ZA.FashionUnlock;
 using KM.ZA.GameModules;
 using KM.ZA.Gifts;
 using KM.ZA.Items;
@@ -78,6 +79,8 @@ public sealed class ZaWorkflowService
     private readonly ZaStaticEncountersWorkflowService staticEncountersWorkflowService;
     private readonly ZaGiftPokemonWorkflowService giftPokemonWorkflowService;
     private readonly ZaTradePokemonWorkflowService tradePokemonWorkflowService;
+    private readonly ZaFashionUnlockWorkflowService fashionUnlockWorkflowService;
+    private readonly ZaFashionUnlockEditSessionService fashionUnlockEditSessionService;
     private readonly ZaTypeChartWorkflowService typeChartWorkflowService;
     private readonly ZaAngeFightWorkflowService angeFightWorkflowService;
     private readonly ZaDumpImportWorkflowService dumpImportWorkflowService;
@@ -122,6 +125,8 @@ public sealed class ZaWorkflowService
         giftPokemonWorkflowService = new ZaGiftPokemonWorkflowService(fileSource);
         tradePokemonWorkflowService = new ZaTradePokemonWorkflowService(fileSource);
         typeChartWorkflowService = new ZaTypeChartWorkflowService();
+        fashionUnlockWorkflowService = new ZaFashionUnlockWorkflowService();
+        fashionUnlockEditSessionService = new ZaFashionUnlockEditSessionService(this.projectWorkspaceService, fashionUnlockWorkflowService);
         angeFightWorkflowService = new ZaAngeFightWorkflowService(fileSource);
         dumpImportWorkflowService = new ZaDumpImportWorkflowService(itemsWorkflowService);
         modMergerWorkflowService = new ZaModMergerWorkflowService(this.projectWorkspaceService);
@@ -1292,6 +1297,7 @@ public sealed class ZaWorkflowService
             itemsWorkflowService.CreateSummary(project),
             shopsWorkflowService.CreateSummary(project),
             typeChartWorkflowService.CreateSummary(project),
+            fashionUnlockWorkflowService.CreateSummary(project),
             angeFightWorkflowService.CreateSummary(project),
             dumpImportWorkflowService.CreateSummary(project),
             modMergerWorkflowService.CreateSummary(project),
@@ -1449,6 +1455,18 @@ public sealed class ZaWorkflowService
         return recordIndices is null ? tradePokemonWorkflowService.Load(project)
             : tradePokemonWorkflowService.LoadForEditing(project, recordIndices.ToHashSet());
     }
+
+    public ZaFashionUnlockWorkflow LoadFashionUnlock(ProjectPaths paths)
+    {
+        projectWorkspaceService.ClearMemoryCache();
+        return fashionUnlockWorkflowService.Load(projectWorkspaceService.Open(paths));
+    }
+
+    public ZaFashionUnlockEditResult StageFashionUnlockInstall(ProjectPaths paths, EditSession? session)
+        => fashionUnlockEditSessionService.StageInstall(paths, session);
+
+    public ZaFashionUnlockEditResult StageFashionUnlockUninstall(ProjectPaths paths, EditSession? session)
+        => fashionUnlockEditSessionService.StageUninstall(paths, session);
 
     public ZaTypeChartWorkflow LoadTypeChart(ProjectPaths paths)
     {
@@ -1963,6 +1981,7 @@ public sealed class ZaWorkflowService
             ZaEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.TradePokemon => tradePokemonEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.TypeChart => typeChartEditSessionService.Validate(paths, session),
+            ZaEditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.AngeFight => angeFightEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.Mixed => CreateUnsupportedMixedValidation(session),
             _ => pokemonEditSessionService.Validate(paths, session),
@@ -1993,6 +2012,7 @@ public sealed class ZaWorkflowService
             ZaEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.TradePokemon => tradePokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.TypeChart => typeChartEditSessionService.CreateChangePlan(paths, session, outputMode),
+            ZaEditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.AngeFight => angeFightEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.Mixed => CreateUnsupportedMixedChangePlan(session),
             _ => pokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
@@ -2024,6 +2044,7 @@ public sealed class ZaWorkflowService
             ZaEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.TradePokemon => tradePokemonEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.TypeChart => typeChartEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
+            ZaEditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.AngeFight => angeFightEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.Mixed => CreateUnsupportedMixedApplyResult(session),
             _ => pokemonEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
@@ -2405,6 +2426,7 @@ public sealed class ZaWorkflowService
             [ZaEditSessionSupport.GiftPokemonDomain] => ZaEditSessionDomain.GiftPokemon,
             [ZaEditSessionSupport.TradePokemonDomain] => ZaEditSessionDomain.TradePokemon,
             [ZaEditSessionSupport.TypeChartDomain] => ZaEditSessionDomain.TypeChart,
+            [ZaFashionUnlockEditSessionService.FashionUnlockEditDomain] => ZaEditSessionDomain.FashionUnlock,
             [ZaEditSessionSupport.AngeFightDomain] => ZaEditSessionDomain.AngeFight,
             _ => ZaEditSessionDomain.Mixed,
         };
@@ -2452,6 +2474,7 @@ public sealed class ZaWorkflowService
             ZaEditSessionSupport.GiftPokemonDomain => ZaEditSessionDomain.GiftPokemon,
             ZaEditSessionSupport.TradePokemonDomain => ZaEditSessionDomain.TradePokemon,
             ZaEditSessionSupport.TypeChartDomain => ZaEditSessionDomain.TypeChart,
+            ZaFashionUnlockEditSessionService.FashionUnlockEditDomain => ZaEditSessionDomain.FashionUnlock,
             ZaEditSessionSupport.AngeFightDomain => ZaEditSessionDomain.AngeFight,
             null or "" => ZaEditSessionDomain.None,
             _ => ZaEditSessionDomain.Mixed,
@@ -2479,7 +2502,7 @@ public sealed class ZaWorkflowService
         ChangePlan reviewedPlan,
         ZaOutputMode outputMode)
     {
-        return domain is not ZaEditSessionDomain.None and not ZaEditSessionDomain.Mixed
+        return domain is not ZaEditSessionDomain.None and not ZaEditSessionDomain.Mixed and not ZaEditSessionDomain.FashionUnlock
             && (domain != ZaEditSessionDomain.TypeChart || outputMode == ZaOutputMode.Standalone)
             && (domain != ZaEditSessionDomain.Pokemon || reviewedPlan.Writes.All(write => !string.Equals(
                 write.TargetRelativePath,
@@ -2576,6 +2599,7 @@ public sealed class ZaWorkflowService
             ZaEditSessionDomain.GiftPokemon => ZaEditSessionSupport.GiftPokemonDomain,
             ZaEditSessionDomain.TradePokemon => ZaEditSessionSupport.TradePokemonDomain,
             ZaEditSessionDomain.TypeChart => ZaEditSessionSupport.TypeChartDomain,
+            ZaEditSessionDomain.FashionUnlock => ZaFashionUnlockEditSessionService.FashionUnlockEditDomain,
             ZaEditSessionDomain.AngeFight => ZaEditSessionSupport.AngeFightDomain,
             _ => string.Empty,
         };
@@ -3024,6 +3048,7 @@ public sealed class ZaWorkflowService
         GiftPokemon,
         TradePokemon,
         TypeChart,
+        FashionUnlock,
         AngeFight,
         Mixed,
     }

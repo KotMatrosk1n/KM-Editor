@@ -87,10 +87,24 @@ const svFashionUnlockWorkflowSchema = z.strictObject({
   ])
 });
 
+const zaFashionUnlockWorkflowSchema = z.strictObject({
+  ...commonFashionUnlockWorkflowShape,
+  detectedGame: z.literal('za').nullable(),
+  directGetterOffsetHex: z.literal(''),
+  editorFamily: z.literal('za'),
+  mappedGetterOffsetHex: z.literal(''),
+  ownershipCheckOffsetHex: z.string(),
+  stubKind: z.enum([
+    'not inspected', 'unsupported', 'unreadable', 'game mismatch', 'unknown bytes',
+    'vanilla wardrobe checks', 'wardrobe access patches'
+  ])
+});
+
 export const fashionUnlockWorkflowSchema = z
   .discriminatedUnion('editorFamily', [
     swshFashionUnlockWorkflowSchema,
-    svFashionUnlockWorkflowSchema
+    svFashionUnlockWorkflowSchema,
+    zaFashionUnlockWorkflowSchema
   ])
   .superRefine(validateFashionUnlockWorkflow);
 
@@ -215,7 +229,7 @@ const svReservedRegion = {
 
 function validateFashionUnlockWorkflow(
   workflow: z.infer<
-    typeof swshFashionUnlockWorkflowSchema | typeof svFashionUnlockWorkflowSchema
+    typeof swshFashionUnlockWorkflowSchema | typeof svFashionUnlockWorkflowSchema | typeof zaFashionUnlockWorkflowSchema
   >,
   context: z.RefinementCtx
 ) {
@@ -318,6 +332,8 @@ function validateFashionUnlockWorkflow(
 
   if (workflow.editorFamily === 'swsh') {
     validateSwShFashionUnlockWorkflow(workflow, context);
+  } else if (workflow.editorFamily === 'za') {
+    validateZaFashionUnlockWorkflow(workflow, context);
   } else {
     validateSvFashionUnlockWorkflow(workflow, context);
   }
@@ -457,6 +473,57 @@ function validateSwShFashionUnlockWorkflow(
   }
 }
 
+const zaReservedRegions = [
+  { label: 'Wardrobe clothing ownership check', length: 4, offsetLabel: 'text+0x2BB2A44..0x2BB2A47',
+    regionId: 'fashion-unlock-za-ownership', rule: 'do-not-overwrite', startOffset: 0x02bb2a44 },
+  { label: 'Wardrobe menu availability', length: 4, offsetLabel: 'text+0x41125C..0x41125F',
+    regionId: 'fashion-unlock-za-menu', rule: 'do-not-overwrite', startOffset: 0x0041125c },
+  { label: 'Wardrobe screen story gate', length: 4, offsetLabel: 'text+0x2BC3F0C..0x2BC3F0F',
+    regionId: 'fashion-unlock-za-screen', rule: 'do-not-overwrite', startOffset: 0x02bc3f0c },
+  { label: 'Wardrobe main menu entry gate', length: 4, offsetLabel: 'text+0x183D70..0x183D73',
+    regionId: 'fashion-unlock-za-entry', rule: 'do-not-overwrite', startOffset: 0x00183d70 },
+] as const;
+
+function validateZaFashionUnlockWorkflow(
+  workflow: z.infer<typeof zaFashionUnlockWorkflowSchema>,
+  context: z.RefinementCtx
+) {
+  if (workflow.detectedGame === 'za') {
+    if (workflow.buildId !== 'B1F12FD919EAE86AB8A978317677E64BCE443D1F' ||
+        workflow.ownershipCheckOffsetHex !== 'main.text+0x02BB2A44') {
+      addIssue(context, ['detectedGame'], 'Z-A Fashion Unlock build and ownership offset are not canonical.');
+    }
+  } else if (workflow.ownershipCheckOffsetHex !== 'unknown') {
+    addIssue(context, ['ownershipCheckOffsetHex'], 'Undetected Z-A Fashion Unlock ownership offset must be unknown.');
+  }
+
+  if (!hasExactRegions(workflow.reservedRegions, zaReservedRegions) ||
+      workflow.stats.reservedMainTextRegionCount !== 4 || workflow.stats.ownedByteCount !== 16) {
+    addIssue(context, ['reservedRegions'], 'Z-A Fashion Unlock owned instructions are not canonical.');
+  }
+
+  const loaded = ['available', 'readOnly', 'installed'].includes(workflow.installStatus);
+  const sourceCount = workflow.provenance.sourceLayer === 'layered' ? 2 : 1;
+  if (workflow.stats.sourceFileCount > 2 ||
+      (loaded && workflow.stats.sourceFileCount !== sourceCount) ||
+      (loaded && workflow.provenance.sourceLayer === 'layered' && workflow.provenance.fileState !== 'layeredOverride')) {
+    addIssue(context, ['stats', 'sourceFileCount'], 'Z-A Fashion Unlock sources do not match its verified base and effective main.');
+  }
+
+  if (workflow.canUninstall !== (workflow.summary.availability === 'available' &&
+      workflow.installStatus === 'installed' && workflow.provenance.sourceLayer === 'layered' &&
+      workflow.provenance.fileState === 'layeredOverride')) {
+    addIssue(context, ['canUninstall'], 'Z-A Fashion Unlock uninstall requires a verified generated installation.');
+  }
+  if (workflow.installStatus === 'installed' &&
+      (workflow.stubKind !== 'wardrobe access patches' || workflow.provenance.sourceLayer !== 'layered')) {
+    addIssue(context, ['stubKind'], 'Installed Z-A Fashion Unlock requires all four wardrobe access patches in generated main.');
+  }
+  if (['available', 'readOnly'].includes(workflow.installStatus) && workflow.stubKind !== 'vanilla wardrobe checks') {
+    addIssue(context, ['stubKind'], 'Available Z-A Fashion Unlock requires the vanilla wardrobe checks.');
+  }
+}
+
 function validateSvFashionUnlockWorkflow(
   workflow: z.infer<typeof svFashionUnlockWorkflowSchema>,
   context: z.RefinementCtx
@@ -545,7 +612,7 @@ function validateSvFashionUnlockWorkflow(
 
 function hasValidAvailabilityStatus(
   workflow: z.infer<
-    typeof swshFashionUnlockWorkflowSchema | typeof svFashionUnlockWorkflowSchema
+    typeof swshFashionUnlockWorkflowSchema | typeof svFashionUnlockWorkflowSchema | typeof zaFashionUnlockWorkflowSchema
   >
 ) {
   switch (workflow.summary.availability) {
@@ -560,7 +627,7 @@ function hasValidAvailabilityStatus(
 
 function hasValidProvenance(
   workflow: z.infer<
-    typeof swshFashionUnlockWorkflowSchema | typeof svFashionUnlockWorkflowSchema
+    typeof swshFashionUnlockWorkflowSchema | typeof svFashionUnlockWorkflowSchema | typeof zaFashionUnlockWorkflowSchema
   >
 ) {
   const { fileState, sourceLayer } = workflow.provenance;
@@ -605,12 +672,12 @@ function validateFashionUnlockRequestGame(
 ) {
   if (
     request.paths.selectedGame === null ||
-    !['sword', 'shield', 'scarlet', 'violet'].includes(request.paths.selectedGame)
+    !['sword', 'shield', 'scarlet', 'violet', 'za'].includes(request.paths.selectedGame)
   ) {
     addIssue(
       context,
       ['paths', 'selectedGame'],
-      'Fashion Unlock requires Sword, Shield, Scarlet, or Violet.'
+      'Fashion Unlock requires Sword, Shield, Scarlet, Violet, or Z-A.'
     );
   }
 }
