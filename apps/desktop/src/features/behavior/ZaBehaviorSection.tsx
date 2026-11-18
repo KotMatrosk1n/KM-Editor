@@ -9,6 +9,14 @@ import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import './behavior.css';
 
 type Changes = Record<string, string>;
+const cityProfiles: Record<string, string> = {
+  aggressive: 'wp_oz_warlike', gentle: 'wp_oz_gentle', timid: 'wp_oz_cowardice', sluggish: 'wp_oz_torpor'
+};
+function cityProfile(tags: readonly string[]) {
+  const overrides = tags.filter(tag => Object.values(cityProfiles).includes(tag));
+  return overrides.length === 0 ? 'default' : overrides.length === 1
+    ? Object.keys(cityProfiles).find(key => cityProfiles[key] === overrides[0])! : 'custom';
+}
 type Props = {
   workflow: ZaBehaviorWorkflow;
   editSession: EditSession | null;
@@ -27,6 +35,7 @@ type Props = {
 export function ZaBehaviorSection(props: Props) {
   const { t, translateLiteral } = useLocalization();
   const profileId = useId();
+  const cityProfileId = useId();
   const { workflow, editSession, selectedEntryId, onDraftDirtyChange } = props;
   const [drafts, setDrafts] = useState<Record<string, Changes>>({});
   const submission = useRef<{ id: string; snapshot: Changes } | null>(null);
@@ -35,18 +44,26 @@ export function ZaBehaviorSection(props: Props) {
     const restore = pending.some(e => e.field === 'restoreVanilla');
     const fields = { ...(restore ? resource.vanillaFields : resource.fields) };
     let profile = restore ? resource.vanillaProfile : resource.profile;
+    let cityRoaming = resource.cityRoaming;
+    const cityEdit = editSession?.pendingEdits.find(e => e.domain === 'workflow.behavior' && e.field === 'cityRoaming' &&
+      e.recordId?.slice(0, 4) === resource.entryId.slice(0, 4));
+    if (cityEdit) cityRoaming = cityEdit.newValue === 'true' ? 'enabled' : 'disabled';
     const tags = restore ? resource.vanillaTags : resource.tags;
+    let outsideProfile = cityProfile(tags);
     const initialization = pending.some(e => e.field === 'initialize');
     if (initialization && !tags.some(tag => /^(Warlike|Gentle(?:[1-9]|10)?|Cowardice|Torpor(?:[1-9]|10)?)$/.test(tag))) profile = 'aggressive';
     for (const edit of pending) {
       if (edit.field === 'profile' && edit.newValue) profile = edit.newValue;
+      else if (edit.field === 'cityProfile' && edit.newValue) outsideProfile = edit.newValue;
       else if (edit.field && Object.hasOwn(fields, edit.field) && edit.newValue != null) fields[edit.field] = edit.newValue;
     }
-    return { ...resource, fields, profile, isInitialized: initialization || (tags.includes('State_usually') && tags.includes('WildTeam')) };
+    return { ...resource, fields, profile, cityRoaming, cityProfile: outsideProfile, isInitialized: initialization || (tags.includes('State_usually') && tags.includes('WildTeam')) };
   }), [workflow.resources, editSession]);
   const entry = resources.find(r => r.entryId === selectedEntryId) ?? null;
-  const current = entry ? { ...entry.fields, profile: entry.profile } : {} as Changes;
-  const draft = entry ? drafts[entry.entryId] ?? {} : {};
+  const current = entry ? { ...entry.fields, profile: entry.profile, cityProfile: entry.cityProfile, cityRoaming: String(entry.cityRoaming === 'enabled') } : {} as Changes;
+  const cityDraft = entry ? Object.entries(drafts).find(([id, changes]) =>
+    id.slice(0, 4) === entry.entryId.slice(0, 4) && Object.hasOwn(changes, 'cityRoaming'))?.[1].cityRoaming : undefined;
+  const draft: Changes = entry ? { ...drafts[entry.entryId], ...(cityDraft === undefined ? {} : { cityRoaming: cityDraft }) } : {};
   const values = { ...current, ...draft };
   const canEdit = workflow.summary.availability === 'available';
   const editable = canEdit && editSession !== null;
@@ -67,10 +84,17 @@ export function ZaBehaviorSection(props: Props) {
   const change = (field: string, value: string) => {
     if (!entry) return;
     setDrafts(previous => {
-      const next = { ...(previous[entry.entryId] ?? {}), [field]: value };
-      if (current[field] === value && !(submission.current?.id === entry.entryId &&
-        Object.hasOwn(submission.current.snapshot, field))) delete next[field];
-      const result = { ...previous, [entry.entryId]: next };
+      const result = { ...previous };
+      if (field === 'cityRoaming') for (const [id, changes] of Object.entries(result)) {
+        if (id.slice(0, 4) !== entry.entryId.slice(0, 4)) continue;
+        const other = { ...changes }; delete other.cityRoaming;
+        if (Object.keys(other).length) result[id] = other; else delete result[id];
+      }
+      const next = { ...(result[entry.entryId] ?? {}), [field]: value };
+      const submitting = submission.current;
+      if (current[field] === value && !(submitting && Object.hasOwn(submitting.snapshot, field) &&
+        (submitting.id === entry.entryId || field === 'cityRoaming' && submitting.id.slice(0, 4) === entry.entryId.slice(0, 4)))) delete next[field];
+      result[entry.entryId] = next;
       if (!Object.keys(next).length) delete result[entry.entryId];
       return result;
     });
@@ -86,6 +110,11 @@ export function ZaBehaviorSection(props: Props) {
           for (const [field, value] of Object.entries(snapshot)) if (remaining[field] === value) delete remaining[field];
           const result = { ...previous, [id]: remaining };
           if (!Object.keys(remaining).length) delete result[id];
+          if (snapshot.cityRoaming !== undefined) for (const [otherId, changes] of Object.entries(result)) {
+            if (otherId.slice(0, 4) !== id.slice(0, 4) || changes.cityRoaming !== snapshot.cityRoaming) continue;
+            const other = { ...changes }; delete other.cityRoaming;
+            if (Object.keys(other).length) result[otherId] = other; else delete result[otherId];
+          }
           return result;
         });
       }
@@ -140,6 +169,16 @@ export function ZaBehaviorSection(props: Props) {
             ]} />
         </div>
         <p className="field-help">{t('behavior.za.profileHelp')}</p>
+        <div className="za-behavior-field"><label htmlFor={cityProfileId}>{t('behavior.za.cityProfile')}</label>
+          <SearchableOptionInput id={cityProfileId} ariaLabel={t('behavior.za.cityProfile')} disabled={!editable} value={values.cityProfile}
+            isFiniteCatalog localizeOptions={false} onChange={value => change('cityProfile', value)}
+            options={[
+              ...(entry.cityProfile === 'custom' ? [{ value: 'custom', label: t('behavior.za.custom') }] : []),
+              { value: 'default', label: t('behavior.za.cityProfileDefault') },
+              ...Object.keys(cityProfiles).map(value => ({ value, label: t(value === 'gentle' ? 'behavior.za.cityProfileGentle' : `behavior.za.profile.${value}`) }))
+            ]} />
+          <small>{t('behavior.za.cityProfileHelp')}</small>
+        </div>
         <div className="za-behavior-fields">{workflow.fields.slice(2).map(renderNumber)}</div>
         <p className="field-help">{t('behavior.za.units')}</p>
         <details><summary>{t('behavior.za.advanced')}</summary>
@@ -152,13 +191,26 @@ export function ZaBehaviorSection(props: Props) {
             onClick={() => change('initialize', 'true')}>{t(draft.initialize === 'true' ? 'behavior.za.initializeSelected' : 'behavior.za.initialize')}</button>
         </div> : null}
         <p className="field-help">{t('behavior.za.roaming')}</p>
+        {entry.cityRoaming === 'enabled' || entry.cityRoaming === 'disabled' ? <div className="za-behavior-field">
+          <label className="za-behavior-city-roaming"><input type="checkbox" checked={values.cityRoaming === 'true'} disabled={!editable}
+            onChange={e => change('cityRoaming', String(e.target.checked))} /> {t('behavior.za.cityRoaming')}</label>
+          <small>{t('behavior.za.cityRoamingHelp')}</small>
+        </div> : <p className="field-help">{t(entry.cityRoaming === 'unavailable'
+          ? 'behavior.za.cityRoamingUnavailable' : 'behavior.za.cityRoamingUnsupported')}</p>}
         <div className="za-behavior-actions">
           <button type="button" className="primary-button" disabled={!editable || props.isBehaviorUpdating || !Object.keys(draft).length || invalid.length > 0}
             onClick={() => void stage({ ...draft })}>{t('behavior.za.stage')}</button>
           <button type="button" className="secondary-button" disabled={!editable || props.isBehaviorUpdating || Object.keys(draft).length > 0}
             onClick={() => void stage({ restoreVanilla: 'true' })}>{t('behavior.za.restore')}</button>
           <button type="button" className="secondary-button" disabled={!Object.keys(draft).length || props.isBehaviorUpdating}
-            onClick={() => setDrafts(previous => { const next = { ...previous }; delete next[entry.entryId]; return next; })}>{t('behavior.za.discard')}</button>
+            onClick={() => setDrafts(previous => {
+              const next = { ...previous }; delete next[entry.entryId];
+              for (const [id, changes] of Object.entries(next)) if (id.slice(0, 4) === entry.entryId.slice(0, 4)) {
+                const other = { ...changes }; delete other.cityRoaming;
+                if (Object.keys(other).length) next[id] = other; else delete next[id];
+              }
+              return next;
+            })}>{t('behavior.za.discard')}</button>
         </div>
         <details><summary>{t('behavior.za.details')}</summary>
           <p data-localization-ignore="true">{entry.sourceFile}</p>

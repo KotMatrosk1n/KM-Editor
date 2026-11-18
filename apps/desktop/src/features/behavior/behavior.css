@@ -8,6 +8,8 @@
 .za-behavior-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1rem; margin-block: 1rem; }
 .za-behavior-field { display: flex; flex-direction: column; gap: .4rem; min-width: 0; }
 .za-behavior-field input, .za-behavior-field select { width: 100%; min-width: 0; }
+.za-behavior-city-roaming { display: flex; align-items: center; gap: .5rem; }
+.za-behavior-city-roaming input[type="checkbox"] { width: auto; }
 .za-behavior-field small { opacity: .8; }
 .za-behavior-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-block: 1rem; }
 .za-behavior-detail details { margin-block: 1rem; overflow-wrap: anywhere; }

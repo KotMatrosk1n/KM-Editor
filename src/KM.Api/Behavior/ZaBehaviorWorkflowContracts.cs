@@ -9,7 +9,8 @@ namespace KM.Api.Behavior;
 public sealed record ZaBehaviorResourceDto(string EntryId, int SpeciesId, string SpeciesName, int Form,
     int Gender, string SourceFile, string SourceLayer, string Profile, bool IsInitialized,
     IReadOnlyList<string> Tags, IReadOnlyDictionary<string, string> Fields,
-    IReadOnlyList<string> VanillaTags, IReadOnlyDictionary<string, string> VanillaFields, string VanillaProfile);
+    IReadOnlyList<string> VanillaTags, IReadOnlyDictionary<string, string> VanillaFields, string VanillaProfile,
+    string CityRoaming);
 public sealed record ZaBehaviorFieldDto(string Field, string Label, double Minimum, double Maximum,
     double StockMinimum, double StockMaximum);
 public sealed record ZaBehaviorProfileDto(string Value, string Label);

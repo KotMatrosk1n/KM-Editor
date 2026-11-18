@@ -53,7 +53,7 @@ public static class ZaBridgeMapper
     private static ZaBehaviorWorkflowDto ToBehaviorDto(ZaBehaviorWorkflow workflow) => new("za", ToDto(workflow.Summary),
         workflow.Resources.Select(r => new ZaBehaviorResourceDto(r.EntryId, r.SpeciesId, r.SpeciesName, r.Form, r.Gender,
             r.SourceFile, r.SourceLayer, r.Profile, r.IsInitialized, r.Tags, r.Fields,
-            r.VanillaTags, r.VanillaFields, r.VanillaProfile)).ToArray(),
+            r.VanillaTags, r.VanillaFields, r.VanillaProfile, r.CityRoaming)).ToArray(),
         workflow.Fields.Select(f => new ZaBehaviorFieldDto(f.Field, f.Label, f.Minimum, f.Maximum, f.StockMinimum, f.StockMaximum)).ToArray(),
         workflow.Profiles.Select(p => new ZaBehaviorProfileDto(p.Value, p.Label)).ToArray(),
         workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
