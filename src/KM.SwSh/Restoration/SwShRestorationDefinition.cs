@@ -435,7 +435,7 @@ public static class SwShRestorationDefinitions
         Species("raging-bolt", 1021),
         Species("iron-boulder", 1022),
         Species("iron-crown", 1023),
-        Species("baxcalibur-mega", 998, 1) with { Donor = SwShRestorationDonor.LegendsZA, AssetRevision = 4 },
+        Species("baxcalibur-mega", 998, 1) with { Donor = SwShRestorationDonor.LegendsZA, AssetRevision = 5 },
     }).ToArray());
     private static SwShRestorationDefinition Species(string id, int species, int form = 0) => Piplup with
         { Id = id, Identities = Array.AsReadOnly(new[] { new SwShPokemonIdentity(species, form) }), AssetRevision = id switch

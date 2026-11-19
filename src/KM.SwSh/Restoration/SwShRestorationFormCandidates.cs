@@ -137,6 +137,7 @@ internal static class SwShRestorationFormCandidates
         Candidate(801, 3, "MegaOriginal", SwShRestorationDonor.LegendsZA),
         Candidate(807, 1, "Mega", SwShRestorationDonor.LegendsZA),
         Candidate(870, 1, "Mega", SwShRestorationDonor.LegendsZA),
+        Candidate(998, 1, "Mega", SwShRestorationDonor.LegendsZA),
     ];
 
     private static readonly IReadOnlyDictionary<SwShPokemonIdentity, SwShRestorationDefinition> RegisteredForms =
@@ -156,7 +157,9 @@ internal static class SwShRestorationFormCandidates
     {
         var family = donor == SwShRestorationDonor.LegendsZA
             ? PokemonFormLabelFamily.LegendsZA : PokemonFormLabelFamily.ScarletViolet;
-        var label = PokemonFormLabels.ResolveFormLabel(identity.Species, string.Empty, identity.Form, family)
+        // Appended species use National Dex identities rather than donor table IDs.
+        var name = SwShRestorationSpecies.DisplayName(identity.Species);
+        var label = PokemonFormLabels.ResolveFormLabel(name is null ? identity.Species : 0, name ?? string.Empty, identity.Form, family)
             ?? string.Create(CultureInfo.InvariantCulture, $"Form {identity.Form}");
         return Candidate(identity.Species, identity.Form, label, donor);
     }

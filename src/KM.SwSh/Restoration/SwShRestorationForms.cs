@@ -14,7 +14,8 @@ public static partial class SwShRestorationForms
 
     // Keep restored form egg files outside native and previously reserved files.
     private const int OlderFormEggOffset = 2048;
-    private static bool HasSeparateEggFiles(SwShPokemonIdentity identity) => IsMega(identity) && identity.Species != 6
+    // Charizard and appended species retain their original unique reservations.
+    private static bool HasSeparateEggFiles(SwShPokemonIdentity identity) => IsMega(identity) && identity.Species is <= 898 and not 6
         || identity.Form != 0 && identity.Species is 211 or 382 or 383 or 483 or 484 or 550 or 664 or 665 or 666 or 669 or 670 or 671 or 705 or 706 or 720 or 724 or 741 or 774;
     public static int EggRow(SwShPokemonIdentity identity) => HasSeparateEggFiles(identity)
         ? checked(OlderFormEggOffset + PersonalRow(identity)) : PersonalRow(identity);

@@ -637,7 +637,7 @@ public sealed partial class SwShRestorationService
                 sources.Add(new(ProjectFileLayer.Base, path));
         }
         foreach (var source in bundle.Sources.Where(s => s.Role == "target"
-            && (!intent.UpdateAssets || SwShRestorationAssetUpdate.IsAssetPath("romfs/" + s.RelativePath))))
+            && (!intent.UpdateAssets || SwShRestorationAssetUpdate.IsInputPath(bundle, "romfs/" + s.RelativePath))))
             sources.Add(new(ProjectFileLayer.Base, "romfs/" + source.RelativePath));
         if (intent.UpdateAssets) sources.Add(new(ProjectFileLayer.Base, SwShRestorationComposer.PersonalPath));
         return new(Domain, (intent.AdoptExternal ? "Replace external installation for " : intent.UpdateAssets ? "Update assets for " : intent.RemovalId is not null ? "Remove assets for " : intent.Enabled ? "Restore " : "Remove restored ") + intent.DefinitionId, sources.OrderBy(s => s.RelativePath, StringComparer.Ordinal).ThenBy(s => s.Layer).ToArray(),
@@ -674,7 +674,7 @@ public sealed partial class SwShRestorationService
         Dictionary<string, SwShRestorationSourceFingerprint> fingerprints, bool assetsOnly)
     {
         foreach (var source in prepared.Sources.Where(s => s.Role == "target"
-            && (!assetsOnly || SwShRestorationAssetUpdate.IsAssetPath("romfs/" + s.RelativePath))))
+            && (!assetsOnly || SwShRestorationAssetUpdate.IsInputPath(prepared, "romfs/" + s.RelativePath))))
         {
             if (!fingerprints.TryGetValue(source.RelativePath, out var fingerprint))
             {
