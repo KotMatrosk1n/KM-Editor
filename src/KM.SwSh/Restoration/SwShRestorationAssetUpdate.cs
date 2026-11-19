@@ -8,7 +8,7 @@ internal static class SwShRestorationAssetUpdate
 {
     internal sealed record Result(SwShPreparedRestoration Customized, IReadOnlyDictionary<string, byte[]?> Files);
 
-    // Even unedited gameplay defaults belong to the installation, not an asset update.
+    // Gameplay defaults belong to the installation. Versioned repairs are explicit exceptions.
     internal static bool IsAsset(SwShRestorationContribution item) => item.Writer is
         SwShRestorationWriter.Icons or SwShRestorationWriter.ModelCatalog or SwShRestorationWriter.Camp or SwShRestorationWriter.Voices or SwShRestorationWriter.BattleCamera
         || item.Writer == SwShRestorationWriter.File && IsAssetPath(item.Path);
@@ -21,13 +21,18 @@ internal static class SwShRestorationAssetUpdate
         || path is SwShRestorationComposer.CampPath or SwShRestorationComposer.VoicesPath or SwShRestorationComposer.BattleCameraPath;
 
     internal static IEnumerable<SwShRestorationContribution> Inputs(SwShPreparedRestoration package) =>
-        package.Contributions.Where(item => IsAsset(item) || item.Writer == SwShRestorationWriter.Personal);
+        package.Contributions.Where(item => IsAsset(item) || item.Writer == SwShRestorationWriter.Personal
+            || SwShRestorationMegaRepair.IncludesItem(package, item));
+
+    internal static bool IsInputPath(SwShPreparedRestoration package, string path) =>
+        IsAssetPath(path) || SwShRestorationMegaRepair.IncludesPath(package, path);
 
     internal static Result Create(ProjectPaths paths, SwShPreparedRestoration previous, SwShPreparedRestoration next,
         SwShPreparedRestoration customized, SwShRestorationState state, bool enabled,
         IReadOnlySet<string> owned, Func<string, byte[]?> read)
     {
         var captured = new Dictionary<(string Path, string Key), SwShRestorationContribution>();
+        var repairMega = SwShRestorationMegaRepair.Applies(previous, next);
         if (enabled)
         {
             customized = SwShRestorationCustomizations.IncludeLooseModels(paths, customized, owned);
@@ -35,8 +40,9 @@ internal static class SwShRestorationAssetUpdate
             foreach (var path in assets.Concat(next.Contributions.Where(IsAsset)).Select(item => item.Path).Distinct(StringComparer.Ordinal))
                 if (File.Exists(Path.Combine(paths.OutputRootPath!, path)) && !owned.Contains(path))
                     throw new InvalidDataException($"Asset update cannot replace externally changed output: {path}.");
-            if (assets.Length > 0)
-                captured = SwShRestorationComposer.Compose(assets, read, false, captureOnly: true)
+            var capture = assets.Concat(customized.Contributions.Where(item => repairMega && SwShRestorationMegaRepair.IsPersonal(item))).ToArray();
+            if (capture.Length > 0)
+                captured = SwShRestorationComposer.Compose(capture, read, false, captureOnly: true)
                     .RetainedCustomizations.ToDictionary(item => (item.Path, item.Key));
             customized = customized with { Contributions = customized.Contributions.Select(item =>
                 captured.TryGetValue((item.Path, item.Key), out var current)
@@ -49,7 +55,9 @@ internal static class SwShRestorationAssetUpdate
             SwShRestorationIconMigration.Find(previous, next)?.RestoreNative(paths, read, repairs, false, owned);
             return new(merged, repairs);
         }
-        var changes = merged.Contributions.Where(IsAsset).Select(item => item with {
+        var originalKeys = previous.Contributions.Select(item => (item.Path, item.Key)).ToHashSet();
+        var changes = merged.Contributions.Where(item => IsAsset(item)
+            || repairMega && SwShRestorationMegaRepair.IncludesItem(next, item) && !originalKeys.Contains((item.Path, item.Key))).Select(item => item with {
             Before = captured.TryGetValue((item.Path, item.Key), out var current) ? current.After : item.Before })
             // Rebuilding an unchanged shared table can reorder unrelated entries.
             // Only compose assets whose effective payload actually changes.
@@ -63,16 +71,21 @@ internal static class SwShRestorationAssetUpdate
         foreach (var original in previous.Contributions.Where(item => item.Writer == SwShRestorationWriter.Personal))
         {
             var replacement = merged.Contributions.Single(item => item.Path == original.Path && item.Key == original.Key);
-            if (Routing(original.After).SequenceEqual(Routing(replacement.After))) continue;
+            var routingChanged = !Routing(original.After).SequenceEqual(Routing(replacement.After));
+            var megaChanged = repairMega && SwShRestorationMegaRepair.IsPersonal(original)
+                && (original.After[0x5a] & 1) != (replacement.After[0x5a] & 1);
+            if (!routingChanged && !megaChanged) continue;
             var personal = files.GetValueOrDefault(original.Path) ?? read(original.Path)
-                ?? throw new InvalidDataException("Personal data is missing for the updated icon route.");
+                ?? throw new InvalidDataException("Personal data is missing for the restoration update.");
             var result = personal.ToArray(); var row = int.Parse(original.Key, System.Globalization.CultureInfo.InvariantCulture);
             var at = checked(row * SwShPersonalTable.RecordSize + 0x4c);
-            if (at + 4 > result.Length) throw new InvalidDataException("The updated icon route is outside personal data.");
+            if (checked((row + 1) * SwShPersonalTable.RecordSize) > result.Length)
+                throw new InvalidDataException("The updated record is outside personal data.");
             var current = result.AsSpan(at, 4);
-            if (!current.SequenceEqual(Routing(original.After)) && !current.SequenceEqual(Routing(replacement.After)))
+            if (routingChanged && !current.SequenceEqual(Routing(original.After)) && !current.SequenceEqual(Routing(replacement.After)))
                 throw new InvalidDataException("The updated icon route conflicts with a customized resource identity.");
-            Routing(replacement.After).CopyTo(current);
+            if (routingChanged) Routing(replacement.After).CopyTo(current);
+            if (megaChanged) result[row * SwShPersonalTable.RecordSize + 0x5a] &= 0xfe;
             files[original.Path] = result;
         }
         foreach (var path in files.Keys.ToArray())
@@ -94,6 +107,7 @@ internal static class SwShRestorationAssetUpdate
         var loose = SwShRestorationModelOverrides.Rebase(previous, next, customized);
         var shadowed = customized.Contributions.Where(SwShRestorationModelOverrides.IsLoose).Select(item => item.Path).ToArray();
         var migration = SwShRestorationIconMigration.Find(previous, next);
+        var repairMega = SwShRestorationMegaRepair.Applies(previous, next);
         if (previous.Contributions.Any(item => IsAsset(item) && !SwShRestorationModelOverrides.IsLoose(item) && !replacements.ContainsKey((item.Path, item.Key))
             && migration?.Retires(item) != true))
             throw new InvalidDataException("This asset update removes an unsupported owned resource. The existing installation is preserved.");
@@ -102,7 +116,8 @@ internal static class SwShRestorationAssetUpdate
         {
             if (!originals.TryGetValue((item.Path, item.Key), out var original))
             {
-                if (item.Before is not null || customizations.ContainsKey((item.Path, item.Key)))
+                if (item.Before is not null && !(repairMega && SwShRestorationMegaRepair.IncludesItem(next, item))
+                    || customizations.ContainsKey((item.Path, item.Key)))
                     throw new InvalidDataException("This asset update conflicts with existing resource ownership.");
                 merged.Add(migration?.Transfer(item, customizations) ?? item);
                 continue;
@@ -123,6 +138,7 @@ internal static class SwShRestorationAssetUpdate
                 if (replacement.Writer != original.Writer)
                     throw new InvalidDataException("This asset update changes the personal record ownership.");
                 var after = current.After.ToArray();
+                SwShRestorationMegaRepair.CorrectPersonal(previous, next, original, replacement, after);
                 if (!Routing(original.After).SequenceEqual(Routing(replacement.After)))
                 {
                     if (!Routing(current.After).SequenceEqual(Routing(original.After))
@@ -134,12 +150,15 @@ internal static class SwShRestorationAssetUpdate
             }
             merged.Add(current);
         }
+        if (repairMega)
+            merged.AddRange(next.Contributions.Where(item => !IsAsset(item) && SwShRestorationMegaRepair.IncludesItem(next, item)
+                && !originals.ContainsKey((item.Path, item.Key))));
         merged.AddRange(loose);
         merged.AddRange(customized.Contributions.Where(item => !SwShRestorationModelOverrides.IsLoose(item) && !originals.ContainsKey((item.Path, item.Key))
             && !replacements.ContainsKey((item.Path, item.Key))));
         return next with { Contributions = merged, UnavailableSourceMoves = customized.UnavailableSourceMoves,
-            Sources = next.Sources.Where(source => source.Role != "target" || IsAssetPath("romfs/" + source.RelativePath))
-                .Concat(previous.Sources.Where(source => source.Role == "target" && !IsAssetPath("romfs/" + source.RelativePath))).ToArray() };
+            Sources = next.Sources.Where(source => source.Role != "target" || IsInputPath(next, "romfs/" + source.RelativePath))
+                .Concat(previous.Sources.Where(source => source.Role == "target" && !IsInputPath(next, "romfs/" + source.RelativePath))).ToArray() };
     }
 
     private static byte[] Merge(SwShRestorationContribution original, SwShRestorationContribution next,
