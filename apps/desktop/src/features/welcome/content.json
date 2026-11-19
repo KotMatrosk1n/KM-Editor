@@ -2,6 +2,146 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "version": "2.7.1",
+      "summary": {
+        "en": "KM Editor 2.7.1 adds 34 Sword and Shield restorations, updates restored models and memory support, and fixes evolution item names. Legends Z-A gains city behavior controls and Fashion Unlock, with smoother editing across the app."
+      },
+      "sections": [
+        {
+          "title": {
+            "en": "Workspace"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "The editing bar stays visible above long sections in the pokemon, Items, and Moves editors. Section navigation accounts for the bar height while the main page handles scrolling."
+              },
+              "audience": [
+                "all"
+              ]
+            },
+            {
+              "body": {
+                "en": "Added checks to catch garbled accents in interface text before a desktop build, including translated text."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Sword And Shield"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Restore 34 more species and forms, including all Paradox pokemon, Koraidon, Miraidon, Farigiraf, Kingambit, the full Baxcalibur line, Mega Baxcalibur, Gholdengo, Wo-Chien, Chien-Pao, Ting-Lu, Chi-Yu, and Archaludon. The catalog now has 423 selectable restorations. These conversions remain In testing."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "New restorations include donor models, animations, cries, sprites, gameplay data, compatible evolution routes, and custom ability support. Gholdengo is available on its own without adding Gimmighoul."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Update Assets brings newer revisions to Girafarig, Mega Hawlucha, and Mega Malamar while preserving compatible customizations. Mega models and battle framing retain their intended scale."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Installing an enabled restoration or updating its assets automatically adds guarded model memory support when required, using the Base ExeFS selected in Project Setup. Updating a disabled restoration keeps it disabled. Supported KM Editor ExeFS patches remain compatible when installed or removed in either order."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "pokemon and Trainer choices use gameplay data without repeatedly validating every installed model package. EXP and EV changes avoid unrelated restoration work, and restored native forms retain their correct vanilla yield defaults."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Evolution item selectors retain items used by evolution routes even when their metadata lacks an evolution flag. Auspicious Armor and Malicious Armor display their game text names in every interface language."
+              },
+              "audience": [
+                "swsh"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Scarlet And Violet"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Evolution item selectors retain route-used items and their game text names, including Auspicious Armor and Malicious Armor, in every interface language."
+              },
+              "audience": [
+                "sv"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Legends Z-A"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Behavior adds independent city roaming and Temperament outside Wild Zones controls. Compatible species can roam through their native walking and return routines. Choose Game Default, Aggressive, Gentle, Timid, or Sluggish for ordinary city spawns while keeping base behavior and separate alpha rules."
+              },
+              "audience": [
+                "za"
+              ]
+            },
+            {
+              "body": {
+                "en": "Fashion Unlock supports Z-A 2.0.2. Access Outfit & Looks clothing from the first controllable point before choosing a starter. Stage, review, apply, and uninstall through the usual workflow. Hair, makeup, salon progression, and native cutscene restrictions keep their existing rules."
+              },
+              "audience": [
+                "za"
+              ]
+            },
+            {
+              "body": {
+                "en": "Evolution item selectors retain route-used items and their game text names in every interface language."
+              },
+              "audience": [
+                "za"
+              ]
+            }
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": {
+            "en": "Full changelog"
+          },
+          "url": "https://github.com/KotMatrosk1n/KM-Editor/compare/v2.7.0...v2.7.1"
+        }
+      ]
+    },
+    {
       "version": "2.7.0",
       "summary": {
         "en": "KM Editor 2.7.0 moves to .NET 11 and C# 15, reduces repeated work during editing, and improves memory use. This release also fixes Sword and Shield restoration, expands editor tabs, and adds sanitized bug reports from errors."
@@ -2610,6 +2750,46 @@
     }
   ],
   "announcements": [
+    {
+      "id": "more-restorations-and-city-controls-2-7-1",
+      "title": {
+        "en": "More ways to build your project",
+        "de": "Mehr Möglichkeiten für dein Projekt",
+        "es": "Más opciones para crear tu proyecto",
+        "fr": "Plus de possibilités pour votre projet",
+        "ru": "Больше возможностей для вашего проекта",
+        "uk": "Більше можливостей для вашого проєкту",
+        "zh": "为你的项目带来更多选择"
+      },
+      "body": {
+        "en": "This update expands Sword and Shield restoration and gives Z-A projects new city behavior and clothing options. Thank you for helping find model, performance, and language issues. Keep sharing what you make in KM Hub!",
+        "de": "Dieses Update erweitert die Wiederherstellung in Schwert und Schild und bietet Z-A-Projekten neue Optionen für Stadtverhalten und Kleidung. Danke für eure Hinweise auf Modell-, Leistungs- und Sprachprobleme. Teilt eure Projekte weiterhin im KM Hub!",
+        "es": "Esta actualización amplía las restauraciones de Espada y Escudo y añade opciones de comportamiento en la ciudad y ropa para los proyectos de Z-A. Gracias por ayudar a detectar problemas de modelos, rendimiento e idiomas. ¡Sigue compartiendo tus proyectos en KM Hub!",
+        "fr": "Cette mise à jour enrichit les restaurations dans Épée et Bouclier et ajoute des options de comportement en ville et de vêtements pour les projets Z-A. Merci de nous aider à repérer les problèmes de modèles, de performances et de langues. Continuez à partager vos projets sur KM Hub !",
+        "ru": "Обновление расширяет восстановление в Sword и Shield и добавляет настройки городского поведения и одежды для проектов Z-A. Спасибо за помощь в поиске проблем с моделями, производительностью и переводами. Продолжайте делиться проектами в KM Hub!",
+        "uk": "Оновлення розширює відновлення у Sword і Shield та додає налаштування міської поведінки й одягу для проєктів Z-A. Дякую за допомогу в пошуку проблем із моделями, продуктивністю та перекладами. Продовжуйте ділитися проєктами в KM Hub!",
+        "zh": "本次更新扩展了剑盾的还原内容，并为 Z-A 项目新增城市行为和服装选项。感谢你帮助发现模型、性能和语言问题。欢迎继续在 KM Hub 分享你的作品！"
+      },
+      "audience": [
+        "all"
+      ],
+      "published": "2026-11-19",
+      "featured": true,
+      "links": [
+        {
+          "label": {
+            "en": "Share in KM Hub",
+            "de": "Im KM Hub teilen",
+            "es": "Comparte en KM Hub",
+            "fr": "Partager sur KM Hub",
+            "ru": "Поделиться в KM Hub",
+            "uk": "Поділитися в KM Hub",
+            "zh": "在 KM Hub 分享"
+          },
+          "url": "https://discord.gg/ess4reb5eB"
+        }
+      ]
+    },
     {
       "id": "a-stronger-foundation-2-7-0",
       "title": {

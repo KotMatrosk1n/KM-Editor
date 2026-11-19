@@ -1,6 +1,6 @@
 {
   "name": "@km-editor/desktop",
-  "version": "2.7.0",
+  "version": "2.7.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,7 +13,8 @@
     "tauri": "tauri",
     "tauri:build": "tauri build",
     "tauri:dev": "tauri dev",
-    "typecheck": "tsc --build"
+    "typecheck": "node scripts/check-text-encoding.mjs && tsc --build",
+    "check:encoding": "node scripts/check-text-encoding.mjs"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.2",
