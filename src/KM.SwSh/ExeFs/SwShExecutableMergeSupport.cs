@@ -131,8 +131,9 @@ public static class SwShExecutableMergeSupport
             try { _ = KM.SwSh.Restoration.SwShRestorationMegaItemProtection.Read(merged, game); }
             catch (InvalidDataException) { return false; }
         }
-        if (KM.SwSh.Restoration.SwShRestorationSoundMemoryPatcher.Reservations().Any(region =>
-            !(region.Area == "main.data" ? beforeOptions.Data : beforeOptions.Text).DecompressedData
+        if (KM.SwSh.Restoration.SwShRestorationSoundMemoryPatcher.Reservations()
+            .Where(region => game == ProjectGame.Sword || !region.FeatureId.Contains("-sword-", StringComparison.Ordinal))
+            .Any(region => !(region.Area == "main.data" ? beforeOptions.Data : beforeOptions.Text).DecompressedData
                 .AsSpan(region.StartOffset!.Value, region.Length!.Value).SequenceEqual(
                     (region.Area == "main.data" ? afterOptions.Data : afterOptions.Text).DecompressedData.AsSpan(region.StartOffset.Value, region.Length.Value))))
         {

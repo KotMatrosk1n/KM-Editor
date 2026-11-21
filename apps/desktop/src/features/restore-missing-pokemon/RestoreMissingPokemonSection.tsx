@@ -20,7 +20,7 @@ type Props = {
   workflow: RestorationWorkflow | null; paths: ProjectPaths; bridge: RestorationProjectBridgeApi; session: EditSession | null;
   isEditing: boolean; isEditStarting: boolean; isStaging: boolean; isLoading: boolean;
   onStartEditSession: () => void; onCancelEditSession: (discard: () => void) => void;
-  onStage: (selections: RestorationSelection[]) => Promise<boolean>;
+  onStage: (selections: RestorationSelection[], repairAudio?: boolean) => Promise<boolean>;
   onDirtyStateChange: (dirty: boolean) => void; onRefresh: () => void; panelOutput: WorkflowPanelOutput;
   desktopServices?: DesktopServices;
 };
@@ -133,8 +133,9 @@ export function RestoreMissingPokemonSection({ workflow, paths, bridge, session,
     } catch { if (active.current) setError(t('restoration.failed')); }
     finally { if (active.current) setIsPreparing(false); }
   };
+  const canStage = canEdit && (dirty || workflow?.canRepairPokedex === true) && valid && !isStaging && removing === null;
   const stage = async () => {
-    if (!canEdit || !dirty || !valid || isStaging || removing) return;
+    if (!canStage) return;
     const submitted = { ...submittedDrafts.current }; setError(null);
     const submittedHashes = new Map(hashes);
     try {
@@ -175,8 +176,12 @@ export function RestoreMissingPokemonSection({ workflow, paths, bridge, session,
     <EditorSessionBar canEdit={workflow?.canEdit === true} isEditing={isEditing} isStarting={isEditStarting}
       label={t('restoration.title')} onStart={onStartEditSession} readOnlyReason={t('restoration.readOnly')} />
     {isEditing ? <EditorSessionBarActions>
-      <button className="primary-button" type="button" onClick={() => void stage()} disabled={!canEdit || !dirty || !valid || isStaging || removing !== null}>
+      <button className="primary-button" type="button" onClick={() => void stage()} disabled={!canStage}>
         <Save size={16} aria-hidden="true" /> {t('restoration.stage')}</button>
+      {workflow?.canRepairAudio ? <button className="secondary-button" type="button"
+        disabled={!canEdit || isStaging || removing !== null || workflow.audioRepairStaged}
+        onClick={() => { setError(null); void onStage([], true); }}>
+        {t('restoration.checkAudio')}</button> : null}
       <button className="secondary-button" type="button" onClick={() => onCancelEditSession(() => { preparationIntents.current.clear(); setDrafts({}); })} disabled={isStaging}>
         <X size={16} aria-hidden="true" /> {t('restoration.cancel')}</button>
       <span>{t('restoration.drafts', { count: Object.keys(drafts).length, staged: pendingCount })}</span>
@@ -186,6 +191,7 @@ export function RestoreMissingPokemonSection({ workflow, paths, bridge, session,
       <p>{t('restoration.removeHelp')}</p>
       <p>{t('restoration.updateHelp')}</p>
       <p>{t('restoration.soundMemoryHelp')}</p>
+      {workflow?.canRepairPokedex ? <p>{t('restoration.pokedexRepairHelp')}</p> : null}
     </div>
     <RestorationSourceFolders sources={sources} desktop={desktopServices} paths={paths} bridge={bridge} onChange={next => {
       setSources(next); if (!rememberRestorationSources(projectKey, next)) setError(t('restoration.sourcesSaveFailed'));

@@ -11,7 +11,7 @@ namespace KM.SwSh.Restoration;
 public static class SwShRestorationSoundMemoryPatcher
 {
     internal const string Owner = "Restoration Sound Memory";
-    internal const string MainPath = "exefs/main";
+    public const string MainPath = "exefs/main";
     private const int SplitOffset = 0xDA8;
     private const int ParentOffset = 0x28;
     private const int SoundOffset = 0x58;
@@ -27,10 +27,13 @@ public static class SwShRestorationSoundMemoryPatcher
     private const uint LargeSplit = 0x52B99209;
     private const uint LargeParent = 0x6844CCCC;
     private const uint LargeSound = 384 * 1024 * 1024;
+    private const int SwordWwisePoolOffset = 0x67550C;
+    private const uint OriginalSwordWwisePool = 0x1A8812A8;
+    private const uint ExpandedSwordWwisePool = 0x52A04008; // mov w8, #32 MiB
 
     internal enum Kind { Original, Legacy81, Legacy256, Installed, InstalledLarge }
 
-    internal static (NsoFile Main, Kind State) Read(byte[] bytes, ProjectGame game)
+    internal static (NsoFile Main, Kind State, bool WwiseExpanded) Read(byte[] bytes, ProjectGame game)
     {
         var main = NsoFile.Parse(bytes);
         if (game is not (ProjectGame.Sword or ProjectGame.Shield)
@@ -69,13 +72,27 @@ public static class SwShRestorationSoundMemoryPatcher
         if (Convert.ToHexString(SHA256.HashData(startup)) != startupHash
             || Convert.ToHexString(SHA256.HashData(constants)) != "50B0ACFD0F51FA4490D4C942E095EFA74C91B96625A38AA19732653659317D20")
             throw new InvalidDataException("The sound memory initialization contains incompatible changes.");
-        return (main, state);
+        var wwiseExpanded = false;
+        if (game == ProjectGame.Sword)
+        {
+            if (text.Length < SwordWwisePoolOffset + 4)
+                throw new InvalidDataException("The Sword sound event pool is missing from the executable.");
+            wwiseExpanded = Word(text, SwordWwisePoolOffset) switch
+            {
+                OriginalSwordWwisePool => false,
+                ExpandedSwordWwisePool when state == Kind.InstalledLarge => true,
+                _ => throw new InvalidDataException("The Sword sound event pool contains incompatible changes."),
+            };
+        }
+        return (main, state, wwiseExpanded);
     }
 
     public static byte[] Apply(byte[] baseline, byte[] source, ProjectGame game) => Apply(baseline, source, game, 0);
 
-    internal static byte[] Apply(byte[] baseline, byte[] source, ProjectGame game, int bankBytes) =>
-        Rewrite(baseline, source, game, bankBytes >= LargeBankThreshold ? Kind.InstalledLarge : Kind.Installed);
+    internal static bool NeedsLargeBankBudget(long bankBytes) => bankBytes >= LargeBankThreshold;
+
+    internal static byte[] Apply(byte[] baseline, byte[] source, ProjectGame game, long bankBytes) =>
+        Rewrite(baseline, source, game, NeedsLargeBankBudget(bankBytes) ? Kind.InstalledLarge : Kind.Installed);
     internal static byte[] RestoreFromBase(byte[] baseline, byte[] source, ProjectGame game) => Rewrite(baseline, source, game, Kind.Original);
 
     private static byte[] Rewrite(byte[] baseline, byte[] source, ProjectGame game, Kind target)
@@ -83,7 +100,10 @@ public static class SwShRestorationSoundMemoryPatcher
         var original = Read(baseline, game); var current = Read(source, game);
         if (original.State != Kind.Original) throw new InvalidDataException("Base ExeFS must contain the original sound memory budgets.");
         SwShExeFsMainComparison.EnsureCompatibleBaseLayout(original.Main, current.Main, Owner);
-        if (current.State == target || (current.State == Kind.InstalledLarge && target == Kind.Installed))
+        if (current.State == Kind.InstalledLarge && target == Kind.Installed)
+            target = Kind.InstalledLarge;
+        var wwiseExpanded = game == ProjectGame.Sword && target == Kind.InstalledLarge;
+        if (current.State == target && current.WwiseExpanded == wwiseExpanded)
             return source;
         var (split, parent, sound) = target switch
         {
@@ -93,11 +113,13 @@ public static class SwShRestorationSoundMemoryPatcher
         };
         var text = current.Main.Text.DecompressedData.ToArray(); var data = current.Main.Data.DecompressedData.ToArray();
         Put(text, SplitOffset, split);
+        if (game == ProjectGame.Sword)
+            Put(text, SwordWwisePoolOffset, wwiseExpanded ? ExpandedSwordWwisePool : OriginalSwordWwisePool);
         Put(data, ParentOffset, parent);
         Put(data, SoundOffset, sound);
         var output = current.Main.Write(textDecompressedData: text, dataDecompressedData: data);
         var after = Read(output, game);
-        if (after.State != target
+        if (after.State != target || after.WwiseExpanded != wwiseExpanded
             || !after.Main.Text.DecompressedData.SequenceEqual(text) || !after.Main.Data.DecompressedData.SequenceEqual(data)
             || !after.Main.Ro.DecompressedData.SequenceEqual(current.Main.Ro.DecompressedData)
             || !SwShExeFsMainComparison.StableHeaderBytesMatch(current.Main.RawHeader, after.Main.RawHeader))
@@ -122,6 +144,7 @@ public static class SwShRestorationSoundMemoryPatcher
         new(Owner, "restoration-sound-global-budget", MainPath, "main.text", SplitOffset, 4, "Shared sound memory global budget", "payload-only"),
         new(Owner, "restoration-sound-parent-budget", MainPath, "main.data", ParentOffset, 4, "Shared sound memory parent budget", "payload-only"),
         new(Owner, "restoration-sound-pool-budget", MainPath, "main.data", SoundOffset, 4, "Shared sound pool budget", "payload-only"),
+        new(Owner, "restoration-sound-sword-wwise-default-pool", MainPath, "main.text", SwordWwisePoolOffset, 4, "Sword sound event pool budget", "payload-only"),
     ];
     private static uint Word(byte[] bytes, int offset) => BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offset, 4));
     private static void Put(byte[] bytes, int offset, uint value) => BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, 4), value);

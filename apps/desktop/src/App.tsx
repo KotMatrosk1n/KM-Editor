@@ -10328,7 +10328,7 @@ export function App({
       () => bridge.loadRestoration({ paths: createProjectPaths(draftPaths), session: useWorkbenchStore.getState().editSession }),
       response => setRestorationWorkflow(response.workflow), () => generation === restorationGenerationRef.current);
   };
-  const handleStageRestoration = async (selections: RestorationSelection[]) => {
+  const handleStageRestoration = async (selections: RestorationSelection[], repairAudio = false) => {
     const activeSession = getEditSessionForSection('restoreMissingPokemon');
     if (!activeSession) return false;
     let accepted = false; restorationGenerationRef.current += 1; setIsRestorationStaging(true);
@@ -10340,7 +10340,8 @@ export function App({
           : undefined;
         const subject = entry?.formLabel ? t(`restoration.form.${entry.formLabel}`, { name: entry.name }) : entry?.name;
         reportProgress({ subject });
-        const response = await bridge.stageRestoration({ paths: createProjectPaths(draftPaths), session, selections }, progress => {
+        const request = { paths: createProjectPaths(draftPaths), session };
+        const response = await bridge.stageRestoration(repairAudio ? { ...request, repairAudio: true } : { ...request, selections }, progress => {
           if (progress.phase === 'staging') {
             reportProgress({ completed: progress.completed, total: progress.total });
           } else {
@@ -10348,13 +10349,17 @@ export function App({
           }
         });
         const diagnostics = [...response.diagnostics, ...response.workflow.diagnostics];
-        const matches = response.session.sessionId === activeSession.sessionId && selections.every(selection =>
-          response.workflow.entries.some(entry => entry.definitionId === selection.definitionId && entry.staged
-            && entry.selected === selection.enabled && (selection.removeAssets ? entry.removalStaged : !entry.removalStaged && entry.preparedHash === selection.preparedHash)));
+        const matches = response.session.sessionId === activeSession.sessionId && (repairAudio
+          ? response.workflow.audioRepairStaged || response.audioRepairUpToDate
+          : selections.every(selection => response.workflow.entries.some(entry => entry.definitionId === selection.definitionId
+            && entry.staged && entry.selected === selection.enabled
+            && (selection.removeAssets ? entry.removalStaged : !entry.removalStaged && entry.preparedHash === selection.preparedHash))));
         const didSucceed = matches && !diagnostics.some(d => d.severity === 'error');
         return { ...response, diagnostics, didSucceed, session: didSucceed ? response.session : session };
       }, response => {
-        setScopedEditorPanelDiagnostics('restoreMissingPokemon', response.diagnostics);
+        setScopedEditorPanelDiagnostics('restoreMissingPokemon', response.audioRepairUpToDate
+          ? [...response.diagnostics, { severity: 'info', message: t('restoration.audioUpToDate') }]
+          : response.diagnostics);
         if (response.didSucceed) { accepted = true; setRestorationWorkflow(response.workflow); setEditSessionSection('restoreMissingPokemon'); }
       }, activeSession, undefined, undefined, selections.some(selection => selection.removeAssets) ? 'remove' : 'stage');
     } catch (error) { setScopedEditorPanelDiagnostics('restoreMissingPokemon', toBridgeDiagnostics(error)); }

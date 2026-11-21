@@ -133,5 +133,11 @@ public static partial class SwShRestorationModelMemoryPatcher
         new("main.text", 0x11C93EC, 0x11C941C, 0x320B0BE3, 0x52A02003,
             "A541697158584E591A089FDBD4168138C0E7971930A0F18F25C6EFB3AB18FF2A", "A541697158584E591A089FDBD4168138C0E7971930A0F18F25C6EFB3AB18FF2A",
             "Camp rotating model/animation bank 13: 14 to 16 MiB within existing parent headroom"),
+        new("main.text", 0x162F310, 0x162F3A0, 0x72A07322, 0x72A08822,
+            "7F596DE7EAE1AA72DC23D2C803E187C7367BB7315A94704FABA78473B21B83E5", "435EC4B9F75B61CB64F615C684FEE83B1267E86940DD93B63FD0008F3F43AF67",
+            "Pokédex scene reservation covering the enlarged preview pool", PokedexParent: true),
+        new("main.text", 0x162F498, 0x162F528, 0x72A040A2, 0x72A055A2,
+            "C894A09EE45345D01190959A3F400B12011972DBEBD74ACFD92FE26A8A2D0980", "C894A09EE45345D01190959A3F400B12011972DBEBD74ACFD92FE26A8A2D0980",
+            "Pokédex preview reservation covering the enlarged model bank", PokedexParent: true),
     ];
 }
