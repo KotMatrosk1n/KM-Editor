@@ -11,7 +11,7 @@ export const restorationWorkflowSchema = z.strictObject({ canEdit: z.boolean(), 
     assetsRemoved: z.string().nullable().default(null), removalStaged: z.boolean().default(false), updateAvailable: z.boolean().default(false),
     availableForAssignment: z.boolean().default(false),
     donor: z.enum(['ScarletViolet', 'LegendsZA', 'LegendsArceus']).nullable(), family: z.array(z.number().int()), preparedHash: z.string().nullable(), selected: z.boolean(), staged: z.boolean() })).max(1020),
-  diagnostics: z.array(apiDiagnosticSchema) });
+  diagnostics: z.array(apiDiagnosticSchema), canRepairAudio: z.boolean().default(false), audioRepairStaged: z.boolean().default(false), canRepairPokedex: z.boolean().default(false) });
 export const restorationPreparationSchema = z.strictObject({ id: z.string(), definitionId: z.string(),
   status: z.enum(['preparing', 'prepared', 'canceled', 'failed']), phase: z.string(), completedSpecies: z.number().int(),
   activity: z.string().default(''), species: z.number().int().nullable().default(null), completedUnits: z.number().int().nonnegative().default(0),
@@ -32,10 +32,11 @@ const restorationSelectionFields = { definitionId: z.string(), preparedHash: z.s
 const restorationStageFields = { paths: projectPathsSchema, session: editSessionSchema.nullable() };
 export const stageRestorationRequestSchema = z.union([
   z.strictObject({ ...restorationStageFields, ...restorationSelectionFields }),
-  z.strictObject({ ...restorationStageFields, selections: z.array(z.strictObject(restorationSelectionFields)).min(1).max(1020) }),
+  z.strictObject({ ...restorationStageFields, selections: z.array(z.strictObject(restorationSelectionFields)).max(1020) }),
+  z.strictObject({ ...restorationStageFields, repairAudio: z.literal(true) }),
 ]);
 export const stageRestorationResponseSchema = z.strictObject({ workflow: restorationWorkflowSchema, session: editSessionSchema,
-  diagnostics: z.array(apiDiagnosticSchema) });
+  diagnostics: z.array(apiDiagnosticSchema), audioRepairUpToDate: z.boolean().default(false) });
 export const restorationStageProgressSchema = z.discriminatedUnion('phase', [
   z.strictObject({ phase: z.literal('staging'), completed: z.number().int().nonnegative(),
     total: z.number().int().positive().max(1020) }),

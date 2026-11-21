@@ -27,7 +27,7 @@ public sealed record SwShRestorationStageProgress(string Phase, int? Completed =
 public sealed record SwShRestorationStageSelection(string DefinitionId, string PreparedHash, bool Enabled,
     bool RemoveAssets = false, string? RemovalId = null, IReadOnlyCollection<string>? PreparedAssets = null,
     bool UpdateAssets = false, bool AdoptExternal = false);
-public sealed record SwShRestorationPreview(IReadOnlyDictionary<string, byte[]?> Files, string StateHash, string? PreviousStateHash,
+public sealed record SwShRestorationPreview(IReadOnlyDictionary<string, byte[]?> Files, string? StateHash, string? PreviousStateHash,
     SwShRestorationState State, IReadOnlyList<ProjectFileReference> Sources, IReadOnlyList<int> RemovedSpecies)
 {
     public IReadOnlyList<SwShPokemonIdentity> RemovedIdentities { get; init; } = RemovedSpecies.Select(s => new SwShPokemonIdentity(s, 0)).ToArray();
@@ -37,6 +37,89 @@ public sealed record SwShRestorationPreview(IReadOnlyDictionary<string, byte[]?>
 public sealed partial class SwShRestorationService
 {
     public const string Domain = SwShRestorationDefinitions.Domain;
+    private const string AudioRepairSummary = "Repair restored Pokemon audio.";
+    private const string PokedexRepairSummary = "Repair the Pokédex model memory.";
+    private const string AudioRepairId = "audio-repair";
+    private const string PokedexRepairId = "pokedex-repair";
+
+    public static bool IsAudioRepair(PendingEdit edit) => edit.Domain == Domain && edit.RecordId == AudioRepairId;
+    public static bool IsPokedexRepair(PendingEdit edit) => edit.Domain == Domain && edit.RecordId == PokedexRepairId;
+    public static bool IsExecutableRepair(PendingEdit edit) => IsAudioRepair(edit) || IsPokedexRepair(edit);
+
+    public static string ExecutableRepairSummary(IReadOnlyList<PendingEdit> edits) =>
+        edits.Any(IsPokedexRepair)
+            ? edits.Any(IsAudioRepair) ? "Repair restored Pokemon audio and Pokédex model memory." : PokedexRepairSummary
+            : AudioRepairSummary;
+
+    public static bool CanRepairPokedex(ProjectPaths paths)
+    {
+        if (paths.SelectedGame is not (ProjectGame.Sword or ProjectGame.Shield)
+            || string.IsNullOrWhiteSpace(paths.BaseExeFsPath) || string.IsNullOrWhiteSpace(paths.BaseRomFsPath)
+            || string.IsNullOrWhiteSpace(paths.OutputRootPath)) return false;
+        try
+        {
+            var output = Output(paths, SwShRestorationModelMemoryPatcher.MainPath, includeExecutable: true);
+            return System.IO.File.Exists(output)
+                && SwShRestorationModelMemoryPatcher.Read(BoundedRead(output), paths.SelectedGame.Value).NeedsPokedexRepair;
+        }
+        catch (Exception exception) when (SourceError(exception)) { return false; }
+    }
+
+    public static bool CanRepairAudio(ProjectPaths paths) => paths.SelectedGame == ProjectGame.Sword
+        && !string.IsNullOrWhiteSpace(paths.BaseExeFsPath) && !string.IsNullOrWhiteSpace(paths.BaseRomFsPath)
+        && !string.IsNullOrWhiteSpace(paths.OutputRootPath)
+        && SwShRestorationSoundMemoryPatcher.NeedsLargeBankBudget(EffectiveVoiceBankBytes(paths));
+
+    public SwShRestorationStageResult StageAudioRepair(ProjectPaths paths, EditSession? session, out bool upToDate)
+        => StageExecutableRepair(paths, session, audio: true, out upToDate);
+
+    private static SwShRestorationStageResult StageExecutableRepair(ProjectPaths paths, EditSession? session, bool audio, out bool upToDate)
+    {
+        var current = session ?? EditSession.Start();
+        upToDate = false;
+        try
+        {
+            var preview = PreviewExecutableRepairs(paths, audio, pokedex: !audio);
+            upToDate = preview.Files.Count == 0;
+            var repairId = audio ? AudioRepairId : PokedexRepairId;
+            var remaining = current.PendingEdits.Where(edit => edit.Domain != Domain || edit.RecordId != repairId);
+            var edits = upToDate ? remaining : remaining.Append(new PendingEdit(
+                Domain, audio ? AudioRepairSummary : PokedexRepairSummary, [], repairId, "repair", "true", Domain));
+            return new(current with { PendingEdits = edits.ToArray() }, []);
+        }
+        catch (Exception exception) when (SourceError(exception)) { return new(current, [Error(SessionCode, exception.Message)]); }
+    }
+
+    private static SwShRestorationPreview PreviewExecutableRepairs(ProjectPaths paths, bool audio, bool pokedex)
+    {
+        var snapshot = SwShRestorationStateStore.Read(paths);
+        var outputs = new Dictionary<string, byte[]?>(StringComparer.Ordinal);
+        var sources = new HashSet<ProjectFileReference>();
+        if (audio)
+        {
+            if (!CanRepairAudio(paths))
+                throw new InvalidDataException("Select a Sword 1.3.2 project with Base ExeFS and a large restored Common.bnk.");
+            var bankBytes = EffectiveVoiceBankBytes(paths, sources);
+            if (SwShRestorationSoundMemoryPatcher.NeedsLargeBankBudget(bankBytes))
+                AddSoundMemory(paths, outputs, sources, bankBytes);
+        }
+        if (pokedex)
+        {
+            if (paths.SelectedGame is not (ProjectGame.Sword or ProjectGame.Shield)
+                || string.IsNullOrWhiteSpace(paths.BaseExeFsPath) || string.IsNullOrWhiteSpace(paths.BaseRomFsPath)
+                || string.IsNullOrWhiteSpace(paths.OutputRootPath))
+                throw new InvalidDataException("Select a Sword or Shield 1.3.2 project with Base RomFS, Base ExeFS and an output folder.");
+            AddModelMemory(paths, outputs, sources, repairOnly: true);
+        }
+        return new(outputs, null, snapshot.Hash, snapshot.State, sources.ToArray(), []);
+    }
+
+    public static void BindOutputState(ProjectPaths paths, SwShRestorationPreview preview)
+    {
+        if (preview.StateHash is { } stateHash)
+            SwShChangePlanSourceGuard.BindRestorationState(paths, preview.PreviousStateHash, stateHash, preview.AdoptedWholeFiles);
+    }
+
     public const string SourceCode = "KM-SWSH-RESTORATION-SOURCE-UNAVAILABLE";
     public const string ConflictCode = "KM-SWSH-RESTORATION-CONFLICT";
     public const string SessionCode = "KM-SWSH-RESTORATION-SESSION-INVALID";
@@ -49,10 +132,11 @@ public sealed partial class SwShRestorationService
     public SwShRestorationStageResult StageBatch(ProjectPaths paths, IReadOnlyList<SwShRestorationStageSelection> selections, EditSession? session,
         Action<SwShRestorationStageProgress>? reportProgress = null)
     {
+        if (selections.Count == 0) return StageExecutableRepair(paths, session, audio: false, out _);
         var current = session ?? EditSession.Start();
         try
         {
-            if (selections.Count == 0 || selections.Count > SwShRestorationDefinitions.All.Count
+            if (selections.Count > SwShRestorationDefinitions.All.Count
                 || selections.Any(s => s is null) || selections.Select(s => s.DefinitionId).Distinct(StringComparer.Ordinal).Count() != selections.Count)
                 throw new InvalidDataException("Restoration selections are missing, duplicated, or excessive.");
             current = UpgradeSession(paths, current);
@@ -115,11 +199,14 @@ public sealed partial class SwShRestorationService
             var references = CheckReferences(paths, preview);
             if (references.References.Count > 0) return new(session.Id, [], ReferenceDiagnostics(references));
             var sources = preview.Sources.Concat(references.Sources).ToHashSet();
-            SwShRestorationFormDependencies.ValidateNative(preview.State, path =>
-                preview.Files.TryGetValue(path, out var value) ? value : ReadEffective(paths, path, sources));
+            var executableOnly = preview.StateHash is null;
+            if (!executableOnly)
+                SwShRestorationFormDependencies.ValidateNative(preview.State, path =>
+                    preview.Files.TryGetValue(path, out var value) ? value : ReadEffective(paths, path, sources));
             var writes = preview.Files.Keys.Order(StringComparer.Ordinal).Select(path => new PlannedFileWrite(path,
-                path == SwShRestorationComposer.PersonalPath ? sources.ToArray() : [],
-                System.IO.File.Exists(Output(paths, path, includeExecutable: true)), "Update restored Pokemon while retaining unrelated resources and project customizations.")).ToArray();
+                path == (executableOnly ? SwShRestorationModelMemoryPatcher.MainPath : SwShRestorationComposer.PersonalPath) ? sources.ToArray() : [],
+                System.IO.File.Exists(Output(paths, path, includeExecutable: true)),
+                executableOnly ? ExecutableRepairSummary(session.PendingEdits) : "Update restored Pokemon while retaining unrelated resources and project customizations.")).ToArray();
             return SwShChangePlanSourceGuard.Capture(paths, new(session.Id, writes, []) { EffectivePendingEdits = session.PendingEdits }, preserveExplicitSourceLayers: true);
         }
         catch (Exception exception) when (SourceError(exception)) { return new(session.Id, [], [Error(SourceCode, exception.Message)]); }
@@ -155,7 +242,7 @@ public sealed partial class SwShRestorationService
             if (!verified.TryPrepareSnapshotPlan(CreateChangePlan(verified.ApplyPaths, session), out var prepared))
                 return Result(plan, [], [Error(StaleCode, "Restoration sources changed while preparing the verified output.")]);
             var preview = Preview(verified.ApplyPaths, session);
-            SwShChangePlanSourceGuard.BindRestorationState(verified.ApplyPaths, preview.PreviousStateHash, preview.StateHash, preview.AdoptedWholeFiles);
+            BindOutputState(verified.ApplyPaths, preview);
             var written = WritePreview(verified.ApplyPaths, preview);
             return verified.Commit(Result(prepared, written, []));
         }
@@ -168,9 +255,20 @@ public sealed partial class SwShRestorationService
     {
         if (paths.SelectedGame is not (ProjectGame.Sword or ProjectGame.Shield) || string.IsNullOrWhiteSpace(paths.OutputRootPath)
             || string.IsNullOrWhiteSpace(paths.BaseRomFsPath)) throw new InvalidDataException("Select a Sword or Shield project with a base dump and output folder.");
-        var edits = UpgradeSession(paths, session).PendingEdits.Where(e => e.Domain == Domain).ToArray();
-        if (edits.Length == 0 || edits.Length > SwShRestorationDefinitions.All.Count || edits.Select(e => e.RecordId).Distinct(StringComparer.Ordinal).Count() != edits.Length)
+        var staged = UpgradeSession(paths, session).PendingEdits.Where(e => e.Domain == Domain).ToArray();
+        if (staged.Length == 0 || staged.Select(e => e.RecordId).Distinct(StringComparer.Ordinal).Count() != staged.Length)
             throw new InvalidDataException("Restoration selections are missing, duplicated, or excessive.");
+        var audioRepair = staged.Any(IsAudioRepair);
+        var pokedexRepair = staged.Any(IsPokedexRepair);
+        foreach (var repair in staged.Where(IsExecutableRepair))
+            if (repair.Summary != (IsAudioRepair(repair) ? AudioRepairSummary : PokedexRepairSummary)
+                || repair.Owner != Domain || repair.Field != "repair" || repair.NewValue != "true" || repair.Sources.Count != 0
+                || IsAudioRepair(repair) && paths.SelectedGame != ProjectGame.Sword)
+                throw new InvalidDataException("Staged restoration executable repair is invalid.");
+        var edits = staged.Where(e => !IsExecutableRepair(e)).ToArray();
+        if (edits.Length > SwShRestorationDefinitions.All.Count)
+            throw new InvalidDataException("Restoration selections are excessive.");
+        if (edits.Length == 0) return PreviewExecutableRepairs(paths, audioRepair, pokedexRepair);
         var completed = 0;
         reportProgress?.Invoke(new("staging", completed, edits.Length));
         void ReportSelection() => reportProgress?.Invoke(new("staging", ++completed, edits.Length));
@@ -202,6 +300,7 @@ public sealed partial class SwShRestorationService
             .Select(e => e.DefinitionId!).ToHashSet(StringComparer.Ordinal));
         var adoptedWholeFiles = new HashSet<string>(StringComparer.Ordinal);
         var needsSoundMemory = false;
+        var allowLargeBankRepair = audioRepair;
         byte[]? Current(string path)
         {
             if (outputs.TryGetValue(path, out var value)) return value;
@@ -243,6 +342,7 @@ public sealed partial class SwShRestorationService
             var bundle = SwShRestorationStateStore.ReadPrepared(paths, intent.PreparedHash);
             if (bundle.DefinitionId != intent.DefinitionId) throw new InvalidDataException("Prepared restoration definition does not match the selection.");
             needsSoundMemory |= intent.Enabled && bundle.Contributions.Any(c => c.Writer == SwShRestorationWriter.Voices);
+            allowLargeBankRepair |= intent.Enabled || intent.UpdateAssets;
             selections.TryGetValue(intent.DefinitionId, out var installed);
             if (installed?.RemovalId is not null && intent.Enabled) installed = null;
             var freshInstall = intent.Enabled && installed is null && !intent.AdoptExternal && !intent.UpdateAssets;
@@ -413,22 +513,31 @@ public sealed partial class SwShRestorationService
                 if (!aligned.Learnset.AsSpan().SequenceEqual(learnset)) outputs[SwShRestorationComposer.LearnsetPath] = aligned.Learnset;
             }
         }
-        if (needsSoundMemory && (!assetsOnly || outputs.ContainsKey(SwShRestorationComposer.VoicesPath)))
-            AddSoundMemory(paths, outputs, sources, voices?.Length ?? 0);
+        var writesVoices = outputs.ContainsKey(SwShRestorationComposer.VoicesPath);
+        var bankBytes = voices?.LongLength ?? 0;
+        if (!writesVoices && allowLargeBankRepair && paths.SelectedGame == ProjectGame.Sword)
+            bankBytes = EffectiveVoiceBankBytes(paths, sources);
+        if (needsSoundMemory && (!assetsOnly || writesVoices)
+            || allowLargeBankRepair && paths.SelectedGame == ProjectGame.Sword
+                && SwShRestorationSoundMemoryPatcher.NeedsLargeBankBudget(bankBytes))
+            AddSoundMemory(paths, outputs, sources, bankBytes);
+        var needsModelMemory = assetsOnly ? edits.Any(edit => Parse(edit).Enabled) : SwShRestorationDependencies.Enabled(state).Count != 0;
         if (!assetsOnly)
         {
             AddMegaItemProtection(paths, state, outputs, sources);
             AddSpeciesSupport(paths, state, outputs, sources);
             AddAbilitySupport(paths, state, outputs, sources, owned);
-            if (SwShRestorationDependencies.Enabled(state).Count != 0)
+            if (needsModelMemory)
             {
                 AddTableMemory(paths, outputs, sources);
                 AddModelMemory(paths, outputs, sources);
             }
             AddCryRouting(paths, state, outputs, sources);
         }
-        else if (edits.Any(edit => Parse(edit).Enabled))
+        else if (needsModelMemory)
             AddModelMemory(paths, outputs, sources);
+        if (!needsModelMemory && (pokedexRepair || edits.Any(edit => Parse(edit).UpdateAssets)))
+            AddModelMemory(paths, outputs, sources, repairOnly: true);
         AddSamplerSupport(paths, state, outputs, sources);
         var storedState = SwShRestorationStateStore.Store(paths, state); using (storedState.Lease) { }
         state = SwShRestorationStateStore.ReadState(paths, storedState.Hash).State;
@@ -526,7 +635,18 @@ public sealed partial class SwShRestorationService
         if (!patched.AsSpan().SequenceEqual(current)) outputs[relative] = patched;
     }
 
-    private static void AddSoundMemory(ProjectPaths paths, IDictionary<string, byte[]?> outputs, ISet<ProjectFileReference> sources, int bankBytes)
+    private static long EffectiveVoiceBankBytes(ProjectPaths paths, ISet<ProjectFileReference>? sources = null)
+    {
+        const string relative = SwShRestorationComposer.VoicesPath;
+        var effectiveSources = new HashSet<ProjectFileReference>();
+        var bank = FindEffectiveFile(paths, relative, effectiveSources);
+        var bytes = bank is null ? 0 : new FileInfo(bank).Length;
+        if (sources is not null && SwShRestorationSoundMemoryPatcher.NeedsLargeBankBudget(bytes))
+            sources.UnionWith(effectiveSources);
+        return bytes;
+    }
+
+    private static void AddSoundMemory(ProjectPaths paths, IDictionary<string, byte[]?> outputs, ISet<ProjectFileReference> sources, long bankBytes)
     {
         if (string.IsNullOrWhiteSpace(paths.BaseExeFsPath))
             throw new InvalidDataException("Select the game's Base ExeFS folder to apply the sound memory required by restored Pokemon.");
@@ -535,21 +655,31 @@ public sealed partial class SwShRestorationService
         sources.Add(new(ProjectFileLayer.Base, relative));
         var output = Output(paths, relative, includeExecutable: true);
         var current = baseline;
-        if (System.IO.File.Exists(output)) { current = BoundedRead(output); sources.Add(new(ProjectFileLayer.Layered, relative)); }
+        if (outputs.TryGetValue(relative, out var pending) && pending is not null) current = pending;
+        else if (System.IO.File.Exists(output)) { current = BoundedRead(output); sources.Add(new(ProjectFileLayer.Layered, relative)); }
         var patched = SwShRestorationSoundMemoryPatcher.Apply(baseline, current, paths.SelectedGame!.Value, bankBytes);
         if (!patched.AsSpan().SequenceEqual(current)) outputs[relative] = patched;
     }
 
-    private static void AddModelMemory(ProjectPaths paths, IDictionary<string, byte[]?> outputs, ISet<ProjectFileReference> sources)
+    private static void AddModelMemory(ProjectPaths paths, IDictionary<string, byte[]?> outputs, ISet<ProjectFileReference> sources,
+        bool repairOnly = false)
     {
+        const string relative = SwShRestorationModelMemoryPatcher.MainPath;
+        var output = Output(paths, relative, includeExecutable: true);
+        outputs.TryGetValue(relative, out var current);
+        if (current is null && System.IO.File.Exists(output))
+        {
+            current = BoundedRead(output);
+            sources.Add(new(ProjectFileLayer.Layered, relative));
+        }
+        var game = paths.SelectedGame!.Value;
+        if (repairOnly && (current is null || !SwShRestorationModelMemoryPatcher.Read(current, game).NeedsPokedexRepair)) return;
         if (string.IsNullOrWhiteSpace(paths.BaseExeFsPath))
             throw new InvalidDataException("Select the game's Base ExeFS folder to apply the memory required by restored Pokemon models.");
-        const string relative = SwShRestorationModelMemoryPatcher.MainPath;
-        var baseline = BoundedRead(Path.Combine(paths.BaseExeFsPath, "main")); sources.Add(new(ProjectFileLayer.Base, relative));
-        var current = baseline; var output = Output(paths, relative, includeExecutable: true);
-        if (outputs.TryGetValue(relative, out var pending) && pending is not null) current = pending;
-        else if (System.IO.File.Exists(output)) { current = BoundedRead(output); sources.Add(new(ProjectFileLayer.Layered, relative)); }
-        var patched = SwShRestorationModelMemoryPatcher.Apply(baseline, current, paths.SelectedGame!.Value);
+        var baseline = BoundedRead(Path.Combine(paths.BaseExeFsPath, "main"));
+        sources.Add(new(ProjectFileLayer.Base, relative));
+        current ??= baseline;
+        var patched = SwShRestorationModelMemoryPatcher.Apply(baseline, current, game);
         if (!patched.AsSpan().SequenceEqual(current)) outputs[relative] = patched;
     }
 

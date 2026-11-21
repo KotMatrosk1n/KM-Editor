@@ -16,13 +16,13 @@ public static partial class SwShRestorationModelMemoryPatcher
     internal const uint OriginalSceneBudget = 713 * 1024 * 1024;
     internal const uint ExpandedSceneBudget = 771 * 1024 * 1024 + 512 * 1024;
     private sealed record Budget(string Area, int SwordOffset, int ShieldOffset, uint Original, uint Expanded,
-        string SwordContext, string ShieldContext, string Label)
+        string SwordContext, string ShieldContext, string Label, bool PokedexParent = false)
     {
         public int Offset(ProjectGame game) => game == ProjectGame.Sword ? SwordOffset : ShieldOffset;
         public string Context(ProjectGame game) => game == ProjectGame.Sword ? SwordContext : ShieldContext;
     }
 
-    internal static (NsoFile Main, bool Installed) Read(byte[] bytes, ProjectGame game)
+    internal static (NsoFile Main, bool Installed, bool NeedsPokedexRepair) Read(byte[] bytes, ProjectGame game)
     {
         var main = NsoFile.Parse(bytes);
         if (game is not (ProjectGame.Sword or ProjectGame.Shield)
@@ -36,9 +36,13 @@ public static partial class SwShRestorationModelMemoryPatcher
         foreach (var word in Words)
             if (Segment(main, word.Area).Length < word.Offset(game) + 36)
                 throw new InvalidDataException("The model memory executable has a truncated initialization.");
-        var original = Words.All(word => Word(Segment(main, word.Area), word.Offset(game)) == word.Original);
-        var installed = Words.All(word => Word(Segment(main, word.Area), word.Offset(game)) == word.Expanded);
-        if (!original && !installed)
+        bool Matches(Budget word, uint expected) => Word(Segment(main, word.Area), word.Offset(game)) == expected;
+        var original = Words.All(word => Matches(word, word.Original));
+        // Existing installations expanded the shared preview child but left both Pokédex parents at retail sizes.
+        var installed = Words.All(word => Matches(word, word.Expanded));
+        var needsPokedexRepair = !original && !installed
+            && Words.All(word => Matches(word, word.PokedexParent ? word.Original : word.Expanded));
+        if (!original && !installed && !needsPokedexRepair)
             throw new InvalidDataException("The model memory budgets contain incompatible or incomplete changes.");
 
         // Hash only small constructor windows. Normalize all owned neighbors so
@@ -60,7 +64,7 @@ public static partial class SwShRestorationModelMemoryPatcher
             if (Convert.ToHexString(SHA256.HashData(context)) != word.Context(game))
                 throw new InvalidDataException("The model heap initialization contains incompatible changes.");
         }
-        return (main, installed);
+        return (main, installed || needsPokedexRepair, needsPokedexRepair);
     }
 
     private static void ValidateSoundTuple(NsoFile main)
@@ -88,7 +92,7 @@ public static partial class SwShRestorationModelMemoryPatcher
                 && other.Area == region.Area && !other.FeatureId.Contains(game == ProjectGame.Sword ? "-shield-" : "-sword-", StringComparison.Ordinal)
                 && SwShExeFsReservedRegionLedger.Overlaps(other, region.StartOffset!.Value, 4)))
                 throw new InvalidDataException("Model memory support overlaps another executable feature.");
-        if (current.Installed == expanded) return source;
+        if (current.Installed == expanded && !current.NeedsPokedexRepair) return source;
         var text = current.Main.Text.DecompressedData.ToArray();
         var ro = current.Main.Ro.DecompressedData.ToArray();
         var data = current.Main.Data.DecompressedData.ToArray();
@@ -97,7 +101,7 @@ public static partial class SwShRestorationModelMemoryPatcher
                 word.Offset(game), expanded ? word.Expanded : word.Original);
         var output = current.Main.Write(textDecompressedData: text, roDecompressedData: ro, dataDecompressedData: data);
         var after = Read(output, game);
-        if (after.Installed != expanded || !after.Main.Text.DecompressedData.SequenceEqual(text)
+        if (after.Installed != expanded || after.NeedsPokedexRepair || !after.Main.Text.DecompressedData.SequenceEqual(text)
             || !after.Main.Ro.DecompressedData.SequenceEqual(ro) || !after.Main.Data.DecompressedData.SequenceEqual(data)
             || !SwShExeFsMainComparison.StableHeaderBytesMatch(current.Main.RawHeader, after.Main.RawHeader))
             throw new InvalidDataException("Model memory output failed preservation verification.");

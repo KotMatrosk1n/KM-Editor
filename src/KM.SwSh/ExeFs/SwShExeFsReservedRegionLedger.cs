@@ -435,7 +435,8 @@ internal static class SwShExeFsReservedRegionLedger
                 || string.Equals(owner, OwnerObedience, StringComparison.Ordinal)
                 || string.Equals(owner, OwnerYComm, StringComparison.Ordinal)
                 || string.Equals(owner, KM.SwSh.ShakingTrees.SwShTreeQuantityPatcher.Owner, StringComparison.Ordinal)
-                || string.Equals(owner, KM.SwSh.Restoration.SwShRestorationModelMemoryPatcher.Owner, StringComparison.Ordinal))
+                || string.Equals(owner, KM.SwSh.Restoration.SwShRestorationModelMemoryPatcher.Owner, StringComparison.Ordinal)
+                || string.Equals(owner, KM.SwSh.Restoration.SwShRestorationSoundMemoryPatcher.Owner, StringComparison.Ordinal))
             && game is ProjectGame.Sword or ProjectGame.Shield)
         {
             var inactiveGameToken = game == ProjectGame.Sword ? "-shield-" : "-sword-";
