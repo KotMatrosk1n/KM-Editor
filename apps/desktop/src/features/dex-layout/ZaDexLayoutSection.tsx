@@ -3,7 +3,6 @@
 import {
   AlertTriangle,
   ArrowRight,
-  ClipboardCheck,
   Info,
   ListOrdered,
   RefreshCw,
@@ -71,7 +70,6 @@ export function ZaDexLayoutSection({
   onCancelEditSession,
   onDirtyChange,
   onMovePlacement,
-  onOpenChanges,
   onResizeDex,
   onStageMegaSync,
   onStageReturnToVanilla,
@@ -89,7 +87,6 @@ export function ZaDexLayoutSection({
     destinationDexKind: DexKind,
     destinationDisplayedNumber: number
   ) => Promise<boolean>;
-  onOpenChanges: () => void;
   onResizeDex: (regularCount: number) => Promise<boolean>;
   onStageMegaSync: () => void;
   onStageReturnToVanilla: () => void;
@@ -324,7 +321,6 @@ export function ZaDexLayoutSection({
     preview !== null && preview.source.dexKind !== preview.destinationDexKind;
   const workflowAvailable = workflow?.summary.availability === 'available';
   const hasActiveEditSession = editSession !== null;
-  const hasStagedChange = (editSession?.pendingEdits.length ?? 0) > 0;
   const sessionActionChangedCount =
     (editSession?.pendingEdits.length ?? 0) + (hasLocalDraft ? 1 : 0);
   const isWorkflowActionBusy = isEditStarting || isPokemonUpdating;
@@ -367,8 +363,6 @@ export function ZaDexLayoutSection({
     hasActiveEditSession &&
     !hasLocalDraft &&
     !isWorkflowActionBusy;
-  const canOpenChanges =
-    hasStagedChange && !hasLocalDraft && !isWorkflowActionBusy;
   usePublishCommonEditorError({
     domain: 'workflow.pokemon.dexLayout',
     field: 'sizes',
@@ -917,15 +911,6 @@ export function ZaDexLayoutSection({
                   isPokemonUpdating ? 'Staging' : 'Return to Vanilla'
                 )}
               </span>
-            </button>
-            <button
-              className="secondary-button"
-              disabled={!canOpenChanges}
-              onClick={onOpenChanges}
-              type="button"
-            >
-              <ClipboardCheck aria-hidden="true" size={16} />
-              <span>{translateLiteral('Open Changes')}</span>
             </button>
           </div>
         ) : null}

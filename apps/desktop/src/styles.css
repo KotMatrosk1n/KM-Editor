@@ -13065,10 +13065,6 @@ h2 {
   margin-top: 16px;
 }
 
-.za-recomp-review[aria-pressed='true'] {
-  border-color: var(--color-accent-bright);
-}
-
 .changes-output-restriction {
   display: flex;
   gap: 10px;

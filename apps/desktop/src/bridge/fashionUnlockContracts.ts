@@ -7,7 +7,8 @@ import {
   projectFileGraphEntryStateSchema,
   projectFileLayerSchema,
   projectPathsSchema,
-  workflowSummarySchema
+  workflowSummarySchema,
+  zaEffectiveMainPathSchema
 } from './contracts';
 
 export const fashionUnlockInstallStatusSchema = z.enum([
@@ -94,6 +95,7 @@ const zaFashionUnlockWorkflowSchema = z.strictObject({
   editorFamily: z.literal('za'),
   mappedGetterOffsetHex: z.literal(''),
   ownershipCheckOffsetHex: z.string(),
+  provenance: fashionUnlockProvenanceSchema.extend({ sourceFile: zaEffectiveMainPathSchema }),
   stubKind: z.enum([
     'not inspected', 'unsupported', 'unreadable', 'game mismatch', 'unknown bytes',
     'vanilla wardrobe checks', 'wardrobe access patches'
@@ -635,7 +637,10 @@ function hasValidProvenance(
     typeof swshFashionUnlockWorkflowSchema | typeof svFashionUnlockWorkflowSchema | typeof zaFashionUnlockWorkflowSchema
   >
 ) {
-  const { fileState, sourceLayer } = workflow.provenance;
+  const { fileState, sourceFile, sourceLayer } = workflow.provenance;
+  if (sourceFile !== 'exefs/main' && sourceLayer !== 'layered') {
+    return false;
+  }
   if (sourceLayer === 'generated') {
     return fileState === 'baseOnly' && ['disabled', 'blocked'].includes(workflow.installStatus);
   }

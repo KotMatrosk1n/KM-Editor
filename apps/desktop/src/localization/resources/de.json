@@ -7261,6 +7261,7 @@
     "Output for Trinity Bypass?": "Ausgabe für Trinity Bypass?",
     "Output for Trinity Mod Manager": "Ausgabe für Trinity Mod Manager",
     "Output for Trinity Mod Manager?": "Ausgabe für Trinity Mod Manager?",
+    "Output for ZA Recomp": "Ausgabe für ZA Recomp",
     "Output root does not exist; write actions are disabled until it is created or changed.": "Ausgabestamm existiert nicht; Schreibaktionen sind deaktiviert, bis sie erstellt oder geändert werden.",
     "Output root folder": "Ausgabe Stammordner",
     "Output root folder matches selected {game} title id {titleId}.": "Der Ausgabe Stammordner entspricht der ausgewählten Titel ID von {game} {titleId}.",

@@ -5639,16 +5639,26 @@ const typeChartEffectivenessSchema = z.union([
   z.literal(8),
 ]);
 
+export const zaRecompMainPatchPathSchema = z.enum([
+  "exefs/km-editor-main.pchtxt",
+  "za-recomp/exefs/km-editor-main.pchtxt",
+]);
+
+export const zaEffectiveMainPathSchema = z.union([
+  z.literal("exefs/main"),
+  zaRecompMainPatchPathSchema,
+]);
+
 export const typeChartProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
-  sourceFile: z.literal("exefs/main"),
+  sourceFile: zaEffectiveMainPathSchema,
   sourceLayer: projectFileLayerSchema,
 });
 
 export const typeChartSourceRecordSchema = z.strictObject({
   label: z.string().min(1),
   provenance: typeChartProvenanceSchema,
-  relativePath: z.literal("exefs/main"),
+  relativePath: zaEffectiveMainPathSchema,
   sourceId: z.string().min(1),
   status: z.enum(["available", "missing"]),
 });
@@ -5740,6 +5750,22 @@ export const typeChartWorkflowSchema = z
         message:
           "Type Chart workflow summary must use the Type Chart identity.",
         path: ["summary", "id"],
+      });
+    }
+
+    const { source, detectedGame } = workflow;
+    if (
+      source &&
+      (source.relativePath !== source.provenance.sourceFile ||
+        (source.relativePath !== "exefs/main" &&
+          (source.provenance.sourceLayer !== "layered" ||
+            source.status !== "available" ||
+            (detectedGame !== "za" && detectedGame !== null))))
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Type Chart must report matching paths for the effective executable source.",
+        path: ["source"],
       });
     }
 

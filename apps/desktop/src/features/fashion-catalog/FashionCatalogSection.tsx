@@ -65,7 +65,6 @@ type FashionCatalogSectionProps = {
   editSession: EditSession | null;
   isStaging: boolean;
   onDirtyStateChange?: (isDirty: boolean) => void;
-  onOpenChanges: () => void;
   onStageFieldEdit: (edit: FashionCatalogFieldEditInput) => Promise<boolean>;
   panelOutput: WorkflowPanelOutput;
   workflow: FashionCatalogWorkflow | null;
@@ -130,7 +129,6 @@ export function FashionCatalogSection({
   editSession,
   isStaging,
   onDirtyStateChange,
-  onOpenChanges,
   onStageFieldEdit,
   panelOutput,
   workflow
@@ -734,11 +732,6 @@ export function FashionCatalogSection({
                       type="button"
                     >
                       {t('editorDrafts.discardUnavailable')}
-                    </button>
-                  ) : null}
-                  {pendingCount > 0 ? (
-                    <button onClick={onOpenChanges} type="button">
-                      {t('fashionCatalog.editor.review', { count: pendingCount })}
                     </button>
                   ) : null}
                 </div>

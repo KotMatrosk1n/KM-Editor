@@ -7261,6 +7261,7 @@
     "Output for Trinity Bypass?": "Trinity绕过输出？",
     "Output for Trinity Mod Manager": "Trinity模组管理器输出",
     "Output for Trinity Mod Manager?": "Trinity模组管理器输出？",
+    "Output for ZA Recomp": "ZA Recomp 输出",
     "Output root does not exist; write actions are disabled until it is created or changed.": "输出根目录不存在；写入操作已禁用，直到创建或更改。",
     "Output root folder": "输出根文件夹",
     "Output root folder matches selected {game} title id {titleId}.": "输出根文件夹与所选{game}标题ID {titleId}匹配。",
