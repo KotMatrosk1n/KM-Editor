@@ -58842,23 +58842,6 @@ function ChangesSection({
                   size={18}
                 />
               </button>
-              {supportsZaRecompOutput ? (
-                <button
-                  aria-busy={isChangePlanApplying || undefined}
-                  className="secondary-button"
-                  disabled={!canSaveValidatedChanges}
-                  onClick={() => onRequestTrinityOutput('zaRecomp')}
-                  type="button"
-                >
-                  <BusyActionContent
-                    busyLabel="Outputting"
-                    icon={<Package aria-hidden="true" size={18} />}
-                    isBusy={isChangePlanApplying}
-                    label="ZA Recomp"
-                    size={18}
-                  />
-                </button>
-              ) : null}
             </>
           ) : (
             <button
@@ -58892,13 +58875,32 @@ function ChangesSection({
             <X aria-hidden="true" size={18} />
             <span>{t('changeSets.discardUnassigned')}</span>
           </button>
+          {supportsTrinityOutput && supportsZaRecompOutput ? (
+            <button
+              aria-busy={isChangePlanApplying || undefined}
+              className="secondary-button"
+              disabled={!canSaveValidatedChanges}
+              onClick={() => onRequestTrinityOutput('zaRecomp')}
+              type="button"
+            >
+              <BusyActionContent
+                busyLabel="Outputting"
+                icon={<Package aria-hidden="true" size={18} />}
+                isBusy={isChangePlanApplying}
+                label="ZA Recomp"
+                size={18}
+              />
+            </button>
+          ) : null}
         </div>
 
         {supportsTrinityOutput && includesExeFsOutput ? (
           <div className="changes-output-restriction" role="note">
             <AlertTriangle aria-hidden="true" size={16} />
             <span>
-              {translateLiteral(hybridOutputExplanation)}
+              {translateLiteral(supportsZaRecompOutput
+                ? 'Standalone and Trinity outputs write to standard exefs/main. ZA Recomp puts its executable patch in the same mod folder as the RomFS edits.'
+                : hybridOutputExplanation)}
               {!canPreserveTrinityBypass ? (
                 <>
                   {' '}

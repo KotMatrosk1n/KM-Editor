@@ -89,6 +89,7 @@ export function AngeFightSection({
   workflow: AngeFightWorkflow | null;
 }) {
   const { translateLiteral } = useLocalization();
+  const zaRecompApplyLabel = isZaRecompPlan ? translateLiteral('Apply ZA Recomp') : undefined;
   const workflowValues = useMemo(() => getAngeFightWorkflowValues(workflow), [workflow]);
   const vanillaValues = useMemo(() => getAngeFightVanillaValues(workflow), [workflow]);
   const stagedState = useMemo(
@@ -422,23 +423,33 @@ export function AngeFightSection({
                 <ClipboardCheck aria-hidden="true" size={16} />
                 <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
               </button>
-              {onReviewZaRecomp ? (
-                <button className="secondary-button" disabled={!canReviewPlan} onClick={onReviewZaRecomp} type="button">
-                  <ClipboardCheck aria-hidden="true" size={16} />
-                  <span>ZA Recomp</span>
-                </button>
-              ) : null}
               <button
                 aria-busy={isChangePlanApplying || undefined}
+                aria-label={zaRecompApplyLabel}
                 className="primary-button"
                 disabled={!canApplyPlan}
                 onClick={onApplyChangePlan}
+                title={zaRecompApplyLabel}
                 type="button"
               >
                 <Save aria-hidden="true" size={16} />
-                <span>{isChangePlanApplying ? 'Applying' : isZaRecompPlan ? 'Apply ZA Recomp' : 'Apply'}</span>
+                <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
               </button>
             </div>
+            {onReviewZaRecomp ? (
+              <div className="form-actions ange-fight-actions">
+                <button
+                  aria-pressed={isZaRecompPlan}
+                  className="secondary-button za-recomp-review"
+                  disabled={!canReviewPlan}
+                  onClick={onReviewZaRecomp}
+                  type="button"
+                >
+                  <ClipboardCheck aria-hidden="true" size={16} />
+                  <span>ZA Recomp</span>
+                </button>
+              </div>
+            ) : null}
 
             <div className="ange-fight-source-grid">
               {workflow.sources.map((source) => (
