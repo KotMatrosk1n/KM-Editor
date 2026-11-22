@@ -2,6 +2,119 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "version": "2.7.2",
+      "summary": {
+        "en": "KM Editor 2.7.2 adds direct ZA Recomp output, city roaming controls for every Legends Z-A species, and five Fashion Unlock hairstyles. Sword and Shield get fixes for Mega Baxcalibur, restoration audio, and Pokédex crashes. Windows now protects saved Mod Merger drafts.",
+        "de": "KM Editor 2.7.2 ergänzt den direkten Export für ZA Recomp, Stadtbewegung für jede Art in Legends Z-A und fünf Frisuren für Fashion Unlock. In Schwert und Schild wurden Mega Baxcalibur, der Ton bei Wiederherstellungen und Pokédex-Abstürze korrigiert. Windows schützt jetzt gespeicherte Mod Merger-Entwürfe.",
+        "es": "KM Editor 2.7.2 añade exportación directa para ZA Recomp, controles de movimiento urbano para todas las especies de Leyendas Z-A y cinco peinados en Fashion Unlock. Corrige a Mega Baxcalibur, el audio de las restauraciones y los cierres de la Pokédex en Espada y Escudo. Windows ahora protege los borradores de Mod Merger.",
+        "fr": "KM Editor 2.7.2 ajoute l’export direct pour ZA Recomp, les déplacements en ville pour toutes les espèces de Légendes Z-A et cinq coiffures dans Fashion Unlock. Épée et Bouclier bénéficient de corrections pour Mega Baxcalibur, le son des restaurations et les plantages du Pokédex. Windows protège désormais les brouillons de Mod Merger.",
+        "ru": "В KM Editor 2.7.2 появились прямой экспорт для ZA Recomp, настройки передвижения по городу для всех видов в Legends Z-A и пять причёсок в Fashion Unlock. В Sword и Shield исправлены Mega Baxcalibur, звук при восстановлении и сбои Покедекса. Windows теперь защищает черновики Mod Merger.",
+        "uk": "У KM Editor 2.7.2 додано прямий експорт для ZA Recomp, налаштування пересування містом для всіх видів у Legends Z-A та п’ять зачісок у Fashion Unlock. У Sword і Shield виправлено Mega Baxcalibur, звук при відновленні та збої Покедекса. Windows тепер захищає чернетки Mod Merger.",
+        "zh": "KM Editor 2.7.2 新增 ZA Recomp 直接导出、适用于《传说 Z-A》所有宝可梦种类的城市漫游设置，以及 Fashion Unlock 的五款发型。剑盾修复了超级戟脊龙、还原音效和打开图鉴时的崩溃问题。Windows 现在会保护 Mod Merger 草稿。"
+      },
+      "sections": [
+        {
+          "title": {
+            "en": "Workspace"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Mod Merger saves drafts with Windows account protection and migrates existing drafts automatically."
+              },
+              "audience": [
+                "all"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Sword And Shield"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "Fixed Mega Baxcalibur's display name, Baxcaliburite evolution item, and form data. Use Update Asset on an existing restoration to keep compatible customizations and assignments."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Restored footsteps and pokemon cries in Sword projects with large restoration sound banks. Use Check Audio to stage the repair for an existing project."
+              },
+              "audience": [
+                "swsh"
+              ]
+            },
+            {
+              "body": {
+                "en": "Fixed a Pokédex crash when loading restored models in Sword and Shield. Stage your current restoration selections, then review and apply the repair in Changes. New restorations and asset updates include the required repairs when needed."
+              },
+              "audience": [
+                "swsh"
+              ]
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Legends Z-A"
+          },
+          "items": [
+            {
+              "body": {
+                "en": "City roaming is editable for every species. The Behavior editor identifies native city roaming and offers Ground or Hover for species that need a movement preset. City temperament remains a separate setting."
+              },
+              "audience": [
+                "za"
+              ]
+            },
+            {
+              "body": {
+                "en": "Fashion Unlock adds all five character hairstyles to the hair salon. Stage and apply the current installation to upgrade an existing Fashion Unlock mod."
+              },
+              "audience": [
+                "za"
+              ]
+            },
+            {
+              "body": {
+                "en": "Stage edits in each editor, then open Changes from the sidebar to review and export them together."
+              },
+              "audience": [
+                "za"
+              ]
+            },
+            {
+              "body": {
+                "en": "Output for ZA Recomp combines RomFS data and ExeFS patches in a single mod folder. Projects that start with existing Standalone or Trinity edits can use the same output. Enable Code in ZA Recomp to load executable patches."
+              },
+              "audience": [
+                "za"
+              ]
+            }
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": {
+            "en": "Full changelog",
+            "de": "Vollständige Änderungsliste",
+            "es": "Registro completo de cambios",
+            "fr": "Journal des modifications complet",
+            "ru": "Полный список изменений",
+            "uk": "Повний список змін",
+            "zh": "完整更新日志"
+          },
+          "url": "https://github.com/KotMatrosk1n/KM-Editor/compare/v2.7.1...v2.7.2"
+        }
+      ]
+    },
+    {
       "version": "2.7.1",
       "summary": {
         "en": "KM Editor 2.7.1 adds 34 Sword and Shield restorations, updates restored models and memory support, and fixes evolution item names. Legends Z-A gains city behavior controls and Fashion Unlock, with smoother editing across the app."
@@ -2750,6 +2863,46 @@
     }
   ],
   "announcements": [
+    {
+      "id": "export-z-a-edits-together-2-7-2",
+      "title": {
+        "en": "Export your Z-A edits together",
+        "de": "Exportiere deine Z-A-Änderungen gemeinsam",
+        "es": "Exporta tus cambios de Z-A juntos",
+        "fr": "Exportez vos modifications Z-A ensemble",
+        "ru": "Экспортируйте изменения Z-A вместе",
+        "uk": "Експортуйте зміни Z-A разом",
+        "zh": "一并导出你的 Z-A 修改"
+      },
+      "body": {
+        "en": "Stage your edits, open Changes, and choose Output for ZA Recomp to get one mod with your data and executable changes. Thanks for reporting the city behavior, salon, and restoration issues and helping us track them down.",
+        "de": "Übernimm deine Änderungen, öffne Changes und wähle Output for ZA Recomp, um Daten- und Programmänderungen in einem Mod zu erhalten. Danke für eure Hinweise zu Stadtverhalten, Friseursalon und Wiederherstellungen.",
+        "es": "Prepara los cambios, abre Changes y elige Output for ZA Recomp para reunir los cambios de datos y ejecutables en un solo mod. Gracias por avisarnos de los problemas de comportamiento en la ciudad, la peluquería y las restauraciones.",
+        "fr": "Préparez vos modifications, ouvrez Changes et choisissez Output for ZA Recomp pour regrouper données et correctifs exécutables dans un seul mod. Merci pour vos signalements sur les déplacements en ville, le salon et les restaurations.",
+        "ru": "Подготовьте изменения, откройте Changes и выберите Output for ZA Recomp, чтобы собрать изменения данных и исполняемых файлов в одном моде. Спасибо за сообщения о проблемах с городским поведением, салоном и восстановлением.",
+        "uk": "Підготуйте зміни, відкрийте Changes і виберіть Output for ZA Recomp, щоб зібрати зміни даних і виконуваних файлів в одному моді. Дякуємо за повідомлення про проблеми з міською поведінкою, салоном і відновленням.",
+        "zh": "暂存修改后打开 Changes 并选择 Output for ZA Recomp，即可将游戏数据与可执行文件补丁打包到一个模组中。感谢大家反馈城市行为、发型沙龙和还原方面的问题。"
+      },
+      "audience": [
+        "all"
+      ],
+      "published": "2026-11-22",
+      "featured": true,
+      "links": [
+        {
+          "label": {
+            "en": "Share in KM Hub",
+            "de": "Im KM Hub teilen",
+            "es": "Comparte en KM Hub",
+            "fr": "Partager sur KM Hub",
+            "ru": "Поделиться в KM Hub",
+            "uk": "Поділитися в KM Hub",
+            "zh": "在 KM Hub 分享"
+          },
+          "url": "https://discord.gg/ess4reb5eB"
+        }
+      ]
+    },
     {
       "id": "more-restorations-and-city-controls-2-7-1",
       "title": {
