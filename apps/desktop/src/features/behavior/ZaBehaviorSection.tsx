@@ -36,6 +36,7 @@ export function ZaBehaviorSection(props: Props) {
   const { t, translateLiteral } = useLocalization();
   const profileId = useId();
   const cityProfileId = useId();
+  const cityMovementId = useId();
   const { workflow, editSession, selectedEntryId, onDraftDirtyChange } = props;
   const [drafts, setDrafts] = useState<Record<string, Changes>>({});
   const submission = useRef<{ id: string; snapshot: Changes } | null>(null);
@@ -208,16 +209,16 @@ export function ZaBehaviorSection(props: Props) {
         </div> : entry.cityRoaming === 'unavailable' ? <p className="field-help">
           {t('behavior.za.cityRoamingUnavailable')}
         </p> : <div className="za-behavior-field">
-          <label>
-            <span>{t('behavior.za.cityMovement')}</span>
-            <select value={values.cityRoaming} disabled={!editable} onChange={e => change('cityRoaming', e.target.value)}>
-              <option value="default">{t(nativeMovement ? 'behavior.za.cityRoamingNative' : 'behavior.za.cityMovementDefault')}</option>
-              {nativeMovement ? <option value="off">{t('behavior.za.cityMovementOff')}</option> : <>
-                <option value="ground">{t('behavior.za.cityMovementGround')}</option>
-                <option value="hover">{t('behavior.za.cityMovementHover')}</option>
-              </>}
-            </select>
-          </label>
+          <label htmlFor={cityMovementId}>{t('behavior.za.cityMovement')}</label>
+          <SearchableOptionInput id={cityMovementId} ariaLabel={t('behavior.za.cityMovement')} disabled={!editable} value={values.cityRoaming}
+            isFiniteCatalog localizeOptions={false} onChange={value => change('cityRoaming', value)}
+            options={[
+              { value: 'default', label: t(nativeMovement ? 'behavior.za.cityRoamingNative' : 'behavior.za.cityMovementDefault') },
+              ...(nativeMovement ? [{ value: 'off', label: t('behavior.za.cityMovementOff') }] : [
+                { value: 'ground', label: t('behavior.za.cityMovementGround') },
+                { value: 'hover', label: t('behavior.za.cityMovementHover') }
+              ])
+            ]} />
           <small>{t(nativeMovement ? 'behavior.za.cityMovementNativeHelp' : 'behavior.za.cityMovementHelp')}</small>
         </div>}
         <div className="za-behavior-actions">
