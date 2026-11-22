@@ -31,6 +31,8 @@ tauri-plugin-process = "2.3.1"
 tokio = { version = "1", features = ["time", "sync"] }
 
 [target.'cfg(windows)'.dependencies]
+tempfile = "3.27.0"
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
 wgpu = { version = "26.0.1", default-features = false, features = ["std", "dx12", "wgsl"] }
 winit = "0.30.12"
 pollster = "0.4"

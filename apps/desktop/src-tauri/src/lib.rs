@@ -27,6 +27,7 @@ mod windows_app_identity;
 
 mod model_preview;
 mod emulator_folders;
+mod mod_merge_draft;
 mod support_reports;
 #[cfg(windows)]
 mod process_gpu_memory;
@@ -3969,6 +3970,8 @@ pub fn run() {
             get_support_diagnostics,
             support_reports::save_support_report,
             support_reports::open_support_report,
+            mod_merge_draft::load_mod_merge_draft,
+            mod_merge_draft::save_mod_merge_draft,
             get_app_memory,
             model_preview_activate,
             model_preview_open,
