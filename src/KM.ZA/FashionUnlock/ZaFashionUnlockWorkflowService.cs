@@ -192,9 +192,30 @@ public sealed class ZaFashionUnlockWorkflowService
         }
 
         AddEffectiveAnalysisDiagnostic(effectiveAnalysis, entry.RelativePath, diagnostics);
+        ZaFashionUnlockSalon? salon = null;
+        if (effectiveIsVerified)
+        {
+            try
+            {
+                salon = ZaFashionUnlockSalon.Read(project);
+            }
+            catch (Exception exception) when (exception is InvalidDataException
+                or IOException or UnauthorizedAccessException or ArgumentException or OverflowException)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Fashion Unlock could not verify the Hair Salon lineup. {exception.Message}",
+                    file: $"romfs/{ZaFashionUnlockSalon.VirtualPath}"));
+            }
+        }
+
         var installStatus = effectiveAnalysis.Kind switch
         {
-            ZaFashionUnlockInstallKind.Installed => "installed",
+            _ when salon is null => "blocked",
+            ZaFashionUnlockInstallKind.Installed when salon.IsUnlocked => "installed",
+            ZaFashionUnlockInstallKind.Installed => summary.Availability == ZaWorkflowAvailability.Available
+                ? "available"
+                : "readOnly",
             ZaFashionUnlockInstallKind.NotInstalled => summary.Availability == ZaWorkflowAvailability.Available
                 ? "available"
                 : "readOnly",
@@ -202,14 +223,23 @@ public sealed class ZaFashionUnlockWorkflowService
         };
         var canUninstall = summary.Availability == ZaWorkflowAvailability.Available
             && effectiveAnalysis.Kind == ZaFashionUnlockInstallKind.Installed
+            && salon is not null
             && entry.LayeredFile is not null
             && ResolveOutputPath(project.Paths, ExeFsMainPath) is { } outputPath
             && File.Exists(outputPath);
 
+        var installMessage = effectiveAnalysis.Kind == ZaFashionUnlockInstallKind.Installed
+            ? salon switch
+            {
+                { IsUnlocked: true } => "Fashion Unlock is installed for the wardrobe and the five Hair Salon quest hairstyles.",
+                { IsUnlocked: false } => "Wardrobe unlock is installed. Stage an install to add the five quest hairstyles to the Hair Salon.",
+                _ => effectiveAnalysis.Message,
+            }
+            : effectiveAnalysis.Message;
         return CreateWorkflow(
             summary,
             installStatus,
-            effectiveAnalysis.Message,
+            installMessage,
             effectiveAnalysis,
             project.Paths.SelectedGame,
             provenance,
@@ -395,7 +425,7 @@ public sealed class ZaFashionUnlockWorkflowService
         return new ZaWorkflowSummary(
             ZaWorkflowIds.FashionUnlock,
             "Fashion Unlock",
-            "Advanced ExeFS editor that makes Z-A clothing available in the wardrobe from opening field gameplay.",
+            "Makes Z-A clothing available in the wardrobe and unlocks quest hairstyles at the Hair Salon.",
             availability,
             diagnostics);
     }

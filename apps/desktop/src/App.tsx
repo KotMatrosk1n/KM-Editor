@@ -12161,7 +12161,9 @@ export function App({
             (action === 'install'
               ? response.workflow.installStatus === 'available' ||
                 response.workflow.installStatus === 'installed'
-              : response.workflow.installStatus === 'installed' &&
+              : (response.workflow.installStatus === 'installed' ||
+                (response.workflow.editorFamily === 'za' &&
+                  response.workflow.installStatus === 'available')) &&
                 response.workflow.canUninstall) &&
             (session === null || response.session.sessionId === session.sessionId);
 

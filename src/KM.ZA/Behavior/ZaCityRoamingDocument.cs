@@ -1,25 +1,35 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Text;
 using Google.FlatBuffers;
 
 namespace KM.ZA.Behavior;
 
-// Changes only a selected actor's location predicates and the city's action registrations.
-// Appended vectors retain all original tables, action programs, and uninterpreted data.
-internal sealed class ZaCityRoamingDocument
+// Preserves the original action tables and adds or registers species movement in the city scenario.
+internal sealed partial class ZaCityRoamingDocument
 {
     internal const string TemplatePath = "param_ai/data/ai/template/action_template_1/action_template_1_array.bin";
     internal const string ScenarioPath = "param_ai/data/ai/scenario_setting/tag_scenario/tag_scenario_array.bin";
+    internal const string TagPath = "param_ai/data/ai/tag/tag/tag_array.bin";
     private const string City = "野生ポケ_ゾーン外";
     private const string Wild = "野生ポケモン";
     private const string Usually = "通常状態";
+    private const string Alpha = "オヤブン";
     private readonly Reader templates;
     private readonly Reader scenarios;
     private readonly Dictionary<int, int> actions;
+    private readonly Dictionary<int, int> actionDatabases = [];
     private readonly Dictionary<int, int> actorReferences;
     private readonly int cityActions;
+    private readonly int[] cityIds;
+    private readonly HashSet<int> nonCityIds;
+    private readonly byte[]? tagBytes;
+    private readonly HashSet<int>? nativeSpecies;
+    private readonly Dictionary<int, List<int>> nativeCityActors = [];
+    private readonly HashSet<int> incompatibleNative = [];
+    private readonly Dictionary<int, string> speciesActors = [];
 
     internal sealed record Profile(int Species, int Walk, int Home, string Actor, string Zone, bool HomeIdle);
     // These pairs use their own species animations, random walking, and HomePoint only.
@@ -43,64 +53,217 @@ internal sealed class ZaCityRoamingDocument
         new(310, 10511, 10512, "ライボルト", "野生ポケ_ラボ", false),
     ];
 
-    internal ZaCityRoamingDocument(byte[] templateBytes, byte[] scenarioBytes)
+    internal ZaCityRoamingDocument(byte[] templateBytes, byte[] scenarioBytes, byte[]? tagBytes = null)
     {
         templates = new(templateBytes); scenarios = new(scenarioBytes);
         actions = [];
         actorReferences = [];
-        foreach (var action in templates.Rows())
+        foreach (var database in templates.Databases())
+        foreach (var action in templates.DatabaseRows(database))
         {
             var id = templates.Int(templates.Field(action, 10, 12));
             if (!actions.TryAdd(id, action)) actions[id] = -1;
+            actionDatabases[id] = database;
             foreach (var actor in templates.Tables(templates.Field(action, 3, 12), 32))
                 actorReferences[actor] = actorReferences.GetValueOrDefault(actor) + 1;
         }
-        var cities = scenarios.Rows().SelectMany(row => scenarios.Tables(scenarios.Field(row, 1, 2), 1024))
-            .Where(row => scenarios.String(scenarios.Field(row, 0, 3)) == "WP_zone_outfield").ToArray();
+        var scenarioRows = scenarios.Rows().SelectMany(row => scenarios.Tables(scenarios.Field(row, 1, 2), 1024)).ToArray();
+        var cities = scenarioRows.Where(row => scenarios.String(scenarios.Field(row, 0, 3)) == "WP_zone_outfield").ToArray();
         if (cities.Length != 1) throw Invalid();
         cityActions = scenarios.Field(cities[0], 1, 3);
         if (cityActions == 0) throw Invalid();
-        _ = scenarios.Integers(cityActions);
+        cityIds = scenarios.Integers(cityActions);
+        nonCityIds = scenarioRows.Where(row => row != cities[0])
+            .SelectMany(row => scenarios.Integers(scenarios.Field(row, 1, 3))).ToHashSet();
+        this.tagBytes = tagBytes;
+        if (tagBytes is not null)
+            nativeSpecies = ReadNativeSpecies(new Reader(tagBytes));
+    }
+
+    // The city scenario also registers shared rules and negated species exceptions.
+    // A native species must have its own positively selected city HomePoint routine.
+    private HashSet<int> ReadNativeSpecies(Reader tags)
+    {
+        var actorsByName = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var set in tags.Rows())
+        {
+            foreach (var record in tags.Tables(tags.Field(set, 1, 2), 50000))
+            {
+                var key = tags.String(tags.Field(record, 0, 10));
+                if (key.Length != 8 || !key.StartsWith("Poke", StringComparison.Ordinal)
+                    || !int.TryParse(key.AsSpan(4), NumberStyles.None, CultureInfo.InvariantCulture, out var species))
+                    continue;
+
+                var name = tags.String(tags.Field(record, 1, 10));
+                if (name.Length == 0 || species == 0) continue;
+                if (!actorsByName.TryAdd(name, species) && actorsByName[name] != species)
+                    actorsByName[name] = 0;
+                if (!speciesActors.TryAdd(species, name) && speciesActors[species] != name)
+                    speciesActors[species] = "";
+            }
+        }
+
+        var speciesWithHome = new HashSet<int>();
+        foreach (var (species, name) in speciesActors.ToArray())
+            if (actorsByName.GetValueOrDefault(name) != species)
+                speciesActors.Remove(species);
+        foreach (var id in cityIds.Distinct())
+        {
+            if (!actions.TryGetValue(id, out var action) || action < 0)
+                continue;
+
+            try
+            {
+                var actors = templates.Tables(templates.Field(action, 3, 12), 32);
+                if (actors.Length != 2 || templates.String(templates.Field(actors[1], 0, 4)) != "HomePoint")
+                    continue;
+
+                var name = templates.String(templates.Field(actors[0], 0, 4));
+                if (!actorsByName.TryGetValue(name, out var species) || species == 0)
+                    continue;
+                var generated = GeneratedAction(species);
+                if ((id == generated || id == generated + 1)
+                    && (MatchesGeneratedAction(id, name, "ground", id != generated)
+                        || MatchesGeneratedAction(id, name, "hover", id != generated)))
+                    continue;
+
+                var groups = ReadGroups(actors[0]);
+                if (!groups.Contains(new Group(6, name, false))
+                    || !groups.Contains(new Group(6, City, false))
+                    || !groups.Contains(new Group(6, Wild, false))
+                    || !groups.Contains(new Group(6, Usually, false))
+                    || !ReadGroups(actors[1]).SequenceEqual([new Group(6, "ホームポイント", false)]))
+                    continue;
+
+                var blocked = new Group(6, name, true);
+                if (!nonCityIds.Contains(id) && actorReferences[actors[0]] == 1 && cityIds.Count(link => link == id) == 1
+                    && groups.Contains(new Group(6, Alpha, true))
+                    && groups.Take(groups.Length - 1).All(group => group != blocked))
+                {
+                    if (!nativeCityActors.TryGetValue(species, out var nativeActors))
+                        nativeCityActors.Add(species, nativeActors = []);
+                    nativeActors.Add(actors[0]);
+                }
+                else
+                    incompatibleNative.Add(species);
+                var runs = templates.Tables(templates.Field(action, 11, 12), 32);
+                if (runs.Any(RunsToHomePoint))
+                    speciesWithHome.Add(species);
+            }
+            catch (Exception exception) when (ZaBehaviorSettings.SourceFailure(exception))
+            {
+                // A rule with a different predicate or program layout does not establish support.
+            }
+        }
+
+        return speciesWithHome;
+    }
+
+    private bool RunsToHomePoint(int data)
+    {
+        return Enumerable.Range(1, 6).Any(slot => templates.Tables(templates.Field(data, slot, 7), 64)
+            .Any(command => templates.Int(templates.Field(command, 1, 3)) is 1352 or 1353
+                && templates.String(templates.Field(command, 2, 3)) == "HomePoint"));
     }
 
     internal string Status(int species)
     {
         var profile = Profiles.SingleOrDefault(p => p.Species == species);
-        if (profile is null) return "unsupported";
+        if (profile is null) return GeneratedStatus(species);
         try
         {
             var walk = Actor(profile, profile.Walk, false);
             var home = Actor(profile, profile.Home, true);
-            var ids = scenarios.Integers(cityActions);
             var enabled = Groups(true, profile);
             var disabled = Groups(false, profile);
             if (ReadGroups(walk).SequenceEqual(enabled) && ReadGroups(home).SequenceEqual(enabled)
-                && ids.Count(i => i == profile.Walk) == 1 && ids.Count(i => i == profile.Home) == 1) return "enabled";
+                && cityIds.Count(i => i == profile.Walk) == 1 && cityIds.Count(i => i == profile.Home) == 1) return "enabled";
             if (ReadGroups(walk).SequenceEqual(disabled) && ReadGroups(home).SequenceEqual(disabled)
-                && !ids.Contains(profile.Walk) && !ids.Contains(profile.Home)) return "disabled";
+                && !cityIds.Contains(profile.Walk) && !cityIds.Contains(profile.Home)) return "disabled";
         }
         catch (Exception e) when (ZaBehaviorSettings.SourceFailure(e)) { }
         return "unavailable";
     }
 
-    internal (byte[] Templates, byte[] Scenarios) Write(IReadOnlyDictionary<int, bool> changes)
+    private string NativeStatus(int species, string actor)
     {
-        var templateBytes = templates.Bytes.ToArray(); var scenarioBytes = scenarios.Bytes.ToArray();
-        var ids = scenarios.Integers(cityActions).ToList();
-        foreach (var (species, enable) in changes.OrderBy(p => p.Key))
+        if (incompatibleNative.Contains(species) || !nativeCityActors.TryGetValue(species, out var actors)) return "unavailable";
+        var blocked = new Group(6, actor, true);
+        var blockedCount = actors.Count(position => ReadGroups(position)[^1] == blocked);
+        return blockedCount == 0 ? "native" : blockedCount == actors.Count ? "native-off" : "unavailable";
+    }
+
+    internal static string Choice(string status) => status switch
+    {
+        "enabled" => "true",
+        "disabled" => "false",
+        "native-off" => "off",
+        "ground" or "hover" => status,
+        _ => "default",
+    };
+
+    internal static bool Accepts(string status, string choice) => status switch
+    {
+        "enabled" or "disabled" => choice is "true" or "false",
+        "native" or "native-off" => choice is "default" or "off",
+        "unsupported" or "ground" or "hover" => choice is "default" or "ground" or "hover",
+        _ => false,
+    };
+
+    internal (byte[] Templates, byte[]? Scenarios) Write(IReadOnlyDictionary<int, string> changes)
+    {
+        var templateBytes = templates.Bytes.ToArray();
+        byte[]? scenarioBytes = null;
+        var ids = cityIds.ToList();
+        var removedDatabases = new HashSet<int>();
+        var additions = new List<byte[]>();
+        foreach (var (species, choice) in changes.OrderBy(p => p.Key))
         {
             var status = Status(species);
-            if (status is not ("enabled" or "disabled")) throw Invalid();
-            if (enable == (status == "enabled")) continue;
+            if (!Accepts(status, choice)) throw Invalid();
+            if (choice == Choice(status)) continue;
+            if (status is "native" or "native-off")
+            {
+                var blocked = new Group(6, speciesActors[species], true);
+                foreach (var actor in nativeCityActors[species])
+                {
+                    var field = templates.Field(actor, 1, 4);
+                    var groups = ReadGroupsAt(field);
+                    templateBytes = ReplaceGroups(templateBytes, field,
+                        choice == "off" ? [.. groups, blocked] : groups[..^1]);
+                }
+                continue;
+            }
+            if (choice is "ground" or "hover" or "default")
+            {
+                var first = GeneratedAction(species);
+                if (status is "ground" or "hover")
+                {
+                    removedDatabases.Add(actionDatabases[first]);
+                    removedDatabases.Add(actionDatabases[first + 1]);
+                    ids.RemoveAll(id => id == first || id == first + 1);
+                }
+                if (choice != "default")
+                {
+                    additions.Add(BuildAction(first, speciesActors[species], choice, false));
+                    additions.Add(BuildAction(first + 1, speciesActors[species], choice, true));
+                    ids.Add(first);
+                    ids.Add(first + 1);
+                }
+                continue;
+            }
+            var enable = choice == "true";
             var profile = Profiles.Single(p => p.Species == species);
             foreach (var id in new[] { profile.Walk, profile.Home })
                 templateBytes = ReplaceGroups(templateBytes, templates.Field(Actor(profile, id, id == profile.Home), 1, 4), Groups(enable, profile));
             ids.RemoveAll(id => id == profile.Walk || id == profile.Home);
             if (enable) { ids.Add(profile.Walk); ids.Add(profile.Home); }
         }
-        if (!ids.SequenceEqual(scenarios.Integers(cityActions)))
+        if (removedDatabases.Count != 0 || additions.Count != 0)
+            templateBytes = ReplaceDatabases(templateBytes, templates.Databases().Where(db => !removedDatabases.Contains(db)), additions);
+        if (!ids.SequenceEqual(cityIds))
         {
-            using var stream = new MemoryStream(); stream.Write(scenarioBytes);
+            using var stream = new MemoryStream(); stream.Write(scenarios.Bytes);
             using var writer = new BinaryWriter(stream);
             while (stream.Length % 4 != 0) writer.Write((byte)0);
             var target = checked((int)stream.Position);
@@ -108,8 +271,8 @@ internal sealed class ZaCityRoamingDocument
             scenarioBytes = stream.ToArray();
             BinaryPrimitives.WriteInt32LittleEndian(scenarioBytes.AsSpan(cityActions), checked(target - cityActions));
         }
-        var check = new ZaCityRoamingDocument(templateBytes, scenarioBytes);
-        if (changes.Any(p => check.Status(p.Key) != (p.Value ? "enabled" : "disabled"))) throw Invalid();
+        var check = new ZaCityRoamingDocument(templateBytes, scenarioBytes ?? scenarios.Bytes, tagBytes);
+        if (changes.Any(p => !Accepts(check.Status(p.Key), p.Value) || Choice(check.Status(p.Key)) != p.Value)) throw Invalid();
         return (templateBytes, scenarioBytes);
     }
 
@@ -171,6 +334,16 @@ internal sealed class ZaCityRoamingDocument
     private static byte[] ReplaceGroups(byte[] bytes, int field, Group[] groups)
     {
         var b = new FlatBufferBuilder(1024);
+        b.Finish(BuildGroups(b, groups));
+        var suffix = b.SizedByteArray();
+        var start = Align(bytes.Length);
+        var output = new byte[checked(start + suffix.Length)]; bytes.CopyTo(output, 0); suffix.CopyTo(output, start);
+        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(field), checked(start + BinaryPrimitives.ReadInt32LittleEndian(suffix) - field));
+        return output;
+    }
+
+    private static int BuildGroups(FlatBufferBuilder b, Group[] groups)
+    {
         var offsets = new List<int>();
         foreach (var group in groups)
         {
@@ -181,17 +354,10 @@ internal sealed class ZaCityRoamingDocument
                 var name = b.CreateString(text);
                 b.StartTable(2); b.AddOffset(0, name.Value, 0); b.AddBool(1, negate, false); tags.Add(b.EndTable());
             }
-            b.StartVector(4, tags.Count, 4); foreach (var tag in tags.AsEnumerable().Reverse()) b.AddOffset(tag);
-            var vector = b.EndVector();
-            b.StartTable(2); b.AddInt(0, group.Operator, 0); b.AddOffset(1, vector.Value, 0); offsets.Add(b.EndTable());
+            var vector = OffsetVector(b, tags);
+            b.StartTable(2); b.AddInt(0, group.Operator, 0); b.AddOffset(1, vector, 0); offsets.Add(b.EndTable());
         }
-        b.StartVector(4, offsets.Count, 4); foreach (var offset in offsets.AsEnumerable().Reverse()) b.AddOffset(offset);
-        b.Finish(b.EndVector().Value);
-        var suffix = b.SizedByteArray();
-        var start = checked((bytes.Length + 7) / 8 * 8);
-        var output = new byte[checked(start + suffix.Length)]; bytes.CopyTo(output, 0); suffix.CopyTo(output, start);
-        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(field), checked(start + BinaryPrimitives.ReadInt32LittleEndian(suffix) - field));
-        return output;
+        return OffsetVector(b, offsets);
     }
 
     private static InvalidDataException Invalid() => new("City roaming requires compatible walking, home, and city scenario data.");
@@ -225,7 +391,9 @@ internal sealed class ZaCityRoamingDocument
         }
         internal int[] Tables(int field, int maximum) => Vector(field, maximum).Select(Target).ToArray();
         internal int[] Integers(int field) => Vector(field, 50000).Select(Int).ToArray();
-        internal int[] Rows() => Tables(Field(Target(0), 0, 1), 50000).SelectMany(db => Tables(Field(db, 0, 1), 50000)).ToArray();
+        internal int[] Databases() => Tables(Field(Target(0), 0, 1), 50000);
+        internal int[] DatabaseRows(int database) => Tables(Field(database, 0, 1), 50000);
+        internal int[] Rows() => Databases().SelectMany(DatabaseRows).ToArray();
         internal string String(int field)
         {
             if (field == 0) return "";

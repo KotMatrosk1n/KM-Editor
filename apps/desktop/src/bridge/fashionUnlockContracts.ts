@@ -289,6 +289,7 @@ function validateFashionUnlockWorkflow(
   }
 
   if (
+    workflow.editorFamily !== 'za' &&
     workflow.canUninstall &&
     (workflow.installStatus !== 'installed' ||
       workflow.provenance.sourceLayer !== 'layered')
@@ -300,7 +301,7 @@ function validateFashionUnlockWorkflow(
     );
   }
 
-  if (workflow.installStatus !== 'installed' && workflow.canUninstall) {
+  if (workflow.editorFamily !== 'za' && workflow.installStatus !== 'installed' && workflow.canUninstall) {
     addIssue(context, ['canUninstall'], 'Only installed Fashion Unlock can be uninstalled.');
   }
 
@@ -510,17 +511,21 @@ function validateZaFashionUnlockWorkflow(
     addIssue(context, ['stats', 'sourceFileCount'], 'Z-A Fashion Unlock sources do not match its verified base and effective main.');
   }
 
+  const hasWardrobePatch = workflow.stubKind === 'wardrobe access patches';
   if (workflow.canUninstall !== (workflow.summary.availability === 'available' &&
-      workflow.installStatus === 'installed' && workflow.provenance.sourceLayer === 'layered' &&
+      (workflow.installStatus === 'installed' || workflow.installStatus === 'available') &&
+      hasWardrobePatch && workflow.provenance.sourceLayer === 'layered' &&
       workflow.provenance.fileState === 'layeredOverride')) {
     addIssue(context, ['canUninstall'], 'Z-A Fashion Unlock uninstall requires a verified generated installation.');
   }
   if (workflow.installStatus === 'installed' &&
-      (workflow.stubKind !== 'wardrobe access patches' || workflow.provenance.sourceLayer !== 'layered')) {
+      (!hasWardrobePatch || workflow.provenance.sourceLayer !== 'layered')) {
     addIssue(context, ['stubKind'], 'Installed Z-A Fashion Unlock requires all four wardrobe access patches in generated main.');
   }
-  if (['available', 'readOnly'].includes(workflow.installStatus) && workflow.stubKind !== 'vanilla wardrobe checks') {
-    addIssue(context, ['stubKind'], 'Available Z-A Fashion Unlock requires the vanilla wardrobe checks.');
+  if (['available', 'readOnly'].includes(workflow.installStatus) &&
+      workflow.stubKind !== 'vanilla wardrobe checks' &&
+      !(hasWardrobePatch && workflow.provenance.sourceLayer === 'layered')) {
+    addIssue(context, ['stubKind'], 'Available Z-A Fashion Unlock requires verified wardrobe instructions.');
   }
 }
 

@@ -38,7 +38,7 @@ internal sealed class ZaBehaviorEditSessionService(ProjectWorkspaceService works
                 var species = state.Workflow.Resources.Single(r => r.EntryId == update.EntryId).SpeciesId;
                 if (update.Field == "cityRoaming")
                 {
-                    if (state.City?.Status(species) is not ("enabled" or "disabled")) throw new InvalidDataException();
+                    if (state.City is null || !ZaCityRoamingDocument.Accepts(state.City.Status(species), value)) throw new InvalidDataException();
                     // AI routines belong to the species, including all its resource variants.
                     pending.RemoveAll(e => e.Domain == ZaBehaviorSettings.Domain && e.Field == "cityRoaming"
                         && e.RecordId is not null && e.RecordId.StartsWith(update.EntryId[..4] + "_", StringComparison.Ordinal));
@@ -46,7 +46,7 @@ internal sealed class ZaBehaviorEditSessionService(ProjectWorkspaceService works
                 if (update.Field == "restoreVanilla") pending.RemoveAll(e => Owns(e, update.EntryId) && e.Field != "cityRoaming");
                 pending.RemoveAll(e => Owns(e, update.EntryId) && e.Field == update.Field);
                 var baseline = new ZaBehaviorDocument(source.Bytes);
-                var equivalent = update.Field == "cityRoaming" ? (value == "true") == (state.City?.Status(species) == "enabled")
+                var equivalent = update.Field == "cityRoaming" ? value == ZaCityRoamingDocument.Choice(state.City!.Status(species))
                     : update.Field == "cityProfile" ? value == ZaBehaviorSettings.CityProfile(baseline.Tags)
                     : update.Field == "profile" ? value == ZaBehaviorSettings.Profile(baseline.Tags)
                     : Array.FindIndex(ZaBehaviorSettings.Fields, f => f.Field == update.Field) is var i && i >= 0
@@ -186,17 +186,18 @@ internal sealed class ZaBehaviorEditSessionService(ProjectWorkspaceService works
         {
             try
             {
-                var changes = new Dictionary<int, bool>();
+                var changes = new Dictionary<int, string>();
                 foreach (var edit in cityEdits)
                 {
                     var resource = state.Workflow.Resources.Single(r => r.EntryId == edit.RecordId);
-                    var enable = Normalize("cityRoaming", edit.NewValue ?? "") == "true";
-                    if (!changes.TryAdd(resource.SpeciesId, enable) && changes[resource.SpeciesId] != enable) throw new InvalidDataException();
+                    var choice = Normalize("cityRoaming", edit.NewValue ?? "");
+                    if (!changes.TryAdd(resource.SpeciesId, choice) && changes[resource.SpeciesId] != choice) throw new InvalidDataException();
                 }
                 if (state.City is null) throw new InvalidDataException();
                 var result = state.City.Write(changes);
                 outputs.Add(ZaCityRoamingDocument.TemplatePath, result.Templates);
-                outputs.Add(ZaCityRoamingDocument.ScenarioPath, result.Scenarios);
+                if (result.Scenarios is { } scenario)
+                    outputs.Add(ZaCityRoamingDocument.ScenarioPath, scenario);
             }
             catch (Exception e) when (ZaBehaviorSettings.SourceFailure(e))
             { diagnostics.Add(Error("CITY-ROAMING-UNAVAILABLE", "City roaming cannot be changed with the current AI data. Review the sources and stage again.", "cityRoaming")); }
@@ -208,7 +209,7 @@ internal sealed class ZaBehaviorEditSessionService(ProjectWorkspaceService works
         if (field == "profile" && ZaBehaviorSettings.Profiles.ContainsKey(value)) return value;
         if (field == "cityProfile" && (value == "default" || ZaBehaviorSettings.CityProfiles.ContainsKey(value))) return value;
         if (field is "initialize" or "restoreVanilla" && value == "true") return value;
-        if (field == "cityRoaming" && value is "true" or "false") return value;
+        if (field == "cityRoaming" && value is "true" or "false" or "default" or "off" or "ground" or "hover") return value;
         if (ZaBehaviorSettings.Fields.Any(f => f.Field == field)
             && float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
             && float.IsFinite(number) && number >= 0) return ZaBehaviorSettings.Format(number);
