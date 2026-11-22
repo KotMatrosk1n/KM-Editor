@@ -4,6 +4,7 @@ import { plaAreaLabel, plaPokemonLabel } from './plaLabels';
 import type { ReactNode } from 'react';
 import { Search, Trees } from 'lucide-react';
 import type { PlaField, PlaKind, PlaPage, PlaRecord } from '../../bridge/plaProjectBridge';
+import { EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, SectionedEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { FieldLabel } from '../../components/FieldLabel';
 import { InteractiveTableRow, VirtualTableBody } from '../../components/VirtualTable';
 import { Metric } from '../../components/workflowPanels';
@@ -14,6 +15,7 @@ import type { PlaRowClipboardBinding } from './usePlaRowClipboard';
 export type PlaWildKind = 'encounters' | 'spawns' | 'outbreakEncounters' | 'distortionEncounters' | 'distortionSpawns';
 export const isPlaWildKind = (kind: PlaKind): kind is PlaWildKind => ['encounters', 'spawns', 'outbreakEncounters', 'distortionEncounters', 'distortionSpawns'].includes(kind);
 type Props = {
+  sessionKey: string;
   clipboard?: PlaRowClipboardBinding;
   kind: PlaWildKind; page: PlaPage | null; selected: PlaRecord | null;
   controls?: ReactNode; title?: string;
@@ -25,7 +27,7 @@ type Props = {
   renderInput: (field: PlaField) => ReactNode; renderPokemon?: PlaPokemonPreview;
 };
 
-export function PlaWildWorkspace({ kind, page, selected, query, offset, loading, sessionBar, actions, refresh, controls, title,
+export function PlaWildWorkspace({ sessionKey, kind, page, selected, query, offset, loading, sessionBar, actions, refresh, controls, title,
   onQuery, onOffset, onSelect, onKind, valuesFor, hasDraft, pendingIds, fieldLabel, renderInput, renderPokemon, clipboard }: Props) {
   const { t, translateLiteral } = useLocalization();
   const records = page?.records ?? [];
@@ -46,7 +48,10 @@ export function PlaWildWorkspace({ kind, page, selected, query, offset, loading,
   const tabs = ['encounters', 'spawns'] as const;
   return <section className="panel wide-panel pla-wild-editor" aria-labelledby="pla-wild-heading">
     <div className="panel-heading"><Trees size={18} aria-hidden="true" /><h2 id="pla-wild-heading">{title ?? translateLiteral('Wild Encounters')}</h2>{refresh}</div>
-    <div className="items-toolbar encounters-toolbar">
+    <SectionedEditorWorkspace sessionKey={sessionKey + ':' + kind} initialSection="data" pinnedBrowser compactFields
+      browserVisibleRows={4} sessionBar={<>{sessionBar}{actions}</>}
+      browserControls={<>
+        <div className="items-toolbar encounters-toolbar">
       <label className="search-box items-search"><Search size={18} aria-hidden="true" /><input type="search" aria-label={translateLiteral('Search encounters')}
         placeholder={translateLiteral('Search encounters')} value={query} onChange={event => onQuery(event.target.value)} /></label>
       <Metric label={translateLiteral(isSpawn ? 'Records' : 'Loaded tables')} value={String(page?.total ?? 0)} />
@@ -61,11 +66,9 @@ export function PlaWildWorkspace({ kind, page, selected, query, offset, loading,
           event.preventDefault(); onKind(tabs[next]); (event.currentTarget.parentElement?.children[next] as HTMLButtonElement | undefined)?.focus();
         }}>{t('pla.kind.' + value)}</button>)}
     </div></nav>}
-    {sessionBar}
-    <p className="field-note">{t('pla.wild.notice')}</p>
-    {loading ? <p role="status">{translateLiteral('Loading')}</p> : null}
-    <div className="encounters-layout">
-      <div className="encounters-table" role="table" aria-label={translateLiteral('Encounter tables')} aria-colcount={2} aria-rowcount={groups.length + 1}>
+      </>}
+      browser={
+        <div className="encounters-table" role="table" aria-label={translateLiteral('Encounter tables')} aria-colcount={2} aria-rowcount={groups.length + 1}>
         <div className="encounters-row pla-wild-row encounters-row-heading" role="row"><span role="columnheader">{translateLiteral('Location')}</span><span role="columnheader">{translateLiteral('ID')}</span></div>
         <VirtualTableBody items={groups} getKey={group => group.value} resetKey={kind + ':' + query} renderRow={group =>
           <InteractiveTableRow className={'encounters-row pla-wild-row ' + ((isSpawn ? selected?.id === group.value : offset === Number(group.value)) ? 'encounters-row-selected' : '')}
@@ -75,15 +78,31 @@ export function PlaWildWorkspace({ kind, page, selected, query, offset, loading,
             <span role="cell" data-localization-ignore="true">{group.table ?? group.label.split('/')[1]}</span>
           </InteractiveTableRow>} />
       </div>
-      <aside className="encounter-inspector" aria-label={translateLiteral('Selected Encounter')}>
-        <div className="panel-heading"><Trees size={18} aria-hidden="true" /><h3>{translateLiteral('Selected Encounter')}</h3></div>
-        {selected ? <>
+      }
+      browserFooter={
+        isSpawn ? <div className="pla-pagination">
+      <button type="button" className="secondary-button" disabled={loading || offset === 0} onClick={() => onOffset(Math.max(0, offset - 100))}>{translateLiteral('Previous')}</button>
+      <span>{Math.min(offset + 1, page?.total ?? 0)} / {page?.total ?? 0}</span>
+      <button type="button" className="secondary-button" disabled={loading || offset + 100 >= (page?.total ?? 0)} onClick={() => onOffset(offset + 100)}>{translateLiteral('Next')}</button>
+    </div> : null
+      }>
+      <EditorWorkspaceHeader>
+        {loading ? <p className="field-note" role="status">{translateLiteral('Loading')}</p> : null}
+      </EditorWorkspaceHeader>
+      {selected ? <>
+        <EditorWorkspaceHeader afterBrowser>
+          <EditorRecordHeading name={plaAreaLabel(t, selected.metadata.area)} id={selected.id} />
+        </EditorWorkspaceHeader>
+        <EditorWorkspaceSection id="details" label={t('editorSections.details')}>
+          <p className="field-note">{t('pla.wild.notice')}</p>
           <dl className="item-provenance-list">
             <div><dt>{translateLiteral('Location')}</dt><dd data-localization-ignore="true">{plaAreaLabel(t, selected.metadata.area)}</dd></div>
             <div><dt>{translateLiteral('ID')}</dt><dd>{selected.metadata.table}</dd></div>
             {!isSpawn ? <><div><dt>{t('pla.wild.profile')}</dt><dd>{profile(selected)}</dd></div>
               <div><dt>{t('pla.wild.shared')}</dt><dd>{selected.metadata.consumers}</dd></div></> : null}
           </dl>
+        </EditorWorkspaceSection>
+        <EditorWorkspaceSection id="data" label={isSpawn ? t('pla.kind.spawns') : translateLiteral('Encounter slots')} modified={hasDraft(selected)}>
           {!isSpawn ? <div className="encounter-edit-form">
             {clipboard?.content}
             <div className="trainer-party-card-grid" aria-label={translateLiteral('Encounter slots')}>
@@ -115,15 +134,9 @@ export function PlaWildWorkspace({ kind, page, selected, query, offset, loading,
             {selected.relatedRecords.length ? <details><summary>{t('pla.wild.references')}</summary><ul className="pla-wild-references">
               {selected.relatedRecords.map(related => <li key={related.id} data-localization-ignore="true">{related.label}{related.label !== related.id ? ` (${related.id})` : ''}</li>)}
             </ul></details> : null}
-            {actions}
           </div>
-        </> : <p className="empty-copy">{translateLiteral('No results')}</p>}
-      </aside>
-    </div>
-    {isSpawn ? <div className="pla-pagination">
-      <button type="button" className="secondary-button" disabled={loading || offset === 0} onClick={() => onOffset(Math.max(0, offset - 100))}>{translateLiteral('Previous')}</button>
-      <span>{Math.min(offset + 1, page?.total ?? 0)} / {page?.total ?? 0}</span>
-      <button type="button" className="secondary-button" disabled={loading || offset + 100 >= (page?.total ?? 0)} onClick={() => onOffset(offset + 100)}>{translateLiteral('Next')}</button>
-    </div> : null}
+        </EditorWorkspaceSection>
+      </> : <p className="empty-copy">{translateLiteral('No results')}</p>}
+    </SectionedEditorWorkspace>
   </section>;
 }

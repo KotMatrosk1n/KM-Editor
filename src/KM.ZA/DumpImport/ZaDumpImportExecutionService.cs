@@ -115,7 +115,7 @@ internal sealed class ZaDumpImportExecutionService
             return new ZaDumpImportExecutionResult(workflow, originalSession, emptyPreview, diagnostics);
         }
 
-        var itemsWorkflow = itemsWorkflowService.LoadForLookup(project);
+        var itemsWorkflow = itemsWorkflowService.Load(project);
         if (itemsWorkflow.Items.Count == 0 || itemsWorkflow.Diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             diagnostics.Add(CreateDiagnostic(

@@ -4,11 +4,16 @@
   align-content: start;
 }
 
+.fashion-catalog-info { margin: 0; color: var(--color-text-muted); font-size: .875rem; }
+.fashion-catalog-info summary { width: fit-content; cursor: pointer; }
+.fashion-catalog-info[open] { display: grid; gap: 8px; }
+.fashion-catalog-info .section-copy { margin: 0; }
+
 .fashion-catalog-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-top: 1rem;
+  margin-top: .55rem;
 }
 
 .fashion-catalog-tabs button {
@@ -30,11 +35,10 @@
   align-items: start;
   display: grid;
   gap: 1rem;
-  grid-template-columns: minmax(20rem, 0.85fr) minmax(22rem, 1.15fr);
-  margin-top: 1rem;
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: .65rem;
 }
 
-.fashion-catalog-browser,
 .fashion-catalog-field-editor {
   background: var(--color-canvas);
   border: 1px solid var(--color-border);
@@ -120,7 +124,7 @@
   display: grid;
   gap: 0.15rem;
   min-width: 0;
-  padding: 0.65rem 0.75rem;
+  padding: .35rem .65rem;
   text-align: left;
 }
 
@@ -215,16 +219,6 @@
   color: var(--color-danger);
 }
 
-@container km-focused-editor (max-width: 56rem) {
-  .fashion-catalog-editor-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .fashion-catalog-row-list {
-    max-height: 22rem;
-  }
-}
-
 @media (forced-colors: active) {
   .fashion-catalog-tabs button.active,
   .fashion-catalog-row-list button:hover,
@@ -242,3 +236,10 @@
     color: CanvasText;
   }
 }
+
+.fashion-catalog-browser-workspace .editor-workspace-browser > .fashion-catalog-row-list {
+  background: var(--color-control);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+.fashion-catalog-browser-workspace .editor-workspace-chrome > .field-hint { margin: 0; }

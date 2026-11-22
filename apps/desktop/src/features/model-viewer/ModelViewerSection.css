@@ -188,3 +188,15 @@
   .model-viewer--editing .model-viewer__properties--secondary { overflow: visible; border-left: 0; padding-left: 0; }
   .model-workspace__tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
+
+.model-viewer:not(.model-viewer--editing) .model-viewer__workspace {
+  grid-template-columns: minmax(0, 1fr);
+  gap: .75rem;
+}
+.model-viewer:not(.model-viewer--editing) .model-viewer__catalog {
+  max-height: clamp(6rem, 18vh, 13rem);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0 .5rem;
+  background: var(--color-control);
+}

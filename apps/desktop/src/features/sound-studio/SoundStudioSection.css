@@ -34,3 +34,10 @@
 @media (max-width: 780px) { .sound-studio__workspace { grid-template-columns: minmax(0, 1fr); }.sound-studio__player { position: static; grid-row: 2; }.sound-studio__catalog { height: 18rem; }.sound-studio__header { flex-wrap: wrap; }.sound-studio__header div { min-width: 10rem; } }
 @media (prefers-reduced-motion: reduce) { .sound-analysis__spectrum { display: none; } }
 @media (forced-colors: active) { .sound-studio__entry[aria-selected="true"] { outline: 2px solid Highlight; }.sound-analysis__track { forced-color-adjust: none; } }
+
+.sound-studio .sound-studio__workspace { grid-template-columns: minmax(0, 1fr); gap: .75rem; }
+.sound-studio .sound-studio__categories { flex-flow: row wrap; }
+.sound-studio .sound-studio__categories button { flex: 0 1 auto; min-height: 2.15rem; }
+.sound-studio .sound-studio__browser { gap: .4rem; }
+.sound-studio .sound-studio__catalog { height: clamp(7rem, 17vh, 12rem); min-height: 0; }
+.sound-studio .sound-studio__player { position: static; grid-row: auto; }

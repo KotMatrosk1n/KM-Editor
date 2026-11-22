@@ -2,8 +2,9 @@
 import { plaFieldHelp } from './plaFieldHelp';
 import { plaPokemonLabel } from './plaLabels';
 import type { ReactNode } from 'react';
-import { Search, ShieldCheck } from 'lucide-react';
+import { Search } from 'lucide-react';
 import type { PlaField, PlaPage, PlaRecord } from '../../bridge/plaProjectBridge';
+import { EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, SectionedEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { FieldLabel } from '../../components/FieldLabel';
 import { InteractiveTableRow, VirtualTableBody } from '../../components/VirtualTable';
 import { Metric } from '../../components/workflowPanels';
@@ -13,6 +14,7 @@ import type { PlaRowClipboardBinding } from './usePlaRowClipboard';
 
 export type PlaPokemonPreview = (values: Record<string, string>, name: string, spriteName: string | undefined, className: string) => ReactNode;
 type Props = {
+  sessionKey: string;
   clipboard?: PlaRowClipboardBinding;
   kind: 'trainers' | 'gifts' | 'static'; page: PlaPage | null; selected: PlaRecord | null;
   query: string; offset: number; loading: boolean; sessionBar: ReactNode; actions: ReactNode; refresh: ReactNode;
@@ -23,7 +25,7 @@ type Props = {
 };
 const groupId = (record: PlaRecord) => record.id.slice(0, record.id.lastIndexOf(':'));
 
-export function PlaBattleWorkspace({ kind, page, selected, query, offset, loading, sessionBar, actions, refresh,
+export function PlaBattleWorkspace({ sessionKey, kind, page, selected, query, offset, loading, sessionBar, actions, refresh,
   onQuery, onOffset, onSelect, valuesFor, hasDraft, pendingIds, fieldLabel, renderInput, renderPokemon, clipboard }: Props) {
   const { t, translateLiteral } = useLocalization();
   const section = kind === 'gifts' ? 'giftPokemon' : kind === 'static' ? 'staticEncounters' : 'trainers';
@@ -58,18 +60,19 @@ export function PlaBattleWorkspace({ kind, page, selected, query, offset, loadin
   ];
   return <section className="panel wide-panel pla-battle-editor" aria-labelledby="pla-battle-heading">
     <div className="panel-heading"><Icon size={18} aria-hidden="true" /><h2 id="pla-battle-heading">{title}</h2>{refresh}</div>
-    <div className="items-toolbar trainers-toolbar">
+    <SectionedEditorWorkspace sessionKey={sessionKey + ':' + kind} initialSection="data" pinnedBrowser compactFields
+      browserVisibleRows={4} sessionBar={<>{sessionBar}{actions}</>}
+      browserControls={<>
+        <div className="items-toolbar trainers-toolbar">
       <label className="search-box items-search"><Search size={18} aria-hidden="true" />
         <input aria-label={translateLiteral('Search')} placeholder={translateLiteral('Search')} type="search" value={query} onChange={event => onQuery(event.target.value)} />
       </label>
       <Metric label={translateLiteral(kind === 'trainers' ? 'Loaded trainers' : kind === 'gifts' ? 'Loaded gifts' : 'Loaded encounters')} value={String(page?.total ?? 0)} />
       <Metric label={translateLiteral('Pending changes')} value={String(pendingIds.size)} />
     </div>
-    {sessionBar}
-    <p className="field-note">{t(`pla.notice.${kind}`)}</p>
-    {loading ? <p role="status">{translateLiteral('Loading')}</p> : null}
-    <div className="trainers-layout">
-      <div className="trainers-table" role="table" aria-label={title} aria-colcount={5} aria-rowcount={rows.length + 1}>
+      </>}
+      browser={
+        <div className="trainers-table" role="table" aria-label={title} aria-colcount={5} aria-rowcount={rows.length + 1}>
         <div className="trainers-row pla-battle-row trainers-row-heading" role="row">
           {(kind === 'trainers' ? ['ID', 'Name', 'Team', 'Level', 'Status'] : ['ID', 'Species', 'Level', 'Event label', 'Status'])
             .map(column => <span role="columnheader" key={column}>{translateLiteral(column)}</span>)}
@@ -90,9 +93,23 @@ export function PlaBattleWorkspace({ kind, page, selected, query, offset, loadin
           </InteractiveTableRow>;
         }} />
       </div>
-      <aside className="trainer-inspector" aria-label={translateLiteral(kind === 'trainers' ? 'Selected Trainer' : kind === 'gifts' ? 'Selected Gift' : 'Selected Static Encounter')}>
-        <div className="panel-heading"><ShieldCheck size={18} aria-hidden="true" /><h3>{translateLiteral(kind === 'trainers' ? 'Selected Trainer' : kind === 'gifts' ? 'Selected Gift' : 'Selected Static Encounter')}</h3></div>
-        {selected ? <>
+      }
+      browserFooter={
+        <div className="pla-pagination">
+      <button type="button" className="secondary-button compact-button" disabled={offset === 0 || loading} onClick={() => onOffset(Math.max(0, offset - pageSize))}>{translateLiteral('Previous')}</button>
+      <span>{page ? `${Math.min(offset + 1, page.total)} - ${Math.min(offset + pageSize, page.total)} / ${page.total}` : ''}</span>
+      <button type="button" className="secondary-button compact-button" disabled={!page || offset + pageSize >= page.total || loading} onClick={() => onOffset(offset + pageSize)}>{translateLiteral('Next')}</button>
+    </div>
+      }>
+      <EditorWorkspaceHeader>
+        {loading ? <p className="field-note" role="status">{translateLiteral('Loading')}</p> : null}
+      </EditorWorkspaceHeader>
+      {selected ? <>
+        <EditorWorkspaceHeader afterBrowser>
+          <EditorRecordHeading name={kind === 'trainers' ? trainerName(selected) : pokemonLabel(selected)} id={selected.id} />
+        </EditorWorkspaceHeader>
+        <EditorWorkspaceSection id="details" label={t('editorSections.details')}>
+          <p className="field-note">{t(`pla.notice.${kind}`)}</p>
           {kind !== 'trainers' ? <div className="pokemon-summary-card">
             {renderPokemon?.(valuesFor(selected), pokemonName(selected), page?.pokemonSpriteNames[valuesFor(selected).species], 'pokemon-summary-sprite')}
             <div className="pokemon-summary-main"><strong className="pokemon-summary-title">{pokemonLabel(selected)}</strong>
@@ -106,6 +123,8 @@ export function PlaBattleWorkspace({ kind, page, selected, query, offset, loadin
           {selected.readOnlyFields.length > 0 ? <section className="technical-tool-notice technical-tool-notice-info pla-battle-notice">
             <p>{t(isProtected(selected) ? 'pla.protectedBattle' : 'pla.fixedBattleIdentity')}</p>
           </section> : null}
+        </EditorWorkspaceSection>
+        <EditorWorkspaceSection id="data" label={translateLiteral(kind === 'trainers' ? 'Party' : 'Pokemon')} modified={hasDraft(selected)}>
           <div className="trainer-edit-form">
             {clipboard?.content}
             {kind === 'trainers' ? <div className="trainer-party-card-grid" aria-label={translateLiteral('Trainer party Pokemon')}>
@@ -131,14 +150,8 @@ export function PlaBattleWorkspace({ kind, page, selected, query, offset, loadin
               </div></fieldset>)}
             </div></div>
           </div>
-        </> : <p className="empty-copy">{t('pla.empty')}</p>}
-        {actions}
-      </aside>
-    </div>
-    <div className="pla-pagination">
-      <button type="button" className="secondary-button compact-button" disabled={offset === 0 || loading} onClick={() => onOffset(Math.max(0, offset - pageSize))}>{translateLiteral('Previous')}</button>
-      <span>{page ? `${Math.min(offset + 1, page.total)} - ${Math.min(offset + pageSize, page.total)} / ${page.total}` : ''}</span>
-      <button type="button" className="secondary-button compact-button" disabled={!page || offset + pageSize >= page.total || loading} onClick={() => onOffset(offset + pageSize)}>{translateLiteral('Next')}</button>
-    </div>
+        </EditorWorkspaceSection>
+      </> : <p className="empty-copy">{t('pla.empty')}</p>}
+    </SectionedEditorWorkspace>
   </section>;
 }

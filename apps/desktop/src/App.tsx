@@ -5,7 +5,8 @@ import { createEvolutionArgumentOptions, evolutionArgumentUsesGameText } from '.
 import { learnsetDraftsEqual, projectLearnsetDraftRows, replaceLearnsetDraftRecord, replaceLearnsetDrafts, settleLearnsetDrafts, stagedLearnsetSlotMap, type PokemonLearnsetLocalDraft } from './features/pokemon/learnsetDrafts';
 import { LearnsetClipboardActions } from './features/pokemon/LearnsetClipboardActions';
 import { InteractiveTableRow, VirtualTableBody } from './components/VirtualTable';
-import { EditorWorkspaceHeader, EditorWorkspaceSection, SectionedEditorWorkspace } from './components/SectionedEditorWorkspace';
+import { EditorLayoutScope, RecordEditorWorkspace, EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, SectionedEditorWorkspace } from './components/SectionedEditorWorkspace';
+import { SpeciesDataMatrix, useSpeciesFieldFinder } from './components/SpeciesDataMatrix';
 import { PokemonSearchBox, PokemonTable, filterPokemonRecords, formatPokemonTypes, type PokemonSelectionRecord } from './components/PokemonSelection';
 import { stageModelAsset, stageModelTexture } from './features/model-viewer/modelTextureBridge';
 import { PlaEditorSection, type PlaDrafts } from './features/pla/PlaEditorSection';
@@ -59,7 +60,6 @@ import {
   Sparkle,
   Sparkles,
   Swords,
-  Table2,
   Trash2,
   Upload,
   UsersRound,
@@ -685,6 +685,7 @@ import { formatBagHookStatus, formatFileState, formatSourceLayer } from './utils
 import { calculatePendingPayloadSha256 } from './utils/pendingPayloadHash';
 import { getSectionWikiUrl } from './wikiLinks';
 import {
+  getWorkbenchCapabilityRegistration,
   getWorkbenchSectionLabelKey
 } from './workbench/capabilityRegistry';
 import { userFacingFeatureVisibility } from './workbench/featureVisibility';
@@ -1087,36 +1088,7 @@ const githubLatestReleaseUrl = 'https://github.com/KotMatrosk1n/KM-Editor/releas
 const githubUpdateCheckTimeoutMs = 15_000;
 const sidebarCompactStorageKey = 'km-editor.sidebar.compact.v1';
 const expandedWorkflowGroupsStorageKey = 'km-editor.workflow-groups.user-expanded.v2';
-const editorLayoutStorageKey = 'km-editor.editor-layout.v1';
 const constrainedSidebarMediaQuery = '(max-width: 1280px), (max-height: 720px)';
-
-type EditorLayoutPreference = 'classic' | 'focused';
-
-function readEditorLayoutPreference(): EditorLayoutPreference {
-  if (typeof window === 'undefined') {
-    return 'classic';
-  }
-
-  try {
-    return window.localStorage.getItem(editorLayoutStorageKey) === 'focused'
-      ? 'focused'
-      : 'classic';
-  } catch {
-    return 'classic';
-  }
-}
-
-function writeEditorLayoutPreference(layout: EditorLayoutPreference) {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(editorLayoutStorageKey, layout);
-  } catch {
-    // The in-memory preference still applies when localStorage is unavailable.
-  }
-}
 
 function readSidebarCompactPreference() {
   if (typeof window === 'undefined') {
@@ -4023,9 +3995,6 @@ export function App({
   const [isSidebarCompactPreference, setIsSidebarCompactPreference] = useState(
     readSidebarCompactPreference
   );
-  const [editorLayout, setEditorLayout] = useState<EditorLayoutPreference>(
-    readEditorLayoutPreference
-  );
   const [isSidebarOverlayOpen, setIsSidebarOverlayOpen] = useState(false);
   const { groups: personalizedWorkflowGroups } = useEditorCategories();
   const [suppressedActiveWorkflowGroup, setSuppressedActiveWorkflowGroup] = useState<
@@ -4038,10 +4007,6 @@ export function App({
   const [expandedWorkflowGroups, setExpandedWorkflowGroups] = useState<
     Set<string>
   >(() => readExpandedWorkflowGroups(selectedGame));
-  const handleChangeEditorLayout = useCallback((nextLayout: EditorLayoutPreference) => {
-    setEditorLayout(nextLayout);
-    writeEditorLayoutPreference(nextLayout);
-  }, []);
   const handleRememberGameplaySettingsDestination = useCallback(async (target: 'ryujinx' | 'eden', path: string) => {
     const snapshot = await personalWorkspaceRegistry.setGameplaySettingsDestination(target, path);
     setApplicationWorkspaceSnapshot(snapshot);
@@ -20161,14 +20126,12 @@ export function App({
         <PersonalizationSettingsPanel />
       }
       themeSettings={<ThemeSettingsPanel />}
-      editorLayout={editorLayout}
       hasBlockingProjectOperation={hasCriticalWriteOperation}
       hasSvCacheRequestError={showingWelcome ? welcomeCache.error : currentSvCacheRequestError}
       isSvCacheClearing={isSvCacheClearing}
       isSvCacheRefreshing={showingWelcome ? welcomeCache.busy : isSvCacheRefreshing}
       isSvCacheSettingsUpdating={showingWelcome ? welcomeCache.busy : isSvCacheSettingsUpdating}
       isSvCacheWarming={isSvCacheWarming}
-      onChangeEditorLayout={handleChangeEditorLayout}
       onChangeLanguage={handleInterfaceLanguageChange}
       onChangeSvCacheLimit={showingWelcome ? welcomeCache.changeLimit : handleChangeSvCacheLimit}
       onChangeSvCacheMode={showingWelcome ? welcomeCache.changeMode : handleChangeSvCacheMode}
@@ -20281,7 +20244,7 @@ export function App({
     <EditorDraftDirtyContext.Provider value={registerEditorDraftDirty}>
     <TooltipIconVisibilityProvider sectionId={activeSection}>
     <main
-      className={`app-shell editor-layout-${editorLayout}${isSidebarCompact ? ' sidebar-is-compact' : ''}${isSidebarConstrained ? ' sidebar-is-constrained' : ''}${isSidebarOverlayOpen ? ' sidebar-overlay-open' : ''}`}
+      className={`app-shell${isSidebarCompact ? ' sidebar-is-compact' : ''}${isSidebarConstrained ? ' sidebar-is-constrained' : ''}${isSidebarOverlayOpen ? ' sidebar-overlay-open' : ''}`}
     >
       <AppSidebar
         activeSection={activeSection}
@@ -20368,8 +20331,12 @@ export function App({
         <div
           aria-busy={isProjectScopeTransitioning || undefined}
           className="workspace-content"
+          data-workspace-section={activeSection}
+          data-editor-workspace={getWorkbenchCapabilityRegistration(activeSection).navigationKind === 'workflow' ||
+            activeSection === 'exefsPatches' ? '' : undefined}
           inert={isProjectScopeTransitioning ? true : undefined}
         >
+          <EditorLayoutScope.Provider value={JSON.stringify([activeProjectId, selectedGame])}>
           <Fragment
             key={`${activeProjectId ?? 'no-project'}:${selectedGame}:${activeSection}:${workspaceContentDiscardRevision}`}
           >
@@ -22215,6 +22182,7 @@ export function App({
             </div>
           ) : null}
           </Fragment>
+          </EditorLayoutScope.Provider>
         </div>
         <AdaptiveInspector
           activeTab={activeInspectorTab}
@@ -23654,110 +23622,8 @@ function SelectedItemPanel({
 
   return (
     <SectionedEditorWorkspace sessionKey={`${ordinaryDraftProject?.projectId ?? 'project'}:${editorFamily}:items`}
-      browser={browser} browserControls={browserControls} sessionBar={editorHeader}>
-      <EditorWorkspaceHeader>
-      <PublishedLocalEditorValidationDiagnostics
-        domain="workflow.items"
-        issues={itemDraftSummary.invalidFields}
-      />
-      {editSession && !item ? (
-        <EmptySelectionEditorSessionActions
-          isBusy={isItemUpdating}
-          onCancel={() =>
-            cancelActiveEditSession(() => {
-              setFieldDraftsByItemId({});
-              setCompatibilityDraftsByItemId({});
-            })
-          }
-          summary="No item selected."
-        />
-      ) : null}
-      <PublishedInlineEditorError
-        domain="workflow.items"
-        message={itemSourceMutationError}
-      />
-      </EditorWorkspaceHeader>
-
-      {item ? (
-        <>
-          <EditorWorkspaceSection id="details" label={t('editorSections.details')}>
-          <dl className="item-provenance-list">
-            <div>
-              <dt>Name</dt>
-              <dd>{item.name}</dd>
-            </div>
-            <div>
-              <dt>Source file</dt>
-              <dd className="pokemon-source-path" data-localization-ignore="true" title={item.provenance.sourceFile}>{item.provenance.sourceFile}</dd>
-            </div>
-            <div>
-              <dt>Layer</dt>
-              <dd>{formatSourceLayer(item.provenance.sourceLayer)}</dd>
-            </div>
-            <div>
-              <dt>File state</dt>
-              <dd>{formatFileState(item.provenance.fileState)}</dd>
-            </div>
-            <div>
-              <dt>Shared row</dt>
-              <dd>{formatSharedItemIds(item)}</dd>
-            </div>
-            {editorFamily === 'za' && item.metadata.machineMoveId !== null ? (
-              <>
-                <div>
-                  <dt>Current TM move</dt>
-                  <dd>{item.metadata.machineMoveName ?? item.metadata.machineMoveId}</dd>
-                </div>
-                <div>
-                  <dt>Verified base move</dt>
-                  <dd>
-                    {item.metadata.baseMachineMoveName ??
-                      item.metadata.baseMachineMoveId ??
-                      'Unavailable'}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Compatible Pokemon rows</dt>
-                  <dd>
-                    {technicalMachineCompatibilityRows.length > 0
-                      ? enabledTechnicalMachineCompatibilityCount
-                      : item.metadata.compatiblePokemonCount}
-                  </dd>
-                </div>
-              </>
-            ) : null}
-            {editorFamily === 'za' && item.metadata.isOwnedTechnicalMachineSlot ? (
-              <>
-                <div>
-                  <dt>{t('za.items.tmStatus.ownership')}</dt>
-                  <dd>{t('za.items.tmStatus.owned')}</dd>
-                </div>
-                <div>
-                  <dt>{t('za.items.tmStatus.projection')}</dt>
-                  <dd>
-                    {item.metadata.isProjectedTechnicalMachineSlot
-                      ? t('za.items.tmStatus.projected')
-                      : t('za.items.tmStatus.loaded')}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('za.items.tmStatus.provisioning')}</dt>
-                  <dd>
-                    {item.metadata.isTechnicalMachineProvisioned
-                      ? t('za.items.tmStatus.provisioned')
-                      : t('za.items.tmStatus.notProvisioned')}
-                  </dd>
-                </div>
-              </>
-            ) : null}
-          </dl>
-          </EditorWorkspaceSection>
-
-          <EditorWorkspaceSection id="itemData" label={translateLiteral('Item Data')}
-            modified={itemDraftSummary.changedFields.length > 0 || itemDraftSummary.invalidFields.length > 0}
-            invalid={itemDraftSummary.invalidFields.length > 0}>
-          <div className="item-edit-form">
-            {editSession ? (
+      initialSection="itemData" pinnedBrowser browserVisibleRows={4} browser={browser}
+      browserControls={browserControls} sessionBar={<>{editorHeader}{editSession && item ? (
               <EditorSessionBarActions>
                 <button
                   aria-busy={isItemUpdating || isPokemonUpdating || undefined}
@@ -23844,7 +23710,112 @@ function SelectedItemPanel({
                   })}
                 </span>
               </EditorSessionBarActions>
+            ) : null}</>} compactFields>
+      <EditorWorkspaceHeader>
+      <PublishedLocalEditorValidationDiagnostics
+        domain="workflow.items"
+        issues={itemDraftSummary.invalidFields}
+      />
+      {editSession && !item ? (
+        <EmptySelectionEditorSessionActions
+          isBusy={isItemUpdating}
+          onCancel={() =>
+            cancelActiveEditSession(() => {
+              setFieldDraftsByItemId({});
+              setCompatibilityDraftsByItemId({});
+            })
+          }
+          summary="No item selected."
+        />
+      ) : null}
+      <PublishedInlineEditorError
+        domain="workflow.items"
+        message={itemSourceMutationError}
+      />
+      </EditorWorkspaceHeader>
+      {item ? <EditorWorkspaceHeader afterBrowser>
+        <EditorRecordHeading name={item.name} id={item.itemId} />
+      </EditorWorkspaceHeader> : null}
+
+      {item ? (
+        <>
+          <EditorWorkspaceSection id="details" label={t('editorSections.details')}>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Name</dt>
+              <dd>{item.name}</dd>
+            </div>
+            <div>
+              <dt>Source file</dt>
+              <dd className="pokemon-source-path" data-localization-ignore="true" title={item.provenance.sourceFile}>{item.provenance.sourceFile}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{formatSourceLayer(item.provenance.sourceLayer)}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{formatFileState(item.provenance.fileState)}</dd>
+            </div>
+            <div>
+              <dt>Shared row</dt>
+              <dd>{formatSharedItemIds(item)}</dd>
+            </div>
+            {editorFamily === 'za' && item.metadata.machineMoveId !== null ? (
+              <>
+                <div>
+                  <dt>Current TM move</dt>
+                  <dd>{item.metadata.machineMoveName ?? item.metadata.machineMoveId}</dd>
+                </div>
+                <div>
+                  <dt>Verified base move</dt>
+                  <dd>
+                    {item.metadata.baseMachineMoveName ??
+                      item.metadata.baseMachineMoveId ??
+                      'Unavailable'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Compatible Pokemon rows</dt>
+                  <dd>
+                    {technicalMachineCompatibilityRows.length > 0
+                      ? enabledTechnicalMachineCompatibilityCount
+                      : item.metadata.compatiblePokemonCount}
+                  </dd>
+                </div>
+              </>
             ) : null}
+            {editorFamily === 'za' && item.metadata.isOwnedTechnicalMachineSlot ? (
+              <>
+                <div>
+                  <dt>{t('za.items.tmStatus.ownership')}</dt>
+                  <dd>{t('za.items.tmStatus.owned')}</dd>
+                </div>
+                <div>
+                  <dt>{t('za.items.tmStatus.projection')}</dt>
+                  <dd>
+                    {item.metadata.isProjectedTechnicalMachineSlot
+                      ? t('za.items.tmStatus.projected')
+                      : t('za.items.tmStatus.loaded')}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t('za.items.tmStatus.provisioning')}</dt>
+                  <dd>
+                    {item.metadata.isTechnicalMachineProvisioned
+                      ? t('za.items.tmStatus.provisioned')
+                      : t('za.items.tmStatus.notProvisioned')}
+                  </dd>
+                </div>
+              </>
+            ) : null}
+          </dl>
+          </EditorWorkspaceSection>
+
+          <EditorWorkspaceSection id="itemData" label={translateLiteral('Item Data')}
+            modified={itemDraftSummary.changedFields.length > 0 || itemDraftSummary.invalidFields.length > 0}
+            invalid={itemDraftSummary.invalidFields.length > 0}>
+          <div className="item-edit-form">
 
             <div className="editable-field-groups">
               {editorFamily === 'za' && item.metadata.machineMoveId !== null ? (
@@ -24336,10 +24307,8 @@ function PokemonSection({
     <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
   );
 
-  const pokemonBrowserControls = (
-        <div className="items-toolbar pokemon-toolbar">
-          <PokemonSearchBox disabled={!workflow} value={searchText} onChange={onSearchChange} />
-          <div className="pokemon-toolbar-side">
+  const pokemonBulkActions = (
+          <div className="pokemon-toolbar-side pokemon-bulk-actions">
             <div className="pokemon-toolbar-metrics">
               <Metric
                 label="Loaded records"
@@ -24404,7 +24373,6 @@ function PokemonSection({
               </button>
             </div>
           </div>
-        </div>
   );
 
   return (
@@ -24420,7 +24388,8 @@ function PokemonSection({
         {workflow ? (
           <div className={`items-layout ${editorFamily}-pokemon-layout sectioned-pokemon-layout`}>
             <SelectedPokemonPanel
-              browserControls={pokemonBrowserControls}
+              browserControls={<PokemonSearchBox disabled={!workflow} value={searchText} onChange={onSearchChange} />}
+              bulkActions={pokemonBulkActions}
               canEditPokemon={canEditPokemon}
               editSession={editSession}
               editorFamily={editorFamily}
@@ -24946,6 +24915,7 @@ function formatPokemonDexKind(kind: PokemonDexPlacement['dexKind']) {
 
 function SelectedPokemonPanel({
   browserControls,
+  bulkActions,
   canEditPokemon,
   dexEditor,
   editSession,
@@ -24971,6 +24941,7 @@ function SelectedPokemonPanel({
   selectedPokemonEvolutionSlot
 }: {
   browserControls: ReactNode;
+  bulkActions: ReactNode;
   canEditPokemon: boolean;
   dexEditor: PokemonDexEditor | null;
   editSession: EditSession | null;
@@ -25051,6 +25022,7 @@ function SelectedPokemonPanel({
     [learnsetClipboardFeedback]
   );
   usePublishCommonEditorDiagnostics(learnsetClipboardDiagnostics);
+  const speciesFieldFinder = useSpeciesFieldFinder();
   const [pokemonSourceMutationError, setPokemonSourceMutationError] = useState<
     string | null
   >(null);
@@ -26677,9 +26649,12 @@ function SelectedPokemonPanel({
   return (
     <SectionedEditorWorkspace
       sessionKey={`${ordinaryDraftProject?.projectId ?? 'project'}:${editorFamily}:pokemon`}
+      initialSection="speciesData"
+      sectionShortcut={speciesFieldFinder.shortcut}
+      pinnedBrowser
       browser={pokemonTable}
       browserControls={browserControls}
-      browserVisibleRows={5}
+      browserVisibleRows={3}
       sessionBar={<EditorSessionBar
         canEdit={canEditPokemon && pokemon !== null}
         isEditing={editSession !== null}
@@ -27033,30 +27008,28 @@ function SelectedPokemonPanel({
           <EditorWorkspaceSection id="speciesData" label={t('editorSections.speciesData')}
             modified={personalDraftSummary.changedFields.length > 0 || personalDraftSummary.invalidFields.length > 0}
             invalid={personalDraftSummary.invalidFields.length > 0}>
-          <div className={`inspector-block ${editorFamily}-pokemon-personal-edit-block`}>
-            <h4>{t('editorSections.speciesData')}</h4>
-            <div className="editable-field-groups">
-              {personalFieldGroups.map((group) => (
-                <fieldset className={`editable-field-group ${group.group === 'Alpha Size' ? 'alpha-size-group' : ''}`} key={group.group}>
-                  <legend>{editorFamily === 'sv' && group.group === 'Material Drops' ? t('pokemon.materialDrops.title') : translateLiteral(group.group)}</legend>
-                  {group.group === 'Alpha Size' ? <AlphaSizeHelp /> : null}
-                  {editorFamily === 'sv' && group.group === 'Material Drops' ? (
+            <SpeciesDataMatrix
+              finderRequest={speciesFieldFinder.request}
+              recordName={formatPokemonRecordName(pokemon, editorFamily)}
+              recordId={`#${String(pokemon.speciesId).padStart(3, '0')}`}
+              groups={personalFieldGroups.map(group => ({
+                key: group.group,
+                label: editorFamily === 'sv' && group.group === 'Material Drops' ? t('pokemon.materialDrops.title') : translateLiteral(group.group),
+                note: group.group === 'Alpha Size' ? <AlphaSizeHelp />
+                  : editorFamily === 'sv' && group.group === 'Material Drops' ? (
                     <p className="muted">{t(pokemon.materialDrop ? 'pokemon.materialDrops.help' : 'pokemon.materialDrops.unavailable')}</p>
-                  ) : null}
-                  <div className="editable-field-grid">
-                    {group.fields.map((field) => {
-                      const currentValue = pokemon
-                        ? getEditablePersonalFieldValue(pokemon, field.field)
-                        : null;
-                      const draftValue = personalDrafts[field.field] ?? '';
-                      const draftState = getPokemonPersonalFieldDraftState(
-                        draftValue,
-                        currentValue,
-                        field
-                      );
-
-                      return (
-                        <div key={field.field}>
+                  ) : undefined,
+                fields: group.fields.map(field => {
+                  const currentValue = getEditablePersonalFieldValue(pokemon, field.field);
+                  const draftValue = personalDrafts[field.field] ?? '';
+                  const draftState = getPokemonPersonalFieldDraftState(draftValue, currentValue, field);
+                  return {
+                    key: field.field,
+                    label: getPokemonPersonalFieldLabel(field, t, translateLiteral),
+                    inputId: `pokemon-personal-${field.field}`,
+                    value: draftValue,
+                    changed: draftState.isChanged,
+                    control: <>
                         <PokemonPersonalFieldInput
                           currentValue={currentValue}
                           disabled={
@@ -27078,7 +27051,6 @@ function SelectedPokemonPanel({
                             species: pokemon.name,
                             speciesId: pokemon.speciesId
                           }}
-                          key={field.field}
                           onChange={(value) => {
                             setPersonalDraftsByPokemonId((currentDrafts) =>
                               setSparseFieldDraftValue(
@@ -27097,14 +27069,11 @@ function SelectedPokemonPanel({
                           onRestore={(value) => setPersonalDraftsByPokemonId(current =>
                             setSparseFieldDraftValue(current, pokemon.personalId, field.field, value, personalDraftDefaults))}
                         /> : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </fieldset>
-              ))}
-            </div>
-          </div>
+                    </>
+                  };
+                })
+              }))}
+            />
           </EditorWorkspaceSection>
           </>
         ) : null}
@@ -28210,6 +28179,9 @@ function SelectedPokemonPanel({
           </EditorWorkspaceSection>
         </>
       ) : null}
+      <EditorWorkspaceSection id="bulkActions" label={t('editorSections.bulkActions')}>
+        {bulkActions}
+      </EditorWorkspaceSection>
     </SectionedEditorWorkspace>
   );
 }
@@ -29455,7 +29427,8 @@ function SelectedMovePanel({
 
   return (
     <SectionedEditorWorkspace sessionKey={`${ordinaryDraftProject?.projectId ?? 'project'}:${ordinaryDraftProject?.game ?? 'game'}:moves`}
-      browser={browser} browserControls={browserControls} sessionBar={editorHeader}>
+      initialSection="moveData" pinnedBrowser browserVisibleRows={4} browser={browser}
+      browserControls={browserControls} sessionBar={editorHeader} compactFields>
       <EditorWorkspaceHeader>
       <PublishedLocalEditorValidationDiagnostics
         domain="workflow.moves"
@@ -29484,6 +29457,9 @@ function SelectedMovePanel({
         message={moveSourceMutationError}
       />
       </EditorWorkspaceHeader>
+      {move ? <EditorWorkspaceHeader afterBrowser>
+        <EditorRecordHeading name={move.name} id={move.moveId} />
+      </EditorWorkspaceHeader> : null}
 
       {move ? (
         <>
@@ -30514,6 +30490,153 @@ function TextSection({
   const resultEnd = page ? page.offset + page.returnedEntryCount : filteredEntries.length;
   const pageNumber = page ? Math.floor(page.offset / page.limit) + 1 : 1;
 
+  const browserControls = <>
+    <div className="items-toolbar text-toolbar">
+      {workflow && workflow.languages.length > 0 ? (
+        <div className="path-field text-language-field">
+          <FieldLabel
+            help={t('text.language.help')}
+            htmlFor="text-game-language"
+            label={t('text.language.label')}
+          />
+          <SearchableOptionInput
+            ariaLabel={t('text.language.ariaLabel')}
+            data-km-source-site="text-game-language-option"
+            data-localization-ignore="true"
+            disabled={false}
+            id="text-game-language"
+            isFiniteCatalog
+            localizeOptions={false}
+            onChange={onLanguageChange}
+            options={workflow.languages.map((language) => ({
+              label: language.label,
+              value: language.language
+            }))}
+            value={activeLanguage}
+          />
+        </div>
+      ) : null}
+      <label className="search-box items-search">
+        <Search aria-hidden="true" size={18} />
+        <input
+          aria-label={t('text.search.ariaLabel')}
+          disabled={!workflow}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder={t('text.search.placeholder')}
+          type="search"
+          value={searchText}
+        />
+      </label>
+      <Metric
+        label={
+          page
+            ? t('text.metrics.pageEntries')
+            : isPagedResultWindow
+              ? 'Loaded results'
+              : 'Loaded entries'
+        }
+        value={
+          workflow
+            ? (page?.returnedEntryCount ?? workflow.stats.totalTextEntryCount).toString()
+            : '0'
+        }
+      />
+      <Metric
+        label={categories.length > 0 ? t('text.metrics.availableFiles') : 'Source files'}
+        value={workflow ? workflow.stats.sourceFileCount.toString() : '0'}
+      />
+      <Metric
+        label="Pending changes"
+        value={(editSession?.pendingEdits.length ?? 0).toString()}
+      />
+    </div>
+    {workflow && categories.length > 0 ? (
+      <nav aria-label={t('text.categories.ariaLabel')} className="text-category-browser">
+        <div className="text-category-tabs">
+          {categories.map((category) => {
+            const localizationKeys = textCategoryLocalizationKeys[category.categoryId];
+
+            return (
+              <button
+                aria-pressed={category.categoryId === activeCategoryId}
+                className={category.categoryId === activeCategoryId ? 'is-active' : ''}
+                disabled={isTextLoading}
+                key={category.categoryId}
+                onClick={() => onCategoryChange(category.categoryId)}
+                type="button"
+              >
+                <span>
+                  {localizationKeys
+                    ? t(localizationKeys.label)
+                    : translateLiteral(category.label)}
+                </span>
+                <small>
+                  {t('text.categories.fileCount', {
+                    count: category.sourceFileCount
+                  })}
+                </small>
+              </button>
+            );
+          })}
+        </div>
+        {activeCategory ? (
+          <div className="editable-field-label-row text-category-context-help">
+            <strong>{activeCategoryLabel}</strong>
+            <ContextHelp label={activeCategoryLabel}>
+              {`${t('text.categories.help')} ${activeCategoryDescription}`}
+            </ContextHelp>
+          </div>
+        ) : null}
+      </nav>
+    ) : null}
+    {workflow ? (
+      <EditorSessionBar
+        canEdit={
+          canEditText && !isTextQueryPending && selectedEntry?.canEdit === true
+        }
+        isEditing={editSession !== null}
+        isStarting={isEditStarting}
+        label="Text"
+        onStart={onStartEditSession}
+        readOnlyReason={selectedEntry?.editBlockedReason}
+      />
+    ) : null}
+  </>;
+  const browserFooter = <>
+    {workflow && page ? (
+      <nav aria-label={t('text.pagination.ariaLabel')} className="text-page-bar">
+        <span aria-live="polite">
+          {page.returnedEntryCount > 0
+            ? t('text.pagination.showing', {
+                start: resultStart,
+                end: resultEnd,
+                page: pageNumber
+              })
+            : t('text.pagination.empty', { page: pageNumber })}
+          {page.hasNext ? ` · ${t('text.pagination.more')}` : ''}
+        </span>
+        <div>
+          <button
+            className="secondary-button"
+            disabled={!page.hasPrevious || isTextLoading}
+            onClick={() => onPageChange(Math.max(0, page.offset - page.limit))}
+            type="button"
+          >
+            {t('text.pagination.previous')}
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!page.hasNext || isTextLoading}
+            onClick={() => onPageChange(page.offset + page.limit)}
+            type="button"
+          >
+            {t('text.pagination.next')}
+          </button>
+        </div>
+      </nav>
+    ) : null}
+  </>;
+
   return (
     <>
       <section aria-labelledby="text-heading" className="panel wide-panel">
@@ -30522,156 +30645,11 @@ function TextSection({
           <h2 id="text-heading">Text and Dialogue Map</h2>
         </div>
 
-        <div className="items-toolbar text-toolbar">
-          {workflow && workflow.languages.length > 0 ? (
-            <div className="path-field text-language-field">
-              <FieldLabel
-                help={t('text.language.help')}
-                htmlFor="text-game-language"
-                label={t('text.language.label')}
-              />
-              <SearchableOptionInput
-                ariaLabel={t('text.language.ariaLabel')}
-                data-km-source-site="text-game-language-option"
-                data-localization-ignore="true"
-                disabled={false}
-                id="text-game-language"
-                isFiniteCatalog
-                localizeOptions={false}
-                onChange={onLanguageChange}
-                options={workflow.languages.map((language) => ({
-                  label: language.label,
-                  value: language.language
-                }))}
-                value={activeLanguage}
-              />
-            </div>
-          ) : null}
-          <label className="search-box items-search">
-            <Search aria-hidden="true" size={18} />
-            <input
-              aria-label={t('text.search.ariaLabel')}
-              disabled={!workflow}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder={t('text.search.placeholder')}
-              type="search"
-              value={searchText}
-            />
-          </label>
-          <Metric
-            label={
-              page
-                ? t('text.metrics.pageEntries')
-                : isPagedResultWindow
-                  ? 'Loaded results'
-                  : 'Loaded entries'
-            }
-            value={
-              workflow
-                ? (page?.returnedEntryCount ?? workflow.stats.totalTextEntryCount).toString()
-                : '0'
-            }
-          />
-          <Metric
-            label={categories.length > 0 ? t('text.metrics.availableFiles') : 'Source files'}
-            value={workflow ? workflow.stats.sourceFileCount.toString() : '0'}
-          />
-          <Metric
-            label="Pending changes"
-            value={(editSession?.pendingEdits.length ?? 0).toString()}
-          />
-        </div>
-
-        {workflow && categories.length > 0 ? (
-          <nav aria-label={t('text.categories.ariaLabel')} className="text-category-browser">
-            <div className="text-category-tabs">
-              {categories.map((category) => {
-                const localizationKeys = textCategoryLocalizationKeys[category.categoryId];
-
-                return (
-                  <button
-                    aria-pressed={category.categoryId === activeCategoryId}
-                    className={category.categoryId === activeCategoryId ? 'is-active' : ''}
-                    disabled={isTextLoading}
-                    key={category.categoryId}
-                    onClick={() => onCategoryChange(category.categoryId)}
-                    type="button"
-                  >
-                    <span>
-                      {localizationKeys
-                        ? t(localizationKeys.label)
-                        : translateLiteral(category.label)}
-                    </span>
-                    <small>
-                      {t('text.categories.fileCount', {
-                        count: category.sourceFileCount
-                      })}
-                    </small>
-                  </button>
-                );
-              })}
-            </div>
-            {activeCategory ? (
-              <div className="editable-field-label-row text-category-context-help">
-                <strong>{activeCategoryLabel}</strong>
-                <ContextHelp label={activeCategoryLabel}>
-                  {`${t('text.categories.help')} ${activeCategoryDescription}`}
-                </ContextHelp>
-              </div>
-            ) : null}
-          </nav>
-        ) : null}
-
-        {workflow && page ? (
-          <nav aria-label={t('text.pagination.ariaLabel')} className="text-page-bar">
-            <span aria-live="polite">
-              {page.returnedEntryCount > 0
-                ? t('text.pagination.showing', {
-                    start: resultStart,
-                    end: resultEnd,
-                    page: pageNumber
-                  })
-                : t('text.pagination.empty', { page: pageNumber })}
-              {page.hasNext ? ` · ${t('text.pagination.more')}` : ''}
-            </span>
-            <div>
-              <button
-                className="secondary-button"
-                disabled={!page.hasPrevious || isTextLoading}
-                onClick={() => onPageChange(Math.max(0, page.offset - page.limit))}
-                type="button"
-              >
-                {t('text.pagination.previous')}
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!page.hasNext || isTextLoading}
-                onClick={() => onPageChange(page.offset + page.limit)}
-                type="button"
-              >
-                {t('text.pagination.next')}
-              </button>
-            </div>
-          </nav>
-        ) : null}
-
-        {workflow ? (
-          <EditorSessionBar
-            canEdit={
-              canEditText && !isTextQueryPending && selectedEntry?.canEdit === true
-            }
-            isEditing={editSession !== null}
-            isStarting={isEditStarting}
-            label="Text"
-            onStart={onStartEditSession}
-            readOnlyReason={selectedEntry?.editBlockedReason}
-          />
-        ) : null}
-
+        {!workflow ? browserControls : null}
         {workflow && isTextLoading ? <LoadingProgress className="is-compact" label={t('workbench.section.text.label')}
           detail={translateLiteral('Loading backend workflow data.')} /> : null}
         {workflow ? (
-          <div className="text-layout">
+          <RecordEditorWorkspace id="text" className="text-layout" browserControls={browserControls} browserFooter={browserFooter} browser={
             <div
               aria-busy={isTextLoading || undefined}
               aria-colcount={5}
@@ -30720,6 +30698,7 @@ function TextSection({
                 )}
               />
             </div>
+          }>
 
             <SelectedTextPanel
               canEditText={canEditText}
@@ -30733,7 +30712,7 @@ function TextSection({
               onUpdateTextEntry={onUpdateTextEntry}
               ordinaryDraftProject={ordinaryDraftProject}
             />
-          </div>
+          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">Open Text from Editors to load backend message tables.</p>
         )}
@@ -31542,45 +31521,7 @@ function TrainersSection({
     workflow
   ]);
 
-  const browserControls = (
-    <>
-        <div className="items-toolbar trainers-toolbar">
-          <label className="search-box items-search">
-            <Search aria-hidden="true" size={18} />
-            <input
-              aria-label="Search trainers"
-              disabled={!workflow}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search trainers"
-              type="search"
-              value={searchText}
-            />
-          </label>
-          <Metric
-            label="Loaded trainers"
-            value={workflow ? workflow.stats.totalTrainerCount.toString() : '0'}
-          />
-          <Metric
-            label="Party Pokemon"
-            value={workflow ? workflow.stats.totalPokemonCount.toString() : '0'}
-          />
-          <Metric
-            label="Pending changes"
-            value={(editSession?.pendingEdits.length ?? 0).toString()}
-          />
-        </div>
-
-        {workflow ? (
-          <EditorSessionBar
-            canEdit={canEditTrainers && selectedTrainer !== null}
-            isEditing={editSession !== null}
-            isStarting={isEditStarting}
-            label="Trainers"
-            onStart={onStartEditSession}
-          />
-        ) : null}
-
-        {workflow && editorFamily === 'za' ? (
+  const bulkActions = workflow && editorFamily === 'za' ? (
           <div className="za-trainer-bulk-actions">
             <div className="za-trainer-bulk-actions-copy">
               <strong>{t('za.trainers.bulk.heading')}</strong>
@@ -31641,6 +31582,44 @@ function TrainersSection({
               </button>
             </div>
           </div>
+        ) : null;
+
+  const browserControls = (
+    <>
+        <div className="items-toolbar trainers-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search trainers"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search trainers"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Loaded trainers"
+            value={workflow ? workflow.stats.totalTrainerCount.toString() : '0'}
+          />
+          <Metric
+            label="Party Pokemon"
+            value={workflow ? workflow.stats.totalPokemonCount.toString() : '0'}
+          />
+          <Metric
+            label="Pending changes"
+            value={(editSession?.pendingEdits.length ?? 0).toString()}
+          />
+        </div>
+
+        {workflow ? (
+          <EditorSessionBar
+            canEdit={canEditTrainers && selectedTrainer !== null}
+            isEditing={editSession !== null}
+            isStarting={isEditStarting}
+            label="Trainers"
+            onStart={onStartEditSession}
+          />
         ) : null}
 
             {supportsTrainerCategories ? (
@@ -31730,6 +31709,7 @@ function TrainersSection({
 
         {workflow ? (
               <SelectedTrainerPanel
+                bulkActions={bulkActions}
                 browser={trainerTable}
                 browserControls={browserControls}
                 canEditTrainers={canEditTrainers}
@@ -31865,6 +31845,7 @@ function ZaTrainerBulkConfirmationModal({
 function SelectedTrainerPanel({
   browser,
   browserControls,
+  bulkActions,
   canEditTrainers,
   editSession,
   editorFamily,
@@ -31887,6 +31868,7 @@ function SelectedTrainerPanel({
 }: {
   browser?: ReactNode;
   browserControls?: ReactNode;
+  bulkActions?: ReactNode;
   canEditTrainers: boolean;
   editSession: EditSession | null;
   editorFamily: EditorUiFamily;
@@ -32997,21 +32979,22 @@ function SelectedTrainerPanel({
         initialSection="aiFlags"
         browser={browser}
         browserControls={browserControls}
-        browserVisibleRows={5}
+        pinnedBrowser
+        compactFields
+        browserVisibleRows={4}
         onActiveSectionChange={handleTrainerSectionChange}
       >
-      <EditorWorkspaceHeader afterBrowser>
-      <aside aria-label="Selected trainer provenance" className="trainer-inspector trainer-selection-details">
-      <div className="panel-heading">
-        <ShieldCheck aria-hidden="true" size={18} />
-        <h3>Selected Trainer</h3>
-      </div>
-
-      <PublishedInlineEditorError
+      <EditorWorkspaceHeader>
+        <PublishedInlineEditorError
         domain="workflow.trainers"
         message={trainerSourceMutationError}
       />
-
+      </EditorWorkspaceHeader>
+      {trainer ? <EditorWorkspaceHeader afterBrowser>
+        <EditorRecordHeading name={trainer.name} id={trainer.trainerId} />
+      </EditorWorkspaceHeader> : null}
+      {trainer ? <EditorWorkspaceSection id="details" label={t('editorSections.details')}>
+      <div className="trainer-selection-details">
       {trainer ? (
         <>
           <dl className="item-provenance-list">
@@ -33138,8 +33121,9 @@ function SelectedTrainerPanel({
 
         </>
       ) : null}
-      </aside>
-      </EditorWorkspaceHeader>
+      </div>
+      </EditorWorkspaceSection> : null}
+      {bulkActions ? <EditorWorkspaceSection id="bulk" label={t('za.trainers.bulk.heading')}>{bulkActions}</EditorWorkspaceSection> : null}
       {trainer ? (
         <>
           <EditorWorkspaceSection id="aiFlags" label={translateLiteral('AI Flags')}
@@ -38830,7 +38814,7 @@ function GiftPokemonSection({
         ) : null}
 
         {workflow ? (
-          <div className="trainers-layout">
+          <RecordEditorWorkspace id="giftPokemon" className="trainers-layout" browser={
             <div
               aria-colcount={5}
               aria-label="Gift Pokemon"
@@ -38867,6 +38851,7 @@ function GiftPokemonSection({
                 )}
               />
             </div>
+          }>
 
             <SelectedGiftPokemonPanel
               canEditGifts={canEditGifts}
@@ -38880,7 +38865,7 @@ function GiftPokemonSection({
               onUpdateGiftPokemonFields={onUpdateGiftPokemonFields}
               pokemonWorkflow={pokemonWorkflow}
             />
-          </div>
+          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">Open Gift Pokemon from Workflows to load backend gift data.</p>
         )}
@@ -39714,7 +39699,7 @@ function TradePokemonSection({
         ) : null}
 
         {workflow ? (
-          <div className="trainers-layout">
+          <RecordEditorWorkspace id="tradePokemon" className="trainers-layout" browser={
             <div
               aria-colcount={7}
               aria-label="Trade Pokemon"
@@ -39761,6 +39746,7 @@ function TradePokemonSection({
                 )}
               />
             </div>
+          }>
 
             <SelectedTradePokemonPanel
               canEditTrades={canEditTrades}
@@ -39774,7 +39760,7 @@ function TradePokemonSection({
               pokemonWorkflow={pokemonWorkflow}
               trade={selectedTrade}
             />
-          </div>
+          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">Open Trade Pokemon from Workflows to load backend trade data.</p>
         )}
@@ -40514,7 +40500,7 @@ function RentalPokemonSection({
         ) : null}
 
         {workflow ? (
-          <div className="trainers-layout">
+          <RecordEditorWorkspace id="rentalPokemon" className="trainers-layout" browser={
             <div
               aria-colcount={7}
               aria-label="Rental Pokemon"
@@ -40559,6 +40545,7 @@ function RentalPokemonSection({
                 )}
               />
             </div>
+          }>
 
             <SelectedRentalPokemonPanel
               canEditRentals={canEditRentals}
@@ -40570,7 +40557,7 @@ function RentalPokemonSection({
               pokemonWorkflow={pokemonWorkflow}
               rental={selectedRental}
             />
-          </div>
+          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">Open Rental Pokemon from Workflows to load backend rental data.</p>
         )}
@@ -41311,8 +41298,8 @@ function DynamaxAdventuresSection({
               onWriteSaveSeed={onWriteSaveSeed}
               selectedEntryIndex={selectedEncounter?.entryIndex ?? null}
             />
-            <div className="trainers-layout dynamax-adventures-layout">
-            <div
+            <RecordEditorWorkspace id="dynamaxAdventures" className="trainers-layout dynamax-adventures-layout" browser={
+              <div
               aria-colcount={6}
               aria-label="Dynamax Adventure encounters"
               aria-rowcount={filteredEncounters.length + 1}
@@ -41368,6 +41355,7 @@ function DynamaxAdventuresSection({
                 )}
               />
             </div>
+            }>
 
             <SelectedDynamaxAdventurePanel
               canEditDynamaxAdventures={canEditDynamaxAdventures}
@@ -41389,7 +41377,7 @@ function DynamaxAdventuresSection({
               outputWritesReady={outputWritesReady}
               safeNormalSpeciesOptions={workflow.safeNormalSpeciesOptions}
             />
-            </div>
+            </RecordEditorWorkspace>
           </>
         ) : (
           <p className="empty-copy">
@@ -42392,7 +42380,7 @@ function StaticEncountersSection({
         ) : null}
 
         {workflow ? (
-          <div className="trainers-layout">
+          <RecordEditorWorkspace id="staticEncounters" className="trainers-layout" browser={
             <div
               aria-colcount={isZaStaticEncounters ? 4 : 6}
               aria-label={translateLiteral('Static Encounters')}
@@ -42465,6 +42453,7 @@ function StaticEncountersSection({
                 }}
               />
             </div>
+          }>
 
             <SelectedStaticEncounterPanel
               canEditStaticEncounters={canEditStaticEncounters}
@@ -42476,7 +42465,7 @@ function StaticEncountersSection({
               onSelectEncounter={onSelectEncounter}
               onUpdateStaticEncounterFields={onUpdateStaticEncounterFields}
             />
-          </div>
+          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">
             {translateLiteral('Open Static Encounters from Workflows to load backend encounter data.')}
@@ -43121,7 +43110,7 @@ function ShopsSection({
         ) : null}
 
         {workflow ? (
-          <div className={`shops-layout ${isFlatShopList ? 'sv-shops-layout' : 'swsh-shops-layout'}`}>
+          <RecordEditorWorkspace id="shops" className={`shops-layout ${isFlatShopList ? 'sv-shops-layout' : 'swsh-shops-layout'}`} browser={
             <div className="shops-table-stack">
               {isFlatShopList ? (
                 renderShopTable('Shops', filteredShops)
@@ -43132,6 +43121,7 @@ function ShopsSection({
                 </>
               )}
             </div>
+          }>
 
             <SelectedShopPanel
               canEditShops={canEditShops}
@@ -43147,7 +43137,7 @@ function ShopsSection({
               selectedSlot={selectedSlot}
               shop={selectedShop}
             />
-          </div>
+          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">
             {translateLiteral('Open Shops from Workflows to load backend shop data.')}
@@ -45032,6 +45022,44 @@ function EncountersSection({
     }
   }, [onSelectSlot, selectedSlot, selectedTable?.slots, selectedTable?.tableId]);
 
+  const browserControls = <>
+    <div className="items-toolbar encounters-toolbar">
+      <label className="search-box items-search">
+        <Search aria-hidden="true" size={18} />
+        <input
+          aria-label="Search encounters"
+          disabled={!workflow}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Search encounters"
+          type="search"
+          value={searchText}
+        />
+      </label>
+      <Metric
+        label="Loaded tables"
+        value={workflow ? workflow.stats.totalTableCount.toString() : '0'}
+      />
+      <Metric
+        label="Encounter slots"
+        value={workflow ? workflow.stats.totalSlotCount.toString() : '0'}
+      />
+      <Metric
+        label="Pending changes"
+        value={(editSession?.pendingEdits.length ?? 0).toString()}
+      />
+    </div>
+
+    {workflow ? (
+      <EditorSessionBar
+        canEdit={canEditEncounters && (selectedTable?.slots.length ?? 0) > 0}
+        isEditing={editSession !== null}
+        isStarting={isEditStarting}
+        label="Wild Encounters"
+        onStart={onStartEditSession}
+      />
+    ) : null}
+  </>;
+
   return (
     <>
       <section
@@ -45043,44 +45071,9 @@ function EncountersSection({
           <h2 id="encounters-heading">Wild Encounters</h2>
         </div>
 
-        <div className="items-toolbar encounters-toolbar">
-          <label className="search-box items-search">
-            <Search aria-hidden="true" size={18} />
-            <input
-              aria-label="Search encounters"
-              disabled={!workflow}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search encounters"
-              type="search"
-              value={searchText}
-            />
-          </label>
-          <Metric
-            label="Loaded tables"
-            value={workflow ? workflow.stats.totalTableCount.toString() : '0'}
-          />
-          <Metric
-            label="Encounter slots"
-            value={workflow ? workflow.stats.totalSlotCount.toString() : '0'}
-          />
-          <Metric
-            label="Pending changes"
-            value={(editSession?.pendingEdits.length ?? 0).toString()}
-          />
-        </div>
-
+        {!workflow ? browserControls : null}
         {workflow ? (
-          <EditorSessionBar
-            canEdit={canEditEncounters && (selectedTable?.slots.length ?? 0) > 0}
-            isEditing={editSession !== null}
-            isStarting={isEditStarting}
-            label="Wild Encounters"
-            onStart={onStartEditSession}
-          />
-        ) : null}
-
-        {workflow ? (
-          <div className="encounters-layout">
+          <RecordEditorWorkspace id="encounters" className="encounters-layout" browserControls={browserControls} browser={
             <div className="encounters-table" role="table" aria-label="Encounter tables">
               <div className="encounters-row encounters-row-heading" role="row">
                 <span role="columnheader">
@@ -45135,6 +45128,7 @@ function EncountersSection({
                 );
               })}
             </div>
+          }>
 
             <SelectedEncounterPanel
               areaTabs={areaTabs}
@@ -45160,7 +45154,7 @@ function EncountersSection({
               table={selectedTable}
               tables={workflow.tables}
             />
-          </div>
+          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">Open Wild Encounters from the sidebar to load backend wild data.</p>
         )}
@@ -49299,7 +49293,7 @@ function TeraRaidsSection({
         ) : null}
 
         {workflow ? (
-          <div className="encounters-layout">
+          <RecordEditorWorkspace id="teraRaids" className="encounters-layout" browser={
             <div
               className="raid-rewards-table"
               role="table"
@@ -49333,6 +49327,7 @@ function TeraRaidsSection({
                 );
               })}
             </div>
+          }>
 
             <aside
               aria-label={translateLiteral('Selected Tera raid')}
@@ -49634,7 +49629,7 @@ function TeraRaidsSection({
                 <p className="empty-copy">{translateLiteral('No Tera raid selected.')}</p>
               )}
             </aside>
-          </div>
+          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">
             {translateLiteral('Open Tera Raids from Workflows to load backend raid data.')}
@@ -50052,7 +50047,7 @@ function RaidBattlesSection({
         ) : null}
 
         {workflow ? (
-          <div className="encounters-layout">
+          <RecordEditorWorkspace id="raidBattles" className="encounters-layout" browser={
             <div
               className="raid-rewards-table"
               role="table"
@@ -50088,6 +50083,7 @@ function RaidBattlesSection({
                 </p>
               ) : null}
             </div>
+          }>
 
             <SelectedRaidBattlePanel
               battleSlot={selectedBattleSlot}
@@ -50102,7 +50098,7 @@ function RaidBattlesSection({
               table={selectedTable}
               tables={workflow.tables}
             />
-          </div>
+          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">Open Raid Battles from Workflows to load backend battle data.</p>
         )}
@@ -50820,7 +50816,7 @@ function RaidRewardsSection({
         ) : null}
 
         {workflow ? (
-          <div className="encounters-layout">
+          <RecordEditorWorkspace id="raidRewards" className="encounters-layout" browser={
             <div
               className="raid-rewards-table"
               role="table"
@@ -50856,6 +50852,7 @@ function RaidRewardsSection({
                 </p>
               ) : null}
             </div>
+          }>
 
             <SelectedRaidRewardPanel
               canEditRaidRewards={canEditRaidRewards}
@@ -50871,7 +50868,7 @@ function RaidRewardsSection({
               table={selectedTable}
               tables={workflow.tables}
             />
-          </div>
+          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">{translateLiteral(emptyCopy)}</p>
         )}
@@ -51491,7 +51488,7 @@ function BehaviorSection({
         ) : null}
 
         {workflow ? (
-          <div className="encounters-layout behavior-layout">
+          <RecordEditorWorkspace id="behavior" className="encounters-layout behavior-layout" browser={
             <div className="raid-rewards-table" role="table" aria-label={translateLiteral('Behavior entries')}>
               <div className="raid-rewards-row raid-rewards-row-heading" role="row">
                 <span role="columnheader">{translateLiteral('Pokemon')}</span>
@@ -51533,6 +51530,7 @@ function BehaviorSection({
                 </div>
               ) : null}
             </div>
+          }>
 
             <SelectedBehaviorPanel
               canEditBehavior={canEditBehavior}
@@ -51543,7 +51541,7 @@ function BehaviorSection({
               onSelectEntry={onSelectEntry}
               onUpdateBehaviorEntryFields={onUpdateBehaviorEntryFields}
             />
-          </div>
+          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">
             {translateLiteral('Open Behavior from Workflows to load symbol behavior data.')}
@@ -52192,7 +52190,7 @@ function PlacementSection({
         ) : null}
 
         {workflow ? (
-          <div className="encounters-layout placement-layout">
+          <RecordEditorWorkspace id="placement" className="encounters-layout placement-layout" browser={
             <div className="placement-browser-stack">
               {remotePaging?.isPageLoading ? (
                 <LoadingProgress className="is-compact" label={t('placement.loadingMatches')} />
@@ -52317,6 +52315,7 @@ function PlacementSection({
                 </nav>
               ) : null}
             </div>
+          }>
 
             <SelectedPlacementPanel
               canEditPlacement={canEditPlacement && canInteractWithSelectedPlacement}
@@ -52331,7 +52330,7 @@ function PlacementSection({
               placementGroup={selectedGroup}
               placedObject={selectedObject}
             />
-          </div>
+          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">Open Placement from Workflows to load backend placement data.</p>
         )}
@@ -53159,7 +53158,7 @@ function FlagworkSaveSection({
         </div>
 
         {workflow ? (
-          <div className="flagwork-layout">
+          <RecordEditorWorkspace id="flagworkSave" className="flagwork-layout" browser={
             <div className="flagwork-stack">
               <div className="flagwork-table" role="table" aria-label="Flagwork records">
                 <div className="flagwork-row flagwork-row-heading" role="row">
@@ -53215,13 +53214,14 @@ function FlagworkSaveSection({
                 ))}
               </div>
             </div>
+          }>
 
             <SelectedFlagworkSavePanel
               flag={selectedFlag}
               saveBlock={selectedSaveBlock}
               saveFile={workflow.saveFile}
             />
-          </div>
+          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">
             Open Flagwork from Workflows to inspect backend flagwork tables.
@@ -53461,7 +53461,7 @@ function BagHookSection({
         </div>
 
         {workflow ? (
-          <div className="flagwork-layout">
+          <RecordEditorWorkspace id="bagHook" className="flagwork-layout" browser={
             <div className="flagwork-stack">
               <div className="exefs-table" role="table" aria-label="Bag Hook slots">
                 <div className="exefs-row bag-hook-row exefs-row-heading" role="row">
@@ -53501,6 +53501,7 @@ function BagHookSection({
                 ))}
               </div>
             </div>
+          }>
 
             <aside aria-label="Selected Bag Hook slot" className="encounter-inspector">
               <div className="panel-heading">
@@ -53637,7 +53638,7 @@ function BagHookSection({
                 <p className="empty-copy">No Bag Hook slot selected.</p>
               )}
             </aside>
-          </div>
+          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">Open Bag Hook from Hooks to inspect the startup hook slots.</p>
         )}
@@ -55019,7 +55020,7 @@ function ExeFsPatchSection({
               {translateLiteral('No matching ExeFS records.')}
             </p>
           ) : (
-            <div className="flagwork-layout">
+            <RecordEditorWorkspace id="exefsPatches" className="flagwork-layout" browser={
             <div className="flagwork-stack">
               <div
                 className="exefs-table"
@@ -55093,6 +55094,7 @@ function ExeFsPatchSection({
                 ))}
               </div>
             </div>
+          }>
 
             <SelectedExeFsPatchPanel
               canStageWorkflow={canStageWorkflow}
@@ -55103,7 +55105,7 @@ function ExeFsPatchSection({
               patch={selectedPatch}
               segments={filteredSegments}
             />
-          </div>
+          </RecordEditorWorkspace>
           )
         ) : (
           <p className="empty-copy">
@@ -56325,7 +56327,7 @@ function StartingItemsSection({
         </div>
 
         {workflow ? (
-          <div className="flagwork-layout">
+          <RecordEditorWorkspace id="startingItems" className="flagwork-layout" browser={
             <div className="flagwork-stack">
               <div className="exefs-table starting-items-table" role="table" aria-label="Starting Items slots">
                 <div className="exefs-row starting-items-row exefs-row-heading" role="row">
@@ -56424,6 +56426,7 @@ function StartingItemsSection({
                 })}
               </div>
             </div>
+          }>
 
             <aside aria-label="Selected Starting Items slot" className="encounter-inspector">
               <div className="panel-heading">
@@ -56550,7 +56553,7 @@ function StartingItemsSection({
                 <p className="empty-copy">No Starting Items slot selected.</p>
               )}
             </aside>
-          </div>
+          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">
             Open Starting Items from Advanced Editors after installing Bag Hook.
@@ -58012,14 +58015,12 @@ function SettingsSection({
   availableUpdateKind,
   personalizationSettings,
   themeSettings,
-  editorLayout,
   hasBlockingProjectOperation,
   hasSvCacheRequestError,
   isSvCacheClearing,
   isSvCacheRefreshing,
   isSvCacheSettingsUpdating,
   isSvCacheWarming,
-  onChangeEditorLayout,
   onChangeLanguage,
   onChangeSvCacheLimit,
   onChangeSvCacheMode,
@@ -58038,14 +58039,12 @@ function SettingsSection({
   availableUpdateKind: AvailableUpdate['kind'] | null;
   personalizationSettings: ReactNode;
   themeSettings: ReactNode;
-  editorLayout: EditorLayoutPreference;
   hasBlockingProjectOperation: boolean;
   hasSvCacheRequestError: boolean;
   isSvCacheClearing: boolean;
   isSvCacheRefreshing: boolean;
   isSvCacheSettingsUpdating: boolean;
   isSvCacheWarming: boolean;
-  onChangeEditorLayout: (layout: EditorLayoutPreference) => void;
   onChangeLanguage: (language: LanguageCode) => Promise<void>;
   onChangeSvCacheLimit: (maxCacheSizeBytes: number) => void;
   onChangeSvCacheMode: (mode: TrinityCacheMode) => void;
@@ -58110,7 +58109,7 @@ function SettingsSection({
   const settingsTabs: readonly { id: SettingsTabId; icon: LucideIcon; label: string }[] = [
     { id: 'updates', icon: RefreshCw, label: t('settings.tabs.updates') },
     { id: 'language', icon: Languages, label: t('settings.language.title') },
-    { id: 'themes', icon: Palette, label: t('settings.tabs.layoutThemes') },
+    { id: 'themes', icon: Palette, label: t('settings.tabs.personalization') },
     { id: 'cache', icon: Layers, label: t('settings.tabs.dataCache') },
     { id: 'diagnostics', icon: Activity, label: t('settings.tabs.diagnostics') },
     { id: 'betaEditors', icon: Layers, label: t('settings.tabs.betaEditors') }
@@ -58281,54 +58280,6 @@ function SettingsSection({
           id="settings-tabpanel-themes"
           role="tabpanel"
         >
-      <section aria-labelledby="layout-settings-heading" className="settings-subsection">
-        <div className="settings-subsection-heading">
-          <Table2 aria-hidden="true" size={18} />
-          <div>
-            <h3 id="layout-settings-heading">{t('settings.layout.title')}</h3>
-            <p>{t('settings.layout.description')}</p>
-          </div>
-        </div>
-
-        <div
-          aria-label={t('settings.layout.groupLabel')}
-          className="layout-options"
-          role="radiogroup"
-        >
-          {(['classic', 'focused'] as const).map((layout) => {
-            const isSelected = editorLayout === layout;
-
-            return (
-              <button
-                aria-checked={isSelected}
-                className={`layout-option${isSelected ? ' layout-option-selected' : ''}`}
-                disabled={isSelected}
-                key={layout}
-                onClick={() => onChangeEditorLayout(layout)}
-                role="radio"
-                type="button"
-              >
-                <span
-                  aria-hidden="true"
-                  className={`layout-option-preview layout-option-preview-${layout}`}
-                >
-                  <span className="layout-option-preview-browser" />
-                  <span className="layout-option-preview-detail" />
-                </span>
-                <span className="layout-option-copy">
-                  <strong>{t(`settings.layout.${layout}`)}</strong>
-                  <span>{t(`settings.layout.${layout}.description`)}</span>
-                </span>
-                {isSelected ? (
-                  <small className="layout-option-selected-label">
-                    {t('settings.language.selected')}
-                  </small>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-      </section>
           <CategorySettings />
           {themeSettings}
           {personalizationSettings}
@@ -64335,6 +64286,17 @@ function getPokemonPersonalFieldDraftState(
   };
 }
 
+function getPokemonPersonalFieldLabel(
+  field: PokemonEditableField,
+  t: ReturnType<typeof useLocalization>['t'],
+  translateLiteral: ReturnType<typeof useLocalization>['translateLiteral']
+) {
+  return field.field === 'materialDropItem' ? t('pokemon.materialDrops.item')
+    : field.field === 'materialDropRate' ? t('pokemon.materialDrops.rate')
+    : field.field === 'materialDropCount' ? t('pokemon.materialDrops.count')
+    : translateLiteral(field.label);
+}
+
 function PokemonPersonalFieldInput({
   currentValue,
   disabled,
@@ -64362,11 +64324,9 @@ function PokemonPersonalFieldInput({
     currentValue
   );
   const { t, translateLiteral } = useLocalization();
-  const materialDropLabel = field.field === 'materialDropItem' ? t('pokemon.materialDrops.item')
-    : field.field === 'materialDropRate' ? t('pokemon.materialDrops.rate')
-    : field.field === 'materialDropCount' ? t('pokemon.materialDrops.count') : null;
-  const localizedFieldLabel = materialDropLabel ?? translateLiteral(field.label);
-  const localizedHelpText = materialDropLabel ? t('pokemon.materialDrops.help') : field.field.startsWith(alphaSizePrefix) ? t('pokemon.alphaSize.help') : disabledReason
+  const localizedFieldLabel = getPokemonPersonalFieldLabel(field, t, translateLiteral);
+  const isMaterialDrop = field.field.startsWith('materialDrop');
+  const localizedHelpText = isMaterialDrop ? t('pokemon.materialDrops.help') : field.field.startsWith(alphaSizePrefix) ? t('pokemon.alphaSize.help') : disabledReason
     ? translateLiteral(disabledReason)
     : getEditableFieldHelp(field, t, {
         domain: 'pokemon',
@@ -64374,7 +64334,7 @@ function PokemonPersonalFieldInput({
         label: localizedFieldLabel,
         optionCount: options.length
       });
-  const localizedHoverText = materialDropLabel ? t('pokemon.materialDrops.help') : field.field.startsWith(alphaSizePrefix) ? t('pokemon.alphaSize.help') : disabledReason
+  const localizedHoverText = isMaterialDrop ? t('pokemon.materialDrops.help') : field.field.startsWith(alphaSizePrefix) ? t('pokemon.alphaSize.help') : disabledReason
     ? translateLiteral(disabledReason)
     : getEditableFieldHoverHelp(field, t, {
         domain: 'pokemon',
@@ -64393,21 +64353,17 @@ function PokemonPersonalFieldInput({
     >
       <FieldLabel help={localizedHelpText} htmlFor={inputId} label={localizedFieldLabel} />
       {field.valueKind === 'boolean' ? (
-        <SearchableOptionInput
-          ariaLabel={localizedFieldLabel}
-          data-km-source-site="pokemon-personal-field-boolean-option"
-          wrapSelectedValue
-          disabled={disabled}
-          id={inputId}
-          isFiniteCatalog
-          onChange={onChange}
-          options={searchableBooleanOptions}
-          tooltipContent={localizedHoverText}
-          value={draftValue === '1' ? '1' : '0'}
-        />
+        <button type="button" role="switch" id={inputId} disabled={disabled}
+          className="species-matrix-switch" aria-label={localizedFieldLabel} aria-checked={draftValue === '1'}
+          aria-invalid={!draftState.isValid || undefined}
+          onClick={() => onChange(draftValue === '1' ? '0' : '1')}>
+          <span>{translateLiteral(draftValue === '1' ? 'Yes' : 'No')}</span>
+          <span className="species-matrix-switch-track" aria-hidden="true" />
+        </button>
       ) : options.length > 0 ? (
         <SearchableOptionInput
           ariaLabel={localizedFieldLabel}
+          ariaInvalid={!draftState.isValid || undefined}
           data-km-source-site="pokemon-personal-field-option"
           isFiniteCatalog={field.field === 'materialDropItem'}
           wrapSelectedValue
@@ -64421,6 +64377,7 @@ function PokemonPersonalFieldInput({
         <HoverTooltip content={localizedHoverText}>
           <input
             aria-label={localizedFieldLabel}
+            aria-invalid={!draftState.isValid || undefined}
             disabled={disabled}
             id={inputId}
             max={field.maximumValue ?? undefined}

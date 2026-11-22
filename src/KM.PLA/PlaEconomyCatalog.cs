@@ -249,6 +249,8 @@ internal sealed class PlaEconomyCatalog
 
     internal IReadOnlyList<PlaRecord> Records(string kind, IReadOnlyDictionary<string, byte[]> edited, string? selectedId = null)
     {
+        // Research pages include move-use tasks. Observe their move catalog even when staging a single non-move task.
+        if (kind == "research") _ = catalog.Moves;
         var records = Ids(kind).Where(id => selectedId is null || id == selectedId).Select(id => Record(kind, id, edited.GetValueOrDefault(PathFor(kind, id)))).ToArray();
         if (kind != "items") return records;
         var uses = new Dictionary<int, List<PlaRelatedRecord>>();

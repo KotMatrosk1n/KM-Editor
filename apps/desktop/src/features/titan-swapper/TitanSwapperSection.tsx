@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowRightLeft, FlaskConical, LockKeyhole, RotateCcw, Save, X } from 'lucide-react';
 import { type TitanSwapperUpdate, type TitanSwapperWorkflow } from '../../bridge/titanSwapperContracts';
@@ -114,7 +115,7 @@ export function TitanSwapperSection({ workflow, isStaging, isEditing, isEditStar
         </button>
         <span className="draft-action-summary">{t('titanSwapper.draftCount', { count: entries.length })}</span>
       </EditorSessionBarActions> : null}
-      <div className="titan-swapper-layout">
+      <RecordEditorWorkspace id="titanSwapper" className="titan-swapper-layout" browser={
         <nav className="titan-swapper-list" aria-label={t('titanSwapper.encounters')}>
           <label className="field"><span>{t('titanSwapper.search')}</span>
             <input type="search" value={search} onChange={event => setSearch(event.target.value)} /></label>
@@ -127,6 +128,7 @@ export function TitanSwapperSection({ workflow, isStaging, isEditing, isEditStar
           </button>)}</div>
           {rows.length === 0 ? <p className="muted">{t('titanSwapper.empty')}</p> : null}
         </nav>
+      }>
         {selected ? <section className="titan-swapper-detail" aria-labelledby="titan-swapper-selected">
           <div className="titan-swapper-detail-heading"><div><h3 id="titan-swapper-selected" data-localization-ignore="true">{speciesName(selected.storySpecies)}</h3>
             <p className="muted">{phaseName(selected.phase)}</p></div>
@@ -160,7 +162,7 @@ export function TitanSwapperSection({ workflow, isStaging, isEditing, isEditStar
           <details><summary>{t('titanSwapper.details')}</summary><p data-localization-ignore="true"><code>{selected.id}</code></p>
             <p>{t('titanSwapper.outputHelp')}</p></details>
         </section> : null}
-      </div>
+      </RecordEditorWorkspace>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />
   </FocusedEditorWorkspace>;

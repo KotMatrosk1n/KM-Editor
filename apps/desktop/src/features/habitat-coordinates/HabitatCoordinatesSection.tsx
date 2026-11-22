@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import {
   ChevronLeft,
   ChevronRight,
@@ -633,13 +634,12 @@ export function HabitatCoordinatesSection({
           </div>
         ) : null}
 
-        <div className="habitat-coordinate-cards">
-          <section aria-labelledby="habitat-coordinate-list-heading" className="habitat-coordinate-card">
+        <RecordEditorWorkspace id="habitatCoordinates" className="habitat-coordinate-card-workspace"
+          browserControls={<>
             <div className="habitat-coordinate-card-heading">
               <h3 id="habitat-coordinate-list-heading">{t('habitatCoordinates.list.title')}</h3>
               <span data-localization-ignore="true">{page?.totalMatches ?? 0}</span>
             </div>
-
             <form
               aria-busy={isLoading}
               className="habitat-coordinate-search"
@@ -672,8 +672,8 @@ export function HabitatCoordinatesSection({
                 <span>{t('habitatCoordinates.search.action')}</span>
               </button>
             </form>
-
-            <div
+          </>}
+          browser={<div
               aria-busy={isLoading}
               aria-labelledby={page ? `habitat-region-tab-${page.region}` : undefined}
               className="habitat-coordinate-list"
@@ -751,9 +751,8 @@ export function HabitatCoordinatesSection({
               {page && page.records.length === 0 ? (
                 <p className="empty-copy">{t('habitatCoordinates.list.empty')}</p>
               ) : null}
-            </div>
-
-            <div className="habitat-coordinate-pagination">
+            </div>}
+          browserFooter={<div className="habitat-coordinate-pagination">
               <button
                 className="secondary-button compact-button"
                 disabled={!canGoPrevious || isLoading || !page}
@@ -781,9 +780,7 @@ export function HabitatCoordinatesSection({
                 <span>{t('habitatCoordinates.page.next')}</span>
                 <ChevronRight aria-hidden="true" size={16} />
               </button>
-            </div>
-          </section>
-
+            </div>}>
           <section aria-labelledby="habitat-coordinate-editor-heading" className="habitat-coordinate-card">
             <div className="habitat-coordinate-card-heading">
               <h3 id="habitat-coordinate-editor-heading">{t('habitatCoordinates.editor.title')}</h3>
@@ -952,7 +949,7 @@ export function HabitatCoordinatesSection({
               </>
             )}
           </section>
-        </div>
+        </RecordEditorWorkspace>
 
         {feedback ? (
           <div
