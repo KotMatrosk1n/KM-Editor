@@ -12,18 +12,36 @@ import { MergePackageDialog } from './MergePackageDialog';
 import './MergeWorkspace.css';
 import { projectBridge, type ProjectBridge } from '../../bridge/projectBridge';
 import { MergeOutputSafety } from './MergeOutputSafety';
-import { readMergeDraft, saveMergeDraft } from './mergeWorkspaceDraft';
+import { readMergeDraft, saveMergeDraft, type MergeDraftState } from './mergeWorkspaceDraft';
 
 const games = ['sword', 'shield', 'scarlet', 'violet', 'za'];
 const pageSize = 50;
-export default function MergeWorkspace({ paths, active, onExportingChange, armWriteGuard = async () => true, bridge = projectBridge }: {
+type MergeWorkspaceProps = {
   armWriteGuard?: () => Promise<boolean>;
   bridge?: ProjectBridge; paths: ProjectPaths; active: boolean; onExportingChange: (busy: boolean) => void;
-}) {
+};
+
+export default function MergeWorkspace(props: MergeWorkspaceProps) {
+  const { t } = useLocalization();
+  const [saved, setSaved] = useState<MergeDraftState>();
+  useEffect(() => {
+    let current = true;
+    void readMergeDraft().then(result => { if (current) setSaved(result); });
+    return () => { current = false; };
+  }, []);
+  if (!saved) return props.active
+    ? <section className="panel wide-panel merge-workspace" aria-label={t('mergeWorkspace.title')}>
+      <LoadingProgress label={t('ordinaryDraft.status.loading')} />
+    </section>
+    : null;
+  return <MergeWorkspaceEditor {...props} saved={saved} />;
+}
+
+function MergeWorkspaceEditor({ paths, active, onExportingChange, armWriteGuard = async () => true, bridge = projectBridge, saved: initial }: MergeWorkspaceProps & { saved: MergeDraftState }) {
   const { t, translateLiteral } = useLocalization();
   const label = (key: string) => t(`mergeWorkspace.${key}`);
-  const [saved] = useState(readMergeDraft);
-  const [draftSaved, setDraftSaved] = useState(true);
+  const saved = initial.draft;
+  const [draftSaved, setDraftSaved] = useState(initial.available);
   const [mode, setMode] = useState<'basic' | 'advanced'>(saved?.mode ?? 'basic');
   const [game, setGame] = useState<string>(saved?.game ?? '');
   const [outputMode, setOutputMode] = useState<MergeRequest['outputMode']>(saved?.outputMode ?? 'standalone');
@@ -52,6 +70,9 @@ export default function MergeWorkspace({ paths, active, onExportingChange, armWr
   const [filePage, setFilePage] = useState(0);
   const [written, setWritten] = useState<number | null>(null);
   const [safetyScope, setSafetyScope] = useState<{ game: ProjectGame; projectId: string; outputRoot: string } | null>(null);
+  const draft = useMemo(() => ({ mode, game, outputMode, outputRoot, baseRomFs, baseExeFs, supportFolder, sources, choices }),
+    [mode, game, outputMode, outputRoot, baseRomFs, baseExeFs, supportFolder, sources, choices]);
+  const lastDraft = useRef(draft);
   const request: MergeRequest = useMemo(() => ({ mode, game: game || null, outputMode, outputRoot,
     sources, choices: Object.entries(choices).map(([conflictId, sourceId]) => ({ conflictId, sourceId })),
     baseRomFs: mode === 'advanced' ? baseRomFs || null : null,
@@ -73,8 +94,12 @@ export default function MergeWorkspace({ paths, active, onExportingChange, armWr
   ] : []);
   useEffect(() => { setPage(0); setFilePage(0); }, [query, selectedFile, result]);
   useEffect(() => {
-    setDraftSaved(saveMergeDraft({ mode, game, outputMode, outputRoot, baseRomFs, baseExeFs, supportFolder, sources, choices }));
-  }, [mode, game, outputMode, outputRoot, baseRomFs, baseExeFs, supportFolder, sources, choices]);
+    if (lastDraft.current === draft) return;
+    lastDraft.current = draft;
+    let current = true;
+    void saveMergeDraft(draft).then(result => { if (current) setDraftSaved(result); });
+    return () => { current = false; };
+  }, [draft]);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => { if (!active) setPackageQueue([]); }, [active]);
 

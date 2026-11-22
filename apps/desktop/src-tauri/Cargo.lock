@@ -2076,8 +2076,10 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-shell",
  "tauri-plugin-updater",
+ "tempfile",
  "tokio",
  "wgpu",
+ "windows-sys 0.61.2",
  "winit",
 ]
 
