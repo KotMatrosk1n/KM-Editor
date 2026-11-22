@@ -53,7 +53,7 @@ const sha256FingerprintSchema = z.string().regex(/^[A-Fa-f0-9]{64}$/u);
 const sourceBindingSchema = z
   .strictObject({
     outputMode: z
-      .enum(['standalone', 'trinityModManager', 'trinityBypass'])
+      .enum(['standalone', 'trinityModManager', 'trinityBypass', 'zaRecomp'])
       .nullable(),
     outputProfileId: associationIdSchema.nullable(),
     outputRootFingerprint: sha256FingerprintSchema,

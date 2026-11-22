@@ -28,15 +28,16 @@ export function TrinityOutputConfirmationModal({
 }: TrinityOutputConfirmationModalProps) {
   const { t, translateLiteral } = useLocalization();
   const isStandalone = mode === 'standalone';
+  const isZaRecomp = mode === 'zaRecomp';
   const isTrinityBypass = mode === 'trinityBypass';
   const headingId = 'trinity-output-confirmation-heading';
-  const title = isStandalone
+  const title = isZaRecomp ? 'Output for ZA Recomp?' : isStandalone
     ? 'Output as Standalone?'
     : isTrinityBypass
       ? 'Output for Trinity Bypass?'
       : 'Output for Trinity Mod Manager?';
   const outputRootLabel = outputRootPath?.trim() || 'the configured Output Root';
-  const OutputIcon = isStandalone ? Package : isTrinityBypass ? ShieldCheck : GitMerge;
+  const OutputIcon = isStandalone || isZaRecomp ? Package : isTrinityBypass ? ShieldCheck : GitMerge;
   const dialogRef = useModalDialog<HTMLElement>({
     canClose: !isApplying,
     onClose: onCancel
@@ -56,7 +57,15 @@ export function TrinityOutputConfirmationModal({
           <OutputIcon aria-hidden="true" size={18} />
           <h2 id={headingId}>{translateLiteral(title)}</h2>
         </div>
-        {isStandalone ? (
+        {isZaRecomp ? (
+          <p className="modal-copy">
+            {translateLiteral('KM Editor will write loose RomFS files under')}{' '}
+            <strong data-localization-ignore={Boolean(outputRootPath)}>
+              {outputRootPath ? outputRootLabel : translateLiteral(outputRootLabel)}
+            </strong>{' '}
+            {translateLiteral('for installation in your ZA Recomp mods folder.')}
+          </p>
+        ) : isStandalone ? (
           <>
             <p className="modal-copy">
               {translateLiteral('KM Editor will write the edited files under')}{' '}

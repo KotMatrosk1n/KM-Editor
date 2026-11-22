@@ -181,6 +181,10 @@ function MergeWorkspaceEditor({ paths, active, onExportingChange, armWriteGuard 
     && `${conflict.file} ${conflict.label}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
   const unresolved = result?.conflicts.filter(conflict => !choices[conflict.id]).length ?? 0;
   const gameOptions = [{ value: '', label: label('automatic') }, ...games.map(value => ({ value, label: translateLiteral(value === 'za' ? 'Pokemon Legends Z-A' : `Pokemon ${value[0]!.toUpperCase()}${value.slice(1)}`) }))];
+  const changeGame = (value: string) => {
+    setGame(value);
+    if (value && value !== 'za' && outputMode === 'za-recomp') setOutputMode('standalone');
+  };
   const changeSource = (id: string, update: Partial<MergeSource>) => {
     const source = sourceRef.current.find(source => source.id === id);
     if (!source) return;
@@ -212,9 +216,11 @@ function MergeWorkspaceEditor({ paths, active, onExportingChange, armWriteGuard 
     </div>
     <div className="merge-workspace-settings merge-workspace-output-settings">
       <div className="path-field"><label htmlFor="merge-game">{label('game')}</label><SearchableOptionInput id="merge-game" ariaLabel={label('game')}
-        value={game} options={gameOptions} onChange={setGame} disabled={false} isFiniteCatalog /></div>
+        value={game} options={gameOptions} onChange={changeGame} disabled={false} isFiniteCatalog /></div>
       <div className="path-field"><label htmlFor="merge-output-mode">{label('outputMode')}</label><SearchableOptionInput id="merge-output-mode" ariaLabel={label('outputMode')}
-        value={outputMode} options={(['standalone', 'trinity', 'bypass'] as const).map(value => ({ value, label: label(value) }))}
+        value={outputMode} options={(['standalone', 'trinity', 'bypass', 'za-recomp'] as const)
+          .filter(value => value !== 'za-recomp' || !game || game === 'za')
+          .map(value => ({ value, label: value === 'za-recomp' ? 'ZA Recomp' : label(value) }))}
         onChange={value => setOutputMode(value as MergeRequest['outputMode'])} disabled={false} isFiniteCatalog /></div>
       <div className="path-field merge-workspace-destination"><label htmlFor="merge-output">{label('destination')}</label>
         <div className="merge-workspace-path"><input id="merge-output" value={outputRoot} onChange={event => setOutputRoot(event.target.value)} />

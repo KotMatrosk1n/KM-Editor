@@ -258,6 +258,7 @@ public static class EditSessionBridgeMapper
                     "standalone" => ChangePlanOutputModeDto.Standalone,
                     "trinityModManager" => ChangePlanOutputModeDto.TrinityModManager,
                     "trinityBypass" => ChangePlanOutputModeDto.TrinityBypass,
+                    "zaRecomp" => ChangePlanOutputModeDto.ZaRecomp,
                     null => null,
                     _ => throw new ArgumentOutOfRangeException(nameof(binding)),
                 });
@@ -281,6 +282,7 @@ public static class EditSessionBridgeMapper
                     ChangePlanOutputModeDto.Standalone => "standalone",
                     ChangePlanOutputModeDto.TrinityModManager => "trinityModManager",
                     ChangePlanOutputModeDto.TrinityBypass => "trinityBypass",
+                    ChangePlanOutputModeDto.ZaRecomp => "zaRecomp",
                     null => null,
                     _ => throw new ArgumentOutOfRangeException(nameof(binding)),
                 });

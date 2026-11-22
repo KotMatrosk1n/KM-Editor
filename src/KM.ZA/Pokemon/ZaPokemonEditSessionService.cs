@@ -3972,6 +3972,17 @@ internal sealed partial class ZaPokemonEditSessionService
             }
 
             var changesRegularCount = DexPlacementChangesRegularCount(workflow, dexEdit);
+            if (changesRegularCount && outputMode == ZaOutputMode.ZaRecomp)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Export this Pokédex size change as Standalone, then convert it to ZA Recomp with Mod Merger.",
+                    ZaEditSessionSupport.PokemonDomain,
+                    file: ZaExeFsReservedRegionLedger.ExeFsMainPath,
+                    field: ZaPokemonWorkflowService.DexPlacementField));
+                return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+            }
+
             var isolateTrinityModManagerRomFs = changesRegularCount
                 && outputMode == ZaOutputMode.TrinityModManager;
             if (isolateTrinityModManagerRomFs

@@ -970,7 +970,7 @@ export const editSessionSchema = z.strictObject({
     .strictObject({
       outputProfileId: pendingEditAssociationIdSchema.nullable(),
       outputMode: z
-        .enum(["standalone", "trinityModManager", "trinityBypass"])
+        .enum(["standalone", "trinityModManager", "trinityBypass", "zaRecomp"])
         .nullable(),
       outputRootFingerprint: z.string().regex(/^[A-Fa-f0-9]{64}$/u),
       projectId: z.string().min(1).max(128),
@@ -1016,6 +1016,7 @@ export const validateEditSessionRequestSchema = z.strictObject({
 export const changePlanOutputModeSchema = z.enum([
   "standalone",
   "trinityModManager",
+  "zaRecomp",
   "trinityBypass",
 ]);
 

@@ -391,6 +391,7 @@ function validOutputMode(
   return (
     value === null ||
     value === 'standalone' ||
+    value === 'zaRecomp' ||
     value === 'trinityModManager' ||
     value === 'trinityBypass'
   );

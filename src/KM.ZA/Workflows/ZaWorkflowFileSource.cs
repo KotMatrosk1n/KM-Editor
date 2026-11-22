@@ -2486,6 +2486,7 @@ internal sealed class ZaWorkflowFileSource
             ZaOutputMode.Standalone => StandaloneOutputModeKey,
             ZaOutputMode.TrinityModManager => TrinityModManagerOutputModeKey,
             ZaOutputMode.TrinityBypass => TrinityBypassOutputModeKey,
+            ZaOutputMode.ZaRecomp => "za.recomp",
             _ => throw new ArgumentOutOfRangeException(nameof(outputMode), outputMode, null),
         };
     }
@@ -2541,7 +2542,7 @@ internal sealed class ZaWorkflowFileSource
             ZaOutputMode.TrinityModManager when isolateTrinityModManagerRomFs =>
                 $"{TrinityModManagerRomFsDirectory}/{normalizedVirtualPath}",
             ZaOutputMode.TrinityModManager => normalizedVirtualPath,
-            ZaOutputMode.TrinityBypass => ToRelativePath(normalizedVirtualPath),
+            ZaOutputMode.TrinityBypass or ZaOutputMode.ZaRecomp => ToRelativePath(normalizedVirtualPath),
             _ => throw new ArgumentOutOfRangeException(nameof(outputMode), outputMode, null),
         };
     }

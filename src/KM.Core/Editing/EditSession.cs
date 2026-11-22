@@ -94,7 +94,7 @@ public sealed record EditSessionAuthoringBinding
         }
 
         if (outputMode is not null
-            && outputMode is not ("standalone" or "trinityModManager" or "trinityBypass"))
+            && outputMode is not ("standalone" or "trinityModManager" or "trinityBypass" or "zaRecomp"))
         {
             throw new ArgumentException("The output mode authoring binding is invalid.", nameof(outputMode));
         }

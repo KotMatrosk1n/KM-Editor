@@ -7,7 +7,7 @@ import { sendProjectBridgeRequest } from '../../bridge/projectBridgeRequest';
 export type MergeSource = { id: string; path: string; game: string | null; layout: string | null;
   packageIds?: string[] | null; packageScanToken?: string | null; packageCount?: number };
 export type MergeRequest = {
-  mode: 'basic' | 'advanced'; game: string | null; outputMode: 'standalone' | 'trinity' | 'bypass'; outputRoot: string;
+  mode: 'basic' | 'advanced'; game: string | null; outputMode: 'standalone' | 'trinity' | 'bypass' | 'za-recomp'; outputRoot: string;
   sources: MergeSource[]; choices: { conflictId: string; sourceId: string }[];
   baseRomFs: string | null; baseExeFs: string | null; supportFolder: string | null; reviewToken?: string | null;
 };

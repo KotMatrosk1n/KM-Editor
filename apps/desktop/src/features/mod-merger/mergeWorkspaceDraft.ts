@@ -8,7 +8,7 @@ const game = z.enum(['sword', 'shield', 'scarlet', 'violet', 'za']);
 const path = z.string().max(4096);
 const schema = z.object({
   mode: z.enum(['basic', 'advanced']), game: game.or(z.literal('')),
-  outputMode: z.enum(['standalone', 'trinity', 'bypass']), outputRoot: path,
+  outputMode: z.enum(['standalone', 'trinity', 'bypass', 'za-recomp']), outputRoot: path,
   baseRomFs: path, baseExeFs: path, supportFolder: path,
   sources: z.array(z.object({ id: z.string().max(80), path, game: game.nullable(),
     layout: z.enum(['standalone', 'trinity', 'bypass', 'independent']).nullable(),

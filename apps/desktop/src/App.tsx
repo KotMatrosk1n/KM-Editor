@@ -3920,10 +3920,11 @@ export function App({
             id: 'trinityModManager' as const,
             label: t('changeSets.outputMode.trinityModManager')
           },
-          { id: 'trinityBypass' as const, label: t('changeSets.outputMode.trinityBypass') }
+          { id: 'trinityBypass' as const, label: t('changeSets.outputMode.trinityBypass') },
+          ...(isPokemonLegendsZAProject ? [{ id: 'zaRecomp' as const, label: 'ZA Recomp' }] : [])
         ]
       : [{ id: 'standalone' as const, label: t('changeSets.outputMode.standalone') }],
-    [supportsTrinityOutput, t]
+    [isPokemonLegendsZAProject, supportsTrinityOutput, t]
   );
   const availableChangeSetOutputProfiles = useMemo(
     () => (projectWorkspaceDocument?.outputProfiles ?? []).map((profile) => ({
@@ -22174,6 +22175,7 @@ export function App({
               isEditSessionMutating={isEditSessionMutating}
               isSessionValidating={isSessionValidating}
               supportsTrinityOutput={supportsTrinityOutput && !editSession?.authoringBinding}
+              supportsZaRecompOutput={isPokemonLegendsZAProject && !editSession?.authoringBinding}
               onCancelEditSession={handleCancelEditSession}
               onOpenEditor={handleNavigateSection}
               onRemovePendingEdit={handleRemovePendingEdit}
@@ -58612,6 +58614,7 @@ function ChangesSection({
   isChangePlanCreating,
   isEditSessionMutating,
   supportsTrinityOutput,
+  supportsZaRecompOutput,
   isSessionValidating,
   onCancelEditSession,
   onOpenEditor,
@@ -58633,6 +58636,7 @@ function ChangesSection({
   isChangePlanCreating: boolean;
   isEditSessionMutating: boolean;
   supportsTrinityOutput: boolean;
+  supportsZaRecompOutput: boolean;
   isSessionValidating: boolean;
   onCancelEditSession: () => void;
   onOpenEditor: (section: WorkbenchSection) => void;
@@ -58819,6 +58823,23 @@ function ChangesSection({
                   size={18}
                 />
               </button>
+              {supportsZaRecompOutput ? (
+                <button
+                  aria-busy={isChangePlanApplying || undefined}
+                  className="secondary-button"
+                  disabled={!canSaveValidatedChanges}
+                  onClick={() => onRequestTrinityOutput('zaRecomp')}
+                  type="button"
+                >
+                  <BusyActionContent
+                    busyLabel="Outputting"
+                    icon={<Package aria-hidden="true" size={18} />}
+                    isBusy={isChangePlanApplying}
+                    label="ZA Recomp"
+                    size={18}
+                  />
+                </button>
+              ) : null}
             </>
           ) : (
             <button
