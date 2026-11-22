@@ -116,7 +116,9 @@ internal sealed class ZaFashionLineupCatalogDocument
         }
     }
 
-    public byte[] Write()
+    public byte[] Write(
+        IReadOnlyDictionary<(int Lineup, int Entry), IReadOnlyList<ZaFashionLineupConditionGroupData>>?
+            replacementConditions = null)
     {
         var builder = new FlatBufferBuilder(1024);
         var lineupOffsets = new int[Lineups.Count];
@@ -139,7 +141,9 @@ internal sealed class ZaFashionLineupCatalogDocument
                         "A Fashion Catalog lineup-entry identity does not match its vector position.");
                 }
 
-                var groups = WriteConditionGroups(builder, entry.ConditionGroups);
+                var conditions = replacementConditions?.GetValueOrDefault((lineupIndex, entryIndex))
+                    ?? entry.ConditionGroups;
+                var groups = WriteConditionGroups(builder, conditions);
                 builder.StartTable(2);
                 builder.AddOffset(1, groups.Value, 0);
                 ZaFashionCatalogFlatBufferSupport.AddUInt(
@@ -168,11 +172,14 @@ internal sealed class ZaFashionLineupCatalogDocument
         return builder.SizedByteArray();
     }
 
-    public string CreateStructureRevision() =>
+    public string CreateStructureRevision(
+        IReadOnlyDictionary<(int Lineup, int Entry), IReadOnlyList<ZaFashionLineupConditionGroupData>>?
+            replacementConditions = null) =>
         CreateRevision(
             "KM.ZA.FashionCatalog.LineupStructure.v1",
             includeIdentity: true,
-            includeConditions: true);
+            includeConditions: true,
+            replacementConditions: replacementConditions);
 
     public string CreateIdentityRevision() =>
         CreateRevision(
@@ -274,7 +281,9 @@ internal sealed class ZaFashionLineupCatalogDocument
     private string CreateRevision(
         string domain,
         bool includeIdentity,
-        bool includeConditions)
+        bool includeConditions,
+        IReadOnlyDictionary<(int Lineup, int Entry), IReadOnlyList<ZaFashionLineupConditionGroupData>>?
+            replacementConditions = null)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         ZaFashionCatalogFlatBufferSupport.Append(hash, domain);
@@ -294,7 +303,9 @@ internal sealed class ZaFashionLineupCatalogDocument
 
                 if (includeConditions)
                 {
-                    AppendConditionGroups(hash, entry.ConditionGroups);
+                    var groups = replacementConditions?.GetValueOrDefault((lineup.PhysicalIndex, entry.PhysicalIndex))
+                        ?? entry.ConditionGroups;
+                    AppendConditionGroups(hash, groups);
                 }
             }
         }

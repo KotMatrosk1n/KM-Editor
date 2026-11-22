@@ -5218,7 +5218,7 @@ export const zaBehaviorWorkflowSchema = z.strictObject({
     form: z.number().int(), gender: z.number().int(), sourceFile: z.string(), sourceLayer: z.string(),
       profile: z.string(), isInitialized: z.boolean(), tags: z.array(z.string()), fields: z.record(z.string(), z.string()),
       vanillaTags: z.array(z.string()), vanillaFields: z.record(z.string(), z.string()), vanillaProfile: z.string(),
-      cityRoaming: z.enum(['enabled', 'disabled', 'unsupported', 'unavailable'])
+      cityRoaming: z.enum(['enabled', 'disabled', 'native', 'native-off', 'unsupported', 'unavailable', 'ground', 'hover'])
   })),
   fields: z.array(z.strictObject({
     field: z.string(), label: z.string(), minimum: z.number(), maximum: z.number(),

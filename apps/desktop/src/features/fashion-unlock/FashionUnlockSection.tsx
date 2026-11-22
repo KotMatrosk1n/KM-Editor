@@ -75,7 +75,7 @@ export function FashionUnlockSection({
     isMatchingGame &&
     !hasConflictingPendingState &&
     workflow?.summary.availability === 'available' &&
-    workflow.installStatus === 'installed' &&
+    (workflow.installStatus === 'installed' || (isZa && workflow.installStatus === 'available')) &&
     workflow.canUninstall;
   const canReviewPlan = hasStagedChange && !isBusy;
   const canApplyPlan =
@@ -90,12 +90,12 @@ export function FashionUnlockSection({
     ? workflow?.ownershipCheckOffsetHex
     : workflow?.directGetterOffsetHex;
   const unlockHelp = isZa
-    ? 'Fashion Unlock makes Z-A clothing available in the wardrobe from opening field gameplay. Normal cutscene and context restrictions still apply.'
+    ? 'Fashion Unlock makes Z-A clothing available in the wardrobe and unlocks five quest hairstyles at the Hair Salon. Normal cutscene and context restrictions still apply.'
     : isScarletViolet
       ? 'Fashion Unlock makes Scarlet/Violet dress-up ownership checks return unlocked at runtime, without editing the save file.'
       : 'Fashion Unlock makes Sword/Shield fashion ownership checks return unlocked at runtime, without importing a PKHeX save block.';
   const removalHelp = isZa
-    ? 'Removing Fashion Unlock restores the wardrobe checks. Outfit changes saved during gameplay remain in the save file.'
+    ? 'Removing Fashion Unlock restores the wardrobe and hairstyle checks. Outfit changes saved during gameplay remain in the save file.'
     : isScarletViolet
       ? 'KM edits only the verified dress-up ownership check bytes in exefs/main; acquired clothing data in the save file stays untouched.'
       : 'KM edits only the verified ownership getter bytes in exefs/main; gender is not selected because the check result is forced after the save has already loaded.';

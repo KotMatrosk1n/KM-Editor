@@ -127,11 +127,22 @@ internal sealed class ZaBehaviorWorkflowService(ZaWorkflowFileSource files)
         {
             foreach (var path in new[] { ZaCityRoamingDocument.TemplatePath, ZaCityRoamingDocument.ScenarioPath })
                 citySources.Add(path, files.Read(project, path));
-            city = new(citySources[ZaCityRoamingDocument.TemplatePath].Bytes, citySources[ZaCityRoamingDocument.ScenarioPath].Bytes);
+            var templates = citySources[ZaCityRoamingDocument.TemplatePath].Bytes;
+            var scenarios = citySources[ZaCityRoamingDocument.ScenarioPath].Bytes;
+            try
+            {
+                var tags = files.Read(project, ZaCityRoamingDocument.TagPath);
+                city = new(templates, scenarios, tags.Bytes);
+                citySources.Add(ZaCityRoamingDocument.TagPath, tags);
+            }
+            catch (Exception exception) when (ZaBehaviorSettings.SourceFailure(exception))
+            {
+                city = new(templates, scenarios);
+            }
         }
         catch (Exception e) when (ZaBehaviorSettings.SourceFailure(e)) { citySources.Clear(); }
         var cityStatus = resources.Select(r => r.SpeciesId).Distinct().ToDictionary(s => s,
-            s => city?.Status(s) ?? (ZaCityRoamingDocument.Profiles.Any(p => p.Species == s) ? "unavailable" : "unsupported"));
+            s => city?.Status(s) ?? "unavailable");
         return new(new(summary, resources.Select(r => r with { CityRoaming = cityStatus[r.SpeciesId] }).ToArray(),
             ZaBehaviorSettings.Fields, ZaBehaviorSettings.Options, diagnostics), sources, catalog, citySources, city);
     }

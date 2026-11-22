@@ -47,7 +47,13 @@ export function ZaBehaviorSection(props: Props) {
     let cityRoaming = resource.cityRoaming;
     const cityEdit = editSession?.pendingEdits.find(e => e.domain === 'workflow.behavior' && e.field === 'cityRoaming' &&
       e.recordId?.slice(0, 4) === resource.entryId.slice(0, 4));
-    if (cityEdit) cityRoaming = cityEdit.newValue === 'true' ? 'enabled' : 'disabled';
+    switch (cityEdit?.newValue) {
+      case 'true': cityRoaming = 'enabled'; break;
+      case 'false': cityRoaming = 'disabled'; break;
+      case 'off': cityRoaming = 'native-off'; break;
+      case 'ground': case 'hover': cityRoaming = cityEdit.newValue; break;
+      case 'default': cityRoaming = resource.cityRoaming === 'native-off' ? 'native' : 'unsupported'; break;
+    }
     const tags = restore ? resource.vanillaTags : resource.tags;
     let outsideProfile = cityProfile(tags);
     const initialization = pending.some(e => e.field === 'initialize');
@@ -60,7 +66,11 @@ export function ZaBehaviorSection(props: Props) {
     return { ...resource, fields, profile, cityRoaming, cityProfile: outsideProfile, isInitialized: initialization || (tags.includes('State_usually') && tags.includes('WildTeam')) };
   }), [workflow.resources, editSession]);
   const entry = resources.find(r => r.entryId === selectedEntryId) ?? null;
-  const current = entry ? { ...entry.fields, profile: entry.profile, cityProfile: entry.cityProfile, cityRoaming: String(entry.cityRoaming === 'enabled') } : {} as Changes;
+  const movement = entry?.cityRoaming;
+  const nativeMovement = movement === 'native' || movement === 'native-off';
+  const movementChoice = movement === 'enabled' ? 'true' : movement === 'disabled' ? 'false'
+    : movement === 'native-off' ? 'off' : movement === 'ground' || movement === 'hover' ? movement : 'default';
+  const current = entry ? { ...entry.fields, profile: entry.profile, cityProfile: entry.cityProfile, cityRoaming: movementChoice } : {} as Changes;
   const cityDraft = entry ? Object.entries(drafts).find(([id, changes]) =>
     id.slice(0, 4) === entry.entryId.slice(0, 4) && Object.hasOwn(changes, 'cityRoaming'))?.[1].cityRoaming : undefined;
   const draft: Changes = entry ? { ...drafts[entry.entryId], ...(cityDraft === undefined ? {} : { cityRoaming: cityDraft }) } : {};
@@ -195,8 +205,21 @@ export function ZaBehaviorSection(props: Props) {
           <label className="za-behavior-city-roaming"><input type="checkbox" checked={values.cityRoaming === 'true'} disabled={!editable}
             onChange={e => change('cityRoaming', String(e.target.checked))} /> {t('behavior.za.cityRoaming')}</label>
           <small>{t('behavior.za.cityRoamingHelp')}</small>
-        </div> : <p className="field-help">{t(entry.cityRoaming === 'unavailable'
-          ? 'behavior.za.cityRoamingUnavailable' : 'behavior.za.cityRoamingUnsupported')}</p>}
+        </div> : entry.cityRoaming === 'unavailable' ? <p className="field-help">
+          {t('behavior.za.cityRoamingUnavailable')}
+        </p> : <div className="za-behavior-field">
+          <label>
+            <span>{t('behavior.za.cityMovement')}</span>
+            <select value={values.cityRoaming} disabled={!editable} onChange={e => change('cityRoaming', e.target.value)}>
+              <option value="default">{t(nativeMovement ? 'behavior.za.cityRoamingNative' : 'behavior.za.cityMovementDefault')}</option>
+              {nativeMovement ? <option value="off">{t('behavior.za.cityMovementOff')}</option> : <>
+                <option value="ground">{t('behavior.za.cityMovementGround')}</option>
+                <option value="hover">{t('behavior.za.cityMovementHover')}</option>
+              </>}
+            </select>
+          </label>
+          <small>{t(nativeMovement ? 'behavior.za.cityMovementNativeHelp' : 'behavior.za.cityMovementHelp')}</small>
+        </div>}
         <div className="za-behavior-actions">
           <button type="button" className="primary-button" disabled={!editable || props.isBehaviorUpdating || !Object.keys(draft).length || invalid.length > 0}
             onClick={() => void stage({ ...draft })}>{t('behavior.za.stage')}</button>
