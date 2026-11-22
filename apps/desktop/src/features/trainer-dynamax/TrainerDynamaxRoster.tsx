@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { useState } from 'react';
 import { RotateCcw, Search } from 'lucide-react';
 import type { TrainerDynamaxSettings, TrainerDynamaxStatus } from '../../bridge/trainerDynamaxContracts';
@@ -64,7 +65,7 @@ export function TrainerDynamaxRoster({ status, settings, disabled, onChange }: P
       <button type="button" className="secondary-button" disabled={disabled || trainers.length === 0} onClick={() => setAll(2)}>{t('trainerDynamax.disableAll')}</button>
       <button type="button" className="secondary-button" disabled={disabled} onClick={() => setAll(0)}>{t('trainerDynamax.clearAll')}</button>
     </div>
-    <div className="trainer-dynamax-roster-layout">
+    <RecordEditorWorkspace id="trainerDynamax" className="trainer-dynamax-roster-layout" browser={
       <div className="trainer-dynamax-list">
         <label className="trainer-dynamax-search"><Search size={17} aria-hidden="true" /><span className="sr-only">{t('trainerDynamax.search')}</span>
           <input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder={t('trainerDynamax.search')} /></label>
@@ -81,6 +82,7 @@ export function TrainerDynamaxRoster({ status, settings, disabled, onChange }: P
           {visible.length === 0 ? <p className="trainer-dynamax-empty">{t('trainerDynamax.noResults')}</p> : null}
         </div>
       </div>
+    }>
       {selected ? <section className="trainer-dynamax-card trainer-dynamax-selected" aria-labelledby="dynamax-selected-title">
         <div className="trainer-dynamax-heading"><h3 id="dynamax-selected-title">{selected.name}</h3><span className="status-pill">#{selected.trainerId}</span></div>
         {(['player', 'opponent'] as const).map((field, index) => <div className="trainer-dynamax-field" key={field}>
@@ -96,7 +98,7 @@ export function TrainerDynamaxRoster({ status, settings, disabled, onChange }: P
           <RotateCcw size={16} aria-hidden="true" />{t('trainerDynamax.resetTrainer')}</button>
         <p>{t('trainerDynamax.resetTrainerHelp')}</p>
       </section> : null}
-    </div>
+    </RecordEditorWorkspace>
   </section>;
 }
 

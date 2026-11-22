@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Gift, RotateCcw, Save, X } from 'lucide-react';
 import { blueberryEligibilityFields, type BlueberryEditor, type BlueberryUpdate, type BlueberryWorkflow } from '../../bridge/blueberryContracts';
@@ -128,7 +129,7 @@ export function BlueberrySection({ editor, workflow, isStaging, isEditing, isEdi
         <button className="secondary-button" type="button" disabled={!canEdit || isStaging || rows.length === 0} onClick={() => restore(rows)}>
           <RotateCcw size={16} aria-hidden="true" />{t('blueberry.restoreAll')}</button>
       </div> : null}
-      <div className="blueberry-layout">
+      <RecordEditorWorkspace id={editor} className="blueberry-layout" browser={
         <div className="blueberry-list" role="group" aria-label={t('blueberry.records')}>
           {filtered.map(row => <button type="button" key={row.id} className="blueberry-row" aria-pressed={selected?.id === row.id} onClick={() => {
             setSelectedId(row.id);
@@ -145,6 +146,7 @@ export function BlueberrySection({ editor, workflow, isStaging, isEditing, isEdi
           </button>)}
           {filtered.length === 0 ? <p className="muted">{t('blueberry.empty')}</p> : null}
         </div>
+      }>
         {selected ? <section ref={detailRef} className="blueberry-detail" aria-labelledby={`${editor}-selected`}>
           <div className="blueberry-detail-heading">{isTreats ? renderPokemon?.(selected.species, label(selected)) : null}
             <h3 id={`${editor}-selected`} data-localization-ignore="true">{label(selected)}</h3></div>
@@ -170,7 +172,7 @@ export function BlueberrySection({ editor, workflow, isStaging, isEditing, isEdi
           <p className="muted blueberry-help">{t(isTreats ? 'blueberry.snacksworth.progress' : editor === 'supportBoard' ? 'blueberry.supportBoard.priceHelp' : 'blueberry.bpHelp')}</p>
           <p className="muted blueberry-help">{t('blueberry.restoreHelp')}</p>
         </section> : null}
-      </div>
+      </RecordEditorWorkspace>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />
   </FocusedEditorWorkspace>;

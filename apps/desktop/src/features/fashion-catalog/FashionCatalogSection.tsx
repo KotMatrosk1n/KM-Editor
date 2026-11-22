@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { ChevronLeft, ChevronRight, Palette, Search, ShieldCheck } from 'lucide-react';
+import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
+import { ChevronLeft, ChevronRight, Palette, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { EditSession } from '../../bridge/contracts';
 import type {
@@ -466,32 +467,25 @@ export function FashionCatalogSection({
         <div className="panel-heading">
           <Palette aria-hidden="true" size={18} />
           <h2 id="fashion-catalog-heading">{t('fashionCatalog.title')}</h2>
-          <span className="status-badge ready">{t('fashionCatalog.dataOnlyBadge')}</span>
         </div>
-        <p className="section-copy focused-editor-readable-copy">
-          {t('fashionCatalog.description')}
-        </p>
-        <p className="field-hint focused-editor-readable-copy">
-          {t('fashionCatalog.shopScope')}
-        </p>
-        <FocusedEditorMetrics>
-          <Metric label={t('fashionCatalog.metrics.items')} value={String(workflow.stats.dressUpItemCount)} />
-          <Metric label={t('fashionCatalog.metrics.groups')} value={String(workflow.stats.dressUpGroupCount)} />
-          <Metric label={t('fashionCatalog.metrics.hair')} value={String(workflow.stats.hairAndMakeupCount)} />
-          <Metric label={t('fashionCatalog.metrics.dressUpLineups')} value={String(workflow.stats.dressUpLineupEntryCount)} />
-          <Metric label={t('fashionCatalog.metrics.hairLineups')} value={String(workflow.stats.hairAndMakeupLineupEntryCount)} />
-          <Metric label={t('fashionCatalog.metrics.staged')} value={String(pendingCount)} />
-        </FocusedEditorMetrics>
-      </section>
-
-      <section aria-labelledby="fashion-catalog-editor-heading" className="panel wide-panel">
-        <div className="panel-heading">
-          <ShieldCheck aria-hidden="true" size={18} />
-          <h2 id="fashion-catalog-editor-heading">{t('fashionCatalog.editor.title')}</h2>
-        </div>
-        <p className="field-hint focused-editor-readable-copy">
-          {t('fashionCatalog.editor.safety')}
-        </p>
+        <details className="fashion-catalog-info">
+          <summary>{t('fashionCatalog.editor.title')}</summary>
+          <p className="section-copy focused-editor-readable-copy">
+            {t('fashionCatalog.description')}
+          </p>
+          <p className="field-hint focused-editor-readable-copy">
+            {t('fashionCatalog.shopScope')}
+          </p>
+          <FocusedEditorMetrics>
+            <Metric label={t('fashionCatalog.metrics.items')} value={String(workflow.stats.dressUpItemCount)} />
+            <Metric label={t('fashionCatalog.metrics.groups')} value={String(workflow.stats.dressUpGroupCount)} />
+            <Metric label={t('fashionCatalog.metrics.hair')} value={String(workflow.stats.hairAndMakeupCount)} />
+            <Metric label={t('fashionCatalog.metrics.dressUpLineups')} value={String(workflow.stats.dressUpLineupEntryCount)} />
+            <Metric label={t('fashionCatalog.metrics.hairLineups')} value={String(workflow.stats.hairAndMakeupLineupEntryCount)} />
+            <Metric label={t('fashionCatalog.metrics.staged')} value={String(pendingCount)} />
+          </FocusedEditorMetrics>
+          <p className="field-hint focused-editor-readable-copy">{t('fashionCatalog.editor.safety')}</p>
+        </details>
         <div aria-label={t('fashionCatalog.tabs.label')} className="fashion-catalog-tabs" role="tablist">
           {catalogFiles.map((file) => (
             <button
@@ -520,11 +514,12 @@ export function FashionCatalogSection({
           role="tabpanel"
           tabIndex={0}
         >
-          <div className="fashion-catalog-browser">
-            <label className="field-label" htmlFor="fashion-catalog-search">
+          <RecordEditorWorkspace id="fashionCatalog" className="fashion-catalog-browser-workspace"
+            browserControls={<>
+              <label className="field-label" htmlFor="fashion-catalog-search">
               {t('fashionCatalog.search.label')}
             </label>
-            <div className="search-field">
+              <div className="search-field">
               <Search aria-hidden="true" size={16} />
               <input
                 id="fashion-catalog-search"
@@ -534,10 +529,11 @@ export function FashionCatalogSection({
                 value={search}
               />
             </div>
-            <p className="field-hint">
+              <p className="field-hint">
               {t('fashionCatalog.search.results', { count: filteredRows.length })}
             </p>
-            <div className="fashion-catalog-row-list">
+            </>}
+            browser={<div className="fashion-catalog-row-list">
               {visibleRows.length === 0 ? (
                 <p className="empty-copy">{t('fashionCatalog.search.noResults')}</p>
               ) : visibleRows.map((row) => {
@@ -555,8 +551,8 @@ export function FashionCatalogSection({
                   </button>
                 );
               })}
-            </div>
-            <div className="fashion-catalog-pagination">
+            </div>}
+            browserFooter={<div className="fashion-catalog-pagination">
               <button
                 aria-label={t('fashionCatalog.pagination.previous')}
                 disabled={page === 0}
@@ -574,10 +570,8 @@ export function FashionCatalogSection({
               >
                 <ChevronRight aria-hidden="true" size={16} />
               </button>
-            </div>
-          </div>
-
-          <div className="fashion-catalog-field-editor">
+            </div>}>
+            <div className="fashion-catalog-field-editor">
             {selectedRow && field ? (
               <>
                 <div className="fashion-catalog-selection-heading">
@@ -774,6 +768,7 @@ export function FashionCatalogSection({
               </>
             )}
           </div>
+          </RecordEditorWorkspace>
         </div>
 
         {feedback ? (

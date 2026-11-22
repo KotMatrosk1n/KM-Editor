@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 import { plaFieldHelp } from './plaFieldHelp';
 import { useState, type ReactNode } from 'react';
-import { Search, ShieldCheck } from 'lucide-react';
+import { Search } from 'lucide-react';
 import type { PlaField, PlaKind, PlaPage, PlaRecord } from '../../bridge/plaProjectBridge';
+import { EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, SectionedEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { FieldLabel } from '../../components/FieldLabel';
 import { PokemonSearchBox } from '../../components/PokemonSelection';
 import { InteractiveTableRow, VirtualTableBody } from '../../components/VirtualTable';
@@ -13,6 +14,7 @@ import type { PlaPokemonPreview } from './PlaBattleWorkspace';
 
 type DataKind = Exclude<PlaKind, 'trainers' | 'gifts' | 'static' | 'items' | 'crafting' | 'shops' | 'ginkgo' | 'drops' | 'research' | 'ranks'>;
 type Props = {
+  sessionKey: string;
   kind: DataKind; page: PlaPage | null; selected: PlaRecord | null; query: string; offset: number; loading: boolean;
   controls: ReactNode; sessionBar: ReactNode; actions: ReactNode; refresh: ReactNode; rowEditor: ReactNode;
   onQuery: (query: string) => void; onOffset: (offset: number) => void; onSelect: (id: string) => void;
@@ -22,7 +24,7 @@ type Props = {
 };
 const statKeys = ['hp', 'attack', 'defense', 'specialAttack', 'specialDefense', 'speed'];
 
-export function PlaDataWorkspace({ kind, page, selected, query, offset, loading, controls, sessionBar, actions, refresh, rowEditor,
+export function PlaDataWorkspace({ sessionKey, kind, page, selected, query, offset, loading, controls, sessionBar, actions, refresh, rowEditor,
   onQuery, onOffset, onSelect, valuesFor, hasDraft, pendingIds, fieldLabel, renderInput, renderPokemon }: Props) {
   const { t, translateLiteral } = useLocalization();
   const [compatibilitySearch, setCompatibilitySearch] = useState('');
@@ -33,7 +35,6 @@ export function PlaDataWorkspace({ kind, page, selected, query, offset, loading,
   const title = translateLiteral(registration.label);
   const rowClass = kind === 'text' ? 'text-row' : kind === 'moves' || kind === 'tutors' ? 'moves-row' : 'items-row';
   const tableClass = kind === 'text' ? 'text-table' : kind === 'moves' || kind === 'tutors' ? 'moves-table' : 'items-table pokemon-table';
-  const layoutClass = kind === 'text' ? 'text-layout' : kind === 'moves' || kind === 'tutors' ? 'items-layout moves-layout' : 'items-layout';
   const inspectorTitle = kind === 'text' ? 'Selected Text' : kind === 'moves' ? 'Selected Move' : kind === 'tutors' ? t('pla.kind.tutors') : 'Selected Pokemon';
   const choiceLabel = (key: string, value: string) => key === 'category' ? t(`pla.choice.category.${value}`)
     : page?.fields.find(field => field.key === key)?.choices?.find(choice => choice.value === value)?.label ?? value;
@@ -75,7 +76,10 @@ export function PlaDataWorkspace({ kind, page, selected, query, offset, loading,
     ? String(stats.reduce((sum, value) => sum + Number(value), 0)) : '-';
   return <section className={`panel wide-panel pla-editor pla-data-editor pla-data-${kind}`} aria-labelledby="pla-editor-title">
     <div className="panel-heading"><Icon size={18} aria-hidden="true" /><h2 id="pla-editor-title">{title}</h2>{refresh}</div>
-    {controls}
+    <SectionedEditorWorkspace sessionKey={sessionKey + ':' + kind} initialSection="data" pinnedBrowser compactFields
+      browserVisibleRows={4} sessionBar={<>{sessionBar}{actions}</>}
+      browserControls={<div className={kind === 'text' ? 'pla-text-browser-controls' : undefined}>
+        {controls}
     <div className={`items-toolbar ${isPokemon ? 'pokemon-toolbar' : kind === 'text' ? 'text-toolbar' : 'moves-toolbar'}`}>
       {isPokemon ? <PokemonSearchBox disabled={false} value={query} onChange={onQuery} /> : <label className="search-box items-search"><Search size={18} aria-hidden="true" />
         <input type="search" aria-label={translateLiteral(kind === 'moves' ? 'Search moves' : 'Search')} placeholder={translateLiteral(kind === 'moves' ? 'Search moves' : 'Search')}
@@ -83,11 +87,9 @@ export function PlaDataWorkspace({ kind, page, selected, query, offset, loading,
       <Metric label={translateLiteral('Loaded records')} value={String(page?.total ?? 0)} />
       <Metric label={translateLiteral('Pending changes')} value={String(pendingIds.size)} />
     </div>
-    {sessionBar}{actions}
-    {page?.notices.length ? <p className="field-note">{t(`pla.notice.${kind}`)}</p> : null}
-    {loading ? <p role="status">{translateLiteral('Loading')}</p> : null}
-    <div className={layoutClass} id={`pla-data-panel-${kind}`} role={section === 'pokemon' ? 'tabpanel' : undefined} aria-labelledby={section === 'pokemon' ? `pla-data-tab-${kind}` : undefined}>
-      <div className={tableClass} role="table" aria-label={t(`pla.kind.${kind}`)} aria-colcount={columns.length} aria-rowcount={(page?.records.length ?? 0) + 1}>
+      </div>}
+      browser={
+        <div className={tableClass} role="table" aria-label={t(`pla.kind.${kind}`)} aria-colcount={columns.length} aria-rowcount={(page?.records.length ?? 0) + 1}>
         <div className={`${rowClass} ${rowClass}-heading pla-data-row`} role="row">{columns.map(column => <span role="columnheader" key={column}>{column === 'Message key' ? t('text.messageKey') : translateLiteral(column)}</span>)}</div>
         <VirtualTableBody items={page?.records ?? []} getKey={record => record.id} resetKey={`${kind}:${offset}:${query}`}
           renderRow={record => <InteractiveTableRow aria-selected={selected?.id === record.id}
@@ -95,9 +97,23 @@ export function PlaDataWorkspace({ kind, page, selected, query, offset, loading,
             onClick={() => onSelect(record.id)}>{cells(record).map((value, i) => <span key={i} role="cell" title={value} data-localization-ignore="true"
               className={kind === 'text' && i === 3 ? 'text-value-summary' : undefined}>{value}</span>)}</InteractiveTableRow>} />
       </div>
-      <aside className={kind === 'text' ? 'text-inspector' : 'item-inspector'} aria-label={translateLiteral(inspectorTitle)}>
-        <div className="panel-heading"><ShieldCheck size={18} aria-hidden="true" /><h3>{translateLiteral(inspectorTitle)}</h3></div>
-        {selected ? <>
+      }
+      browserFooter={
+        <nav className="text-page-bar pla-pagination" aria-label={t('text.pagination.ariaLabel')}>
+      <span>{page ? `${Math.min(offset + 1, page.total)} - ${Math.min(offset + 100, page.total)} / ${page.total}` : ''}</span>
+      <div><button type="button" className="secondary-button compact-button" disabled={offset === 0 || loading} onClick={() => onOffset(Math.max(0, offset - 100))}>{translateLiteral('Previous')}</button>
+        <button type="button" className="secondary-button compact-button" disabled={!page || offset + 100 >= page.total || loading} onClick={() => onOffset(offset + 100)}>{translateLiteral('Next')}</button></div>
+    </nav>
+      }>
+      <EditorWorkspaceHeader>
+        {loading ? <p className="field-note" role="status">{translateLiteral('Loading')}</p> : null}
+      </EditorWorkspaceHeader>
+      {selected ? <>
+        <EditorWorkspaceHeader afterBrowser>
+          <EditorRecordHeading name={recordName(selected)} id={selected.id} />
+        </EditorWorkspaceHeader>
+        <EditorWorkspaceSection id="details" label={t('editorSections.details')}>
+          {page?.notices.length ? <p className="field-note">{t(`pla.notice.${kind}`)}</p> : null}
           {isPokemon ? <div className="pokemon-summary-card">
             {renderPokemon?.({ species: identity[0], form: identity[1] }, recordName(selected), page?.pokemonSpriteNames[identity[0]], 'pokemon-summary-sprite')}
             <div className="pokemon-summary-main"><strong className="pokemon-summary-title" data-localization-ignore="true">{recordName(selected)}</strong>
@@ -111,6 +127,8 @@ export function PlaDataWorkspace({ kind, page, selected, query, offset, loading,
             <div><dt>{translateLiteral('Move ID')}</dt><dd>{selected.id}</dd></div>
             <div><dt>{translateLiteral('Type / category')}</dt><dd>{choiceLabel('type', valuesFor(selected).type)} / {choiceLabel('category', valuesFor(selected).category)}</dd></div>
           </dl> : null}
+        </EditorWorkspaceSection>
+        <EditorWorkspaceSection id="data" label={translateLiteral(kind === 'moves' ? 'Move Data' : kind === 'text' ? 'Text' : inspectorTitle)} modified={hasDraft(selected)}>
           <div className={kind === 'text' ? 'text-edit-form' : kind === 'moves' ? 'item-edit-form move-edit-form' : 'item-edit-form'}>
             {kind === 'learnsets' || kind === 'evolutions' ? rowEditor : kind === 'compatibility' ? <div className="compatibility-editor">
               <h4>{t('pla.kind.compatibility')}</h4>
@@ -125,13 +143,8 @@ export function PlaDataWorkspace({ kind, page, selected, query, offset, loading,
               </legend><div className="editable-field-grid">{group.fields.map(renderField)}</div></fieldset>)}
             </div>}
           </div>
-        </> : <p className="empty-copy">{t('pla.empty')}</p>}
-      </aside>
-    </div>
-    <nav className="text-page-bar pla-pagination" aria-label={t('text.pagination.ariaLabel')}>
-      <span>{page ? `${Math.min(offset + 1, page.total)} - ${Math.min(offset + 100, page.total)} / ${page.total}` : ''}</span>
-      <div><button type="button" className="secondary-button compact-button" disabled={offset === 0 || loading} onClick={() => onOffset(Math.max(0, offset - 100))}>{translateLiteral('Previous')}</button>
-        <button type="button" className="secondary-button compact-button" disabled={!page || offset + 100 >= page.total || loading} onClick={() => onOffset(offset + 100)}>{translateLiteral('Next')}</button></div>
-    </nav>
+        </EditorWorkspaceSection>
+      </> : <p className="empty-copy">{t('pla.empty')}</p>}
+    </SectionedEditorWorkspace>
   </section>;
 }

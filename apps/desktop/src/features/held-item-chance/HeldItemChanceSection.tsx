@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { useEffect, useRef, useState } from 'react';
 import { PokemonSearchBox, PokemonTable, filterPokemonRecords, type PokemonSelectionRecord } from '../../components/PokemonSelection';
 import { RefreshCw, RotateCcw, Save, Sparkles, X } from 'lucide-react';
@@ -152,9 +153,10 @@ export function HeldItemChanceSection({ formatPokemonName, workflow, session, is
       <div className="items-toolbar pokemon-toolbar">
         <PokemonSearchBox disabled={!workflow} value={searchText} onChange={setSearchText} />
       </div>
-      <div className="items-layout swsh-pokemon-layout held-item-pokemon-layout">
+      <RecordEditorWorkspace id="heldItemChance" className="items-layout swsh-pokemon-layout held-item-pokemon-layout" browser={
         <PokemonTable records={filtered} selectedId={selected?.personalId} pendingIds={pendingIds}
           onSelect={setSelectedId} formatName={formatPokemonName} resetKey={searchText} />
+      }>
         <div className="held-item-pokemon-details">
       {selected && desired ? <>
         <h3 data-localization-ignore="true">{formatPokemonName(selected)}</h3>
@@ -179,7 +181,7 @@ export function HeldItemChanceSection({ formatPokemonName, workflow, session, is
         </div>
       </> : <p>{workflow && records.length ? translateLiteral('No Pokemon selected.') : t('heldItemChance.wildMissing')}</p>}
         </div>
-      </div>
+      </RecordEditorWorkspace>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />
   </FocusedEditorWorkspace>;

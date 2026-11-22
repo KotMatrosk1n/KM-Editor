@@ -3,11 +3,12 @@ import { plaFieldHelp } from './plaFieldHelp';
 import type { ReactNode } from 'react';
 import { SlidersVertical } from 'lucide-react';
 import type { PlaField, PlaPage } from '../../bridge/plaProjectBridge';
+import { EditorWorkspaceSection, SectionedEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { FieldLabel } from '../../components/FieldLabel';
 import { useLocalization } from '../../localization';
 
-export function PlaRulesWorkspace({ kind, page, controls, sessionBar, actions, refresh, loading, fieldLabel, renderInput }: {
-  kind: 'capture' | 'friendship' | 'shiny' | 'bagPrices' | 'charmPrices'; page: PlaPage | null; controls: ReactNode; sessionBar: ReactNode;
+export function PlaRulesWorkspace({ sessionKey, kind, page, controls, sessionBar, actions, refresh, loading, fieldLabel, renderInput }: {
+  sessionKey: string; kind: 'capture' | 'friendship' | 'shiny' | 'bagPrices' | 'charmPrices'; page: PlaPage | null; controls: ReactNode; sessionBar: ReactNode;
   actions: ReactNode; refresh: ReactNode; loading: boolean; fieldLabel: (field: PlaField) => string; renderInput: (field: PlaField) => ReactNode;
 }) {
   const { t, translateLiteral } = useLocalization();
@@ -27,16 +28,22 @@ export function PlaRulesWorkspace({ kind, page, controls, sessionBar, actions, r
   ] : [{ title: t('pla.kind.shiny'), fields }];
   return <section className="panel wide-panel pla-editor" aria-labelledby="pla-editor-title">
     <div className="panel-heading"><SlidersVertical size={18} aria-hidden="true" /><h2 id="pla-editor-title">{t('workbench.section.gameplayRules.label')}</h2>{refresh}</div>
-    {controls}{sessionBar}{actions}
-    <p className="field-note" id="pla-rules-help">{t('pla.notice.' + kind)}</p>
-    {loading ? <p role="status">{translateLiteral('Loading')}</p> : null}
-    <div className="editable-field-groups" aria-describedby="pla-rules-help">
-      {groups.map(group => <fieldset className="editable-field-group" key={group.title}><legend>{group.title}</legend>
-        <div className="editable-field-grid">{group.fields.map(field => <div className="path-field editable-field-control" key={field.key}>
-          <FieldLabel htmlFor={'pla-field-' + field.key} label={fieldLabel(field)} help={plaFieldHelp(t, kind, field, fieldLabel(field))} />{renderInput(field)}
-          <small className="field-note">{t(field.kind === 'factor' ? 'pla.rules.factorRange' : 'pla.rules.range', { min: field.minimum ?? 0, max: field.maximum ?? 0 })}</small>
-        </div>)}</div>
-      </fieldset>)}
-    </div>
+    <SectionedEditorWorkspace sessionKey={sessionKey} initialSection="rules" compactFields
+      sessionBar={<>{sessionBar}{actions}</>} browserControls={controls}>
+      <EditorWorkspaceSection id="rules" label={t('pla.kind.' + kind)}>
+        <p className="field-note" id="pla-rules-help">{t('pla.notice.' + kind)}</p>
+        {loading ? <p role="status">{translateLiteral('Loading')}</p> : null}
+        <div className="editable-field-groups" aria-describedby="pla-rules-help">
+          {groups.map(group => <fieldset className="editable-field-group" key={group.title}>
+            <legend>{group.title}</legend>
+            <div className="editable-field-grid">{group.fields.map(field => <div className="path-field editable-field-control" key={field.key}>
+              <FieldLabel htmlFor={'pla-field-' + field.key} label={fieldLabel(field)} help={plaFieldHelp(t, kind, field, fieldLabel(field))} />
+              {renderInput(field)}
+              <small className="field-note">{t(field.kind === 'factor' ? 'pla.rules.factorRange' : 'pla.rules.range', { min: field.minimum ?? 0, max: field.maximum ?? 0 })}</small>
+            </div>)}</div>
+          </fieldset>)}
+        </div>
+      </EditorWorkspaceSection>
+    </SectionedEditorWorkspace>
   </section>;
 }

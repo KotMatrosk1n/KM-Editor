@@ -362,3 +362,12 @@
     forced-color-adjust: none;
   }
 }
+
+.habitat-coordinate-card-workspace .editor-workspace-browser > .habitat-coordinate-list {
+  background: var(--color-control);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 4px;
+}
+.habitat-coordinate-card-workspace .habitat-coordinate-search,
+.habitat-coordinate-card-workspace .habitat-coordinate-card-heading { margin-bottom: 0; }

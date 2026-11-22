@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ApiDiagnostic, EditSession, ZaBehaviorWorkflow } from '../../bridge/contracts';
 import { EditorSessionBar, EditorSessionBarActions } from '../../components/EditorSessionBar';
@@ -151,7 +152,7 @@ export function ZaBehaviorSection(props: Props) {
     {editSession ? <EditorSessionBarActions><button type="button" className="secondary-button"
       disabled={props.isBehaviorUpdating} onClick={() => props.onCancelEditSession(() => setDrafts({}))}>
       {translateLiteral('Cancel')}</button></EditorSessionBarActions> : null}
-    <div className="za-behavior-layout">
+    <RecordEditorWorkspace id="zaBehavior" className="za-behavior-layout" browser={
       <aside className="za-behavior-browser">
         <input type="search" aria-label={t('behavior.za.search')} placeholder={t('behavior.za.search')}
           value={props.searchText} onChange={e => props.onSearchChange(e.target.value)} />
@@ -168,6 +169,7 @@ export function ZaBehaviorSection(props: Props) {
           {!filtered.length ? <p>{t('behavior.za.empty')}</p> : null}
         </div>
       </aside>
+    }>
       {entry ? <div className="za-behavior-detail">
         <h3 data-localization-ignore="true">{entry.speciesName}</h3>
         <p>{t('behavior.za.scope')}</p>
@@ -241,6 +243,6 @@ export function ZaBehaviorSection(props: Props) {
           <p data-localization-ignore="true">{entry.tags.join(', ')}</p>
         </details>
       </div> : <p>{t('behavior.za.empty')}</p>}
-    </div>
+    </RecordEditorWorkspace>
   </section>;
 }

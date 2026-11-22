@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Crown, KeyRound, Plus, RefreshCw, Save, Trash2, X } from 'lucide-react';
 import type { EditSession, GiftPokemonEditableField } from '../../bridge/contracts';
@@ -174,7 +175,7 @@ export function CustomGiftSection({ mode, workflow, session, isEditing, isEditSt
         <p>{t('customGifts.oddsHelp')}</p>
         {invalidPools.length > 0 ? <p role="status">{t('customGifts.invalidPools', { badges: invalidPools.join(', ') })}</p> : null}
       </div> : null}
-      <div className="custom-gifts-layout">
+      <RecordEditorWorkspace id="customGifts" className="custom-gifts-layout" browser={
         <div className="custom-gifts-list">
           <button type="button" className="secondary-button" disabled={addDisabled} onClick={add}><Plus size={16} aria-hidden="true" />{t('customGifts.add')}</button>
           {entries.length === 0 ? <p>{t('customGifts.empty')}</p> : entries.map(entry => <button type="button" key={entry.key}
@@ -184,6 +185,7 @@ export function CustomGiftSection({ mode, workflow, session, isEditing, isEditSt
             {mode === 'royal' ? <span>{t('customGifts.slotChance', { chance: selectedPool?.chances[entry.key] ?? 0 })}</span> : null}
           </button>)}
         </div>
+      }>
         <div className="custom-gifts-detail">
           {selected ? <>
             <div className="panel-heading"><h3>{t('customGifts.pokemon')}</h3><button type="button" className="danger-button" disabled={!canEdit} onClick={remove}>
@@ -213,7 +215,7 @@ export function CustomGiftSection({ mode, workflow, session, isEditing, isEditSt
               idPrefix: `custom-gift-${recordKey}`, onChange: changeNumber })}
           </> : <p>{t('customGifts.select')}</p>}
         </div>
-      </div>
+      </RecordEditorWorkspace>
       <p>{t('customGifts.saveHelp')}</p>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />

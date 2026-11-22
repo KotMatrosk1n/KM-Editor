@@ -6,6 +6,7 @@ import { starmobileFieldMaximum as maximum, starmobileFields, starmobileMoveFiel
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { FocusedEditorWorkspace } from '../../components/FocusedEditorWorkspace';
 import { EditorSessionBar, EditorSessionBarActions } from '../../components/EditorSessionBar';
+import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { ContextHelp } from '../../components/ContextHelp';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { WorkflowPanelOutputSections, type WorkflowPanelOutput } from '../../components/workflowPanels';
@@ -132,6 +133,7 @@ export function StarmobilesSection({ workflow, isStaging, isEditing, isEditStart
   return <FocusedEditorWorkspace className="starmobiles-editor">
     <section className="panel wide-panel starmobiles-panel" aria-labelledby="starmobiles-heading">
       <div className="panel-heading"><Star size={20} aria-hidden="true" /><h2 id="starmobiles-heading">{t('starmobiles.title')}</h2></div>
+    <RecordEditorWorkspace id="starmobiles" className="starmobiles-layout" browserVisibleRows={1} browserControls={<>
     <EditorSessionBar canEdit={available && !!selected} isEditing={isEditing} isStarting={isEditStarting}
       label={t('starmobiles.title')} onStart={onStartEditSession} />
     {isEditing ? <EditorSessionBarActions>
@@ -146,14 +148,14 @@ export function StarmobilesSection({ workflow, isStaging, isEditing, isEditStart
       </button>
       <span className="draft-action-summary">{t('starmobiles.draftCount', { count: entries.length })}</span>
     </EditorSessionBarActions> : null}
-    <div className="starmobiles-selector" role="group" aria-label={t('starmobiles.select')}>
+    </>} browser={<div className="starmobiles-selector" role="group" aria-label={t('starmobiles.select')}>
       {rows.map(row => {
         const edited = entries.some(draft => draft.rowId === row.id);
         return <button type="button" key={row.id} aria-pressed={selected?.id === row.id}
           className={`starmobiles-boss starmobiles-boss-${bossNames[row.bossType] ?? 'unknown'}`}
           onClick={() => setSelectedId(row.id)}>
           <span className="starmobiles-sprite" aria-hidden="true">
-            {bossSprites[row.bossType] ? <img src={`/sprites/starmobiles/${bossSprites[row.bossType]}.png`} alt="" width={94} height={94} /> : <Star size={48} />}
+            {bossSprites[row.bossType] ? <img src={`/sprites/starmobiles/${bossSprites[row.bossType]}.png`} alt="" width={40} height={40} /> : <Star size={24} />}
           </span>
           <span className="starmobiles-boss-copy"><strong>{bossLabel(row.bossType)}</strong>
             <span>{t('starmobiles.field.level')} <b>{(drafts[`${row.id}/level`]?.value ?? row.values.level) || '…'}</b></span>
@@ -161,7 +163,7 @@ export function StarmobilesSection({ workflow, isStaging, isEditing, isEditStart
           <span className="starmobiles-boss-status">{edited ? t('starmobiles.edited') : null}{selected?.id === row.id ? <Check size={16} aria-hidden="true" /> : null}</span>
         </button>;
       })}
-    </div>
+    </div>}>
     {selected ? <section className="starmobiles-detail" aria-labelledby="starmobiles-selected-heading">
       <div className="starmobiles-detail-heading">
         <h3 id="starmobiles-selected-heading">{t('starmobiles.selectedTitle', { boss: bossLabel(selected.bossType) })}</h3>
@@ -240,6 +242,7 @@ export function StarmobilesSection({ workflow, isStaging, isEditing, isEditStart
       </details>
     </section> : null}
     {workflow?.rows.length === 0 ? <p className="muted">{t('starmobiles.empty')}</p> : null}
+    </RecordEditorWorkspace>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />
   </FocusedEditorWorkspace>;

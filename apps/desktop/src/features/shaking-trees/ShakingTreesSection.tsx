@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, RotateCcw, Save, TreeDeciduous, X } from 'lucide-react';
 import { type EditSession } from '../../bridge/contracts';
@@ -146,7 +147,7 @@ export function ShakingTreesSection({ workflow, session, isEditing, isEditStarti
           className={`secondary-button${tab === value ? ' tree-tab-active' : ''}`}>{t(`shakingTrees.tab.${value}`)}</button>)}
       </div>
       <div id="tree-panel" role="tabpanel" aria-labelledby={`tree-tab-${tab}`}>
-      {tab !== 'rules' ? <div className="tree-layout">
+      {tab !== 'rules' ? <RecordEditorWorkspace id="shakingTrees" className="tree-layout" browser={
         <aside className="tree-catalog">
           <label className="tree-search"><span>{t('shakingTrees.search')}</span><input type="search" value={search}
             aria-label={t('shakingTrees.search')} onChange={event => setSearch(event.target.value)} /></label>
@@ -158,6 +159,7 @@ export function ShakingTreesSection({ workflow, session, isEditing, isEditStarti
             {filtered.length === 0 ? <p>{t('shakingTrees.noResults')}</p> : null}
           </div>
         </aside>
+      }>
         <div className="tree-detail">
         {selected && area ? <>
           <h3>{treeName(selected)}</h3>
@@ -199,7 +201,7 @@ export function ShakingTreesSection({ workflow, session, isEditing, isEditStarti
           </>}
         </> : <p>{t('shakingTrees.empty')}</p>}
         </div>
-      </div> : <div className="tree-rules">
+      </RecordEditorWorkspace> : <div className="tree-rules">
         <div className="tree-rules-controls">
           <h3>{t('shakingTrees.globalRules')}</h3><p>{t('shakingTrees.riskHelp')}</p>
           <div className="tree-rules-grid">

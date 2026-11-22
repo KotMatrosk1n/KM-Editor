@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 .pla-controls { display: flex; flex-wrap: wrap; gap: 1rem; margin-block: 1rem; }
+.sectioned-editor-workspace .pla-controls { gap: 8px; margin-block: 0; }
 .pla-record-detail { display: block; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pla-editor .editable-field-groups,
 .pla-battle-editor .editable-field-groups,
@@ -34,6 +35,17 @@
 .pla-data-editor .pokemon-summary-main { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
 .pla-data-editor .pokemon-summary-title { overflow-wrap: anywhere; }
 .pla-data-editor .text-edit-form textarea { width: 100%; min-height: 12rem; resize: vertical; }
+.pla-text-browser-controls { display: grid; gap: 8px; }
+@media (max-height: 800px), (max-width: 1000px) {
+  .pla-data-text .pla-control { gap: 4px; }
+  .pla-data-text .pla-control input { min-height: 36px; padding-block: 5px; }
+  .pla-data-text .items-toolbar { grid-template-columns: minmax(0, 1fr); }
+  .pla-data-text .items-toolbar .metric { display: none; }
+  @container editorWorkspace (min-width: 46rem) {
+    .pla-text-browser-controls { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); align-items: end; }
+    .pla-text-browser-controls .pla-control { flex-basis: 0; }
+  }
+}
 .pla-data-editor .pla-pokemon-detail-row.evolution-row { grid-template-columns: 42px minmax(100px, 1fr) minmax(90px, .8fr) minmax(90px, .8fr); }
 .pla-data-editor .pla-pokemon-detail-row > span:last-child { white-space: normal; }
 .pla-data-editor .pla-learnset-inline-row { grid-template-areas: "slot level metadata move actions"; grid-template-columns: 42px minmax(80px, .7fr) minmax(90px, .8fr) minmax(150px, 1.4fr) max-content; }

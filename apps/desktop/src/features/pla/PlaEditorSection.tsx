@@ -250,7 +250,7 @@ function PlaRecordEditor({ section, paths, session, bridge, drafts, setDrafts, i
     sessionBar={<EditorSessionBar canEdit={visiblePage !== null && !loading} isEditing={session !== null} isStarting={isStarting}
       label={translateLiteral('Type Chart')} onStart={onStart} />} /></>;
   if (kind === 'trainers' || kind === 'gifts' || kind === 'static') {
-    return <><PlaBattleWorkspace kind={kind} page={page} selected={selected} query={query} offset={offset} loading={loading} clipboard={kind === 'trainers' ? clipboard : undefined}
+    return <><PlaBattleWorkspace sessionKey={scope} kind={kind} page={page} selected={selected} query={query} offset={offset} loading={loading} clipboard={kind === 'trainers' ? clipboard : undefined}
       onQuery={value => { setQuery(value); setOffset(0); }} onOffset={setOffset} onSelect={selectRecord} refresh={refreshButton}
       sessionBar={<EditorSessionBar canEdit={page !== null && !loading} isEditing={session !== null} isStarting={isStarting} label={translateLiteral(getWorkbenchCapabilityRegistration(section).label)} onStart={onStart} />}
       actions={actions} fieldLabel={label} renderPokemon={renderPokemon}
@@ -282,12 +282,12 @@ function PlaRecordEditor({ section, paths, session, bridge, drafts, setDrafts, i
     </div></nav>{section !== 'gameplayRules' ? <p className="field-note">{t(section === 'outbreaks' ? 'pla.event.outbreakNotice' : 'pla.event.distortionNotice')}</p> : null}
   </> : undefined;
   if (kind === 'capture' || kind === 'friendship' || kind === 'shiny' || kind === 'bagPrices' || kind === 'charmPrices') return <>
-    <PlaRulesWorkspace kind={kind} page={visiblePage} controls={eventControls} loading={loading} actions={actions} refresh={refreshButton} fieldLabel={label}
+    <PlaRulesWorkspace sessionKey={scope} kind={kind} page={visiblePage} controls={eventControls} loading={loading} actions={actions} refresh={refreshButton} fieldLabel={label}
       sessionBar={<EditorSessionBar canEdit={visiblePage !== null && !loading} isEditing={session !== null} isStarting={isStarting}
         label={t('workbench.section.gameplayRules.label')} onStart={onStart} />}
       renderInput={field => input(field, values[field.key] ?? '', value => setValue(field.key, value), !enabled || field.readOnly || Boolean(selected?.readOnlyFields.includes(field.key)), 'pla-field-' + field.key)} />
   </>;
-  if (isPlaWildKind(kind)) return <><PlaWildWorkspace kind={kind} page={visiblePage} selected={visiblePage ? selected : null} clipboard={clipboard}
+  if (isPlaWildKind(kind)) return <><PlaWildWorkspace sessionKey={scope} kind={kind} page={visiblePage} selected={visiblePage ? selected : null} clipboard={clipboard}
     controls={eventControls} title={t(workbenchSectionLocalization[section].label)}
     query={query} offset={offset} loading={loading} refresh={refreshButton} actions={actions} fieldLabel={label} renderPokemon={renderPokemon}
     onQuery={value => { setQuery(value); setOffset(0); }} onOffset={setOffset} onSelect={selectRecord}
@@ -302,7 +302,7 @@ function PlaRecordEditor({ section, paths, session, bridge, drafts, setDrafts, i
       !enabled || field.readOnly || Boolean(selected?.readOnlyFields.includes(field.key)), 'pla-field-' + field.key)} /></>;
   if (isPlaEconomyKind(kind)) {
     const tabs: PlaKind[] = section === 'shops' ? ['shops', 'ginkgo'] : section === 'research' ? ['research', 'ranks'] : [];
-    return <><PlaEconomyWorkspace kind={kind} page={visiblePage} selected={visiblePage ? selected : null}
+    return <><PlaEconomyWorkspace sessionKey={scope} kind={kind} page={visiblePage} selected={visiblePage ? selected : null}
       query={query} offset={offset} loading={loading} onQuery={value => { setQuery(value); setOffset(0); }} onOffset={setOffset} onSelect={selectRecord}
       refresh={refreshButton} actions={actions} fieldLabel={label}
       renderRecordInput={(record, field) => input(field, { ...record.values, ...drafts[recordDraftKey(record)]?.values }[field.key] ?? '',
@@ -325,7 +325,7 @@ function PlaRecordEditor({ section, paths, session, bridge, drafts, setDrafts, i
           }}>{t(`pla.kind.${value}`)}</button>)}
       </div></nav> : null)} /></>;
   }
-  return <><PlaDataWorkspace kind={kind} page={visiblePage} selected={visiblePage ? selected : null} query={query} offset={offset} loading={loading}
+  return <><PlaDataWorkspace sessionKey={scope} kind={kind} page={visiblePage} selected={visiblePage ? selected : null} query={query} offset={offset} loading={loading}
     onQuery={value => { setQuery(value); setOffset(0); }} onOffset={setOffset} onSelect={selectRecord} refresh={refreshButton}
     sessionBar={<EditorSessionBar canEdit={visiblePage !== null && !loading} isEditing={session !== null} isStarting={isStarting} label={translateLiteral(getWorkbenchCapabilityRegistration(section).label)} onStart={onStart} />}
     actions={actions} fieldLabel={label} renderPokemon={renderPokemon}
