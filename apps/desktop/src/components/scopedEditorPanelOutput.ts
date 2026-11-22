@@ -1,12 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { useCallback, useState } from 'react';
-import { type ApiDiagnostic } from '../bridge/contracts';
+import { type ApiDiagnostic, type ChangePlanOutputMode } from '../bridge/contracts';
 import { type WorkbenchSection } from '../workbenchStore';
 import { type WorkflowPanelOutput } from './workflowPanels';
 
 export type ScopedEditorPanelState = WorkflowPanelOutput & {
   changePlanSessionSignature: string | null;
+  outputMode?: ChangePlanOutputMode;
 };
 
 export const scopedEditorPanelSectionIds = new Set<WorkbenchSection>([

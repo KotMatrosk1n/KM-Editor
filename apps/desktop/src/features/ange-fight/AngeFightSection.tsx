@@ -62,6 +62,8 @@ export function AngeFightSection({
   isStaging,
   onApplyChangePlan,
   onCreateChangePlan,
+  onReviewZaRecomp,
+  isZaRecompPlan = false,
   onDirtyChange,
   onStageFight,
   onStageUninstall,
@@ -74,6 +76,8 @@ export function AngeFightSection({
   isStaging: boolean;
   onApplyChangePlan: () => void;
   onCreateChangePlan: () => void;
+  onReviewZaRecomp?: () => void;
+  isZaRecompPlan?: boolean;
   onDirtyChange: (isDirty: boolean) => void;
   onStageFight: (
     blueFlowerHp: number,
@@ -418,6 +422,12 @@ export function AngeFightSection({
                 <ClipboardCheck aria-hidden="true" size={16} />
                 <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
               </button>
+              {onReviewZaRecomp ? (
+                <button className="secondary-button" disabled={!canReviewPlan} onClick={onReviewZaRecomp} type="button">
+                  <ClipboardCheck aria-hidden="true" size={16} />
+                  <span>ZA Recomp</span>
+                </button>
+              ) : null}
               <button
                 aria-busy={isChangePlanApplying || undefined}
                 className="primary-button"
@@ -426,7 +436,7 @@ export function AngeFightSection({
                 type="button"
               >
                 <Save aria-hidden="true" size={16} />
-                <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                <span>{isChangePlanApplying ? 'Applying' : isZaRecompPlan ? 'Apply ZA Recomp' : 'Apply'}</span>
               </button>
             </div>
 

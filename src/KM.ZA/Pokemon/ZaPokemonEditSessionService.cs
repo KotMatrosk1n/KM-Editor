@@ -2306,10 +2306,11 @@ internal sealed partial class ZaPokemonEditSessionService
 
             if (dexApply.ChangesRegularCount)
             {
+                var executableTarget = ZaExeFsMainFileResolver.OutputRelativePath(outputMode);
                 var mainWrite = currentPlan.Writes
                     .Single(write => string.Equals(
                         write.TargetRelativePath,
-                        ZaExeFsReservedRegionLedger.ExeFsMainPath,
+                        executableTarget,
                         StringComparison.OrdinalIgnoreCase));
                 var executableOutputContext = new ZaOutputApplyContext(
                     OutputReviewFingerprint.FromChangePlan(currentPlan),
@@ -2367,7 +2368,7 @@ internal sealed partial class ZaPokemonEditSessionService
                                 "Trinity bypass Dex Layout output must compose onto the existing layered exefs/main.");
                         }
 
-                        var effectiveMainBytes = File.ReadAllBytes(effectiveMain.AbsolutePath);
+                        var effectiveMainBytes = effectiveMain.ReadBytes();
                         if (!ZaChangePlanSourceGuard.MatchesCoreSourceFingerprint(
                                 paths,
                                 currentPlan,
@@ -2424,11 +2425,7 @@ internal sealed partial class ZaPokemonEditSessionService
                         return new ZaStandaloneMixedBatch(
                             outputWrites,
                             Array.Empty<string>(),
-                            [new ZaStandaloneOutputMutation(
-                                ZaExeFsReservedRegionLedger.ExeFsMainPath,
-                                mainOutputBytes,
-                                DeleteFallbackBytes: mainOutputBytes is null ? baseMainBytes : null,
-                                ApplyContext: executableOutputContext)]);
+                            [ZaExeFsMainFileResolver.CreateMutation(paths, outputMode, mainOutputBytes, baseMainBytes, executableOutputContext)]);
                     },
                     revalidateReviewedState: () =>
                         ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(
@@ -2492,7 +2489,7 @@ internal sealed partial class ZaPokemonEditSessionService
             {
                 writtenFiles.Add(new ProjectFileReference(
                     ProjectFileLayer.Generated,
-                    ZaExeFsReservedRegionLedger.ExeFsMainPath));
+                    ZaExeFsMainFileResolver.OutputRelativePath(outputMode)));
             }
 
             pokemonWorkflowService.ClearMemoryCache();
@@ -3972,17 +3969,6 @@ internal sealed partial class ZaPokemonEditSessionService
             }
 
             var changesRegularCount = DexPlacementChangesRegularCount(workflow, dexEdit);
-            if (changesRegularCount && outputMode == ZaOutputMode.ZaRecomp)
-            {
-                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    "Export this Pokédex size change as Standalone, then convert it to ZA Recomp with Mod Merger.",
-                    ZaEditSessionSupport.PokemonDomain,
-                    file: ZaExeFsReservedRegionLedger.ExeFsMainPath,
-                    field: ZaPokemonWorkflowService.DexPlacementField));
-                return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
-            }
-
             var isolateTrinityModManagerRomFs = changesRegularCount
                 && outputMode == ZaOutputMode.TrinityModManager;
             if (isolateTrinityModManagerRomFs
@@ -4074,13 +4060,15 @@ internal sealed partial class ZaPokemonEditSessionService
                 var mainSource = ZaExeFsMainFileResolver.ResolveEffective(project)
                     ?? throw new FileNotFoundException(
                         "Pokemon Legends Z-A exefs/main is no longer available.");
-                var outputPath = ZaExeFsMainFileResolver.ResolveOutputPath(paths)
+                var outputPath = ZaExeFsMainFileResolver.ResolveOutputPath(paths, outputMode)
                     ?? throw new InvalidOperationException(
                         "Pokemon Legends Z-A output exefs/main target could not be resolved.");
-                var mainBytes = File.ReadAllBytes(mainSource.AbsolutePath);
+                var mainBytes = mainSource.ReadBytes();
                 writes.Add(new PlannedFileWrite(
-                    ZaExeFsReservedRegionLedger.ExeFsMainPath,
-                    [mainSource.Reference],
+                    ZaExeFsMainFileResolver.OutputRelativePath(outputMode),
+                    mainSource.Reference.Layer == ProjectFileLayer.Base
+                        ? [mainSource.Reference]
+                        : [mainSource.Reference, new ProjectFileReference(ProjectFileLayer.Base, ZaExeFsReservedRegionLedger.ExeFsMainPath)],
                     File.Exists(outputPath),
                     "Update the runtime Regular Dex boundary used by every verified Pokédex number normalization site.",
                     CreateSourceFingerprint(mainBytes)));

@@ -24,6 +24,8 @@ export function FashionUnlockSection({
   isChangePlanCreating,
   onApplyChangePlan,
   onCreateChangePlan,
+  onReviewZaRecomp,
+  isZaRecompPlan = false,
   onStageInstall,
   onStageUninstall,
   panelOutput,
@@ -36,6 +38,8 @@ export function FashionUnlockSection({
   isChangePlanCreating: boolean;
   onApplyChangePlan: () => void;
   onCreateChangePlan: () => void;
+  onReviewZaRecomp?: () => void;
+  isZaRecompPlan?: boolean;
   onStageInstall: () => void;
   onStageUninstall: () => void;
   panelOutput: WorkflowPanelOutput;
@@ -200,9 +204,15 @@ export function FashionUnlockSection({
                     <ClipboardCheck aria-hidden="true" size={16} />
                     <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
                   </button>
+                  {onReviewZaRecomp ? (
+                    <button className="secondary-button" disabled={!canReviewPlan} onClick={onReviewZaRecomp} type="button">
+                      <ClipboardCheck aria-hidden="true" size={16} />
+                      <span>ZA Recomp</span>
+                    </button>
+                  ) : null}
                   <button className="primary-button" disabled={!canApplyPlan} onClick={onApplyChangePlan} type="button">
                     <Save aria-hidden="true" size={16} />
-                    <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                    <span>{isChangePlanApplying ? 'Applying' : isZaRecompPlan ? 'Apply ZA Recomp' : 'Apply'}</span>
                   </button>
                 </div>
 

@@ -19,6 +19,7 @@ internal sealed class ZaWorkflowFileSource
 {
     public const string DescriptorVirtualPath = ZaTrinityDescriptorPatcher.DescriptorVirtualPath;
     public const string TrinityModManagerRomFsDirectory = "trinity-mod-manager-romfs";
+    public const string ZaRecompDirectory = "za-recomp";
     private const int MaximumBoundedArchiveIndexBytes = 64 * 1024 * 1024;
     private const long MaximumBoundedArchivePackBytes = 128L * 1024L * 1024L;
     private const int MaximumBoundedTableRecords = 50_000;
@@ -338,7 +339,8 @@ internal sealed class ZaWorkflowFileSource
                 looseOutput = SelectLatestLooseOutput(
                     trinityModManagerPath,
                     isolatedTrinityModManagerPath,
-                    standalonePath);
+                    standalonePath,
+                    ResolveOutputPath(project.Paths, normalizedVirtualPath, ZaOutputMode.ZaRecomp));
             }
             catch (Exception exception) when (IsContextualFileFailure(exception))
             {
@@ -637,7 +639,8 @@ internal sealed class ZaWorkflowFileSource
             var looseOutput = SelectLatestLooseOutput(
                 trinityModManagerPath,
                 isolatedPath,
-                standalonePath);
+                standalonePath,
+                ResolveOutputPath(paths, normalizedVirtualPath, ZaOutputMode.ZaRecomp));
             if (looseOutput is not null)
             {
                 return (
@@ -753,6 +756,11 @@ internal sealed class ZaWorkflowFileSource
                     state: null)
                 || FileExistsWithContext(
                     CombineGraphPath(project.Paths.OutputRootPath, relativePath),
+                    relativePath,
+                    ProjectFileLayer.Layered,
+                    state: null)
+                || FileExistsWithContext(
+                    ResolveOutputPath(project.Paths, normalizedVirtualPath, ZaOutputMode.ZaRecomp),
                     relativePath,
                     ProjectFileLayer.Layered,
                     state: null)
@@ -1279,7 +1287,7 @@ internal sealed class ZaWorkflowFileSource
             outputMode,
             batch.ReviewedStandaloneDescriptorBytes,
             batch.DeleteStandaloneDescriptor,
-            allowHybridExeFsOutput: true,
+            allowHybridExeFsOutput: outputMode != ZaOutputMode.Standalone,
             isolateTrinityModManagerRomFs,
             applyContext: applyContext,
             revalidateReviewedState: revalidateReviewedState);
@@ -1395,7 +1403,9 @@ internal sealed class ZaWorkflowFileSource
                 ArgumentNullException.ThrowIfNull(mutation);
                 ArgumentException.ThrowIfNullOrWhiteSpace(mutation.RelativePath);
                 var relativePath = NormalizeStandaloneOutputRelativePath(mutation.RelativePath);
-                if (!relativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase))
+                if (outputMode == ZaOutputMode.ZaRecomp
+                    ? !string.Equals(relativePath, ExeFs.ZaExeFsMainFileResolver.OutputRelativePath(outputMode), StringComparison.Ordinal)
+                    : !relativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase))
                 {
                     throw new ArgumentException(
                         "Explicit standalone output mutations are limited to ExeFS paths.",
@@ -2542,7 +2552,8 @@ internal sealed class ZaWorkflowFileSource
             ZaOutputMode.TrinityModManager when isolateTrinityModManagerRomFs =>
                 $"{TrinityModManagerRomFsDirectory}/{normalizedVirtualPath}",
             ZaOutputMode.TrinityModManager => normalizedVirtualPath,
-            ZaOutputMode.TrinityBypass or ZaOutputMode.ZaRecomp => ToRelativePath(normalizedVirtualPath),
+            ZaOutputMode.TrinityBypass => ToRelativePath(normalizedVirtualPath),
+            ZaOutputMode.ZaRecomp => $"{ZaRecompDirectory}/{ToRelativePath(normalizedVirtualPath)}",
             _ => throw new ArgumentOutOfRangeException(nameof(outputMode), outputMode, null),
         };
     }
@@ -2651,13 +2662,15 @@ internal sealed class ZaWorkflowFileSource
     private static (string Path, bool IsStandalone)? SelectLatestLooseOutput(
         string trinityModManagerPath,
         string isolatedTrinityModManagerPath,
-        string standalonePath)
+        string standalonePath,
+        string zaRecompPath)
     {
         var candidates = new[]
         {
             new LooseOutputCandidate(trinityModManagerPath, IsStandalone: false, Priority: 2),
             new LooseOutputCandidate(isolatedTrinityModManagerPath, IsStandalone: false, Priority: 3),
             new LooseOutputCandidate(standalonePath, IsStandalone: true, Priority: 1),
+            new LooseOutputCandidate(zaRecompPath, IsStandalone: false, Priority: 4),
         };
         var selected = candidates
             .Where(candidate => FileExistsForInspection(candidate.Path))

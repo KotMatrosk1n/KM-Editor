@@ -10,6 +10,51 @@ public static class ZaRecompExecutablePatch
 {
     public const string RelativePath = "exefs/km-editor-main.pchtxt";
 
+    internal static byte[] CreateEmpty(byte[] original) =>
+        Encoding.UTF8.GetBytes(CreateHeader(NsoFile.Inspect(original).BuildId).Append("@stop\n").ToString());
+
+    internal static byte[] Apply(byte[] original, byte[] patch)
+    {
+        var baseline = NsoFile.Inspect(original);
+        using var reader = new StringReader(Encoding.UTF8.GetString(patch));
+        if (reader.ReadLine() != $"@nsobid-{Convert.ToHexString(baseline.BuildId)}"
+            || reader.ReadLine() != "@flag offset_shift 0x100"
+            || reader.ReadLine() != ""
+            || reader.ReadLine() != "@enabled")
+        {
+            throw new InvalidDataException("The KM Editor ZA Recomp patch has an invalid header or targets a different executable build.");
+        }
+
+        var segments = baseline.Segments;
+        var data = segments.Select(segment => segment.DecompressedData.ToArray()).ToArray();
+        long previousEnd = 0;
+        while (reader.ReadLine() is { } line)
+        {
+            if (line == "@stop" && reader.ReadLine() is null)
+                return NsoFile.Parse(original).Write(data[0], data[1], data[2]);
+
+            if (line.Length is < 11 or > 137 || line[8] != ' '
+                || !uint.TryParse(line.AsSpan(0, 8), NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var offset)
+                || offset < previousEnd || (line.Length - 9) % 2 != 0
+                || !line.AsSpan(9).ToArray().All(char.IsAsciiHexDigit))
+            {
+                throw new InvalidDataException("The KM Editor ZA Recomp patch has an invalid or overlapping write.");
+            }
+
+            var replacement = Convert.FromHexString(line.AsSpan(9));
+            previousEnd = (long)offset + replacement.Length;
+            var segmentIndex = Enumerable.Range(0, segments.Count).FirstOrDefault(index =>
+                offset >= segments[index].Header.MemoryOffset
+                && previousEnd <= (long)segments[index].Header.MemoryOffset + data[index].Length, -1);
+            if (segmentIndex < 0)
+                throw new InvalidDataException("The KM Editor ZA Recomp patch writes outside the mapped game image.");
+
+            replacement.CopyTo(data[segmentIndex].AsSpan(checked((int)offset - segments[segmentIndex].Header.MemoryOffset)));
+        }
+
+        throw new InvalidDataException("The KM Editor ZA Recomp patch is missing its end marker.");
+    }
+
     public static byte[]? Create(byte[] original, byte[] edited)
     {
         if (original.AsSpan().SequenceEqual(edited))
@@ -73,9 +118,7 @@ public static class ZaRecompExecutablePatch
 
     private static byte[]? Write(byte[] buildId, IEnumerable<KeyValuePair<uint, byte>> changes)
     {
-        var output = new StringBuilder()
-            .Append("@nsobid-").Append(Convert.ToHexString(buildId)).Append('\n')
-            .Append("@flag offset_shift 0x100\n\n@enabled\n");
+        var output = CreateHeader(buildId);
         Span<byte> run = stackalloc byte[64];
         var length = 0;
         uint start = 0;
@@ -103,4 +146,8 @@ public static class ZaRecompExecutablePatch
     private static void AppendRun(StringBuilder output, uint offset, ReadOnlySpan<byte> bytes) =>
         output.Append(offset.ToString("X8", CultureInfo.InvariantCulture)).Append(' ')
             .Append(Convert.ToHexString(bytes)).Append('\n');
+
+    private static StringBuilder CreateHeader(byte[] buildId) =>
+        new StringBuilder().Append("@nsobid-").Append(Convert.ToHexString(buildId)).Append('\n')
+            .Append("@flag offset_shift 0x100\n\n@enabled\n");
 }

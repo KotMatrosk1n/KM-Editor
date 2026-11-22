@@ -44,6 +44,8 @@ export function TypeChartSection({
   isStaging,
   onApplyChangePlan,
   onCreateChangePlan,
+  onReviewZaRecomp,
+  isZaRecompPlan = false,
   onDirtyChange,
   onStageChart,
   onStageUninstall,
@@ -56,6 +58,8 @@ export function TypeChartSection({
   isStaging: boolean;
   onApplyChangePlan: () => void;
   onCreateChangePlan: () => void;
+  onReviewZaRecomp?: () => void;
+  isZaRecompPlan?: boolean;
   onDirtyChange: (isDirty: boolean) => void;
   onStageChart: (values: TypeChartEffectivenessValue[]) => void;
   onStageUninstall: () => void;
@@ -291,6 +295,12 @@ export function TypeChartSection({
                 <ClipboardCheck aria-hidden="true" size={16} />
                 <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
               </button>
+              {onReviewZaRecomp ? (
+                <button className="secondary-button" disabled={!canReviewPlan} onClick={onReviewZaRecomp} type="button">
+                  <ClipboardCheck aria-hidden="true" size={16} />
+                  <span>ZA Recomp</span>
+                </button>
+              ) : null}
               <button
                 aria-busy={isChangePlanApplying || undefined}
                 className="primary-button"
@@ -299,7 +309,7 @@ export function TypeChartSection({
                 type="button"
               >
                 <Save aria-hidden="true" size={16} />
-                <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                <span>{isChangePlanApplying ? 'Applying' : isZaRecompPlan ? 'Apply ZA Recomp' : 'Apply'}</span>
               </button>
             </div>
 

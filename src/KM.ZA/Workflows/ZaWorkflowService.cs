@@ -2506,7 +2506,7 @@ public sealed class ZaWorkflowService
             && (domain != ZaEditSessionDomain.TypeChart || outputMode == ZaOutputMode.Standalone)
             && (domain != ZaEditSessionDomain.Pokemon || reviewedPlan.Writes.All(write => !string.Equals(
                 write.TargetRelativePath,
-                ZaExeFsReservedRegionLedger.ExeFsMainPath,
+                ZaExeFsMainFileResolver.OutputRelativePath(outputMode),
                 StringComparison.OrdinalIgnoreCase)));
     }
 
@@ -2749,7 +2749,7 @@ public sealed class ZaWorkflowService
 
     private sealed class BoundedGameModuleExecutableReader
     {
-        private const int MaximumExecutableCount = 2;
+        private const int MaximumExecutableCount = 4;
         private const long MaximumAggregateExecutableBytes =
             (long)MaximumExecutableCount * MaximumSemanticSourceBytesPerFile;
 
@@ -2767,6 +2767,8 @@ public sealed class ZaWorkflowService
             {
                 (Path: ZaExeFsMainFileResolver.ResolveBasePath(paths), Root: paths.BaseExeFsPath),
                 (Path: ZaExeFsMainFileResolver.ResolveOutputPath(paths), Root: paths.OutputRootPath),
+                (Path: ZaExeFsMainFileResolver.ResolveOutputPath(paths, ZaOutputMode.ZaRecomp), Root: paths.OutputRootPath),
+                (Path: ZaExeFsMainFileResolver.ResolveImportedPatchPath(paths), Root: paths.OutputRootPath),
             };
             var allowed = new Dictionary<string, string>(comparer);
             foreach (var candidate in candidates)

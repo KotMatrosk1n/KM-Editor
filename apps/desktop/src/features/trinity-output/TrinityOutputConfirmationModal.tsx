@@ -58,13 +58,21 @@ export function TrinityOutputConfirmationModal({
           <h2 id={headingId}>{translateLiteral(title)}</h2>
         </div>
         {isZaRecomp ? (
-          <p className="modal-copy">
-            {translateLiteral('KM Editor will write loose RomFS files under')}{' '}
-            <strong data-localization-ignore={Boolean(outputRootPath)}>
-              {outputRootPath ? outputRootLabel : translateLiteral(outputRootLabel)}
-            </strong>{' '}
-            {translateLiteral('for installation in your ZA Recomp mods folder.')}
-          </p>
+          <>
+            <p className="modal-copy">
+              {translateLiteral('KM Editor will write one mod in the')} <code>za-recomp</code>{' '}
+              {translateLiteral('folder under')}{' '}
+              <strong data-localization-ignore={Boolean(outputRootPath)}>
+                {outputRootPath ? outputRootLabel : translateLiteral(outputRootLabel)}
+              </strong>.{' '}
+              {translateLiteral('The folder holds loose RomFS edits and any ExeFS patch. Copy that folder into your ZA Recomp mods folder.')}
+            </p>
+            {includesExeFsOutput ? (
+              <p className="modal-copy modal-copy-muted">
+                {translateLiteral('Turn on Code for this mod in ZA Recomp to apply its ExeFS patch.')}
+              </p>
+            ) : null}
+          </>
         ) : isStandalone ? (
           <>
             <p className="modal-copy">

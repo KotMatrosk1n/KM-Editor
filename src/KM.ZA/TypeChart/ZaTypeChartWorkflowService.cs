@@ -114,7 +114,7 @@ public sealed class ZaTypeChartWorkflowService
         try
         {
             var analysis = ZaTypeChartMainPatcher.Analyze(
-                File.ReadAllBytes(mainSource.AbsolutePath),
+                mainSource.ReadBytes(),
                 project.Paths.SelectedGame);
 
             if (analysis.Kind is ZaTypeChartMainKind.UnsupportedBuild
@@ -175,13 +175,6 @@ public sealed class ZaTypeChartWorkflowService
     {
         return string.Equals(relativePath, ExeFsMainPath, StringComparison.OrdinalIgnoreCase)
             ? ZaExeFsMainFileResolver.ResolveEffective(project)
-            : null;
-    }
-
-    internal static string? ResolveOutputPath(ProjectPaths paths, string targetRelativePath)
-    {
-        return string.Equals(targetRelativePath, ExeFsMainPath, StringComparison.OrdinalIgnoreCase)
-            ? ZaExeFsMainFileResolver.ResolveOutputPath(paths)
             : null;
     }
 

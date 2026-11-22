@@ -618,14 +618,18 @@ internal static class ZaChangePlanSourceGuard
 
     private static bool IsExeFsPath(string relativePath)
     {
-        return new RelativeOutputPath(relativePath).Value.StartsWith(
-            "exefs/",
-            StringComparison.OrdinalIgnoreCase);
+        var normalized = new RelativeOutputPath(relativePath).Value;
+        return normalized.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase)
+            || ExeFs.ZaExeFsMainFileResolver.IsPatchPath(normalized);
     }
 
     private static string ToSemanticSourcePath(string targetRelativePath)
     {
         var normalized = new RelativeOutputPath(targetRelativePath).Value;
+        var recompPrefix = $"{ZaWorkflowFileSource.ZaRecompDirectory}/";
+        if (normalized.StartsWith($"{recompPrefix}romfs/", StringComparison.OrdinalIgnoreCase))
+            return normalized[recompPrefix.Length..];
+
         var isolatedPrefix = $"{ZaWorkflowFileSource.TrinityModManagerRomFsDirectory}/";
         return normalized.StartsWith(isolatedPrefix, StringComparison.OrdinalIgnoreCase)
             ? normalized[isolatedPrefix.Length..]
@@ -640,6 +644,9 @@ internal static class ZaChangePlanSourceGuard
         }
 
         var normalized = new RelativeOutputPath(relativePath).Value;
+        if (!normalized.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase)
+            || ExeFs.ZaExeFsMainFileResolver.IsPatchPath(normalized))
+            return null;
         var pathWithinExeFs = normalized["exefs/".Length..];
         var root = Path.GetFullPath(paths.BaseExeFsPath);
         var path = Path.GetFullPath(Path.Combine(

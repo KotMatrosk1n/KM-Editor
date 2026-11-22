@@ -1104,7 +1104,7 @@ internal sealed class ZaPokemonWorkflowService
         try
         {
             var analysis = ZaDexLayoutMainPatcher.Analyze(
-                readExecutableBytes(effectiveMain.AbsolutePath),
+                effectiveMain.ReadBytes(readExecutableBytes),
                 project.Paths.SelectedGame);
             if (analysis.Kind is ZaDexLayoutMainKind.UnsupportedBuild
                 or ZaDexLayoutMainKind.GameMismatch

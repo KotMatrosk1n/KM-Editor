@@ -88,7 +88,6 @@ public sealed class ZaFashionUnlockWorkflowService
 
         provenance = CreateProvenance(entry);
         var basePath = ResolveBaseSourcePath(project.Paths, ExeFsMainPath);
-        var effectivePath = ResolveSourcePath(project.Paths, entry);
         if (basePath is null || !File.Exists(basePath))
         {
             diagnostics.Add(CreateDiagnostic(
@@ -107,7 +106,7 @@ public sealed class ZaFashionUnlockWorkflowService
                 diagnostics);
         }
 
-        if (effectivePath is null || !File.Exists(effectivePath))
+        if (ZaExeFsMainFileResolver.ResolveEffective(project) is not { } effectiveSource)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -125,6 +124,9 @@ public sealed class ZaFashionUnlockWorkflowService
                 diagnostics);
         }
 
+        var effectivePath = effectiveSource.AbsolutePath;
+        provenance = new ZaFashionUnlockProvenance(effectiveSource.Reference.RelativePath,
+            effectiveSource.Reference.Layer, effectiveSource.FileState);
         ZaFashionUnlockAnalysis baseAnalysis;
         ZaFashionUnlockAnalysis effectiveAnalysis;
         try
@@ -137,7 +139,7 @@ public sealed class ZaFashionUnlockWorkflowService
             }
             else
             {
-                var effectiveBytes = File.ReadAllBytes(effectivePath);
+                var effectiveBytes = effectiveSource.ReadBytes();
                 effectiveAnalysis = ZaFashionUnlockMainPatcher.Analyze(
                     effectiveBytes,
                     project.Paths.SelectedGame);
@@ -224,9 +226,7 @@ public sealed class ZaFashionUnlockWorkflowService
         var canUninstall = summary.Availability == ZaWorkflowAvailability.Available
             && effectiveAnalysis.Kind == ZaFashionUnlockInstallKind.Installed
             && salon is not null
-            && entry.LayeredFile is not null
-            && ResolveOutputPath(project.Paths, ExeFsMainPath) is { } outputPath
-            && File.Exists(outputPath);
+            && effectiveSource.Reference.Layer == ProjectFileLayer.Layered;
 
         var installMessage = effectiveAnalysis.Kind == ZaFashionUnlockInstallKind.Installed
             ? salon switch
@@ -264,9 +264,9 @@ public sealed class ZaFashionUnlockWorkflowService
             sources.Add(new ProjectFileReference(ProjectFileLayer.Base, ExeFsMainPath));
         }
 
-        if (entry.LayeredFile is not null)
+        if (ZaExeFsMainFileResolver.ResolveEffective(project) is { Reference.Layer: ProjectFileLayer.Layered } effective)
         {
-            sources.Add(new ProjectFileReference(ProjectFileLayer.Layered, ExeFsMainPath));
+            sources.Add(effective.Reference);
         }
 
         return sources
@@ -296,11 +296,6 @@ public sealed class ZaFashionUnlockWorkflowService
         return targetRelativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase)
             ? CombineGraphPath(paths.BaseExeFsPath, targetRelativePath["exefs/".Length..])
             : null;
-    }
-
-    internal static string? ResolveOutputPath(ProjectPaths paths, string targetRelativePath)
-    {
-        return ZaExeFsMainFileResolver.ResolveOutputPath(paths);
     }
 
     internal static bool IsSupportedGame(ProjectGame? game)

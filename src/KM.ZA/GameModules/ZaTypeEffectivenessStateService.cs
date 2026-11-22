@@ -146,7 +146,7 @@ public sealed class ZaTypeEffectivenessStateService
         ProjectGame? selectedGame)
     {
         var analysis = ZaTypeChartMainPatcher.Analyze(
-            readExecutableBytes(source.AbsolutePath),
+            source.ReadBytes(readExecutableBytes),
             selectedGame);
         if (analysis.Kind is not ZaTypeChartMainKind.Vanilla
             and not ZaTypeChartMainKind.Modified
@@ -191,7 +191,8 @@ public sealed class ZaTypeEffectivenessStateService
             || !string.Equals(
                 source.Reference.RelativePath,
                 ZaExeFsReservedRegionLedger.ExeFsMainPath,
-                StringComparison.Ordinal))
+                StringComparison.Ordinal)
+                && (isBaseSource || !ZaExeFsMainFileResolver.IsPatchPath(source.Reference.RelativePath)))
         {
             throw new InvalidDataException(
                 "Type Effectiveness State received inconsistent executable source metadata.");

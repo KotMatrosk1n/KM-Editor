@@ -104,7 +104,7 @@ public sealed class ZaFashionUnlockEditSessionService
             return new ZaFashionUnlockEditResult(workflow, currentSession, diagnostics);
         }
 
-        if (!CanStageUninstall(project, workflow, paths, diagnostics))
+        if (!CanStageUninstall(project, workflow, diagnostics))
         {
             return new ZaFashionUnlockEditResult(workflow, currentSession, diagnostics);
         }
@@ -167,7 +167,7 @@ public sealed class ZaFashionUnlockEditSessionService
 
         if (session.PendingEdits.Count == 1 && IsCanonicalUninstallIdentity(session.PendingEdits[0]))
         {
-            CanStageUninstall(project, workflow, paths, diagnostics);
+            CanStageUninstall(project, workflow, diagnostics);
         }
         else
         {
@@ -200,18 +200,18 @@ public sealed class ZaFashionUnlockEditSessionService
 
         var validation = Validate(paths, session);
         var diagnostics = validation.Diagnostics.ToList();
-        if (outputMode != ZaOutputMode.Standalone)
+        if (outputMode is not (ZaOutputMode.Standalone or ZaOutputMode.ZaRecomp))
         {
             diagnostics.Add(CreateDiagnostic(DiagnosticSeverity.Error,
-                "Fashion Unlock edits exefs/main. Use standalone LayeredFS output for this editor.",
-                expected: "Standalone LayeredFS output mode"));
+                "Fashion Unlock edits exefs/main. Use Standalone or ZA Recomp output for this editor.",
+                expected: "Standalone or ZA Recomp output mode"));
         }
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
 
-        var targetPath = ResolveOutputPath(paths, diagnostics);
+        var targetPath = ZaExeFsMainFileResolver.ResolveOutputPath(paths, outputMode);
         if (targetPath is null)
         {
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
@@ -223,13 +223,13 @@ public sealed class ZaFashionUnlockEditSessionService
         var writes = new List<PlannedFileWrite>
         {
             new(
-                ZaFashionUnlockWorkflowService.ExeFsMainPath,
+                ZaExeFsMainFileResolver.OutputRelativePath(outputMode),
                 CreatePendingSources(project, isUninstall),
                 File.Exists(targetPath),
                 isUninstall ? UninstallReason : InstallReason),
         };
         var salon = ZaFashionUnlockSalon.Read(project);
-        if (isUninstall ? salon.HasUnlockedStyles : !salon.IsUnlocked)
+        if (isUninstall ? salon.HasUnlockedStyles : !salon.IsUnlocked || outputMode == ZaOutputMode.ZaRecomp)
         {
             var sources = new List<ProjectFileReference>
             {
@@ -238,13 +238,16 @@ public sealed class ZaFashionUnlockEditSessionService
             var effective = new ProjectFileReference(salon.Effective.SourceLayer, salon.Effective.RelativePath);
             if (!sources.Contains(effective))
                 sources.Add(effective);
-            var target = ZaWorkflowFileSource.CreatePlannedWrite(paths, ZaFashionUnlockSalon.VirtualPath, sources);
+            var target = ZaWorkflowFileSource.CreatePlannedWrite(paths, ZaFashionUnlockSalon.VirtualPath, sources, outputMode);
             writes.Add(new PlannedFileWrite(target.TargetRelativePath, target.Sources, target.ReplacesExistingOutput,
                 isUninstall ? "Restore the five original quest hairstyle conditions in the Hair Salon."
                     : "Unlock five quest hairstyles in both Hair Salon lineups."));
-            var descriptor = ZaWorkflowFileSource.CreateDescriptorPlannedWrite(paths);
-            writes.Add(new PlannedFileWrite(descriptor.TargetRelativePath, descriptor.Sources,
-                descriptor.ReplacesExistingOutput, "Update the Trinity descriptor for the Hair Salon override."));
+            if (outputMode == ZaOutputMode.Standalone)
+            {
+                var descriptor = ZaWorkflowFileSource.CreateDescriptorPlannedWrite(paths);
+                writes.Add(new PlannedFileWrite(descriptor.TargetRelativePath, descriptor.Sources,
+                    descriptor.ReplacesExistingOutput, "Update the Trinity descriptor for the Hair Salon override."));
+            }
         }
         diagnostics.Add(CreateDiagnostic(
             DiagnosticSeverity.Info,
@@ -290,8 +293,8 @@ public sealed class ZaFashionUnlockEditSessionService
         try
         {
             var uninstall = IsCanonicalUninstallIdentity(session.PendingEdits.Single());
-            transaction = ZaWorkflowFileSource.ApplyStandaloneMixedBatch(
-                paths,
+            transaction = ZaWorkflowFileSource.ApplyHybridMixedBatch(
+                paths, outputMode, isolateTrinityModManagerRomFs: false,
                 () =>
                 {
                     projectWorkspaceService.ClearMemoryCache();
@@ -301,7 +304,7 @@ public sealed class ZaFashionUnlockEditSessionService
                     var basePath = ZaExeFsMainFileResolver.ResolveBasePath(paths)
                         ?? throw new FileNotFoundException("Fashion Unlock base exefs/main is no longer available.");
                     var baseBytes = File.ReadAllBytes(basePath);
-                    var effectiveBytes = File.ReadAllBytes(source.AbsolutePath);
+                    var effectiveBytes = source.ReadBytes();
                     EnsureVerifiedVanillaBase(ZaFashionUnlockMainPatcher.Analyze(baseBytes, paths.SelectedGame));
                     EnsureEditableEffectiveSource(ZaFashionUnlockMainPatcher.Analyze(effectiveBytes, paths.SelectedGame));
                     ZaFashionUnlockMainPatcher.EnsureCompatibleExecutableIdentity(baseBytes, effectiveBytes);
@@ -312,7 +315,9 @@ public sealed class ZaFashionUnlockEditSessionService
                         ? null : output;
                     var salon = ZaFashionUnlockSalon.Read(project);
                     var salonBytes = salon.CreateOutput(uninstall);
-                    var deleteSalon = uninstall && salonBytes is not null && salon.CanDeleteOutput(paths, salonBytes);
+                    if (!uninstall && outputMode == ZaOutputMode.ZaRecomp)
+                        salonBytes ??= salon.Effective.Bytes;
+                    var deleteSalon = outputMode == ZaOutputMode.Standalone && uninstall && salonBytes is not null && salon.CanDeleteOutput(paths, salonBytes);
                     IReadOnlyList<string> salonDeletes = deleteSalon ? [ZaFashionUnlockSalon.VirtualPath] : [];
                     var descriptorPreview = deleteSalon
                         ? ZaWorkflowFileSource.CreateStandaloneDescriptorPreview(paths, [], salonDeletes)
@@ -322,9 +327,7 @@ public sealed class ZaFashionUnlockEditSessionService
                     return new ZaStandaloneMixedBatch(
                         salonBytes is not null && !deleteSalon ? [new(ZaFashionUnlockSalon.VirtualPath, salonBytes)] : [],
                         salonDeletes,
-                        [new ZaStandaloneOutputMutation(ZaFashionUnlockWorkflowService.ExeFsMainPath,
-                            outputBytes, DeleteFallbackBytes: outputBytes is null ? baseBytes : null,
-                            ApplyContext: executableContext)],
+                        [ZaExeFsMainFileResolver.CreateMutation(paths, outputMode, outputBytes, baseBytes, executableContext)],
                         descriptorPreview,
                         deleteDescriptor);
                 },
@@ -334,7 +337,7 @@ public sealed class ZaFashionUnlockEditSessionService
                 new ProjectFileReference(ProjectFileLayer.Generated, write.TargetRelativePath)));
             diagnostics.Add(CreateDiagnostic(DiagnosticSeverity.Info, uninstall
                 ? "Restored the wardrobe and Hair Salon conditions managed by Fashion Unlock."
-                : "Applied Fashion Unlock changes to the configured LayeredFS output root."));
+                : ZaEditSessionSupport.CreateApplyOutputMessage("Fashion Unlock", outputMode)));
         }
         catch (ZaOutputApplyNotCommittedException exception)
         {
@@ -388,7 +391,6 @@ public sealed class ZaFashionUnlockEditSessionService
     private static bool CanStageUninstall(
         OpenedProject project,
         ZaFashionUnlockWorkflow workflow,
-        ProjectPaths paths,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (!project.Health.CanOpenEditableWorkflows
@@ -410,8 +412,7 @@ public sealed class ZaFashionUnlockEditSessionService
             return false;
         }
 
-        var targetPath = ResolveOutputPath(paths, diagnostics);
-        if (targetPath is null || !File.Exists(targetPath))
+        if (ZaExeFsMainFileResolver.ResolveEffective(project)?.Reference.Layer != ProjectFileLayer.Layered)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -564,33 +565,6 @@ public sealed class ZaFashionUnlockEditSessionService
             throw new InvalidDataException(
                 "The reviewed effective exefs/main is no longer vanilla or an exact Fashion Unlock install.");
         }
-    }
-
-    private static string? ResolveOutputPath(
-        ProjectPaths paths,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Fashion Unlock apply requires a configured output root.",
-                expected: "Valid output root"));
-            return null;
-        }
-
-        var targetPath = ZaFashionUnlockWorkflowService.ResolveOutputPath(
-            paths,
-            ZaFashionUnlockWorkflowService.ExeFsMainPath);
-        if (targetPath is null)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Fashion Unlock target must stay inside the configured output root.",
-                expected: "Output-root-contained target"));
-        }
-
-        return targetPath;
     }
 
     private static ApplyResult CreateApplyResult(
