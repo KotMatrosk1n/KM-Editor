@@ -44,8 +44,6 @@ export function TypeChartSection({
   isStaging,
   onApplyChangePlan,
   onCreateChangePlan,
-  onReviewZaRecomp,
-  isZaRecompPlan = false,
   onDirtyChange,
   onStageChart,
   onStageUninstall,
@@ -56,10 +54,8 @@ export function TypeChartSection({
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
   isStaging: boolean;
-  onApplyChangePlan: () => void;
-  onCreateChangePlan: () => void;
-  onReviewZaRecomp?: () => void;
-  isZaRecompPlan?: boolean;
+  onApplyChangePlan?: () => void;
+  onCreateChangePlan?: () => void;
   onDirtyChange: (isDirty: boolean) => void;
   onStageChart: (values: TypeChartEffectivenessValue[]) => void;
   onStageUninstall: () => void;
@@ -67,7 +63,6 @@ export function TypeChartSection({
   workflow: TypeChartWorkflow | null;
 }) {
   const { t, translateLiteral } = useLocalization();
-  const zaRecompApplyLabel = isZaRecompPlan ? translateLiteral('Apply ZA Recomp') : undefined;
   const workflowValues = useMemo(() => getTypeChartWorkflowValues(workflow), [workflow]);
   const vanillaValues = useMemo(() => getTypeChartVanillaValues(workflow), [workflow]);
   const stagedState = useMemo(
@@ -286,43 +281,31 @@ export function TypeChartSection({
                   <span>{isStaging ? 'Staging' : 'Stage Uninstall'}</span>
                 </button>
               ) : null}
-              <button
-                aria-busy={isChangePlanCreating || undefined}
-                className="secondary-button"
-                disabled={!canReviewPlan}
-                onClick={onCreateChangePlan}
-                type="button"
-              >
-                <ClipboardCheck aria-hidden="true" size={16} />
-                <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
-              </button>
-              <button
-                aria-busy={isChangePlanApplying || undefined}
-                aria-label={zaRecompApplyLabel}
-                className="primary-button"
-                disabled={!canApplyPlan}
-                onClick={onApplyChangePlan}
-                title={zaRecompApplyLabel}
-                type="button"
-              >
-                <Save aria-hidden="true" size={16} />
-                <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
-              </button>
+              {onCreateChangePlan && onApplyChangePlan ? (
+                <>
+                  <button
+                    aria-busy={isChangePlanCreating || undefined}
+                    className="secondary-button"
+                    disabled={!canReviewPlan}
+                    onClick={onCreateChangePlan}
+                    type="button"
+                  >
+                    <ClipboardCheck aria-hidden="true" size={16} />
+                    <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+                  </button>
+                  <button
+                    aria-busy={isChangePlanApplying || undefined}
+                    className="primary-button"
+                    disabled={!canApplyPlan}
+                    onClick={onApplyChangePlan}
+                    type="button"
+                  >
+                    <Save aria-hidden="true" size={16} />
+                    <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                  </button>
+                </>
+              ) : null}
             </div>
-            {onReviewZaRecomp ? (
-              <div className="type-chart-actions">
-                <button
-                  aria-pressed={isZaRecompPlan}
-                  className="secondary-button za-recomp-review"
-                  disabled={!canReviewPlan}
-                  onClick={onReviewZaRecomp}
-                  type="button"
-                >
-                  <ClipboardCheck aria-hidden="true" size={16} />
-                  <span>ZA Recomp</span>
-                </button>
-              </div>
-            ) : null}
 
             <dl className="encounter-slot-detail">
               <div>

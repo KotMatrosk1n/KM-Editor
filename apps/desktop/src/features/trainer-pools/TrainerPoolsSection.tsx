@@ -19,7 +19,6 @@ import { useLocalization } from '../../localization';
 type TrainerPoolsSectionProps = {
   editSession: EditSession | null;
   isStaging: boolean;
-  onOpenChanges: () => void;
   onStageSwap: (selection: {
     destinationLogicalPoolId: string;
     destinationRawTrainerId: string;
@@ -37,7 +36,6 @@ type PoolMemberSelection = {
 export function TrainerPoolsSection({
   editSession,
   isStaging,
-  onOpenChanges,
   onStageSwap,
   workflow
 }: TrainerPoolsSectionProps) {
@@ -256,16 +254,6 @@ export function TrainerPoolsSection({
               ? t('trainerPools.swap.staging')
               : t('trainerPools.swap.stage')}
           </button>
-          {editSession && editSession.pendingEdits.length > 0 ? (
-            <button
-              className="secondary-button"
-              disabled={isStageLocked}
-              onClick={onOpenChanges}
-              type="button"
-            >
-              {t('trainerPools.openChanges', { count: editSession.pendingEdits.length })}
-            </button>
-          ) : null}
         </div>
       </section>
 

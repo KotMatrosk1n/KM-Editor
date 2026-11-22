@@ -102,7 +102,7 @@ function getVerifiedBaseSources(
   return [
     { layer: 'base' as const, relativePath: fashionUnlockSourcePath },
     ...(workflow.provenance.sourceLayer === 'layered'
-      ? [{ layer: 'layered' as const, relativePath: fashionUnlockSourcePath }]
+      ? [{ layer: 'layered' as const, relativePath: workflow.provenance.sourceFile }]
       : []),
     {
       layer: 'pending' as const,

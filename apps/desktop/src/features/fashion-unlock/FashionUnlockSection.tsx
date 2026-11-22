@@ -24,8 +24,6 @@ export function FashionUnlockSection({
   isChangePlanCreating,
   onApplyChangePlan,
   onCreateChangePlan,
-  onReviewZaRecomp,
-  isZaRecompPlan = false,
   onStageInstall,
   onStageUninstall,
   panelOutput,
@@ -36,10 +34,8 @@ export function FashionUnlockSection({
   editSession: EditSession | null;
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
-  onApplyChangePlan: () => void;
-  onCreateChangePlan: () => void;
-  onReviewZaRecomp?: () => void;
-  isZaRecompPlan?: boolean;
+  onApplyChangePlan?: () => void;
+  onCreateChangePlan?: () => void;
   onStageInstall: () => void;
   onStageUninstall: () => void;
   panelOutput: WorkflowPanelOutput;
@@ -48,7 +44,6 @@ export function FashionUnlockSection({
   workflow: FashionUnlockWorkflow | null;
 }) {
   const { t, translateLiteral } = useLocalization();
-  const zaRecompApplyLabel = isZaRecompPlan ? translateLiteral('Apply ZA Recomp') : undefined;
   const pendingAction = getCanonicalFashionUnlockPendingAction(editSession, workflow);
   const isInstallStaged = pendingAction === 'install';
   const isUninstallStaged = pendingAction === 'uninstall';
@@ -201,36 +196,19 @@ export function FashionUnlockSection({
                     <Trash2 aria-hidden="true" size={16} />
                     <span>{stagingAction === 'uninstall' ? 'Staging uninstall' : 'Stage Uninstall'}</span>
                   </button>
-                  <button className="secondary-button" disabled={!canReviewPlan} onClick={onCreateChangePlan} type="button">
-                    <ClipboardCheck aria-hidden="true" size={16} />
-                    <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
-                  </button>
-                  <button
-                    aria-label={zaRecompApplyLabel}
-                    className="primary-button"
-                    disabled={!canApplyPlan}
-                    onClick={onApplyChangePlan}
-                    title={zaRecompApplyLabel}
-                    type="button"
-                  >
-                    <Save aria-hidden="true" size={16} />
-                    <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
-                  </button>
+                  {onCreateChangePlan && onApplyChangePlan ? (
+                    <>
+                      <button className="secondary-button" disabled={!canReviewPlan} onClick={onCreateChangePlan} type="button">
+                        <ClipboardCheck aria-hidden="true" size={16} />
+                        <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+                      </button>
+                      <button className="primary-button" disabled={!canApplyPlan} onClick={onApplyChangePlan} type="button">
+                        <Save aria-hidden="true" size={16} />
+                        <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                      </button>
+                    </>
+                  ) : null}
                 </div>
-                {onReviewZaRecomp ? (
-                  <div className="form-actions">
-                    <button
-                      aria-pressed={isZaRecompPlan}
-                      className="secondary-button za-recomp-review"
-                      disabled={!canReviewPlan}
-                      onClick={onReviewZaRecomp}
-                      type="button"
-                    >
-                      <ClipboardCheck aria-hidden="true" size={16} />
-                      <span>ZA Recomp</span>
-                    </button>
-                  </div>
-                ) : null}
 
                 <dl className="encounter-slot-detail">
                   <div><dt>Install message</dt><dd>{translateLiteral(workflow.installMessage)}</dd></div>

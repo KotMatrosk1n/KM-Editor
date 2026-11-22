@@ -187,15 +187,6 @@ export const scarletVioletAdvancedEditorDomains = new Set([
   'workflow.hyperspaceBypass'
 ]);
 
-export const pokemonLegendsZAAdvancedEditorSectionIds = new Set<WorkbenchSection>([
-  'angeFight',
-  'dexLayout'
-]);
-
-export const pokemonLegendsZAAdvancedEditorDomains = new Set([
-  'workflow.angeFight'
-]);
-
 export const sharedStagedEditorSectionIds = new Set<WorkbenchSection>([
   'dynamaxAdventures',
   'modelViewer',
@@ -309,17 +300,6 @@ export function isScarletVioletAdvancedEditorSection(
     section !== null &&
     isScarletVioletGame(game) &&
     scarletVioletAdvancedEditorSectionIds.has(section)
-  );
-}
-
-export function isPokemonLegendsZAAdvancedEditorSection(
-  section: WorkbenchSection | null,
-  game: ProjectGame | null | undefined
-) {
-  return (
-    section !== null &&
-    isPokemonLegendsZAGame(game) &&
-    pokemonLegendsZAAdvancedEditorSectionIds.has(section)
   );
 }
 

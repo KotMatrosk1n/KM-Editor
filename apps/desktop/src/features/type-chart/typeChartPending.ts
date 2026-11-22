@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import {
+  zaRecompMainPatchPathSchema,
   type EditSession,
   type ProjectGame,
   type TypeChartWorkflow
@@ -138,7 +139,10 @@ function hasCanonicalChartSources(
   return (
     sources.length === 1 &&
     (sources[0]?.layer === 'base' || sources[0]?.layer === 'layered') &&
-    sources[0].relativePath === typeChartMainPath
+    (sources[0].relativePath === typeChartMainPath ||
+      (detectedGame === 'za' &&
+        sources[0].layer === 'layered' &&
+        zaRecompMainPatchPathSchema.safeParse(sources[0].relativePath).success))
   );
 }
 

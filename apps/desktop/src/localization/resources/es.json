@@ -7261,6 +7261,7 @@
     "Output for Trinity Bypass?": "¿Exportar para Trinity Bypass?",
     "Output for Trinity Mod Manager": "Exportar para Trinity Mod Manager",
     "Output for Trinity Mod Manager?": "¿Exportar para Trinity Mod Manager?",
+    "Output for ZA Recomp": "Exportar para ZA Recomp",
     "Output root does not exist; write actions are disabled until it is created or changed.": "La raíz de salida no existe; las acciones de escritura estarán desactivadas hasta crearla o cambiarla.",
     "Output root folder": "carpeta raíz de salida",
     "Output root folder matches selected {game} title id {titleId}.": "La carpeta raíz de salida coincide con el ID de título seleccionado de {game} {titleId}.",
