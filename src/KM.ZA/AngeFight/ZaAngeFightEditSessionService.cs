@@ -296,12 +296,12 @@ internal sealed class ZaAngeFightEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var diagnostics = Validate(paths, session).Diagnostics.ToList();
-        if (outputMode != ZaOutputMode.Standalone)
+        if (outputMode is not (ZaOutputMode.Standalone or ZaOutputMode.ZaRecomp))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Ange Fight uses standalone LayeredFS output so both Trinity members and the descriptor can be reviewed together.",
-                expected: "Standalone output mode"));
+                "Ange Fight supports Standalone and ZA Recomp output.",
+                expected: "Standalone or ZA Recomp output mode"));
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -319,11 +319,11 @@ internal sealed class ZaAngeFightEditSessionService
             var preparedBatch = PrepareOutputs(paths, operation, planSources);
             var preparedOutputs = preparedBatch.Outputs;
             var plannedWriteVirtualPaths = preparedOutputs
-                .Where(output => !output.DeleteOutput)
+                .Where(output => outputMode != ZaOutputMode.Standalone || !output.DeleteOutput)
                 .Select(output => output.VirtualPath)
                 .ToArray();
             var plannedDeleteVirtualPaths = preparedOutputs
-                .Where(output => output.DeleteOutput)
+                .Where(output => outputMode == ZaOutputMode.Standalone && output.DeleteOutput)
                 .Select(output => output.VirtualPath)
                 .ToArray();
             var fingerprintSources = CreateFingerprintSources(planSources);
@@ -343,7 +343,7 @@ internal sealed class ZaAngeFightEditSessionService
                     writeInfo.TargetRelativePath,
                     writeInfo.Sources,
                     writeInfo.ReplacesExistingOutput,
-                    preparedOutput.DeleteOutput
+                    outputMode == ZaOutputMode.Standalone && preparedOutput.DeleteOutput
                         ? "Remove the base-equivalent Ange Fight output member after restoring its owned values. "
                             + $"Action SHA-256 {payloadFingerprint}."
                         : preparedBatch.RestoresVanillaValues
@@ -359,44 +359,47 @@ internal sealed class ZaAngeFightEditSessionService
                         fingerprintSources)));
             }
 
-            var descriptorPreview = ZaWorkflowFileSource.CreateStandaloneDescriptorPreview(
-                paths,
-                plannedWriteVirtualPaths,
-                plannedDeleteVirtualPaths);
-            var deleteDescriptor = preparedBatch.RestoresVanillaValues
-                && ZaWorkflowFileSource.CanDeleteStandaloneDescriptor(
+            if (outputMode == ZaOutputMode.Standalone)
+            {
+                var descriptorPreview = ZaWorkflowFileSource.CreateStandaloneDescriptorPreview(
                     paths,
-                    descriptorPreview,
                     plannedWriteVirtualPaths,
                     plannedDeleteVirtualPaths);
-            var descriptorWriteInfo = ZaWorkflowFileSource.CreateDescriptorPlannedWrite(paths);
-            writes.Add(new PlannedFileWrite(
-                descriptorWriteInfo.TargetRelativePath,
-                descriptorWriteInfo.Sources
-                    .Concat(pendingSources)
-                    .Distinct()
-                    .OrderBy(source => source.Layer)
-                    .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
-                    .ToArray(),
-                descriptorWriteInfo.ReplacesExistingOutput,
-                deleteDescriptor
-                    ? "Remove the base-equivalent standalone Trinity descriptor after the reviewed Ange Fight removals. "
-                        + $"Action SHA-256 {payloadFingerprint}."
-                    : "Patch the Pokemon Legends Z-A Trinity descriptor for the reviewed Ange Fight writes and removals. "
-                        + $"Action SHA-256 {payloadFingerprint}.",
-                CreatePlanSourceFingerprint(
-                    paths,
-                    ZaWorkflowFileSource.DescriptorVirtualPath,
-                    ZaOutputMode.Standalone,
-                    operation.CanonicalValue,
-                    [
-                        .. fingerprintSources,
-                        new FingerprintSource(
-                            ZaWorkflowFileSource.DescriptorVirtualPath,
-                            descriptorPreview,
-                            "DescriptorPreview",
-                            ZaWorkflowFileSource.DescriptorVirtualPath),
-                    ])));
+                var deleteDescriptor = preparedBatch.RestoresVanillaValues
+                    && ZaWorkflowFileSource.CanDeleteStandaloneDescriptor(
+                        paths,
+                        descriptorPreview,
+                        plannedWriteVirtualPaths,
+                        plannedDeleteVirtualPaths);
+                var descriptorWriteInfo = ZaWorkflowFileSource.CreateDescriptorPlannedWrite(paths);
+                writes.Add(new PlannedFileWrite(
+                    descriptorWriteInfo.TargetRelativePath,
+                    descriptorWriteInfo.Sources
+                        .Concat(pendingSources)
+                        .Distinct()
+                        .OrderBy(source => source.Layer)
+                        .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+                        .ToArray(),
+                    descriptorWriteInfo.ReplacesExistingOutput,
+                    deleteDescriptor
+                        ? "Remove the base-equivalent standalone Trinity descriptor after the reviewed Ange Fight removals. "
+                            + $"Action SHA-256 {payloadFingerprint}."
+                        : "Patch the Pokemon Legends Z-A Trinity descriptor for the reviewed Ange Fight writes and removals. "
+                            + $"Action SHA-256 {payloadFingerprint}.",
+                    CreatePlanSourceFingerprint(
+                        paths,
+                        ZaWorkflowFileSource.DescriptorVirtualPath,
+                        ZaOutputMode.Standalone,
+                        operation.CanonicalValue,
+                        [
+                            .. fingerprintSources,
+                            new FingerprintSource(
+                                ZaWorkflowFileSource.DescriptorVirtualPath,
+                                descriptorPreview,
+                                "DescriptorPreview",
+                                ZaWorkflowFileSource.DescriptorVirtualPath),
+                        ])));
+            }
 
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
@@ -486,17 +489,19 @@ internal sealed class ZaAngeFightEditSessionService
             var preparedBatch = PrepareOutputs(paths, operation, planSources);
             var preparedOutputs = preparedBatch.Outputs;
             var retainedOutputs = preparedOutputs
-                .Where(output => !output.DeleteOutput)
+                .Where(output => outputMode != ZaOutputMode.Standalone || !output.DeleteOutput)
                 .ToArray();
             var deletedOutputs = preparedOutputs
-                .Where(output => output.DeleteOutput)
+                .Where(output => outputMode == ZaOutputMode.Standalone && output.DeleteOutput)
                 .ToArray();
 
-            var descriptorPreview = ZaWorkflowFileSource.CreateStandaloneDescriptorPreview(
-                paths,
-                retainedOutputs.Select(output => output.VirtualPath),
-                deletedOutputs.Select(output => output.VirtualPath));
-            var deleteDescriptor = preparedBatch.RestoresVanillaValues
+            var descriptorPreview = outputMode == ZaOutputMode.Standalone
+                ? ZaWorkflowFileSource.CreateStandaloneDescriptorPreview(
+                    paths,
+                    retainedOutputs.Select(output => output.VirtualPath),
+                    deletedOutputs.Select(output => output.VirtualPath))
+                : null;
+            var deleteDescriptor = descriptorPreview is not null && preparedBatch.RestoresVanillaValues
                 && ZaWorkflowFileSource.CanDeleteStandaloneDescriptor(
                     paths,
                     descriptorPreview,
@@ -524,7 +529,7 @@ internal sealed class ZaAngeFightEditSessionService
                 ZaEditSessionSupport.GeneratedReference(
                     output.VirtualPath,
                     outputMode)));
-            if (!deleteDescriptor)
+            if (outputMode == ZaOutputMode.Standalone && !deleteDescriptor)
             {
                 writtenFiles.Add(ZaEditSessionSupport.GeneratedDescriptorReference());
             }

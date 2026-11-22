@@ -206,12 +206,12 @@ public sealed class ZaTypeChartEditSessionService
 
         var validation = Validate(paths, session);
         var diagnostics = validation.Diagnostics.ToList();
-        if (outputMode != ZaOutputMode.Standalone)
+        if (outputMode is not (ZaOutputMode.Standalone or ZaOutputMode.ZaRecomp))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Type Chart edits exefs/main, which is outside Pokemon Legends Z-A RomFS output modes. Use standalone LayeredFS output for this editor.",
-                expected: "Standalone LayeredFS output mode"));
+                "Type Chart edits exefs/main, which is outside Pokemon Legends Z-A RomFS output modes. Use Standalone or ZA Recomp output for this editor.",
+                expected: "Standalone or ZA Recomp output mode"));
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -219,7 +219,7 @@ public sealed class ZaTypeChartEditSessionService
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
 
-        var targetPath = ResolveOutputPath(paths, diagnostics);
+        var targetPath = ZaExeFsMainFileResolver.ResolveOutputPath(paths, outputMode);
         if (targetPath is null)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -233,7 +233,7 @@ public sealed class ZaTypeChartEditSessionService
         var isUninstall = IsUninstallSession(session);
         var project = projectWorkspaceService.Open(paths);
         var source = ZaTypeChartWorkflowService.ResolveWorkflowFile(project, ZaTypeChartWorkflowService.ExeFsMainPath);
-        if (!isUninstall && source is null)
+        if (source is null)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -244,13 +244,10 @@ public sealed class ZaTypeChartEditSessionService
         }
 
         var write = new PlannedFileWrite(
-            ZaTypeChartWorkflowService.ExeFsMainPath,
-            isUninstall
-                ? [
-                    new ProjectFileReference(ProjectFileLayer.Generated, ZaTypeChartWorkflowService.ExeFsMainPath),
-                    new ProjectFileReference(ProjectFileLayer.Base, ZaTypeChartWorkflowService.ExeFsMainPath),
-                ]
-                : [source!.Reference],
+            ZaExeFsMainFileResolver.OutputRelativePath(outputMode),
+            isUninstall || outputMode == ZaOutputMode.ZaRecomp
+                ? new[] { source.Reference, new ProjectFileReference(ProjectFileLayer.Base, ZaTypeChartWorkflowService.ExeFsMainPath) }.Distinct().ToArray()
+                : [source.Reference],
             File.Exists(targetPath),
             isUninstall
                 ? "Remove Pokemon Legends Z-A Type Chart output from exefs/main while preserving other generated ExeFS edits."
@@ -310,6 +307,7 @@ public sealed class ZaTypeChartEditSessionService
                     paths,
                     writtenFiles,
                     diagnostics,
+                    outputMode,
                     outputContext,
                     revalidateReviewedState);
                 return CreateApplyResult(
@@ -332,6 +330,7 @@ public sealed class ZaTypeChartEditSessionService
                 values,
                 writtenFiles,
                 diagnostics,
+                outputMode,
                 outputContext,
                 revalidateReviewedState);
         }
@@ -360,12 +359,13 @@ public sealed class ZaTypeChartEditSessionService
         IReadOnlyList<int> values,
         ICollection<ProjectFileReference> writtenFiles,
         ICollection<ValidationDiagnostic> diagnostics,
+        ZaOutputMode outputMode,
         ZaOutputApplyContext outputContext,
         Func<bool> revalidateReviewedState)
     {
         var project = projectWorkspaceService.Open(paths);
         var source = ZaTypeChartWorkflowService.ResolveWorkflowFile(project, ZaTypeChartWorkflowService.ExeFsMainPath);
-        var targetPath = ResolveOutputPath(paths, diagnostics);
+        var targetPath = ZaExeFsMainFileResolver.ResolveOutputPath(paths, outputMode);
         if (source is null || targetPath is null)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -379,8 +379,8 @@ public sealed class ZaTypeChartEditSessionService
         try
         {
             var gameOrderValues = ZaTypeChartWorkflowService.ToGameOrder(values);
-            var outputTransaction = ZaWorkflowFileSource.ApplyStandaloneMixedBatch(
-                paths,
+            var outputTransaction = ZaWorkflowFileSource.ApplyHybridMixedBatch(
+                paths, outputMode, isolateTrinityModManagerRomFs: false,
                 () =>
                 {
                     var currentProject = projectWorkspaceService.Open(paths);
@@ -388,22 +388,23 @@ public sealed class ZaTypeChartEditSessionService
                         ?? throw new FileNotFoundException(
                             "Pokemon Legends Z-A exefs/main is no longer available.");
                     var output = ZaTypeChartMainPatcher.ApplyChart(
-                        File.ReadAllBytes(currentSource.AbsolutePath),
+                        currentSource.ReadBytes(),
                         gameOrderValues,
                         paths.SelectedGame);
                     return new ZaStandaloneMixedBatch(
                         Array.Empty<ZaWorkflowFileWrite>(),
                         Array.Empty<string>(),
-                        [new ZaStandaloneOutputMutation(
-                            ZaTypeChartWorkflowService.ExeFsMainPath,
-                            output,
-                            ApplyContext: outputContext)]);
+                        [ZaExeFsMainFileResolver.CreateMutation(paths, outputMode, output,
+                            outputMode == ZaOutputMode.ZaRecomp
+                                ? ZaExeFsMainFileResolver.ResolveBase(currentProject)?.ReadBytes()
+                                : null,
+                            outputContext)]);
                 },
                 revalidateReviewedState: revalidateReviewedState);
-            writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, ZaTypeChartWorkflowService.ExeFsMainPath));
+            writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, ZaExeFsMainFileResolver.OutputRelativePath(outputMode)));
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
-                "Applied Type Chart changes to exefs/main in the configured LayeredFS output root."));
+                ZaEditSessionSupport.CreateApplyOutputMessage("Type Chart", outputMode)));
             return outputTransaction;
         }
         catch (InvalidDataException exception)
@@ -434,14 +435,15 @@ public sealed class ZaTypeChartEditSessionService
         return null;
     }
 
-    private static OutputApplyResult? ApplyUninstall(
+    private OutputApplyResult? ApplyUninstall(
         ProjectPaths paths,
         ICollection<ProjectFileReference> writtenFiles,
         ICollection<ValidationDiagnostic> diagnostics,
+        ZaOutputMode outputMode,
         ZaOutputApplyContext outputContext,
         Func<bool> revalidateReviewedState)
     {
-        var targetPath = ResolveOutputPath(paths, diagnostics);
+        var targetPath = ZaExeFsMainFileResolver.ResolveOutputPath(paths, outputMode);
         var basePath = ZaExeFsMainFileResolver.ResolveBasePath(paths);
         if (targetPath is null || basePath is null || !File.Exists(basePath))
         {
@@ -453,25 +455,16 @@ public sealed class ZaTypeChartEditSessionService
             return null;
         }
 
-        if (!File.Exists(targetPath))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Type Chart uninstall target no longer exists. Review the change plan again before applying.",
-                file: ZaTypeChartWorkflowService.ExeFsMainPath,
-                expected: "Existing reviewed LayeredFS exefs/main"));
-            return null;
-        }
-
         try
         {
-            var outputTransaction = ZaWorkflowFileSource.ApplyStandaloneMixedBatch(
-                paths,
+            var outputTransaction = ZaWorkflowFileSource.ApplyHybridMixedBatch(
+                paths, outputMode, isolateTrinityModManagerRomFs: false,
                 () =>
                 {
-                    var currentTargetPath = ZaExeFsMainFileResolver.ResolveOutputPath(paths)
-                        ?? throw new FileNotFoundException(
-                            "Pokemon Legends Z-A output exefs/main target is no longer available.");
+                    var currentProject = projectWorkspaceService.Open(paths);
+                    var currentSource = ZaExeFsMainFileResolver.ResolveEffective(currentProject);
+                    if (currentSource is null || currentSource.Reference.Layer != ProjectFileLayer.Layered)
+                        throw new FileNotFoundException("Pokemon Legends Z-A effective executable output disappeared.");
                     var currentBasePath = ZaExeFsMainFileResolver.ResolveBasePath(paths);
                     if (currentBasePath is null || !File.Exists(currentBasePath))
                     {
@@ -479,15 +472,9 @@ public sealed class ZaTypeChartEditSessionService
                             "Pokemon Legends Z-A base exefs/main is no longer available.");
                     }
 
-                    if (!File.Exists(currentTargetPath))
-                    {
-                        throw new FileNotFoundException(
-                            "Pokemon Legends Z-A output exefs/main target no longer exists.");
-                    }
-
                     var baseBytes = File.ReadAllBytes(currentBasePath);
                     var restored = ZaTypeChartMainPatcher.RestoreFromBase(
-                        File.ReadAllBytes(currentTargetPath),
+                        currentSource.ReadBytes(),
                         baseBytes,
                         paths.SelectedGame);
                     var outputBytes = ZaExeFsMainComparison.IsSemanticallyEquivalentToBase(restored, baseBytes)
@@ -496,18 +483,14 @@ public sealed class ZaTypeChartEditSessionService
                     return new ZaStandaloneMixedBatch(
                         Array.Empty<ZaWorkflowFileWrite>(),
                         Array.Empty<string>(),
-                        [new ZaStandaloneOutputMutation(
-                            ZaTypeChartWorkflowService.ExeFsMainPath,
-                            outputBytes,
-                            DeleteFallbackBytes: outputBytes is null ? baseBytes : null,
-                            ApplyContext: outputContext)]);
+                        [ZaExeFsMainFileResolver.CreateMutation(paths, outputMode, outputBytes, baseBytes, outputContext)]);
                 },
                 revalidateReviewedState: revalidateReviewedState);
 
-            writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, ZaTypeChartWorkflowService.ExeFsMainPath));
+            writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, ZaExeFsMainFileResolver.OutputRelativePath(outputMode)));
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
-                "Uninstalled Type Chart changes from the configured LayeredFS output root."));
+                "Restored the original Type Chart while preserving other executable changes."));
             return outputTransaction;
         }
         catch (InvalidDataException exception)
@@ -624,8 +607,7 @@ public sealed class ZaTypeChartEditSessionService
             return false;
         }
 
-        var targetPath = ResolveOutputPath(paths, diagnostics);
-        if (targetPath is null || !File.Exists(targetPath))
+        if (ZaExeFsMainFileResolver.ResolveEffective(project)?.Reference.Layer != ProjectFileLayer.Layered)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -729,32 +711,6 @@ public sealed class ZaTypeChartEditSessionService
     private static bool IsUninstallEdit(PendingEdit edit)
     {
         return string.Equals(edit.RecordId, UninstallRecordId, StringComparison.Ordinal);
-    }
-
-    private static string? ResolveOutputPath(
-        ProjectPaths paths,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Type Chart apply requires a configured output root.",
-                expected: "Valid output root"));
-            return null;
-        }
-
-        var targetPath = ZaTypeChartWorkflowService.ResolveOutputPath(paths, ZaTypeChartWorkflowService.ExeFsMainPath);
-        if (targetPath is null)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Type Chart target must stay inside the configured output root.",
-                file: ZaTypeChartWorkflowService.ExeFsMainPath,
-                expected: "Output-root-contained target"));
-        }
-
-        return targetPath;
     }
 
     private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)

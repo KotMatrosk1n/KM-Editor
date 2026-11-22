@@ -7,4 +7,5 @@ public enum ZaOutputMode
     Standalone,
     TrinityModManager,
     TrinityBypass,
+    ZaRecomp,
 }

@@ -28,15 +28,16 @@ export function TrinityOutputConfirmationModal({
 }: TrinityOutputConfirmationModalProps) {
   const { t, translateLiteral } = useLocalization();
   const isStandalone = mode === 'standalone';
+  const isZaRecomp = mode === 'zaRecomp';
   const isTrinityBypass = mode === 'trinityBypass';
   const headingId = 'trinity-output-confirmation-heading';
-  const title = isStandalone
+  const title = isZaRecomp ? 'Output for ZA Recomp?' : isStandalone
     ? 'Output as Standalone?'
     : isTrinityBypass
       ? 'Output for Trinity Bypass?'
       : 'Output for Trinity Mod Manager?';
   const outputRootLabel = outputRootPath?.trim() || 'the configured Output Root';
-  const OutputIcon = isStandalone ? Package : isTrinityBypass ? ShieldCheck : GitMerge;
+  const OutputIcon = isStandalone || isZaRecomp ? Package : isTrinityBypass ? ShieldCheck : GitMerge;
   const dialogRef = useModalDialog<HTMLElement>({
     canClose: !isApplying,
     onClose: onCancel
@@ -56,7 +57,23 @@ export function TrinityOutputConfirmationModal({
           <OutputIcon aria-hidden="true" size={18} />
           <h2 id={headingId}>{translateLiteral(title)}</h2>
         </div>
-        {isStandalone ? (
+        {isZaRecomp ? (
+          <>
+            <p className="modal-copy">
+              {translateLiteral('KM Editor will write one mod in the')} <code>za-recomp</code>{' '}
+              {translateLiteral('folder under')}{' '}
+              <strong data-localization-ignore={Boolean(outputRootPath)}>
+                {outputRootPath ? outputRootLabel : translateLiteral(outputRootLabel)}
+              </strong>.{' '}
+              {translateLiteral('The folder holds loose RomFS edits and any ExeFS patch. Copy that folder into your ZA Recomp mods folder.')}
+            </p>
+            {includesExeFsOutput ? (
+              <p className="modal-copy modal-copy-muted">
+                {translateLiteral('Turn on Code for this mod in ZA Recomp to apply its ExeFS patch.')}
+              </p>
+            ) : null}
+          </>
+        ) : isStandalone ? (
           <>
             <p className="modal-copy">
               {translateLiteral('KM Editor will write the edited files under')}{' '}

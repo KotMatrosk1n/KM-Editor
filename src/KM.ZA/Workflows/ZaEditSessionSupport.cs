@@ -326,6 +326,7 @@ internal static class ZaEditSessionSupport
         {
             ZaOutputMode.Standalone => $"{workflowName} output was written as a standalone LayeredFS override with a patched descriptor.",
             ZaOutputMode.TrinityModManager => $"{workflowName} output was written in Trinity Mod Manager layout.",
+            ZaOutputMode.ZaRecomp => $"{workflowName} output was written for ZA Recomp.",
             ZaOutputMode.TrinityBypass => $"{workflowName} output was written in Trinity bypass layout.",
             _ => $"{workflowName} output was written.",
         };

@@ -24,6 +24,8 @@ export function FashionUnlockSection({
   isChangePlanCreating,
   onApplyChangePlan,
   onCreateChangePlan,
+  onReviewZaRecomp,
+  isZaRecompPlan = false,
   onStageInstall,
   onStageUninstall,
   panelOutput,
@@ -36,6 +38,8 @@ export function FashionUnlockSection({
   isChangePlanCreating: boolean;
   onApplyChangePlan: () => void;
   onCreateChangePlan: () => void;
+  onReviewZaRecomp?: () => void;
+  isZaRecompPlan?: boolean;
   onStageInstall: () => void;
   onStageUninstall: () => void;
   panelOutput: WorkflowPanelOutput;
@@ -44,6 +48,7 @@ export function FashionUnlockSection({
   workflow: FashionUnlockWorkflow | null;
 }) {
   const { t, translateLiteral } = useLocalization();
+  const zaRecompApplyLabel = isZaRecompPlan ? translateLiteral('Apply ZA Recomp') : undefined;
   const pendingAction = getCanonicalFashionUnlockPendingAction(editSession, workflow);
   const isInstallStaged = pendingAction === 'install';
   const isUninstallStaged = pendingAction === 'uninstall';
@@ -200,11 +205,32 @@ export function FashionUnlockSection({
                     <ClipboardCheck aria-hidden="true" size={16} />
                     <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
                   </button>
-                  <button className="primary-button" disabled={!canApplyPlan} onClick={onApplyChangePlan} type="button">
+                  <button
+                    aria-label={zaRecompApplyLabel}
+                    className="primary-button"
+                    disabled={!canApplyPlan}
+                    onClick={onApplyChangePlan}
+                    title={zaRecompApplyLabel}
+                    type="button"
+                  >
                     <Save aria-hidden="true" size={16} />
                     <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
                   </button>
                 </div>
+                {onReviewZaRecomp ? (
+                  <div className="form-actions">
+                    <button
+                      aria-pressed={isZaRecompPlan}
+                      className="secondary-button za-recomp-review"
+                      disabled={!canReviewPlan}
+                      onClick={onReviewZaRecomp}
+                      type="button"
+                    >
+                      <ClipboardCheck aria-hidden="true" size={16} />
+                      <span>ZA Recomp</span>
+                    </button>
+                  </div>
+                ) : null}
 
                 <dl className="encounter-slot-detail">
                   <div><dt>Install message</dt><dd>{translateLiteral(workflow.installMessage)}</dd></div>

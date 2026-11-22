@@ -6196,6 +6196,8 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
         EditSession session,
         ChangePlanOutputModeDto? outputMode)
     {
+        if (outputMode == ChangePlanOutputModeDto.ZaRecomp && !IsPokemonLegendsZA(paths))
+            return InvalidGuidedChangePlan(session, "ZA Recomp output requires Pokemon Legends Z-A.");
         if (paths.SelectedGame == ProjectGame.PLA) return CreatePlaChangePlan(paths, session, outputMode);
         if (session.PendingEdits.Count > 0
             && session.PendingEdits.All(edit => GeneratedChangeSetOwners.IsSupported(edit.Owner))
@@ -6323,7 +6325,8 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
                 or ProjectGame.Violet
                 or ProjectGame.ZA)
             || outputMode is ChangePlanOutputModeDto.TrinityModManager
-                or ChangePlanOutputModeDto.TrinityBypass)
+                or ChangePlanOutputModeDto.TrinityBypass
+                or ChangePlanOutputModeDto.ZaRecomp)
         {
             return "not-applicable";
         }
@@ -6403,6 +6406,8 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var changePlan = EditSessionBridgeMapper.ToCore(request.Payload.ChangePlan);
+        if (request.Payload.OutputMode == ChangePlanOutputModeDto.ZaRecomp && !IsPokemonLegendsZA(paths))
+            return SerializeFailure("KM-ZA-INVALID-OUTPUT-MODE", "ZA Recomp output requires Pokemon Legends Z-A.", request.RequestId);
         if (paths.SelectedGame == ProjectGame.PLA && request.Payload.OutputMode is not (null or ChangePlanOutputModeDto.Standalone))
             return SerializeFailure("KM-PLA-INVALID-DATA", "PLA supports standalone loose output.", request.RequestId);
         var isPokemonLegendsZA = IsPokemonLegendsZA(paths);
@@ -6446,6 +6451,7 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
             "standalone" => ChangePlanOutputModeDto.Standalone,
             "trinityModManager" => ChangePlanOutputModeDto.TrinityModManager,
             "trinityBypass" => ChangePlanOutputModeDto.TrinityBypass,
+            "zaRecomp" => ChangePlanOutputModeDto.ZaRecomp,
             null => null,
             _ => throw new ChangeSetValidationException(
                 "The edit-session authoring output mode is invalid."),

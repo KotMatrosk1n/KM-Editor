@@ -10,6 +10,7 @@ using KM.Core.Projects;
 using KM.Core.Semantics;
 using KM.Formats.SV;
 using KM.Formats.ZA;
+using KM.ZA.ExeFs;
 
 namespace KM.Tools.ModMerging;
 
@@ -88,6 +89,9 @@ public sealed class MergeWorkspaceService
             issues.Add(new(MergeWorkspaceErrorCodes.VanillaRequired, "error", "Advanced mode requires the original RomFS folder."));
         if (MergeInputs.Family(game ?? "") == "swsh" && request.OutputMode != "standalone")
             issues.Add(new(MergeWorkspaceErrorCodes.OutputUnavailable, "error", "Sword and Shield use Standalone output."));
+
+        if (request.OutputMode == "za-recomp" && game != "za")
+            issues.Add(new(MergeWorkspaceErrorCodes.OutputUnavailable, "error", "ZA Recomp output requires Pokemon Legends Z-A."));
 
         if (game is not null && MergeInputs.Family(game) is "sv" or "za")
             MergePackedSources.ExpandKnownPaths(inputs, game, request.SupportFolder, ref remaining);
@@ -245,6 +249,8 @@ public sealed class MergeWorkspaceService
                     && owned.ProjectId == ProjectIdentity.FromPaths(paths!) && owned.Claims.All(claim => claim.OwnerId == Owner)))
                     .Select(entry => entry.Path.Value).ToArray() ?? [],
                 values => AddConflict(Descriptor, "Complete file", "descriptor", null, values));
+        if (request.OutputMode == "za-recomp")
+            ConvertRecompExecutables(output, files, vanilla, issues);
         if (output.TryGetValue(Descriptor, out var descriptorBytes))
         {
             var descriptorConflicts = conflicts.Where(conflict => conflict.File == Descriptor).ToArray();
@@ -319,6 +325,44 @@ public sealed class MergeWorkspaceService
             conflicts.Add(new(id, path, key.Length == 0 ? "Complete file" : key.TrimStart('/').Replace("~1", "/", StringComparison.Ordinal).Replace("~0", "~", StringComparison.Ordinal).Replace("/", " → ", StringComparison.Ordinal),
                 kind, original, values, choice));
             return choice;
+        }
+    }
+
+    private static void ConvertRecompExecutables(
+        SortedDictionary<string, byte[]> output, List<MergeFileDto> files, MergeVanilla vanilla, List<MergeIssueDto> issues)
+    {
+        foreach (var (path, bytes) in output.Where(pair => pair.Key.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase)).ToArray())
+        {
+            output.Remove(path);
+            if (!path.Equals("exefs/main", StringComparison.OrdinalIgnoreCase) && !MergeExecutableEdits.IsPatch(path))
+            {
+                issues.Add(new(MergeWorkspaceErrorCodes.OutputUnavailable, "error", "ZA Recomp export cannot convert this ExeFS file.", path));
+                continue;
+            }
+
+            var original = vanilla.Read("exefs/main");
+            if (original is null)
+            {
+                issues.Add(new(MergeWorkspaceErrorCodes.ExecutableBaseRequired, "error", "Use Advanced mode with the original ExeFS main to convert this code patch.", path));
+                continue;
+            }
+
+            try
+            {
+                var patch = MergeExecutableEdits.IsPatch(path)
+                    ? ZaRecompExecutablePatch.CreateFromIpsOffsets(original, Path.GetFileNameWithoutExtension(path), MergeExecutableEdits.ReadPatch(bytes))
+                    : ZaRecompExecutablePatch.Create(original, bytes);
+                if (patch is not null)
+                {
+                    if (!output.TryAdd(ZaRecompExecutablePatch.RelativePath, patch))
+                        throw new InvalidDataException("Executable sources must be combined into one image for this game build.");
+                    files.Add(new(ZaRecompExecutablePatch.RelativePath, "executable", "converted", 0, patch.Length));
+                }
+            }
+            catch (Exception exception) when (exception is InvalidDataException or ArgumentException or OverflowException)
+            {
+                issues.Add(new(MergeWorkspaceErrorCodes.PatchInvalid, "error", exception.Message, path));
+            }
         }
     }
 
@@ -398,7 +442,7 @@ public sealed class MergeWorkspaceService
 
     private static void Validate(MergeWorkspaceRequest request)
     {
-        if (request.Sources is null || request.Choices is null || request.Mode is not ("basic" or "advanced") || request.OutputMode is not ("standalone" or "trinity" or "bypass")
+        if (request.Sources is null || request.Choices is null || request.Mode is not ("basic" or "advanced") || request.OutputMode is not ("standalone" or "trinity" or "bypass" or "za-recomp")
             || request.Sources.Count is < 1 or > 64 || request.Choices.Count > 100_000 || string.IsNullOrWhiteSpace(request.OutputRoot)
             || request.Sources.Any(source => source is null || string.IsNullOrWhiteSpace(source.Id) || string.IsNullOrWhiteSpace(source.Path))
             || request.Sources.Select(source => source.Id).Distinct().Count() != request.Sources.Count

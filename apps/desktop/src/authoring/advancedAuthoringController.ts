@@ -1509,6 +1509,7 @@ function validOutputMode(value: AdvancedAuthoringSourceBinding['outputMode']) {
   return (
     value === null ||
     value === 'standalone' ||
+    value === 'zaRecomp' ||
     value === 'trinityModManager' ||
     value === 'trinityBypass'
   );

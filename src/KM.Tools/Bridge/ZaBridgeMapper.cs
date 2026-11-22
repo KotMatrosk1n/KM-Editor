@@ -118,6 +118,7 @@ public static class ZaBridgeMapper
             ChangePlanOutputModeDto.Standalone => ZaOutputMode.Standalone,
             ChangePlanOutputModeDto.TrinityModManager => ZaOutputMode.TrinityModManager,
             ChangePlanOutputModeDto.TrinityBypass => ZaOutputMode.TrinityBypass,
+            ChangePlanOutputModeDto.ZaRecomp => ZaOutputMode.ZaRecomp,
             _ => throw new ArgumentOutOfRangeException(nameof(outputMode), outputMode, null),
         };
     }

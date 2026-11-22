@@ -850,6 +850,7 @@ public sealed class ChangeSetApplicationService
             ChangePlanOutputModeDto.Standalone => "standalone",
             ChangePlanOutputModeDto.TrinityModManager => "trinityModManager",
             ChangePlanOutputModeDto.TrinityBypass => "trinityBypass",
+            ChangePlanOutputModeDto.ZaRecomp => "zaRecomp",
             null => null,
             _ => throw Invalid("The requested output mode is invalid."),
         };
@@ -862,6 +863,7 @@ public sealed class ChangeSetApplicationService
             "standalone" => ChangePlanOutputModeDto.Standalone,
             "trinityModManager" => ChangePlanOutputModeDto.TrinityModManager,
             "trinityBypass" => ChangePlanOutputModeDto.TrinityBypass,
+            "zaRecomp" => ChangePlanOutputModeDto.ZaRecomp,
             null => null,
             _ => throw Invalid("The edit-session authoring output mode is invalid."),
         };
@@ -1975,6 +1977,11 @@ public sealed class ChangeSetApplicationService
             outputMode ??= profile.OutputMode;
         }
 
+        if (scope.Game != ProjectGameDto.ZA && outputMode == ChangePlanOutputModeDto.ZaRecomp)
+        {
+            throw Invalid("ZA Recomp output requires Pokemon Legends Z-A.");
+        }
+
         if ((scope.Game == ProjectGameDto.Sword || scope.Game == ProjectGameDto.Shield)
             && outputMode is ChangePlanOutputModeDto.TrinityModManager
                 or ChangePlanOutputModeDto.TrinityBypass)
@@ -2396,6 +2403,13 @@ public sealed class ChangeSetApplicationService
                 outputMode ??= profile.OutputMode;
             }
         }
+        if (scope.Game != ProjectGameDto.ZA && outputMode == ChangePlanOutputModeDto.ZaRecomp)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                ApiDiagnosticSeverity.Error,
+                "ZA Recomp output requires Pokemon Legends Z-A."));
+        }
+
         if ((scope.Game == ProjectGameDto.Sword || scope.Game == ProjectGameDto.Shield)
             && (outputMode == ChangePlanOutputModeDto.TrinityModManager
                 || outputMode == ChangePlanOutputModeDto.TrinityBypass))
@@ -2707,6 +2721,7 @@ public sealed class ChangeSetApplicationService
                     ChangePlanOutputModeDto.Standalone => "standalone",
                     ChangePlanOutputModeDto.TrinityModManager => "trinityModManager",
                     ChangePlanOutputModeDto.TrinityBypass => "trinityBypass",
+                    ChangePlanOutputModeDto.ZaRecomp => "zaRecomp",
                     null => null,
                     _ => throw Invalid("The selected output mode is invalid."),
                 }));
@@ -4407,6 +4422,11 @@ public sealed class ChangeSetApplicationService
         if (variant.OutputMode is { } mode && !Enum.IsDefined(mode))
         {
             throw Invalid("A build variant output mode is invalid.");
+        }
+
+        if (game != ProjectGameDto.ZA && variant.OutputMode == ChangePlanOutputModeDto.ZaRecomp)
+        {
+            throw Invalid("ZA Recomp output requires Pokemon Legends Z-A.");
         }
 
         if ((game == ProjectGameDto.Sword || game == ProjectGameDto.Shield)
