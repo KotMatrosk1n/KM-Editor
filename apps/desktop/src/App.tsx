@@ -726,6 +726,9 @@ import {
   PersonalizationSettingsPanel,
   ThemeSettingsPanel
 } from './features/settings/PersonalizationSettingsPanel';
+import {
+  ArtworkSettingsPanel, artworkUrl, useArtworkRevision, useInitialArtworkSync
+} from './features/settings/ArtworkSettingsPanel';
 import { WhatChangedTour } from './features/updates/WhatChangedTour';
 import { shouldShowWhatChangedTour } from './features/updates/whatChangedCatalog';
 import {
@@ -2104,6 +2107,7 @@ export function App({
   bridge?: ProjectBridge;
   desktopServices?: DesktopServices;
 } = {}) {
+  useInitialArtworkSync();
   const [appVersion, setAppVersion] = useState(bundledAppVersion);
   useEffect(() => {
     if (!desktopServices.isAvailable) return;
@@ -20122,9 +20126,7 @@ export function App({
     <SettingsSection
       appVersion={appVersion}
       availableUpdateKind={availableUpdate?.kind ?? null}
-      personalizationSettings={
-        <PersonalizationSettingsPanel />
-      }
+      personalizationSettings={<PersonalizationSettingsPanel />}
       themeSettings={<ThemeSettingsPanel />}
       hasBlockingProjectOperation={hasCriticalWriteOperation}
       hasSvCacheRequestError={showingWelcome ? welcomeCache.error : currentSvCacheRequestError}
@@ -58270,6 +58272,7 @@ function SettingsSection({
           ]}
         />
           </div>
+          <ArtworkSettingsPanel />
         </div>
       ) : null}
 
@@ -64887,6 +64890,7 @@ function PokemonSprite({
   speciesId?: number;
   spriteName?: string | null;
 }) {
+  const artworkRevision = useArtworkRevision();
   const urls = useMemo(
     () =>
       getPokemonSpriteUrls(
@@ -64897,9 +64901,10 @@ function PokemonSprite({
           speciesId,
           spriteName
         },
-        preferStatic
+        preferStatic,
+        artworkRevision
       ),
-    [editorFamily, form, name, preferStatic, speciesId, spriteName]
+    [artworkRevision, editorFamily, form, name, preferStatic, speciesId, spriteName]
   );
   const [urlIndex, setUrlIndex] = useState(0);
 
@@ -64931,28 +64936,23 @@ type PokemonSpriteIdentity = {
   spriteName?: string | null;
 };
 
-function getPokemonSpriteUrls(identity: PokemonSpriteIdentity, preferStatic: boolean) {
+function getPokemonSpriteUrls(identity: PokemonSpriteIdentity, preferStatic: boolean, revision: number) {
   const spriteIds = getPokemonSpriteIdsForIdentity(identity);
   if (spriteIds.length === 0) {
     return [];
   }
 
   const localUrls = spriteIds.flatMap((spriteId) => {
-    const localStatic = getPublicAssetUrl(`sprites/gen5/${spriteId}.png`);
+    const localStatic = artworkUrl(`gen5/${spriteId}.png`, revision);
     return preferStatic
       ? [localStatic]
-      : [getPublicAssetUrl(`sprites/ani/${spriteId}.gif`), localStatic];
+      : [artworkUrl(`ani/${spriteId}.gif`, revision), localStatic];
   });
+
   const remoteUrls = spriteIds.map(
     (spriteId) => `https://play.pokemonshowdown.com/sprites/gen5/${spriteId}.png`
   );
   return [...localUrls, ...remoteUrls];
-}
-
-function getPublicAssetUrl(path: string) {
-  const baseUrl = import.meta.env.BASE_URL || '/';
-  const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-  return `${normalizedBaseUrl}${path.replace(/^\/+/, '')}`;
 }
 
 export function getPokemonSpriteIdsForIdentity(identity: PokemonSpriteIdentity) {

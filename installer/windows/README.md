@@ -64,7 +64,7 @@ requires the repository variable `WIX_V7_EULA_ACCEPTED=true`.
 Production packaging requires exact release inputs:
 
 - the unbundled Tauri executable, named `km-editor-desktop.exe`;
-- the self-contained project bridge, staged as `km-tools-bridge.exe`;
+- the self-contained project bridge, staged in `bridge` with its executable, DLLs, and runtime configuration;
 - the KM application icon;
 - the Microsoft-signed WebView2 Evergreen Bootstrapper; and
 - an explicit KM version supplied by the release process.
@@ -146,13 +146,15 @@ before packaging unless all of these conditions hold:
 An eligible run builds the unbundled application, downloads and verifies the current
 Microsoft-signed WebView2 bootstrapper, invokes the setup driver, and Minisign-signs the
 final outer launcher for Tauri updater verification. It creates a **draft** GitHub Release
-containing exactly these four assets:
+containing these required assets and any verified setup deltas:
 
 ```text
 KM.Editor.Setup_<version>_x64.exe
 KM.Editor.Setup_<version>_x64.exe.sig
 latest.json
 SHA256SUMS.txt
+artwork.json
+artwork-<sha256>.pack
 ```
 
 The local build receipt, inner Burn executable, and MSI are not published. A maintainer
@@ -236,6 +238,25 @@ secret and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` when that key is password-protec
 migration is part of every production setup and is not controlled by a repository variable.
 The integration accepts numeric `vX.Y.Z` release tags only; prerelease status remains a
 GitHub Release flag rather than an MSI version suffix.
+
+## Smaller updates and artwork
+
+The launcher saves a copy of a successfully installed setup in the current user's local
+application data for use as a Zstandard dictionary. Desktop Release can publish a direct
+delta from each of up to three recent stable releases that support this cache. It includes
+a delta only when it reproduces the full setup and saves at least 15 percent. The updater
+verifies the cached dictionary and delta, then verifies the rebuilt setup with the same
+Minisign signature as the complete download. Any delta failure falls back to the complete
+download. The first release with this installer layout establishes the cache through a full
+update. Both paths use the same Burn and MSI lifecycle.
+
+The artwork catalog uses the updater signing key and records each sprite's length and
+SHA-256. Setup downloads artwork to the per-user cache. The desktop checks it after each
+client update and offers **Check for Artwork Updates** on the Updates tab in Settings. It
+reuses every matching file, including files verified before an interrupted download. Both
+delivery caches live in the existing per-user application data directory. Setup preserves them
+unless the user chooses to remove app data during uninstall. The manual **Artwork Release**
+workflow can publish a signed catalog independently of a client release.
 
 ## Legacy installation migration
 

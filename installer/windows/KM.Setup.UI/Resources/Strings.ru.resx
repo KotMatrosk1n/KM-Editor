@@ -87,4 +87,6 @@
   <data name="ProgressLastUpdate" xml:space="preserve"><value>Последнее обновление: {0} назад</value></data>
   <data name="ProgressPackageScope" xml:space="preserve"><value>Текущий пакет</value></data>
   <data name="ProgressCacheScope" xml:space="preserve"><value>Подготовка файлов</value></data>
+  <data name="StatusDownloadingArtwork" xml:space="preserve"><value>Загрузка иллюстраций покемонов</value></data>
+  <data name="ArtworkPending" xml:space="preserve"><value>Загрузка иллюстраций ещё не завершена. KM Editor повторит попытку при открытии. Вы также можете проверить иллюстрации в настройках.</value></data>
 </root>

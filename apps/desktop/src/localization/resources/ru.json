@@ -1,5 +1,12 @@
 {
   "keys": {
+    "settings.artwork.title": "Иллюстрации",
+    "settings.artwork.description": "Управляйте иллюстрациями покемонов, сохранёнными на этом устройстве.",
+    "settings.artwork.check": "Проверить обновления иллюстраций",
+    "settings.artwork.checking": "Проверка иллюстраций…",
+    "settings.artwork.current": "Иллюстрации актуальны.",
+    "settings.artwork.updated": "Иллюстрации обновлены.",
+    "settings.artwork.failed": "Не удалось полностью проверить или загрузить иллюстрации. Повторите попытку.",
     "bugReport.generate": "Создать отчёт об ошибке",
     "bugReport.generating": "Создание отчёта...",
     "bugReport.goToReport": "Перейти к отчёту",

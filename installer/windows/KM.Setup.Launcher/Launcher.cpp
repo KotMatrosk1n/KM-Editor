@@ -5,6 +5,7 @@
 #include <bcrypt.h>
 #include <intrin.h>
 #include <shellapi.h>
+#include <shlobj.h>
 #include <softpub.h>
 #include <wincrypt.h>
 #include <wintrust.h>
@@ -1058,6 +1059,51 @@ private:
     return (static_cast<unsigned int>(registers[2]) & requiredFeatures) == requiredFeatures;
 }
 
+// This copy is only a delta dictionary. The updater checks its exact hash
+// and independently verifies the reconstructed setup before launching it.
+void CacheSetupForUpdates() {
+    // Default setup can finish successfully after maintenance or uninstall.
+    // Require the version installed by this setup before replacing the cache.
+    const auto versionIsInstalled = [](HKEY hive) {
+        std::array<wchar_t, 32> version{};
+        DWORD bytes = sizeof(version);
+        return RegGetValueW(hive, L"Software\\kmeditor\\KM Editor", L"Version", RRF_RT_REG_SZ,
+            nullptr, version.data(), &bytes) == ERROR_SUCCESS && std::wstring_view(version.data()) == KM_INSTALL_VERSION;
+    };
+    if (!versionIsInstalled(HKEY_CURRENT_USER) && !versionIsInstalled(HKEY_LOCAL_MACHINE)) {
+        return;
+    }
+
+    std::array<wchar_t, MAX_PATH> localData{};
+    if (FAILED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, SHGFP_TYPE_CURRENT, localData.data()))) {
+        return;
+    }
+
+    auto directory = std::wstring(localData.data()) + L"\\app.kmeditor.desktop";
+    for (const auto* suffix : {L"", L"\\Update"}) {
+        directory += suffix;
+        CreateDirectoryW(directory.c_str(), nullptr);
+        const auto attributes = GetFileAttributesW(directory.c_str());
+        if (attributes == INVALID_FILE_ATTRIBUTES || !(attributes & FILE_ATTRIBUTE_DIRECTORY) ||
+            (attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+            return;
+        }
+    }
+
+    std::vector<wchar_t> executable(32768U, L'\0');
+    const auto length = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
+    std::wstring random;
+    if (length == 0 || length >= executable.size() || RandomHex(random) != ERROR_SUCCESS) {
+        return;
+    }
+    const auto temporary = directory + L"\\base-" + random + L".tmp";
+    const auto destination = directory + L"\\base.bin";
+    if (!CopyFileW(executable.data(), temporary.c_str(), TRUE) ||
+        !MoveFileExW(temporary.c_str(), destination.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        DeleteFileW(temporary.c_str());
+    }
+}
+
 [[nodiscard]] LauncherOutcome RunLauncher() {
     LocalArgv commandLine;
     if (!commandLine.IsValid()) {
@@ -1113,6 +1159,14 @@ private:
     pinnedReadHandle.Reset();
     if (result != ERROR_SUCCESS) {
         return {result, PreBootstrapFailure::Launch};
+    }
+    if ((invocation.action == BundleAction::Install || invocation.action == BundleAction::Default) &&
+        (childExitCode == ERROR_SUCCESS || childExitCode == ERROR_SUCCESS_REBOOT_REQUIRED)) {
+        try {
+            CacheSetupForUpdates();
+        } catch (...) {
+            // An unavailable cache does not change the successful installation.
+        }
     }
     // Burn owns all user-visible failures after CreateProcess succeeds. A child
     // cancellation or nonzero installer exit must not trigger a second dialog.

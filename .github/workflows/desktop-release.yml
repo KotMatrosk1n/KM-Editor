@@ -176,7 +176,7 @@ jobs:
           $version = $env:RELEASE_TAG.Substring(1)
           $releaseDir = Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/dist/release'
           $webView2Path = Join-Path $env:RUNNER_TEMP 'km-webview2/MicrosoftEdgeWebview2Setup.exe'
-          $sidecarPath = Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/src-tauri/binaries/km-tools-bridge-x86_64-pc-windows-msvc.exe'
+          $sidecarPath = Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/src-tauri/binaries/bridge/x86_64-pc-windows-msvc/km-tools-bridge.exe'
 
           & .\installer\windows\scripts\Get-WebView2Bootstrapper.ps1 `
             -DestinationFile $webView2Path
@@ -189,7 +189,7 @@ jobs:
             -OutputDirectory $releaseDir `
             -AcceptWixEula
 
-      - name: Sign custom updater artifact
+      - name: Sign setup and artwork
         shell: pwsh
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -208,9 +208,18 @@ jobs:
           }
 
           pnpm --dir apps/desktop exec tauri signer sign $setupPath
+          if ($LASTEXITCODE -ne 0) { throw 'Setup signer failed.' }
+          node apps/desktop/scripts/build-artwork.mjs pack $releaseDir $env:RELEASE_TAG
+          if ($LASTEXITCODE -ne 0) { throw 'Artwork packaging failed.' }
+          pnpm --dir apps/desktop exec tauri signer sign (Join-Path $releaseDir 'artwork-manifest.json')
+          if ($LASTEXITCODE -ne 0) { throw 'Artwork signer failed.' }
+          node apps/desktop/scripts/build-artwork.mjs envelope $releaseDir
+          if ($LASTEXITCODE -ne 0) { throw 'Artwork manifest staging failed.' }
 
       - name: Stage release assets
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $releaseDir = Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/dist/release'
           $version = $env:RELEASE_TAG.Substring(1)
@@ -277,10 +286,15 @@ jobs:
           }
 
           $windowsPlatform = New-UpdaterPlatform $setup
+          $deltas = & ./installer/windows/scripts/Build-KmUpdateDeltas.ps1 -Setup $setup.FullName -Version $version -WorkDirectory (Join-Path $env:RUNNER_TEMP 'km-deltas')
+          $artworkEnvelope = Get-Content -LiteralPath (Join-Path $releaseDir 'artwork.json') -Raw | ConvertFrom-Json
+          $artworkPack = ($artworkEnvelope.manifest | ConvertFrom-Json).pack
+          if ($artworkPack -cnotmatch '^artwork-[a-f0-9]{64}\.pack$') { throw 'Invalid artwork pack name.' }
           $latestJson = [ordered]@{
             version = $version
             notes = "See the GitHub Release notes for KM Editor $env:RELEASE_TAG."
             pub_date = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            setup_deltas = $deltas
             platforms = [ordered]@{
               'windows-x86_64-nsis' = $windowsPlatform
               'windows-x86_64-msi' = $windowsPlatform
@@ -295,8 +309,10 @@ jobs:
           $allowedBeforeChecksums = @(
             $setup.Name,
             "$($setup.Name).sig",
-            'latest.json'
-          )
+            'latest.json',
+            'artwork.json',
+            $artworkPack
+          ) + @($deltas.Keys | ForEach-Object { "KM.Editor.Setup_$($version)_from_$($_)_x64.zst" })
           $unexpectedBeforeChecksums = @(
             Get-ChildItem -LiteralPath $releaseDir -File |
               Where-Object { $_.Name -notin $allowedBeforeChecksums }

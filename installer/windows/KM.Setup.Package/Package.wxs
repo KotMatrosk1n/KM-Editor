@@ -107,13 +107,7 @@
           <RemoveFolder Id="RemoveKmInstallFolderIfEmpty" Directory="INSTALLFOLDER" On="uninstall" />
         </Component>
 
-        <Component Id="CmpKmToolsBridge" Guid="{$(KmBridgeComponentGuid)}">
-          <File
-            Id="FilKmToolsBridge"
-            Source="!(bindpath.KmPayload)\$(KmSidecarExecutableName)"
-            Name="$(KmSidecarExecutableName)"
-            KeyPath="yes" />
-        </Component>
+        <Directory Id="BridgeDirectory" Name="bridge" />
 
         <!--
           Preserve KM's published product-key identity. HKMU follows the planned
@@ -362,7 +356,7 @@
 
     <Feature Id="MainFeature" Title="$(KmProductName)" Level="1" AllowAbsent="no">
       <ComponentRef Id="CmpKmEditorExecutable" />
-      <ComponentRef Id="CmpKmToolsBridge" />
+      <Files Directory="BridgeDirectory" Include="!(bindpath.KmPayload)\bridge\**" />
       <ComponentRef Id="CmpInstallerRegistration" />
       <ComponentRef Id="CmpLegacyNsisTakeover" />
       <ComponentRef Id="CmpStartMenuShortcut" />
