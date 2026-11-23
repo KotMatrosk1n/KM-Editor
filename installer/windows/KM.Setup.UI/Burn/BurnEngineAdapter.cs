@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Diagnostics;
+using System.Security.Principal;
 using KM.Setup.UI.Invocation;
 using WixToolset.BootstrapperApplicationApi;
 using Directory = System.IO.Directory;
@@ -31,6 +32,7 @@ internal enum InstallerActivity
     Planning,
     Caching,
     Executing,
+    Artwork,
     Finalizing,
     Cancelling,
 }
@@ -58,7 +60,8 @@ internal sealed record ApplyOutcome(
     string? LogPath,
     string? RelaunchWarning,
     bool RestartRequired,
-    bool CanRestartNow);
+    bool CanRestartNow,
+    bool ArtworkPending = false);
 
 internal sealed class BurnEngineAdapter
 {
@@ -1111,16 +1114,17 @@ internal sealed class BurnEngineAdapter
         CloseCancellation();
     }
 
-    private void OnApplyComplete(object? sender, ApplyCompleteEventArgs e)
+    private async void OnApplyComplete(object? sender, ApplyCompleteEventArgs e)
     {
         ProgressDetails.Finish();
         CloseCancellation();
-        ExitCode = e.Status;
+        var status = e.Status;
+        ExitCode = status;
         // A cancel request is not a terminal result. Burn can finish successfully
         // after the final cancellable boundary, so only the engine's explicit
         // user-exit statuses classify the transaction as cancelled.
-        var wasCancelled = e.Status is ErrorInstallUserExit or HResultInstallUserExit;
-        var succeeded = e.Status >= 0 && !wasCancelled;
+        var wasCancelled = status is ErrorInstallUserExit or HResultInstallUserExit;
+        var succeeded = status >= 0 && !wasCancelled;
         var applyReportedRestartRequired = e.Restart == ApplyRestart.RestartRequired;
         var applyReportedRestartInitiated = e.Restart == ApplyRestart.RestartInitiated;
         var engineRestartRequired = succeeded && applyReportedRestartRequired;
@@ -1128,6 +1132,7 @@ internal sealed class BurnEngineAdapter
         var restartRequired = engineRestartRequired ||
             (succeeded && !restartInitiated && restartBehavior == Restart.Always);
         string? relaunchWarning = null;
+        var artworkPending = false;
 
         if (restartInitiated)
         {
@@ -1151,8 +1156,13 @@ internal sealed class BurnEngineAdapter
             e.Action = BOOTSTRAPPER_APPLYCOMPLETE_ACTION.Restart;
         }
 
-        if (!applyReportedRestartRequired && !applyReportedRestartInitiated)
+        if (!applyReportedRestartRequired && !applyReportedRestartInitiated && !restartAutomatically)
         {
+            if (succeeded && PlannedAction == LaunchAction.Install && !isUpdate)
+            {
+                ActivityChanged?.Invoke(InstallerActivity.Artwork);
+                artworkPending = !await TryDownloadArtworkAsync();
+            }
             relaunchWarning = TryRelaunchAtTerminal();
         }
 
@@ -1161,12 +1171,13 @@ internal sealed class BurnEngineAdapter
         ApplyCompleted?.Invoke(new ApplyOutcome(
             succeeded,
             wasCancelled,
-            e.Status,
+            status,
             lastError,
             GetLogPath(),
             relaunchWarning,
             restartRequired,
-            restartCanBeInitiated));
+            restartCanBeInitiated,
+            artworkPending));
 
         var waitForRestartChoice = restartRequired && restartCanBeInitiated;
         if (succeeded && (restartAutomatically || restartInitiated))
@@ -1180,6 +1191,57 @@ internal sealed class BurnEngineAdapter
         else if (!ShouldShowWindow)
         {
             ExitRequested?.Invoke();
+        }
+    }
+
+    private async Task<bool> TryDownloadArtworkAsync()
+    {
+        try
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            if (identity.IsSystem)
+            {
+                return true;
+            }
+
+            var executable = TryResolveRelaunchExecutable();
+            if (executable is null)
+            {
+                return false;
+            }
+
+            using var child = Process.Start(new ProcessStartInfo(executable)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                ArgumentList = { "--sync-artwork" },
+                WorkingDirectory = Path.GetDirectoryName(executable)!,
+            });
+            if (child is null)
+            {
+                return false;
+            }
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(4));
+            try
+            {
+                await child.WaitForExitAsync(timeout.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                if (!child.HasExited)
+                {
+                    child.Kill();
+                }
+                return false;
+            }
+
+            return child.ExitCode == 0;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            engine.Log(LogLevel.Standard, $"KM Editor will retry artwork on launch: {exception.Message}");
+            return false;
         }
     }
 
@@ -2088,7 +2150,11 @@ internal sealed class BurnEngineAdapter
 
                 var applicationMissing =
                     !File.Exists(Path.Combine(currentMsiInstallFolder, InstalledExecutableName)) ||
-                    !File.Exists(Path.Combine(currentMsiInstallFolder, InstalledBridgeName));
+                    !File.Exists(Path.Combine(currentMsiInstallFolder, "bridge", InstalledBridgeName)) ||
+                    !File.Exists(Path.Combine(currentMsiInstallFolder, "bridge", "KM.Tools.dll")) ||
+                    !File.Exists(Path.Combine(currentMsiInstallFolder, "bridge", "hostfxr.dll")) ||
+                    !File.Exists(Path.Combine(currentMsiInstallFolder, "bridge", "hostpolicy.dll")) ||
+                    !File.Exists(Path.Combine(currentMsiInstallFolder, "bridge", "coreclr.dll"));
                 if (currentBundleMsiScopeMismatch ||
                     msiDetectionMetadataMismatch ||
                     markerState == ProductMarkerState.Absent ||

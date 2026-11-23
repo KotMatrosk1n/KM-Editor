@@ -7,7 +7,7 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "pnpm sprites:ensure && pnpm sidecar:publish && pnpm dev",
-    "beforeBuildCommand": "pnpm sprites:ensure && pnpm sidecar:publish && pnpm build"
+    "beforeBuildCommand": "pnpm sidecar:publish && pnpm build"
   },
   "app": {
     "windows": [

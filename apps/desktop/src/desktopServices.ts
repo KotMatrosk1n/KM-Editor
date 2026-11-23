@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { invoke } from '@tauri-apps/api/core';
+import { Channel, invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { open as openExternal } from '@tauri-apps/plugin-shell';
 import type { DownloadEvent } from '@tauri-apps/plugin-updater';
@@ -87,7 +87,14 @@ export const desktopServices: DesktopServices = {
             withDesktopServiceError(
               desktopErrorCodes.updateInstallFailed,
               'Could not install the native update.',
-              () => update.downloadAndInstall(onProgress)
+              async () => {
+                if (!navigator.userAgent.includes('Windows')) {
+                  return update.downloadAndInstall(onProgress);
+                }
+                const progress = new Channel<DownloadEvent>();
+                progress.onmessage = (event) => onProgress?.(event);
+                await invoke('install_windows_update', { version: update.version, progress });
+              }
             ),
           version: update.version
         };

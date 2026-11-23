@@ -1,5 +1,12 @@
 {
   "keys": {
+    "settings.artwork.title": "Artwork",
+    "settings.artwork.description": "Manage the Pokémon artwork stored on this device.",
+    "settings.artwork.check": "Check for Artwork Updates",
+    "settings.artwork.checking": "Checking artwork…",
+    "settings.artwork.current": "Artwork is up to date.",
+    "settings.artwork.updated": "Artwork was updated.",
+    "settings.artwork.failed": "Artwork could not be fully checked or downloaded. Try again.",
     "bugReport.generate": "Generate Bug Report",
     "bugReport.generating": "Generating report...",
     "bugReport.goToReport": "Go to Report",

@@ -502,7 +502,7 @@ internal sealed partial class InstallerViewModel : ObservableObject
         CompletionNotice = outcome.RestartRequired
             ? strings[outcome.CanRestartNow ? "RestartRequiredNotice" : "RestartRequiredManualNotice"]
             : outcome.RelaunchWarning is null
-                ? string.Empty
+                ? outcome.ArtworkPending && !adapter.ShouldExitAfterVisibleCompletion ? strings["ArtworkPending"] : string.Empty
                 : strings[outcome.RelaunchWarning];
         Phase = outcome.Succeeded
             ? InstallerPhase.Succeeded
@@ -591,6 +591,7 @@ internal sealed partial class InstallerViewModel : ObservableObject
             InstallerActivity.Planning => $"StatusPlanning{GetOperationName()}",
             InstallerActivity.Caching => $"StatusCaching{GetOperationName()}",
             InstallerActivity.Executing => $"StatusExecuting{GetOperationName()}",
+            InstallerActivity.Artwork => "StatusDownloadingArtwork",
             InstallerActivity.Finalizing => $"StatusFinalizing{GetOperationName()}",
             InstallerActivity.Cancelling => "StatusCancelling",
             _ => "StatusInitializing",

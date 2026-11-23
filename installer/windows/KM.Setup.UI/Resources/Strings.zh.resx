@@ -87,4 +87,6 @@
   <data name="ProgressLastUpdate" xml:space="preserve"><value>上次更新：{0} 前</value></data>
   <data name="ProgressPackageScope" xml:space="preserve"><value>当前软件包</value></data>
   <data name="ProgressCacheScope" xml:space="preserve"><value>文件准备</value></data>
+  <data name="StatusDownloadingArtwork" xml:space="preserve"><value>正在下载宝可梦图像</value></data>
+  <data name="ArtworkPending" xml:space="preserve"><value>图像尚未下载完成。KM Editor 打开时会重试。你也可以在设置中的宝可梦图像一栏检查。</value></data>
 </root>

@@ -87,4 +87,6 @@
   <data name="ProgressLastUpdate" xml:space="preserve"><value>Letzte Aktualisierung: vor {0}</value></data>
   <data name="ProgressPackageScope" xml:space="preserve"><value>Aktuelles Paket</value></data>
   <data name="ProgressCacheScope" xml:space="preserve"><value>Dateivorbereitung</value></data>
+  <data name="StatusDownloadingArtwork" xml:space="preserve"><value>Pokémon-Illustrationen werden heruntergeladen</value></data>
+  <data name="ArtworkPending" xml:space="preserve"><value>Illustrationen stehen noch aus. KM Editor versucht es beim Öffnen erneut. Du kannst auch in den Einstellungen unter Illustrationen nachsehen.</value></data>
 </root>

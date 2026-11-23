@@ -1,5 +1,12 @@
 {
   "keys": {
+    "settings.artwork.title": "Ilustraciones",
+    "settings.artwork.description": "Gestiona las ilustraciones de Pokémon guardadas en este dispositivo.",
+    "settings.artwork.check": "Buscar actualizaciones de ilustraciones",
+    "settings.artwork.checking": "Comprobando ilustraciones…",
+    "settings.artwork.current": "Las ilustraciones están al día.",
+    "settings.artwork.updated": "Se han actualizado las ilustraciones.",
+    "settings.artwork.failed": "No se pudieron comprobar o descargar todas las ilustraciones. Inténtalo de nuevo.",
     "bugReport.generate": "Generar informe de errores",
     "bugReport.generating": "Generando informe...",
     "bugReport.goToReport": "Ir al informe",

@@ -185,4 +185,6 @@
   <data name="ProgressLastUpdate" xml:space="preserve"><value>Last update: {0} ago</value></data>
   <data name="ProgressPackageScope" xml:space="preserve"><value>Current package</value></data>
   <data name="ProgressCacheScope" xml:space="preserve"><value>File preparation</value></data>
+  <data name="StatusDownloadingArtwork" xml:space="preserve"><value>Downloading Pokémon artwork</value></data>
+  <data name="ArtworkPending" xml:space="preserve"><value>Artwork is pending. KM Editor will try again when it opens. You can also check in Settings under Artwork.</value></data>
 </root>

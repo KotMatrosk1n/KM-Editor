@@ -1,5 +1,12 @@
 {
   "keys": {
+    "settings.artwork.title": "Ілюстрації",
+    "settings.artwork.description": "Керуйте ілюстраціями покемонів, збереженими на цьому пристрої.",
+    "settings.artwork.check": "Перевірити оновлення ілюстрацій",
+    "settings.artwork.checking": "Перевірка ілюстрацій…",
+    "settings.artwork.current": "Ілюстрації актуальні.",
+    "settings.artwork.updated": "Ілюстрації оновлено.",
+    "settings.artwork.failed": "Не вдалося повністю перевірити або завантажити ілюстрації. Спробуйте ще раз.",
     "bugReport.generate": "Створити звіт про помилку",
     "bugReport.generating": "Створення звіту...",
     "bugReport.goToReport": "Перейти до звіту",

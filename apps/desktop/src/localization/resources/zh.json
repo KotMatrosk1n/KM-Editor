@@ -1,5 +1,12 @@
 {
   "keys": {
+    "settings.artwork.title": "宝可梦图像",
+    "settings.artwork.description": "管理存储在此设备上的宝可梦图像。",
+    "settings.artwork.check": "检查图像更新",
+    "settings.artwork.checking": "正在检查图像…",
+    "settings.artwork.current": "图像已是最新。",
+    "settings.artwork.updated": "图像已更新。",
+    "settings.artwork.failed": "未能完成图像检查或下载。请重试。",
     "bugReport.generate": "生成错误报告",
     "bugReport.generating": "正在生成报告...",
     "bugReport.goToReport": "转到报告",

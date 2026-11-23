@@ -3,6 +3,7 @@
 import { execFileSync } from 'node:child_process';
 import {
   copyFileSync,
+  cpSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -32,6 +33,7 @@ const stagedBinary = resolve(
   binariesDirectory,
   `${sidecarBaseName}-${targetTriple}${binaryExtension}`
 );
+const stagedDirectory = resolve(binariesDirectory, 'bridge', targetTriple);
 const applicationVersion = getApplicationVersion();
 
 mkdirSync(binariesDirectory, { recursive: true });
@@ -51,9 +53,9 @@ try {
       runtimeIdentifier,
       '--self-contained',
       'true',
-      '-p:PublishSingleFile=true',
-      '-p:EnableCompressionInSingleFile=true',
-      '-p:IncludeNativeLibrariesForSelfExtract=true',
+      '-p:PublishSingleFile=' + !isWindowsTarget,
+      '-p:EnableCompressionInSingleFile=' + !isWindowsTarget,
+      '-p:IncludeNativeLibrariesForSelfExtract=' + !isWindowsTarget,
       '-p:PublishTrimmed=false',
       `-p:Version=${applicationVersion}`,
       `-p:AssemblyVersion=${applicationVersion}.0`,
@@ -69,12 +71,21 @@ try {
   );
 
   assertFile(publishedBinary, 'KM.Tools publish did not produce the expected executable.');
-  copyFileSync(publishedBinary, stagedBinary);
+  if (isWindowsTarget) {
+    rmSync(stagedDirectory, { force: true, recursive: true });
+    cpSync(publishDirectory, stagedDirectory, {
+      recursive: true,
+      filter: (path) => path !== publishedBinary && !path.endsWith('.pdb')
+    });
+    copyFileSync(publishedBinary, resolve(stagedDirectory, 'km-tools-bridge.exe'));
+  } else {
+    copyFileSync(publishedBinary, stagedBinary);
+  }
 } finally {
   rmSync(publishRoot, { force: true, recursive: true });
 }
 
-console.log(`Staged KM.Tools sidecar at ${relative(repositoryRoot, stagedBinary)}`);
+console.log(`Staged KM.Tools sidecar at ${relative(repositoryRoot, isWindowsTarget ? stagedDirectory : stagedBinary)}`);
 
 function getApplicationVersion() {
   execFileSync(process.execPath, [releaseVersionScript, '--check'], {

@@ -168,10 +168,14 @@ if (Test-Path -LiteralPath $destinationPath) {
 }
 
 $stagedApplication = Join-Path $destinationPath 'km-editor-desktop.exe'
-$stagedBridge = Join-Path $destinationPath 'km-tools-bridge.exe'
+$bridgeDirectory = Split-Path -Parent $bridgeExecutable
+$stagedBridge = Join-Path $destinationPath 'bridge'
+foreach ($required in 'KM.Tools.dll', 'KM.Tools.deps.json', 'KM.Tools.runtimeconfig.json', 'hostfxr.dll', 'hostpolicy.dll', 'coreclr.dll') {
+    Resolve-RequiredFile -Path (Join-Path $bridgeDirectory $required) -Description "Bridge file $required" | Out-Null
+}
 
 Copy-Item -LiteralPath $mainExecutable -Destination $stagedApplication
-Copy-Item -LiteralPath $bridgeExecutable -Destination $stagedBridge
+Copy-Item -LiteralPath $bridgeDirectory -Destination $stagedBridge -Recurse
 
 & (Join-Path $PSScriptRoot 'Set-TauriBundleType.ps1') -Path $stagedApplication
 
@@ -181,16 +185,18 @@ $manifest = @(
         sha256 = (Get-FileHash -LiteralPath $stagedApplication -Algorithm SHA256).Hash
         size = (Get-Item -LiteralPath $stagedApplication).Length
         tauriBundleType = 'nsis'
-    },
-    [ordered]@{
-        file = 'km-tools-bridge.exe'
-        sha256 = (Get-FileHash -LiteralPath $stagedBridge -Algorithm SHA256).Hash
-        size = (Get-Item -LiteralPath $stagedBridge).Length
     }
 )
+$manifest += @(Get-ChildItem -LiteralPath $stagedBridge -File -Recurse | Sort-Object FullName | ForEach-Object {
+    [ordered]@{
+        file = [IO.Path]::GetRelativePath($destinationPath, $_.FullName).Replace('\', '/')
+        sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+        size = $_.Length
+    }
+})
 
 [ordered]@{ version = $Version; files = $manifest } |
     ConvertTo-Json -Depth 4 |
     Set-Content -LiteralPath (Join-Path $destinationPath 'payload-manifest.json') -Encoding utf8
 
-Write-Output 'Staged the two explicit KM Editor setup payloads and recorded their SHA-256 hashes.'
+Write-Output 'Staged the application and bridge runtime and recorded their SHA-256 hashes.'
