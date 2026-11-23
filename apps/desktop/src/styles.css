@@ -2297,7 +2297,8 @@ h2 {
 }
 
 .searchable-option-wrap-value[data-show-value='true'] > input {
-  color: transparent;
+  /* Disabled controls set an explicit text fill. Only paint the wrapped value here. */
+  -webkit-text-fill-color: transparent;
 }
 
 .searchable-option-wrap-value[data-show-value='true'] > .searchable-option-selected-value {

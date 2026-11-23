@@ -27652,49 +27652,47 @@ function SelectedPokemonPanel({
                       value={evolutionMethodDraft}
                     />
                   </div>
-                  <div className="path-field">
-                    <FieldLabel
-                      help={t('fieldHelp.catalog.pokemon.evolutionArgument')}
-                      htmlFor="pokemon-evolution-argument"
-                      label={translateLiteral(
-                        selectedEvolutionMethodOption?.argumentLabel ?? 'Argument'
-                      )}
-                    />
-                    {usesEvolutionArgumentSelector(selectedEvolutionMethodOption) &&
-                    selectedEvolutionArgumentOptions.length > 0 ? (
-                      <SearchableOptionInput
-                        wrapSelectedValue
-                        ariaLabel={translateLiteral(
+                  {usesSeparateEvolutionArgument(selectedEvolutionMethodOption) ? (
+                    <div className="path-field">
+                      <FieldLabel
+                        help={t('fieldHelp.catalog.pokemon.evolutionArgument')}
+                        htmlFor="pokemon-evolution-argument"
+                        label={translateLiteral(
                           selectedEvolutionMethodOption?.argumentLabel ?? 'Argument'
                         )}
-                        disabled={!canEditEvolutionFields}
-                        id="pokemon-evolution-argument"
-                        localizeOptions={!evolutionArgumentUsesGameText(selectedEvolutionMethodOption?.argumentKind)}
-                        onChange={(value) => {
-                          setEvolutionArgumentDraft(value);
-                          updateSelectedEvolutionDraft({ argument: value });
-                        }}
-                        options={selectedEvolutionArgumentOptions}
-                        value={evolutionArgumentDraft}
                       />
-                    ) : (
-                      <input
-                        disabled={
-                          !canEditEvolutionFields ||
-                          !usesEvolutionArgumentNumberInput(selectedEvolutionMethodOption)
-                        }
-                        id="pokemon-evolution-argument"
-                        max={65535}
-                        min={0}
-                        onChange={(event) => {
-                          setEvolutionArgumentDraft(event.target.value);
-                          updateSelectedEvolutionDraft({ argument: event.target.value });
-                        }}
-                        type="number"
-                        value={evolutionArgumentDraft}
-                      />
-                    )}
-                  </div>
+                      {selectedEvolutionMethodOption?.argumentOptions.length ? (
+                        <SearchableOptionInput
+                          wrapSelectedValue
+                          ariaLabel={translateLiteral(
+                            selectedEvolutionMethodOption.argumentLabel
+                          )}
+                          disabled={!canEditEvolutionFields}
+                          id="pokemon-evolution-argument"
+                          localizeOptions={!evolutionArgumentUsesGameText(selectedEvolutionMethodOption.argumentKind)}
+                          onChange={(value) => {
+                            setEvolutionArgumentDraft(value);
+                            updateSelectedEvolutionDraft({ argument: value });
+                          }}
+                          options={selectedEvolutionArgumentOptions}
+                          value={evolutionArgumentDraft}
+                        />
+                      ) : (
+                        <input
+                          disabled={!canEditEvolutionFields}
+                          id="pokemon-evolution-argument"
+                          max={65535}
+                          min={0}
+                          onChange={(event) => {
+                            setEvolutionArgumentDraft(event.target.value);
+                            updateSelectedEvolutionDraft({ argument: event.target.value });
+                          }}
+                          type="number"
+                          value={evolutionArgumentDraft}
+                        />
+                      )}
+                    </div>
+                  ) : null}
                   <div className="path-field">
                     <FieldLabel
                       help={t('fieldHelp.catalog.pokemon.evolutionTargetSpecies')}
@@ -27879,43 +27877,39 @@ function SelectedPokemonPanel({
                     value={newEvolutionMethodDraft}
                   />
                 </div>
-                <div className="path-field">
-                  <FieldLabel
-                    help={t('fieldHelp.catalog.pokemon.evolutionArgument')}
-                    htmlFor="pokemon-new-evolution-argument"
-                    label={translateLiteral(
-                      newEvolutionMethodOption?.argumentLabel ?? 'New argument'
-                    )}
-                  />
-                  {usesEvolutionArgumentSelector(newEvolutionMethodOption) &&
-                  newEvolutionArgumentOptions.length > 0 ? (
-                    <SearchableOptionInput
-                      wrapSelectedValue
-                      ariaLabel={translateLiteral(
+                {usesSeparateEvolutionArgument(newEvolutionMethodOption) ? (
+                  <div className="path-field">
+                    <FieldLabel
+                      help={t('fieldHelp.catalog.pokemon.evolutionArgument')}
+                      htmlFor="pokemon-new-evolution-argument"
+                      label={translateLiteral(
                         newEvolutionMethodOption?.argumentLabel ?? 'New argument'
                       )}
-                      disabled={!canEditEvolution}
-                      id="pokemon-new-evolution-argument"
-                      localizeOptions={!evolutionArgumentUsesGameText(newEvolutionMethodOption?.argumentKind)}
-                      onChange={setNewEvolutionArgumentDraft}
-                      options={newEvolutionArgumentOptions}
-                      value={newEvolutionArgumentDraft}
                     />
-                  ) : (
-                    <input
-                      disabled={
-                        !canEditEvolution ||
-                        !usesEvolutionArgumentNumberInput(newEvolutionMethodOption)
-                      }
-                      id="pokemon-new-evolution-argument"
-                      max={65535}
-                      min={0}
-                      onChange={(event) => setNewEvolutionArgumentDraft(event.target.value)}
-                      type="number"
-                      value={newEvolutionArgumentDraft}
-                    />
-                  )}
-                </div>
+                    {newEvolutionMethodOption?.argumentOptions.length ? (
+                      <SearchableOptionInput
+                        wrapSelectedValue
+                        ariaLabel={translateLiteral(newEvolutionMethodOption.argumentLabel)}
+                        disabled={!canEditEvolution}
+                        id="pokemon-new-evolution-argument"
+                        localizeOptions={!evolutionArgumentUsesGameText(newEvolutionMethodOption.argumentKind)}
+                        onChange={setNewEvolutionArgumentDraft}
+                        options={newEvolutionArgumentOptions}
+                        value={newEvolutionArgumentDraft}
+                      />
+                    ) : (
+                      <input
+                        disabled={!canEditEvolution}
+                        id="pokemon-new-evolution-argument"
+                        max={65535}
+                        min={0}
+                        onChange={(event) => setNewEvolutionArgumentDraft(event.target.value)}
+                        type="number"
+                        value={newEvolutionArgumentDraft}
+                      />
+                    )}
+                  </div>
+                ) : null}
                 <div className="path-field">
                   <FieldLabel
                     help={t('fieldHelp.catalog.pokemon.evolutionTargetSpecies')}
@@ -60096,22 +60090,10 @@ function getDefaultEvolutionArgumentDraft(methodOption: PokemonEvolutionMethodOp
   return methodOption.argumentOptions[0]?.value.toString() ?? '0';
 }
 
-function usesEvolutionArgumentSelector(methodOption: PokemonEvolutionMethodOption | null) {
-  return Boolean(
-    methodOption &&
-      methodOption.argumentKind !== 'none' &&
-      methodOption.argumentKind !== 'level' &&
-      methodOption.argumentOptions.length > 0
-  );
-}
-
-function usesEvolutionArgumentNumberInput(methodOption: PokemonEvolutionMethodOption | null) {
-  return Boolean(
-    methodOption &&
-      methodOption.argumentKind !== 'none' &&
-      methodOption.argumentKind !== 'level' &&
-      methodOption.argumentOptions.length === 0
-  );
+function usesSeparateEvolutionArgument(methodOption: PokemonEvolutionMethodOption | null) {
+  return methodOption !== null &&
+    methodOption.argumentKind !== 'none' &&
+    methodOption.argumentKind !== 'level';
 }
 
 function formatEvolutionMethodSummary(evolution: PokemonEvolutionRecord) {
