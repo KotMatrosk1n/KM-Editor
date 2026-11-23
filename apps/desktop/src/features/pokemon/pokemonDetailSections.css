@@ -1,0 +1,256 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+.sectioned-editor-workspace .pokemon-detail-panel {
+  container: pokemon-details / inline-size;
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  min-inline-size: 0;
+}
+
+.pokemon-detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.sectioned-editor-workspace .pokemon-detail-panel h4 {
+  margin: 0;
+}
+
+.pokemon-detail-fields,
+.sectioned-editor-workspace .evolution-disclosure {
+  display: grid;
+  align-items: start;
+  gap: 8px 12px;
+  min-inline-size: 0;
+}
+
+.pokemon-detail-fields > *,
+.evolution-disclosure > * {
+  min-inline-size: 0;
+}
+
+.pokemon-alpha-fields {
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, .8fr) auto;
+}
+
+.pokemon-dex-fields {
+  grid-template-columns: minmax(0, .85fr) minmax(0, 1fr) minmax(0, 1.4fr);
+}
+
+.pokemon-detail-reference {
+  display: grid;
+  grid-template-rows: auto minmax(32px, auto);
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  font-size: .8125rem;
+  overflow-wrap: anywhere;
+}
+
+.pokemon-detail-reference dt {
+  color: var(--color-text-muted);
+  font-weight: 650;
+}
+
+.pokemon-detail-reference dd {
+  margin: 0;
+  font-weight: 650;
+}
+
+.pokemon-alpha-restore {
+  display: grid;
+  justify-items: start;
+  align-self: start;
+  gap: 3px;
+  margin-block-start: 1.25rem;
+}
+
+.pokemon-alpha-restore > button,
+.pokemon-detail-heading > button {
+  white-space: normal;
+  min-inline-size: 0;
+  text-align: start;
+}
+
+.sectioned-editor-workspace .pokemon-detail-panel .pokemon-detail-actions {
+  margin: 0;
+}
+
+.pokemon-dex-preview {
+  display: grid;
+  gap: 4px;
+  color: var(--color-text-muted);
+  font-size: .8125rem;
+  border-block-start: 1px solid var(--color-border);
+  padding-block-start: 8px;
+}
+
+.pokemon-dex-preview > strong {
+  color: var(--color-accent-bright);
+}
+
+.pokemon-dex-preview dl {
+  display: grid;
+  gap: 2px 12px;
+  margin: 0;
+}
+
+.pokemon-dex-preview dl > div {
+  display: grid;
+  grid-template-columns: minmax(8rem, .45fr) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 2px 10px;
+}
+
+.pokemon-dex-preview dt {
+  color: var(--color-text);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.pokemon-dex-preview dd {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  margin: 0;
+}
+
+.evolution-record-list {
+  display: grid;
+  gap: 4px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.sectioned-editor-workspace .evolution-record-row {
+  display: grid;
+  grid-template-columns: minmax(3rem, auto) minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, .65fr) minmax(0, 1.2fr) 16px;
+  align-items: center;
+  gap: 2px 10px;
+  width: 100%;
+  min-block-size: 36px;
+  padding: 3px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-control) 55%, transparent);
+  font-size: .8125rem;
+  line-height: 1.35;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+.evolution-record-row:hover,
+.evolution-record-row[aria-expanded='true'] {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-control));
+}
+
+.evolution-record-row:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.evolution-record-slot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.evolution-record-slot .pokemon-row-sprite {
+  width: 24px;
+  height: 24px;
+  flex: none;
+}
+
+.evolution-record-condition,
+.evolution-record-form,
+.evolution-record-slot,
+.evolution-record-chevron {
+  color: var(--color-text-muted);
+}
+
+.evolution-record-row[aria-expanded='true'] .evolution-record-chevron {
+  transform: rotate(180deg);
+}
+
+.sectioned-editor-workspace .evolution-disclosure {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.5rem), 1fr));
+  padding: 8px;
+  margin-block: 3px 2px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-control) 32%, transparent);
+}
+
+.evolution-disclosure .path-field {
+  gap: 4px;
+}
+
+.evolution-disclosure .learnset-button-row {
+  justify-content: flex-start;
+}
+
+.evolution-disclosure .evolution-draft-status {
+  margin-inline-end: auto;
+}
+
+.evolution-stored-argument {
+  grid-column: 1 / -1;
+  font-size: .75rem;
+  color: var(--color-text-muted);
+}
+
+.evolution-stored-argument summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.evolution-stored-value {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding-block-start: 4px;
+}
+
+.evolution-stored-value output {
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+@container pokemon-details (width < 41rem) {
+  .sectioned-editor-workspace .evolution-record-row {
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, .75fr) 16px;
+  }
+
+  .evolution-record-row .evolution-record-target { grid-column: 2; grid-row: 1; }
+  .evolution-record-row .evolution-record-form { grid-column: 3; grid-row: 1; }
+  .evolution-record-row .evolution-record-method { grid-column: 2; grid-row: 2; }
+  .evolution-record-row .evolution-record-condition { grid-column: 3 / 5; grid-row: 2; }
+  .evolution-record-row .evolution-record-chevron { grid-column: 4; grid-row: 1; }
+
+  .pokemon-alpha-fields {
+    grid-template-columns: minmax(0, 1fr) minmax(0, .65fr);
+  }
+
+  .pokemon-alpha-restore { margin-block-start: 0; }
+}
+
+@container pokemon-details (width < 30rem) {
+  .pokemon-dex-fields,
+  .pokemon-alpha-fields,
+  .pokemon-dex-preview dl > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pokemon-detail-reference {
+    grid-template-rows: auto auto;
+  }
+}

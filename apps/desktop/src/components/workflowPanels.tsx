@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { Activity, AlertCircle, AlertTriangle, CheckCircle, ClipboardCheck } from 'lucide-react';
+import { Activity, AlertCircle, AlertTriangle, CheckCircle, ChevronDown, ClipboardCheck } from 'lucide-react';
 import { type ReactNode, useId, useMemo } from 'react';
 import { type ApiDiagnostic, type ApplyResult, type ChangePlan } from '../bridge/contracts';
 import { formatDiagnosticSummary, isProjectSetupConfirmation } from '../diagnostics';
@@ -265,9 +265,11 @@ export function DiagnosticsSection({
 }
 
 function DiagnosticsPanel({
+  hideHeading = false,
   diagnostics,
   scrollAfterEntries
 }: {
+  hideHeading?: boolean;
   diagnostics: ApiDiagnostic[];
   scrollAfterEntries?: number;
 }) {
@@ -326,10 +328,13 @@ function DiagnosticsPanel({
     .find((action) => action !== null);
 
   return (
-    <section aria-labelledby={headingId} className="panel wide-panel">
+    <section aria-label={hideHeading ? translateLiteral('Diagnostics') : undefined}
+      aria-labelledby={hideHeading ? undefined : headingId} className={hideHeading ? 'project-setup-diagnostic-content' : 'panel wide-panel'}>
       <div className="panel-heading">
-        <Activity aria-hidden="true" size={18} />
-        <h2 id={headingId}>{translateLiteral('Diagnostics')}</h2>
+        {!hideHeading ? <>
+          <Activity aria-hidden="true" size={18} />
+          <h2 id={headingId}>{translateLiteral('Diagnostics')}</h2>
+        </> : null}
         <ContextHelp label={translateLiteral('Diagnostics')}>
           {t('workflowPanels.diagnosticsHelp')}
         </ContextHelp>
@@ -401,18 +406,37 @@ function DiagnosticsPanel({
  * diagnostics owned by the app shell itself.
  */
 export function CommonBottomDiagnosticsSection({
+  compact = false,
   diagnostics,
   showProjectSetupConfirmations = false
 }: {
+  compact?: boolean;
   diagnostics: ApiDiagnostic[];
   showProjectSetupConfirmations?: boolean;
 }) {
+  const { translateLiteral } = useLocalization();
   const publishedDiagnostics = useCommonEditorDiagnostics();
   const combinedDiagnostics = useMemo(
     () => mergeEditorDiagnostics(diagnostics, publishedDiagnostics)
       .filter(diagnostic => showProjectSetupConfirmations || !isProjectSetupConfirmation(diagnostic)),
     [diagnostics, publishedDiagnostics, showProjectSetupConfirmations]
   );
+
+  if (compact) {
+    const hasError = combinedDiagnostics.some((diagnostic) => diagnostic.severity === 'error');
+    const DiagnosticIcon = hasError ? AlertCircle : Activity;
+    return (
+      <details className="project-setup-disclosure project-setup-diagnostics">
+        <summary>
+          <DiagnosticIcon aria-hidden="true" size={16} />
+          <strong>{translateLiteral('Diagnostics')}</strong>
+          <span>{combinedDiagnostics.length || translateLiteral('No diagnostics.')}</span>
+          <ChevronDown aria-hidden="true" size={16} />
+        </summary>
+        {combinedDiagnostics.length > 0 ? <DiagnosticsPanel diagnostics={combinedDiagnostics} hideHeading /> : null}
+      </details>
+    );
+  }
 
   return combinedDiagnostics.length > 0 ? (
     <DiagnosticsPanel

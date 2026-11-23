@@ -291,7 +291,7 @@ public static class ProjectBridgeMapper
         };
     }
 
-    private static ProjectPathRoleDto ToDto(ProjectPathRole role)
+    internal static ProjectPathRoleDto ToDto(ProjectPathRole role)
     {
         return role switch
         {

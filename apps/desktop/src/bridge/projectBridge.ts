@@ -342,6 +342,8 @@ import {
   updateTrainerFieldResponseSchema,
   validateEditSessionResponseSchema,
   validateProjectResponseSchema,
+  projectPathCheckProgressSchema,
+  type ProjectPathCheckProgress,
 } from "./contracts";
 import {
   type LoadFashionUnlockWorkflowRequest,
@@ -1016,6 +1018,7 @@ export type ProjectBridge = {
   ) => Promise<ValidateEditSessionResponse>;
   validateProject: (
     request: ValidateProjectRequest,
+    onProgress?: (progress: ProjectPathCheckProgress) => void,
   ) => Promise<ValidateProjectResponse>;
 } & PlaProjectBridgeApi & RestorationProjectBridgeApi & SvBatchFieldProjectBridgeApi &
   SvCacheProjectBridgeApi &
@@ -2173,13 +2176,18 @@ export function createProjectBridge(
         request,
         validateEditSessionResponseSchema,
       ),
-    validateProject: (request) =>
-      sendProjectBridgeRequest(
-        transport,
+    validateProject: (request, onProgress) => {
+      const shouldStream = transport === tauriProjectBridgeTransport && onProgress && hasTauriRuntime();
+      return sendProjectBridgeRequest(
+        shouldStream ? (requestJson) => tauriProjectBridgeProgressTransport(requestJson, (message) => {
+          const progress = projectPathCheckProgressSchema.safeParse(message);
+          if (progress.success) onProgress(progress.data);
+        }) : transport,
         kmCommandNames.validateProject,
-        request,
+        shouldStream ? { ...request, reportProgress: true } : request,
         validateProjectResponseSchema,
-      ),
+      );
+    },
   };
 }
 

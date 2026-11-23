@@ -636,6 +636,7 @@ export const openProjectRequestSchema = z.strictObject({
 });
 export const validateProjectRequestSchema = z.strictObject({
   paths: projectPathsSchema,
+  reportProgress: z.boolean().optional(),
 });
 export const refreshFileGraphRequestSchema = z.strictObject({
   paths: projectPathsSchema,
@@ -898,6 +899,12 @@ export const projectPathRoleSchema = z.enum([
   "pokemonLegendsZASupportFolder",
   "pokemonLegendsArceusSupportFolder",
 ]);
+
+export const projectPathCheckProgressSchema = z.strictObject({
+  role: projectPathRoleSchema,
+  completed: z.boolean(),
+});
+export type ProjectPathCheckProgress = z.infer<typeof projectPathCheckProgressSchema>;
 
 export const projectPathStatusSchema = z.enum([
   "notSet",

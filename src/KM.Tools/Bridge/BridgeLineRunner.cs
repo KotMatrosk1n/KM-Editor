@@ -3,6 +3,8 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using KM.Api.Bridge;
+using KM.Api.Projects;
 using KM.Core.Output;
 
 namespace KM.Tools.Bridge;
@@ -179,8 +181,10 @@ public sealed class BridgeLineRunner : IDisposable
             }
             try
             {
-                // Keep the existing progress framing for both request-scoped streams.
-                output.WriteLine("#km-apply-progress " + JsonSerializer.Serialize(progress, JsonSerializerOptions.Web));
+                var options = progress is ProjectPathCheckProgressDto
+                    ? BridgeJson.SerializerOptions
+                    : JsonSerializerOptions.Web;
+                output.WriteLine("#km-apply-progress " + JsonSerializer.Serialize(progress, options));
                 output.Flush();
             }
             catch (Exception exception) when (exception is IOException or ObjectDisposedException)

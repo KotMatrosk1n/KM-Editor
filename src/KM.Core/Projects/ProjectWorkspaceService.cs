@@ -69,13 +69,13 @@ public sealed class ProjectWorkspaceService
         return ValidateAndOpen(paths).Health;
     }
 
-    public OpenedProject ValidateAndOpen(ProjectPaths paths)
+    public OpenedProject ValidateAndOpen(ProjectPaths paths, Action<ProjectPathRole, bool>? reportPathCheck = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         ClearMemoryCache();
         var fileSystemStamp = ProjectFileSystemStamp.CaptureFileGraph(paths);
-        var (health, fileGraph) = ValidateAndBuildFileGraph(paths);
+        var (health, fileGraph) = ValidateAndBuildFileGraph(paths, reportPathCheck);
         return CacheOpenedProject(paths, health, fileGraph, fileSystemStamp);
     }
 
@@ -128,14 +128,15 @@ public sealed class ProjectWorkspaceService
         }
     }
 
-    private (ProjectHealth Health, ProjectFileGraph FileGraph) ValidateAndBuildFileGraph(ProjectPaths paths)
+    private (ProjectHealth Health, ProjectFileGraph FileGraph) ValidateAndBuildFileGraph(
+        ProjectPaths paths, Action<ProjectPathRole, bool>? reportPathCheck = null)
     {
         ProjectFileGraph? fileGraph = null;
         var health = validator.Validate(paths, graphPaths =>
         {
             fileGraph = fileGraphBuilder.Build(graphPaths);
             return fileGraph.ToSummary();
-        });
+        }, reportPathCheck);
 
         return (health, fileGraph ?? EmptyFileGraph);
     }
