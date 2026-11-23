@@ -6,6 +6,7 @@ import { learnsetDraftsEqual, projectLearnsetDraftRows, replaceLearnsetDraftReco
 import { LearnsetClipboardActions } from './features/pokemon/LearnsetClipboardActions';
 import { InteractiveTableRow, VirtualTableBody } from './components/VirtualTable';
 import { EditorLayoutScope, RecordEditorWorkspace, EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, SectionedEditorWorkspace } from './components/SectionedEditorWorkspace';
+import { EditorDetailGroup, EditorDetailValue, PokemonDetailsStats } from './components/EditorRecordDetails';
 import { SpeciesDataMatrix, useSpeciesFieldFinder } from './components/SpeciesDataMatrix';
 import { PokemonSearchBox, PokemonTable, filterPokemonRecords, formatPokemonTypes, type PokemonSelectionRecord } from './components/PokemonSelection';
 import { stageModelAsset, stageModelTexture } from './features/model-viewer/modelTextureBridge';
@@ -18,6 +19,8 @@ import MergeWorkspace from './features/mod-merger/MergeWorkspace';
 import { AdvancedEditorDetails } from './components/AdvancedEditorDetails';
 import { BetaEditorsSettings } from './features/settings/BetaEditorsSettings';
 import './components/advancedEditorWorkspace.css';
+import './components/editorWorkspaceProperties.css';
+import './components/editorSpecializedWorkspaces.css';
 import './features/type-chart/typeChartTheme.css';
 import { handleRowClipboardShortcut } from './authoring/rowClipboardShortcuts';
 import { buildZaTrainerChangeUpdates, trainerAiFlagEnabled, toggleTrainerAiFlag } from './features/trainers/trainerAiFlags';
@@ -20334,8 +20337,9 @@ export function App({
           aria-busy={isProjectScopeTransitioning || undefined}
           className="workspace-content"
           data-workspace-section={activeSection}
-          data-editor-workspace={getWorkbenchCapabilityRegistration(activeSection).navigationKind === 'workflow' ||
-            activeSection === 'exefsPatches' ? '' : undefined}
+          data-editor-workspace={['workflow', 'hidden'].includes(
+            getWorkbenchCapabilityRegistration(activeSection).navigationKind
+          ) ? '' : undefined}
           inert={isProjectScopeTransitioning ? true : undefined}
         >
           <EditorLayoutScope.Provider value={JSON.stringify([activeProjectId, selectedGame])}>
@@ -23624,7 +23628,7 @@ function SelectedItemPanel({
 
   return (
     <SectionedEditorWorkspace sessionKey={`${ordinaryDraftProject?.projectId ?? 'project'}:${editorFamily}:items`}
-      initialSection="itemData" pinnedBrowser browserVisibleRows={4} browser={browser}
+      initialSection="itemData" browserVisibleRows={4} browser={browser}
       browserControls={browserControls} sessionBar={<>{editorHeader}{editSession && item ? (
               <EditorSessionBarActions>
                 <button
@@ -23742,76 +23746,36 @@ function SelectedItemPanel({
       {item ? (
         <>
           <EditorWorkspaceSection id="details" label={t('editorSections.details')}>
-          <dl className="item-provenance-list">
-            <div>
-              <dt>Name</dt>
-              <dd>{item.name}</dd>
-            </div>
-            <div>
-              <dt>Source file</dt>
-              <dd className="pokemon-source-path" data-localization-ignore="true" title={item.provenance.sourceFile}>{item.provenance.sourceFile}</dd>
-            </div>
-            <div>
-              <dt>Layer</dt>
-              <dd>{formatSourceLayer(item.provenance.sourceLayer)}</dd>
-            </div>
-            <div>
-              <dt>File state</dt>
-              <dd>{formatFileState(item.provenance.fileState)}</dd>
-            </div>
-            <div>
-              <dt>Shared row</dt>
-              <dd>{formatSharedItemIds(item)}</dd>
-            </div>
-            {editorFamily === 'za' && item.metadata.machineMoveId !== null ? (
-              <>
-                <div>
-                  <dt>Current TM move</dt>
-                  <dd>{item.metadata.machineMoveName ?? item.metadata.machineMoveId}</dd>
-                </div>
-                <div>
-                  <dt>Verified base move</dt>
-                  <dd>
-                    {item.metadata.baseMachineMoveName ??
-                      item.metadata.baseMachineMoveId ??
-                      'Unavailable'}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Compatible Pokemon rows</dt>
-                  <dd>
-                    {technicalMachineCompatibilityRows.length > 0
-                      ? enabledTechnicalMachineCompatibilityCount
-                      : item.metadata.compatiblePokemonCount}
-                  </dd>
-                </div>
-              </>
-            ) : null}
-            {editorFamily === 'za' && item.metadata.isOwnedTechnicalMachineSlot ? (
-              <>
-                <div>
-                  <dt>{t('za.items.tmStatus.ownership')}</dt>
-                  <dd>{t('za.items.tmStatus.owned')}</dd>
-                </div>
-                <div>
-                  <dt>{t('za.items.tmStatus.projection')}</dt>
-                  <dd>
-                    {item.metadata.isProjectedTechnicalMachineSlot
-                      ? t('za.items.tmStatus.projected')
-                      : t('za.items.tmStatus.loaded')}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('za.items.tmStatus.provisioning')}</dt>
-                  <dd>
-                    {item.metadata.isTechnicalMachineProvisioned
-                      ? t('za.items.tmStatus.provisioned')
-                      : t('za.items.tmStatus.notProvisioned')}
-                  </dd>
-                </div>
-              </>
-            ) : null}
-          </dl>
+          <div className="editor-detail-columns">
+            <EditorDetailGroup label={translateLiteral('Item')}>
+              <dl className="editor-detail-list">
+                <EditorDetailValue label={translateLiteral('Shared row')}>{formatSharedItemIds(item)}</EditorDetailValue>
+                {editorFamily === 'za' && item.metadata.machineMoveId !== null ? <>
+                  <EditorDetailValue label={translateLiteral('Current TM move')}>{item.metadata.machineMoveName ?? item.metadata.machineMoveId}</EditorDetailValue>
+                  <EditorDetailValue label={translateLiteral('Verified base move')}>{item.metadata.baseMachineMoveName ?? item.metadata.baseMachineMoveId ?? translateLiteral('Unavailable')}</EditorDetailValue>
+                  <EditorDetailValue label={translateLiteral('Compatible Pokemon rows')}>
+                    {technicalMachineCompatibilityRows.length > 0 ? enabledTechnicalMachineCompatibilityCount : item.metadata.compatiblePokemonCount}
+                  </EditorDetailValue>
+                </> : null}
+                {editorFamily === 'za' && item.metadata.isOwnedTechnicalMachineSlot ? <>
+                  <EditorDetailValue label={t('za.items.tmStatus.ownership')}>{t('za.items.tmStatus.owned')}</EditorDetailValue>
+                  <EditorDetailValue label={t('za.items.tmStatus.projection')}>
+                    {t(item.metadata.isProjectedTechnicalMachineSlot ? 'za.items.tmStatus.projected' : 'za.items.tmStatus.loaded')}
+                  </EditorDetailValue>
+                  <EditorDetailValue label={t('za.items.tmStatus.provisioning')}>
+                    {t(item.metadata.isTechnicalMachineProvisioned ? 'za.items.tmStatus.provisioned' : 'za.items.tmStatus.notProvisioned')}
+                  </EditorDetailValue>
+                </> : null}
+              </dl>
+            </EditorDetailGroup>
+            <EditorDetailGroup label={translateLiteral('Source')}>
+              <dl className="editor-detail-list">
+                <EditorDetailValue label={translateLiteral('Source file')} dataValue path>{item.provenance.sourceFile}</EditorDetailValue>
+                <EditorDetailValue label={translateLiteral('Layer')}>{formatSourceLayer(item.provenance.sourceLayer)}</EditorDetailValue>
+                <EditorDetailValue label={translateLiteral('File state')}>{formatFileState(item.provenance.fileState)}</EditorDetailValue>
+              </dl>
+            </EditorDetailGroup>
+          </div>
           </EditorWorkspaceSection>
 
           <EditorWorkspaceSection id="itemData" label={translateLiteral('Item Data')}
@@ -23835,9 +23799,7 @@ function SelectedItemPanel({
                 <fieldset
                   className={[
                     'editable-field-group',
-                    group.group === 'Item Data' || group.group === 'Use Flags'
-                      ? 'item-field-group-wide'
-                      : '',
+                    group.group === 'Use Flags' ? 'item-field-group-wide' : '',
                     group.group === 'Use Flags' ? 'item-use-flags-group' : ''
                   ].filter(Boolean).join(' ')}
                   key={group.group}
@@ -24453,87 +24415,6 @@ function PokemonSection({
         />
       ) : null}
     </>
-  );
-}
-
-function SelectedPokemonSummaryCard({
-  dexEditor,
-  editorFamily,
-  pokemon,
-  variant = 'detailed',
-  showIdentity = true
-}: {
-  dexEditor?: PokemonDexEditor | null;
-  editorFamily: EditorUiFamily;
-  pokemon: PokemonRecord;
-  variant?: 'context' | 'detailed';
-  showIdentity?: boolean;
-}) {
-  const isContext = variant === 'context';
-  const pokemonLabel = formatPokemonRecordName(pokemon, editorFamily);
-  const pokemonFormLabel = editorFamily === 'swsh'
-    ? pokemon.formLabel
-    : formatSpeciesFormOptionLabel(pokemon.form, {
-        gameFamily: editorFamily,
-        species: pokemon.name,
-        speciesId: pokemon.speciesId
-      });
-
-  return (
-    <div
-      className={`${editorFamily}-pokemon-summary-card pokemon-summary-card ${
-        isContext ? 'pokemon-summary-card-context' : 'pokemon-summary-card-detailed'
-      }`}
-    >
-      {showIdentity ? (
-        <>
-          <PokemonSprite
-            className="pokemon-summary-sprite"
-            editorFamily={editorFamily}
-            form={getPokemonRecordDisplayForm(pokemon, editorFamily)}
-            name={pokemonLabel}
-            speciesId={pokemon.speciesId}
-            spriteName={pokemon.spriteName}
-          />
-          <div className="pokemon-summary-main">
-            <strong data-localization-ignore="true">{pokemonLabel}</strong>
-            <span data-localization-ignore="true">
-              {pokemon.speciesId} / {pokemonFormLabel}
-            </span>
-          </div>
-        </>
-      ) : null}
-      <dl className="item-provenance-list pokemon-summary-metadata">
-        <div>
-          <dt>Personal ID</dt>
-          <dd>{pokemon.personalId}</dd>
-        </div>
-        <div>
-          <dt>Types</dt>
-          <dd data-localization-ignore="true">{formatPokemonTypes(pokemon)}</dd>
-        </div>
-        <div>
-          <dt>Dex</dt>
-          <dd>{formatPokemonDexPresence(pokemon, dexEditor)}</dd>
-        </div>
-        {!isContext ? (
-          <>
-            <div>
-              <dt>Source file</dt>
-              <dd className="pokemon-source-path" data-localization-ignore="true" title={pokemon.provenance.sourceFile}>{pokemon.provenance.sourceFile}</dd>
-            </div>
-            <div>
-              <dt>Layer</dt>
-              <dd>{formatSourceLayer(pokemon.provenance.sourceLayer)}</dd>
-            </div>
-            <div>
-              <dt>File state</dt>
-              <dd>{formatFileState(pokemon.provenance.fileState)}</dd>
-            </div>
-          </>
-        ) : null}
-      </dl>
-    </div>
   );
 }
 
@@ -26643,8 +26524,6 @@ function SelectedPokemonPanel({
       crownDexIndex: parseOptionalInteger(personalDrafts.crownDexIndex ?? '') ?? pokemon.dexPresence.crownDexIndex
     }
   } : null;
-  const workingStats = ['hp', 'attack', 'defense', 'specialAttack', 'specialDefense', 'speed']
-    .map(field => parseOptionalInteger(personalDrafts[field] ?? String(pokemon ? getEditablePersonalFieldValue(pokemon, field) ?? '' : '')));
   const hasNewEvolutionDraft = pokemonDraftRecordKey !== null && !!newEvolutionDraftsByPokemonId[pokemonDraftRecordKey];
   const hasNewLearnsetDraft = pokemonDraftRecordKey !== null && !!newLearnsetDraftsByPokemonId[pokemonDraftRecordKey];
 
@@ -26653,7 +26532,6 @@ function SelectedPokemonPanel({
       sessionKey={`${ordinaryDraftProject?.projectId ?? 'project'}:${editorFamily}:pokemon`}
       initialSection="speciesData"
       sectionShortcut={speciesFieldFinder.shortcut}
-      pinnedBrowser
       browser={pokemonTable}
       browserControls={browserControls}
       browserVisibleRows={3}
@@ -26765,83 +26643,48 @@ function SelectedPokemonPanel({
         {pokemon && detailsPokemon ? (
           <>
           <EditorWorkspaceSection id="details" label={t('editorSections.details')}>
-          <div className="pokemon-details-grid">
-            <SelectedPokemonSummaryCard
-              dexEditor={dexEditor}
-              editorFamily={editorFamily}
-              pokemon={detailsPokemon}
-            />
 
-          <div className={`inspector-block ${editorFamily}-pokemon-stats-block`}>
-            <h4>Base Stats</h4>
-            <dl className="item-provenance-list compact-dl">
-              <div>
-                <dt>HP</dt>
-                <dd>{workingPersonalLabel('hp', pokemon.baseStats.hp)}</dd>
-              </div>
-              <div>
-                <dt>Attack</dt>
-                <dd>{workingPersonalLabel('attack', pokemon.baseStats.attack)}</dd>
-              </div>
-              <div>
-                <dt>Defense</dt>
-                <dd>{workingPersonalLabel('defense', pokemon.baseStats.defense)}</dd>
-              </div>
-              <div>
-                <dt>Sp. Atk</dt>
-                <dd>{workingPersonalLabel('specialAttack', pokemon.baseStats.specialAttack)}</dd>
-              </div>
-              <div>
-                <dt>Sp. Def</dt>
-                <dd>{workingPersonalLabel('specialDefense', pokemon.baseStats.specialDefense)}</dd>
-              </div>
-              <div>
-                <dt>Speed</dt>
-                <dd>{workingPersonalLabel('speed', pokemon.baseStats.speed)}</dd>
-              </div>
-              <div>
-                <dt>Total</dt>
-                <dd>{workingStats.every(value => value !== null) ? workingStats.reduce<number>((sum, value) => sum + (value ?? 0), 0) : '-'}</dd>
-              </div>
-            </dl>
-          </div>
-
-          <div className={`inspector-block ${editorFamily}-pokemon-traits-block`}>
-            <h4>Traits</h4>
-            <dl className="item-provenance-list compact-dl">
-              <div>
-                <dt>Ability 1</dt>
-                <dd data-localization-ignore="true">{workingPersonalLabel('ability1', pokemon.abilities.ability1Label)}</dd>
-              </div>
-              <div>
-                <dt>Ability 2</dt>
-                <dd data-localization-ignore="true">{workingPersonalLabel('ability2', pokemon.abilities.ability2Label)}</dd>
-              </div>
-              <div>
-                <dt>Hidden</dt>
-                <dd data-localization-ignore="true">{workingPersonalLabel('hiddenAbility', pokemon.abilities.hiddenAbilityLabel)}</dd>
-              </div>
-              <div>
-                <dt>Catch rate</dt>
-                <dd>{workingPersonalLabel('catchRate', pokemon.catchRate)}</dd>
-              </div>
-              <div>
-                <dt>Base EXP</dt>
-                <dd>{workingPersonalLabel('baseExperience', pokemon.baseExperience)}</dd>
-              </div>
-              <div>
-                <dt>Gender</dt>
-                <dd>{workingPersonalLabel('genderRatio', pokemon.genderRatioLabel)}</dd>
-              </div>
-              <div>
-                <dt>Height / weight</dt>
-                <dd>
-                  {workingPersonalLabel('height', pokemon.height)} / {workingPersonalLabel('weight', pokemon.weight)}
-                </dd>
-              </div>
-            </dl>
-          </div>
-          </div>
+            <div className="pokemon-overview-identity">
+              <PokemonSprite className="pokemon-summary-sprite" editorFamily={editorFamily}
+                form={getPokemonRecordDisplayForm(pokemon, editorFamily)}
+                name={formatPokemonRecordName(pokemon, editorFamily)} speciesId={pokemon.speciesId} spriteName={pokemon.spriteName} />
+              <h3 data-localization-ignore="true">{formatPokemonRecordName(pokemon, editorFamily)}</h3>
+              <span data-localization-ignore="true">
+                {pokemon.speciesId} / {editorFamily === 'swsh' ? pokemon.formLabel : formatSpeciesFormOptionLabel(pokemon.form, {
+                  gameFamily: editorFamily, species: pokemon.name, speciesId: pokemon.speciesId
+                })}
+              </span>
+            </div>
+            <div className="editor-detail-columns">
+              <PokemonDetailsStats stats={trainerProjectedStatRows.map(({ key, label }) => ({
+                label: translateLiteral(label),
+                value: workingPersonalLabel(key, getEditablePersonalFieldValue(pokemon, key)),
+                number: parseOptionalInteger(personalDrafts[key] ?? String(getEditablePersonalFieldValue(pokemon, key)))
+              }))} />
+              <EditorDetailGroup label="Traits">
+                <dl className="editor-detail-list">
+                  <EditorDetailValue label="Ability 1" dataValue>{workingPersonalLabel('ability1', pokemon.abilities.ability1Label)}</EditorDetailValue>
+                  <EditorDetailValue label="Ability 2" dataValue>{workingPersonalLabel('ability2', pokemon.abilities.ability2Label)}</EditorDetailValue>
+                  <EditorDetailValue label="Hidden Ability" dataValue>{workingPersonalLabel('hiddenAbility', pokemon.abilities.hiddenAbilityLabel)}</EditorDetailValue>
+                  <EditorDetailValue label="Catch rate">{workingPersonalLabel('catchRate', pokemon.catchRate)}</EditorDetailValue>
+                  <EditorDetailValue label="Base EXP">{workingPersonalLabel('baseExperience', pokemon.baseExperience)}</EditorDetailValue>
+                  <EditorDetailValue label="Gender">{workingPersonalLabel('genderRatio', pokemon.genderRatioLabel)}</EditorDetailValue>
+                  <EditorDetailValue label="Height / weight">
+                    {workingPersonalLabel('height', pokemon.height)} / {workingPersonalLabel('weight', pokemon.weight)}
+                  </EditorDetailValue>
+                </dl>
+              </EditorDetailGroup>
+              <EditorDetailGroup label="Details">
+                <dl className="editor-detail-list">
+                  <EditorDetailValue label="Personal ID">{pokemon.personalId}</EditorDetailValue>
+                  <EditorDetailValue label="Types" dataValue>{formatPokemonTypes(detailsPokemon)}</EditorDetailValue>
+                  <EditorDetailValue label="Dex">{formatPokemonDexPresence(detailsPokemon, dexEditor)}</EditorDetailValue>
+                  <EditorDetailValue label="Layer">{formatSourceLayer(pokemon.provenance.sourceLayer)}</EditorDetailValue>
+                  <EditorDetailValue label="File state">{formatFileState(pokemon.provenance.fileState)}</EditorDetailValue>
+                  <EditorDetailValue label="Source file" path dataValue>{pokemon.provenance.sourceFile}</EditorDetailValue>
+                </dl>
+              </EditorDetailGroup>
+            </div>
           </EditorWorkspaceSection>
 
           {editorFamily === 'za' && alphaMove ? (
@@ -29429,7 +29272,7 @@ function SelectedMovePanel({
 
   return (
     <SectionedEditorWorkspace sessionKey={`${ordinaryDraftProject?.projectId ?? 'project'}:${ordinaryDraftProject?.game ?? 'game'}:moves`}
-      initialSection="moveData" pinnedBrowser browserVisibleRows={4} browser={browser}
+      initialSection="moveData" browserVisibleRows={4} browser={browser}
       browserControls={browserControls} sessionBar={editorHeader} compactFields>
       <EditorWorkspaceHeader>
       <PublishedLocalEditorValidationDiagnostics
@@ -29466,120 +29309,58 @@ function SelectedMovePanel({
       {move ? (
         <>
           <EditorWorkspaceSection id="details" label={t('editorSections.details')}>
-          <dl className="item-provenance-list">
-            <div>
-              <dt>Name</dt>
-              <dd>{move.name}</dd>
-            </div>
-            <div>
-              <dt>Move ID</dt>
-              <dd>{move.moveId}</dd>
-            </div>
-            <div>
-                  <dt>{t('moves.inspector.catalogStatus')}</dt>
-                  <dd>
-                    {t(
+          <div className="editor-detail-columns editor-move-overview">
+            <EditorDetailGroup label={translateLiteral('Move Data')}>
+              <dl className="editor-detail-list">
+            <EditorDetailValue label={t('moves.inspector.catalogStatus')}>{t(
                       move.canUseMove
                         ? 'moves.inspector.catalogEnabled'
                         : 'moves.inspector.catalogDisabled'
-                    )}
-                  </dd>
-            </div>
+                    )}</EditorDetailValue>
             {move.hasRuntimeData && selectedRuntimeView ? (
               <>
-                <div>
-                  <dt>{t('moves.inspector.selectedRuntimeVariant')}</dt>
-                  <dd>
-                    {formatLocalizedMoveRuntimeVariantLabel(selectedRuntimeView.variant, t)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('moves.inspector.runtimeRowStatus')}</dt>
-                  <dd>{selectedRuntimeRowStatus}</dd>
-                </div>
-                <div>
-                  <dt>{t('moves.inspector.runtimeTypeCategory')}</dt>
-                  <dd>
-                    {selectedRuntimeView.battleRow
+                <EditorDetailValue label={t('moves.inspector.selectedRuntimeVariant')}>{formatLocalizedMoveRuntimeVariantLabel(selectedRuntimeView.variant, t)}</EditorDetailValue>
+                <EditorDetailValue label={t('moves.inspector.runtimeRowStatus')}>{selectedRuntimeRowStatus}</EditorDetailValue>
+                <EditorDetailValue label={t('moves.inspector.runtimeTypeCategory')}>{selectedRuntimeView.battleRow
                       ? `${selectedRuntimeView.battleRow.typeName} / ${selectedRuntimeView.battleRow.damageTypeName}`
-                      : t('moves.inspector.missingBattleRow')}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('moves.inspector.runtimePower')}</dt>
-                  <dd>
-                    {selectedRuntimeView.battleRow
+                      : t('moves.inspector.missingBattleRow')}</EditorDetailValue>
+                <EditorDetailValue label={t('moves.inspector.runtimePower')}>{selectedRuntimeView.battleRow
                       ? selectedRuntimeView.battleRow.power
-                      : t('moves.inspector.missingBattleRow')}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('moves.inspector.runtimeAccuracy')}</dt>
-                  <dd>
-                    {selectedRuntimeView.timingRow
+                      : t('moves.inspector.missingBattleRow')}</EditorDetailValue>
+                <EditorDetailValue label={t('moves.inspector.runtimeAccuracy')}>{selectedRuntimeView.timingRow
                       ? `${selectedRuntimeView.timingRow.hitPercent}%`
-                      : t('moves.inspector.missingTimingRow')}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t('moves.inspector.runtimeCooldown')}</dt>
-                  <dd>
-                    {selectedRuntimeView.timingRow
+                      : t('moves.inspector.missingTimingRow')}</EditorDetailValue>
+                <EditorDetailValue label={t('moves.inspector.runtimeCooldown')}>{selectedRuntimeView.timingRow
                       ? `${selectedRuntimeView.timingRow.cooldown}s`
-                      : t('moves.inspector.missingTimingRow')}
-                  </dd>
-                </div>
+                      : t('moves.inspector.missingTimingRow')}</EditorDetailValue>
                 {selectedRuntimeView.variant === 2 ? (
-                  <div>
-                    <dt>{t('moves.inspector.playerDamageRows')}</dt>
-                    <dd>
-                      {selectedRuntimeView.playerDamageRows.length > 0
+                  <EditorDetailValue label={t('moves.inspector.playerDamageRows')}>{selectedRuntimeView.playerDamageRows.length > 0
                         ? t(
                             selectedRuntimeView.playerDamageRows.length === 1
                               ? 'moves.inspector.playerDamageRows.one'
                               : 'moves.inspector.playerDamageRows.other',
                             { count: selectedRuntimeView.playerDamageRows.length }
                           )
-                        : t('moves.inspector.playerDamageRows.none')}
-                    </dd>
-                  </div>
+                        : t('moves.inspector.playerDamageRows.none')}</EditorDetailValue>
                 ) : null}
               </>
             ) : (
-              <div>
-                <dt>Type / category</dt>
-                <dd>
-                  {move.typeName} / {move.categoryName}
-                </dd>
-              </div>
+              <EditorDetailValue label={translateLiteral('Type / category')}>{move.typeName} / {move.categoryName}</EditorDetailValue>
             )}
-            <div>
-              <dt>Description</dt>
-              <dd>{move.description ?? 'No description text.'}</dd>
-            </div>
-            <div>
-              <dt>{t('moves.inspector.catalogSourceFile')}</dt>
-              <dd className="pokemon-source-path" data-localization-ignore="true" title={move.provenance.sourceFile}>{move.provenance.sourceFile}</dd>
-            </div>
-            <div>
-              <dt>{t('moves.inspector.catalogSourceLayer')}</dt>
-              <dd>{formatSourceLayer(move.provenance.sourceLayer)}</dd>
-            </div>
-            <div>
-              <dt>{t('moves.inspector.catalogFileState')}</dt>
-              <dd>{formatFileState(move.provenance.fileState)}</dd>
-            </div>
-            {move.hasRuntimeData ? (
-              <div>
-                <dt>{t('moves.inspector.runtimeDataSources')}</dt>
-                <dd>
-                  {move.runtimeSourceFiles.length > 0
-                    ? move.runtimeSourceFiles.join(', ')
-                    : t('moves.inspector.noRuntimeDataSources')}
-                </dd>
-              </div>
-            ) : null}
-          </dl>
+            <EditorDetailValue label={translateLiteral('Description')}>{move.description ?? 'No description text.'}</EditorDetailValue>
+              </dl>
+            </EditorDetailGroup>
+            <EditorDetailGroup label={translateLiteral('Source')}>
+              <dl className="editor-detail-list">
+                <EditorDetailValue label={t('moves.inspector.catalogSourceFile')} dataValue path>{move.provenance.sourceFile}</EditorDetailValue>
+                <EditorDetailValue label={t('moves.inspector.catalogSourceLayer')}>{formatSourceLayer(move.provenance.sourceLayer)}</EditorDetailValue>
+                <EditorDetailValue label={t('moves.inspector.catalogFileState')}>{formatFileState(move.provenance.fileState)}</EditorDetailValue>
+                {move.hasRuntimeData ? <EditorDetailValue label={t('moves.inspector.runtimeDataSources')} path>
+                  {move.runtimeSourceFiles.length > 0 ? move.runtimeSourceFiles.join(', ') : t('moves.inspector.noRuntimeDataSources')}
+                </EditorDetailValue> : null}
+              </dl>
+            </EditorDetailGroup>
+          </div>
           </EditorWorkspaceSection>
 
           <EditorWorkspaceSection id="moveData" label={translateLiteral('Move Data')}
@@ -31614,16 +31395,6 @@ function TrainersSection({
           />
         </div>
 
-        {workflow ? (
-          <EditorSessionBar
-            canEdit={canEditTrainers && selectedTrainer !== null}
-            isEditing={editSession !== null}
-            isStarting={isEditStarting}
-            label="Trainers"
-            onStart={onStartEditSession}
-          />
-        ) : null}
-
             {supportsTrainerCategories ? (
               <div
                 aria-label="Trainer categories"
@@ -31730,6 +31501,15 @@ function TrainersSection({
                 pokemonWorkflow={pokemonWorkflow}
                 selectedPokemon={selectedPokemon}
                 selectedSlot={selectedTrainerPartySlot}
+                sessionBar={
+                  <EditorSessionBar
+                    canEdit={canEditTrainers && selectedTrainer !== null}
+                    isEditing={editSession !== null}
+                    isStarting={isEditStarting}
+                    label="Trainers"
+                    onStart={onStartEditSession}
+                  />
+                }
                 trainer={selectedTrainer}
                 trainerRecords={trainers}
                 zaClassPairOptions={workflow.zaClassPairOptions}
@@ -31864,6 +31644,7 @@ function SelectedTrainerPanel({
   pokemonWorkflow,
   selectedPokemon,
   selectedSlot,
+  sessionBar,
   trainer,
   trainerRecords,
   zaClassPairOptions
@@ -31898,6 +31679,7 @@ function SelectedTrainerPanel({
   pokemonWorkflow: PokemonWorkflow | null;
   selectedPokemon: TrainerPokemonRecord | null;
   selectedSlot: number | null;
+  sessionBar: ReactNode;
   trainer: TrainerRecord | null;
   trainerRecords: TrainerRecord[];
   zaClassPairOptions: TrainersWorkflow['zaClassPairOptions'];
@@ -32981,7 +32763,7 @@ function SelectedTrainerPanel({
         initialSection="aiFlags"
         browser={browser}
         browserControls={browserControls}
-        pinnedBrowser
+        sessionBar={sessionBar}
         compactFields
         browserVisibleRows={4}
         onActiveSectionChange={handleTrainerSectionChange}
@@ -32999,56 +32781,32 @@ function SelectedTrainerPanel({
       <div className="trainer-selection-details">
       {trainer ? (
         <>
-          <dl className="item-provenance-list">
-            <div>
-              <dt>Name</dt>
-              <dd data-localization-ignore="true">{trainer.name}</dd>
-            </div>
-            <div>
-              <dt>Data file</dt>
-              <dd title={trainer.provenance.sourceFile}>{trainer.provenance.sourceFile}</dd>
-            </div>
-            <div>
-              <dt>Party file</dt>
-              <dd title={trainer.provenance.teamSourceFile}>{trainer.provenance.teamSourceFile}</dd>
-            </div>
-            <div>
-              <dt>Class file</dt>
-              <dd title={trainer.provenance.classSourceFile ?? 'Not loaded'}>{trainer.provenance.classSourceFile ?? 'Not loaded'}</dd>
-            </div>
-            <div>
-              <dt>Class ball scope</dt>
-              <dd title={trainer.classBallScope}>{trainer.classBallScope}</dd>
-            </div>
-            {showTerastallizationDetails ? (
-              <>
-                <div>
-                  <dt>Can Terastallize</dt>
-                  <dd>{trainer.canTerastallize === true ? 'Yes' : 'No'}</dd>
-                </div>
-                <div>
-                  <dt>Tera behavior</dt>
-                  <dd>{trainer.teraTarget ?? 'Disabled'}</dd>
-                </div>
-              </>
-            ) : null}
-            <div>
-              <dt>Data layer</dt>
-              <dd>{formatSourceLayer(trainer.provenance.sourceLayer)}</dd>
-            </div>
-            <div>
-              <dt>Party layer</dt>
-              <dd>{formatSourceLayer(trainer.provenance.teamSourceLayer)}</dd>
-            </div>
-            <div>
-              <dt>Class layer</dt>
-              <dd>
-                {trainer.provenance.classSourceLayer
-                  ? formatSourceLayer(trainer.provenance.classSourceLayer)
-                  : 'Not loaded'}
-              </dd>
-            </div>
-          </dl>
+          <div className="editor-detail-columns">
+            <EditorDetailGroup label={translateLiteral('Trainer')}>
+              <dl className="editor-detail-list">
+                <EditorDetailValue label={translateLiteral('Name')}>{trainer.name}</EditorDetailValue>
+                <EditorDetailValue label={translateLiteral('Class ball scope')}>{trainer.classBallScope}</EditorDetailValue>
+                {showTerastallizationDetails ? <>
+                  <EditorDetailValue label={translateLiteral('Can Terastallize')}>{translateLiteral(trainer.canTerastallize === true ? 'Yes' : 'No')}</EditorDetailValue>
+                  <EditorDetailValue label={translateLiteral('Tera behavior')}>{trainer.teraTarget ?? translateLiteral('Disabled')}</EditorDetailValue>
+                </> : null}
+              </dl>
+            </EditorDetailGroup>
+            <EditorDetailGroup label={translateLiteral('Trainer data')}>
+              <dl className="editor-detail-list">
+                <EditorDetailValue label={translateLiteral('Data file')} dataValue path>{trainer.provenance.sourceFile}</EditorDetailValue>
+                <EditorDetailValue label={translateLiteral('Data layer')}>{formatSourceLayer(trainer.provenance.sourceLayer)}</EditorDetailValue>
+                <EditorDetailValue label={translateLiteral('Class file')} dataValue path>{trainer.provenance.classSourceFile ?? translateLiteral('Not loaded')}</EditorDetailValue>
+                <EditorDetailValue label={translateLiteral('Class layer')}>{trainer.provenance.classSourceLayer ? formatSourceLayer(trainer.provenance.classSourceLayer) : translateLiteral('Not loaded')}</EditorDetailValue>
+              </dl>
+            </EditorDetailGroup>
+            <EditorDetailGroup label={translateLiteral('Party')}>
+              <dl className="editor-detail-list">
+                <EditorDetailValue label={translateLiteral('Party file')} dataValue path>{trainer.provenance.teamSourceFile}</EditorDetailValue>
+                <EditorDetailValue label={translateLiteral('Party layer')}>{formatSourceLayer(trainer.provenance.teamSourceLayer)}</EditorDetailValue>
+              </dl>
+            </EditorDetailGroup>
+          </div>
 
           {editorFamily === 'za' && trainer.zaSharedRivalRoster === true ? (
             <section
@@ -33143,7 +32901,7 @@ function SelectedTrainerPanel({
                   </div>
                   <span>{aiFlagsMaskLabel}</span>
                 </div>
-                <div className="trainer-ai-flags-grid">
+                <div className="trainer-ai-flags-grid" role="group" aria-label={translateLiteral('AI Flags')}>
                   {trainer.aiFlagStates.map((flag) => {
                     const isReserved = flag.label.toLocaleLowerCase().startsWith('unused');
                     const flagInputId = `trainer-${trainer.trainerId}-ai-flag-${flag.bit}`;

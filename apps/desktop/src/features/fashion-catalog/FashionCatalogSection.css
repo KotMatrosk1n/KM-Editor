@@ -242,4 +242,34 @@
   border: 1px solid var(--color-border);
   border-radius: 8px;
 }
+
+.workspace-content[data-editor-workspace] .fashion-catalog-row-list > button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: stretch;
+  justify-items: stretch;
+  align-items: center;
+  text-align: start;
+  border-radius: 0;
+  min-block-size: 1.95rem;
+}
+
+.fashion-catalog-properties {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: .6rem;
+}
+
+.fashion-catalog-property {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  gap: .25rem;
+}
 .fashion-catalog-browser-workspace .editor-workspace-chrome > .field-hint { margin: 0; }
+
+.workspace-content[data-editor-workspace] .fashion-catalog-row-list > button.selected {
+  background: var(--property-selected);
+  box-shadow: inset 3px 0 var(--color-accent);
+}
+.workspace-content[data-editor-workspace] .fashion-catalog-row-list > button:focus-visible { outline-offset: -2px; }

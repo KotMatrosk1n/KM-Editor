@@ -48,7 +48,7 @@ export function PlaWildWorkspace({ sessionKey, kind, page, selected, query, offs
   const tabs = ['encounters', 'spawns'] as const;
   return <section className="panel wide-panel pla-wild-editor" aria-labelledby="pla-wild-heading">
     <div className="panel-heading"><Trees size={18} aria-hidden="true" /><h2 id="pla-wild-heading">{title ?? translateLiteral('Wild Encounters')}</h2>{refresh}</div>
-    <SectionedEditorWorkspace sessionKey={sessionKey + ':' + kind} initialSection="data" pinnedBrowser compactFields
+    <SectionedEditorWorkspace sessionKey={sessionKey + ':' + kind} initialSection="data" compactFields
       browserVisibleRows={4} sessionBar={<>{sessionBar}{actions}</>}
       browserControls={<>
         <div className="items-toolbar encounters-toolbar">

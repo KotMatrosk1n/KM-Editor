@@ -73,10 +73,10 @@ export function ObedienceSection({ workflow, session, isEditing, isEditStarting,
         </button>
         <span className="draft-action-summary">{t(dirty ? 'obedience.draft' : pending ? 'obedience.staged' : 'obedience.clean')}</span>
       </EditorSessionBarActions> : null}
-      <div className="obedience-grid">
+      <div className="obedience-grid editor-property-ledger">
+        <div className="obedience-ledger-header">{t('obedience.level')}</div>
         {desired.map((value, index) => <label className="obedience-card" key={index}>
           <span>{t('obedience.badges', { count: index })}</span>
-          <span>{t('obedience.level')}</span>
           <input type="text" inputMode="numeric" value={value} disabled={!canEdit}
             aria-label={t('obedience.limitLabel', { count: index })} aria-describedby="obedience-help"
             aria-invalid={!Number.isInteger(values[index]) || values[index] < 1 || values[index] > 100 || undefined}

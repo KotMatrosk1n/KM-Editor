@@ -115,10 +115,12 @@ export function TitanSwapperSection({ workflow, isStaging, isEditing, isEditStar
         </button>
         <span className="draft-action-summary">{t('titanSwapper.draftCount', { count: entries.length })}</span>
       </EditorSessionBarActions> : null}
-      <RecordEditorWorkspace id="titanSwapper" className="titan-swapper-layout" browser={
-        <nav className="titan-swapper-list" aria-label={t('titanSwapper.encounters')}>
-          <label className="field"><span>{t('titanSwapper.search')}</span>
-            <input type="search" value={search} onChange={event => setSearch(event.target.value)} /></label>
+      <RecordEditorWorkspace id="titanSwapper" className="titan-swapper-layout" browserControls={
+        <label className="editor-browser-filter"><span>{t('titanSwapper.search')}</span>
+          <input type="search" value={search} onChange={event => setSearch(event.target.value)} />
+        </label>
+      } browser={
+        <nav className="titan-swapper-list editor-record-ledger" aria-label={t('titanSwapper.encounters')}>
           <div className="titan-swapper-rows">{rows.map(row => <button type="button" key={row.id}
             className="titan-swapper-row" aria-pressed={selected?.id === row.id} onClick={() => setSelectedId(row.id)}>
             <span className="titan-swapper-row-sprite">{renderPokemon(row.storySpecies, speciesName(row.storySpecies))}</span>

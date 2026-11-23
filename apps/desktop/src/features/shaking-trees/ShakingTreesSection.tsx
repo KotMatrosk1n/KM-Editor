@@ -147,18 +147,18 @@ export function ShakingTreesSection({ workflow, session, isEditing, isEditStarti
           className={`secondary-button${tab === value ? ' tree-tab-active' : ''}`}>{t(`shakingTrees.tab.${value}`)}</button>)}
       </div>
       <div id="tree-panel" role="tabpanel" aria-labelledby={`tree-tab-${tab}`}>
-      {tab !== 'rules' ? <RecordEditorWorkspace id="shakingTrees" className="tree-layout" browser={
-        <aside className="tree-catalog">
-          <label className="tree-search"><span>{t('shakingTrees.search')}</span><input type="search" value={search}
-            aria-label={t('shakingTrees.search')} onChange={event => setSearch(event.target.value)} /></label>
-          <div className="tree-list" aria-label={t('shakingTrees.selectTree')}>
+      {tab !== 'rules' ? <RecordEditorWorkspace id="shakingTrees" className="tree-layout" browserControls={
+        <label className="editor-browser-filter"><span>{t('shakingTrees.search')}</span>
+          <input type="search" value={search} onChange={event => setSearch(event.target.value)} />
+        </label>
+      } browser={
+        <div className="tree-list editor-record-ledger" role="group" aria-label={t('shakingTrees.selectTree')}>
             {filtered.map(tree => <button type="button" key={tree.id} aria-pressed={selected?.id === tree.id}
               className={selected?.id === tree.id ? 'tree-selected' : ''} onClick={() => setSelectedId(tree.id)}>
               <span>{treeName(tree)}</span>{dirtyKeys.some(key => key.startsWith(tree.id + '|')) ? <span className="tree-draft-dot" aria-label={t('shakingTrees.changed')}>●</span> : null}
             </button>)}
             {filtered.length === 0 ? <p>{t('shakingTrees.noResults')}</p> : null}
-          </div>
-        </aside>
+        </div>
       }>
         <div className="tree-detail">
         {selected && area ? <>

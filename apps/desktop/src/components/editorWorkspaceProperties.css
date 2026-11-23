@@ -1,0 +1,302 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+/* Keep record controls and their source adjacent in a compact property sheet. */
+.workspace-content[data-editor-workspace] {
+  --property-gap: .6rem;
+  --property-padding: .65rem;
+  --property-radius: .5rem;
+  --property-divider: color-mix(in srgb, var(--color-border) 72%, transparent);
+  --property-selected: color-mix(in srgb, var(--color-accent) 13%, var(--color-control));
+}
+
+.workspace-content[data-editor-workspace] .editor-session-bar {
+  border-radius: 0 0 .5rem .5rem;
+  background: var(--color-surface-strong);
+  gap: .4rem .85rem;
+  padding: .45rem .65rem;
+}
+.workspace-content[data-editor-workspace] .editor-session-bar-summary :is(.item-icon, .pokemon-row-sprite) {
+  inline-size: 2rem;
+  block-size: 2rem;
+}
+.workspace-content[data-editor-workspace] .editor-session-bar + :is(.panel, .sectioned-editor-workspace, .focused-editor-workspace) {
+  margin-block-start: 0;
+}
+.workspace-content[data-editor-workspace] .editor-section-selectors { gap: .35rem; padding-inline: 0; }
+.workspace-content[data-editor-workspace] .editor-section-selector { min-height: 2.1rem; }
+.workspace-content[data-editor-workspace] .editor-workspace-section-content { gap: .6rem; }
+
+/* Fields in a group share label and value columns. Each group retains its own height. */
+.workspace-content[data-editor-workspace] .editable-field-groups {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+  gap: var(--property-gap);
+}
+.workspace-content[data-editor-workspace] :is(.field-note, .technical-tool-notice, .move-player-damage-field-group) {
+  min-width: 0;
+  grid-column: 1 / -1;
+}
+.workspace-content[data-editor-workspace] .editable-field-group {
+  padding: 0 var(--property-padding) .3rem;
+  margin: 0;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--property-radius);
+}
+.workspace-content[data-editor-workspace] .editable-field-group > legend {
+  padding: .25rem .45rem;
+  color: var(--color-text);
+  background: var(--color-surface-strong);
+  border: 1px solid var(--property-divider);
+  border-radius: .3rem;
+  font-size: .8125rem;
+  font-weight: 700;
+  text-transform: none;
+}
+.workspace-content[data-editor-workspace] .editable-field-group .editable-field-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+.workspace-content[data-editor-workspace] .editable-field-group:is(.item-use-flags-group, .move-player-damage-field-group) .editable-field-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16.5rem), 1fr));
+  column-gap: 1rem;
+}
+.workspace-content[data-editor-workspace] :is(.editable-field-group, .fashion-catalog-field-editor) .editable-field-control {
+  display: grid;
+  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+  align-items: center;
+  gap: .15rem .6rem;
+  min-width: 0;
+  padding: .24rem 0;
+  border: 0;
+}
+.workspace-content[data-editor-workspace] .editable-field-group .editable-field-control + .editable-field-control {
+  border-block-start: 1px solid var(--property-divider);
+}
+.workspace-content[data-editor-workspace] .editable-field-control .editable-field-label-row {
+  font-size: .8rem;
+  min-width: 0;
+  gap: .25rem;
+  overflow-wrap: anywhere;
+}
+.workspace-content[data-editor-workspace] .editable-field-label-row > .context-help-trigger {
+  min-height: 24px;
+}
+.workspace-content[data-editor-workspace] .editable-field-control :is(.editable-field-status, .editable-field-error, .field-note, textarea) { grid-column: 1 / -1; }
+.workspace-content[data-editor-workspace] .editable-field-control :is(input, select, .searchable-option-input) { min-width: 0; }
+.workspace-content[data-editor-workspace] .editable-field-control > :is(select, input:not([type='checkbox']), .searchable-option-input) { width: 100%; }
+.workspace-content[data-editor-workspace] :is(.item-edit-form, .encounter-edit-form, .text-edit-form, .trainer-edit-form) {
+  min-width: 0;
+  gap: .55rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* Read-only source data should never determine the height of the editable controls. */
+.workspace-content[data-editor-workspace] :is(.item-provenance-list, .encounter-slot-detail) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  align-items: start;
+  align-content: start;
+  gap: 0 1rem;
+  min-width: 0;
+  margin: 0;
+}
+.workspace-content[data-editor-workspace] :is(.item-provenance-list, .encounter-slot-detail) > div {
+  display: grid;
+  grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr);
+  align-items: baseline;
+  gap: .45rem;
+  padding: .24rem .1rem;
+  border-block-end: 1px solid var(--property-divider);
+  min-width: 0;
+}
+.workspace-content[data-editor-workspace] :is(.item-provenance-list, .encounter-slot-detail) > div:has(.pokemon-source-path),
+.workspace-content[data-editor-workspace] :is(.text-source-file-detail, .editor-long-fact) { grid-column: 1 / -1; }
+.workspace-content[data-editor-workspace] :is(.item-provenance-list, .encounter-slot-detail) > div:has(.pokemon-source-path) {
+  grid-template-columns: minmax(6rem, max-content) minmax(0, 1fr);
+}
+.workspace-content[data-editor-workspace] :is(.item-provenance-list, .encounter-slot-detail) :is(dt, dd) {
+  min-width: 0;
+  font-size: .8rem;
+  font-weight: 500;
+  text-transform: none;
+  overflow-wrap: anywhere;
+}
+.workspace-content[data-editor-workspace] :is(.item-provenance-list, .encounter-slot-detail) dd { font-variant-numeric: tabular-nums; }
+.workspace-content[data-editor-workspace] .item-provenance-list .pokemon-source-path {
+  white-space: normal;
+  overflow: visible;
+  user-select: text;
+}
+.workspace-content[data-editor-workspace] .editor-move-overview { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+.workspace-content[data-editor-workspace] .trainer-selection-details { display: grid; gap: .6rem; padding: 0; }
+.workspace-content[data-editor-workspace] .trainer-selection-details .editor-detail-columns { grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); }
+
+/* Trainers and encounter slots use a roster, followed by the selected slot's controls. */
+.workspace-content[data-editor-workspace] .trainer-ai-flags-panel {
+  gap: 0;
+  padding: 0;
+  background: var(--color-surface-muted);
+}
+.workspace-content[data-editor-workspace] .trainer-ai-flags-header {
+  padding: .35rem .65rem;
+  background: var(--color-surface-strong);
+  border-radius: .5rem .5rem 0 0;
+}
+.workspace-content[data-editor-workspace] .trainer-ai-flags-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: 0;
+  padding: 0 .45rem .4rem;
+}
+.workspace-content[data-editor-workspace] .trainer-ai-flag {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  padding: .3rem .4rem;
+  min-height: 2.1rem;
+  border: 0;
+  border-block-start: 1px solid var(--property-divider);
+  border-radius: 0;
+  background: transparent;
+}
+.workspace-content[data-editor-workspace] .trainer-ai-flag:focus-within { background: var(--color-control-hover); }
+.workspace-content[data-editor-workspace] .trainer-ai-flag-copy small { margin: 0; }
+.workspace-content[data-editor-workspace] .trainer-party-card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+  gap: .35rem;
+}
+.workspace-content[data-editor-workspace] .trainer-party-card {
+  grid-template-columns: 1.85rem minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  align-content: center;
+  justify-items: start;
+  gap: .05rem .35rem;
+  min-height: 2.65rem;
+  padding: .28rem .4rem;
+  text-align: start;
+  background: var(--color-control);
+}
+.workspace-content[data-editor-workspace] .trainer-party-card:hover { background: var(--color-control-hover); }
+.workspace-content[data-editor-workspace] .trainer-party-card[aria-pressed='true'] {
+  background: var(--property-selected);
+  border-color: var(--color-accent);
+  box-shadow: inset 0 -2px var(--color-accent);
+}
+.workspace-content[data-editor-workspace] .trainer-party-card[aria-pressed='true'] span { color: var(--color-text-muted); }
+.workspace-content[data-editor-workspace] .trainer-party-card .trainer-party-sprite {
+  grid-row: 1 / 3;
+  grid-column: 1;
+  width: 1.8rem;
+  height: 1.8rem;
+}
+.workspace-content[data-editor-workspace] .trainer-party-card > strong {
+  grid-area: 1 / 2;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.workspace-content[data-editor-workspace] .trainer-party-card > span:not([class]) { grid-area: 2 / 2; }
+.workspace-content[data-editor-workspace] .trainer-party-card .trainer-party-held-item-bag { inset: auto auto .15rem .13rem; }
+.workspace-content[data-editor-workspace] :is(.encounter-slot-tabs, .raid-reward-slot-grid) { gap: .32rem; }
+.workspace-content[data-editor-workspace] :is(.encounter-slot-tabs, .raid-reward-slot-grid) .slot-tab-button {
+  min-height: 2.3rem;
+  gap: .2rem .35rem;
+  padding: .36rem .5rem;
+  border-radius: var(--property-radius);
+}
+.workspace-content[data-editor-workspace] .slot-tab-button .encounter-slot-name { min-height: 0; }
+
+/* Shops expose their inventory as one ledger. Dialogue text keeps the editing area wide. */
+.workspace-content[data-editor-workspace] .shop-inventory-editor-grid {
+  gap: 0;
+  padding-inline-end: 0;
+  max-height: min(23rem, 60dvh);
+  border: 1px solid var(--color-border);
+  border-radius: var(--property-radius);
+}
+.workspace-content[data-editor-workspace] .shop-inventory-editor-row {
+  border: 0;
+  border-block-end: 1px solid var(--property-divider);
+  border-radius: 0;
+  background: var(--color-surface-muted);
+  padding: .35rem .5rem;
+  gap: .4rem;
+}
+.workspace-content[data-editor-workspace] .shop-inventory-editor-heading { background: var(--color-surface-strong); }
+.workspace-content[data-editor-workspace] .shop-inventory-editor-row-selected { background: var(--property-selected); }
+.workspace-content[data-editor-workspace] .shop-inventory-editor-row .path-field { gap: .18rem; min-width: 0; }
+.workspace-content[data-editor-workspace] .text-token-toolbar { display: flex; flex-wrap: wrap; gap: .3rem; margin: .2rem 0; }
+.workspace-content[data-editor-workspace] .text-token-button { min-height: 1.95rem; padding: .2rem .55rem; font-size: .78rem; }
+.workspace-content[data-editor-workspace] .text-edit-form textarea { min-height: 6rem; }
+.workspace-content[data-editor-workspace] .text-edit-form .form-actions { margin: 0; }
+
+/* Tools combine a compact status strip, the active control surface, and technical details. */
+.workspace-content[data-editor-workspace] :is(.focused-editor-workspace, .advanced-editor-workspace) {
+  align-content: start;
+  gap: .65rem;
+}
+.workspace-content[data-editor-workspace] :is(.focused-editor-metrics, .advanced-editor-workspace > .exefs-toolbar, .technical-tool-context-grid, .habitat-coordinates-metrics) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  gap: .35rem;
+}
+.workspace-content[data-editor-workspace] :is(.focused-editor-metrics, .habitat-coordinates-metrics, .advanced-editor-workspace > .exefs-toolbar) > .metric {
+  padding: .32rem .55rem;
+  min-height: 0;
+  min-width: 0;
+  border-radius: .35rem;
+  background: var(--color-surface-muted);
+}
+.workspace-content[data-editor-workspace] :is(.focused-editor-metrics, .habitat-coordinates-metrics, .advanced-editor-workspace > .exefs-toolbar) .metric-value {
+  font-size: .87rem;
+  line-height: 1.2;
+}
+.workspace-content[data-editor-workspace] :is(.editor-record-layout, .advanced-editor-workspace) :is(.encounter-inspector, .item-inspector, .text-inspector) {
+  align-content: start;
+  gap: .55rem;
+  min-width: 0;
+  padding: .55rem .65rem;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--property-radius);
+}
+.workspace-content[data-editor-workspace] .advanced-editor-workspace .flagwork-layout {
+  grid-template-columns: minmax(0, 1.2fr) minmax(min(100%, 17rem), 1fr);
+  align-items: start;
+  gap: .6rem;
+}
+.workspace-content[data-editor-workspace] .advanced-editor-workspace :is(.exefs-row, .royal-candy-workflow-choice) {
+  min-height: 2rem;
+  padding: .35rem .55rem;
+  line-height: 1.32;
+}
+.workspace-content[data-editor-workspace] .advanced-editor-workspace .form-actions > button { flex: 0 1 auto; }
+.workspace-content[data-editor-workspace] :is(.advanced-editor-details, .technical-tool-details) > summary { padding: .4rem .6rem; }
+.workspace-content[data-editor-workspace] .advanced-editor-details-content { padding: .15rem .6rem .55rem; gap: .55rem; }
+.workspace-content[data-editor-workspace] .technical-tool-instruction-table { gap: 0; }
+.workspace-content[data-editor-workspace] .technical-tool-instruction-table > div {
+  padding: .35rem .5rem;
+  border: 0;
+  border-radius: 0;
+  border-block-end: 1px solid var(--property-divider);
+  background: transparent;
+}
+.workspace-content[data-editor-workspace] :is(.technical-tool-component-section, .technical-tool-subsystem-card, .technical-tool-overview-grid > article) {
+  padding: .55rem .65rem;
+  border-radius: var(--property-radius);
+}
+.workspace-content[data-editor-workspace] .technical-tool-details dl > div {
+  grid-template-columns: minmax(0, .7fr) minmax(0, 1.3fr);
+  gap: .5rem;
+  align-items: baseline;
+}
+@container workspace (max-width: 48rem) {
+  .workspace-content[data-editor-workspace] .advanced-editor-workspace .flagwork-layout,
+  .workspace-content[data-editor-workspace] .editor-move-overview { grid-template-columns: minmax(0, 1fr); }
+}
+@container workspace (max-width: 29rem) {
+  .workspace-content[data-editor-workspace] :is(.editable-field-group, .fashion-catalog-field-editor) .editable-field-control {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

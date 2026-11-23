@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 import { ChartNoAxesColumnIncreasing, Search } from 'lucide-react';
-import { useCallback, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useLocalization } from '../localization';
 import './speciesDataMatrix.css';
 
@@ -34,15 +34,23 @@ type Props = {
 
 export function useSpeciesFieldFinder() {
   const { t } = useLocalization();
-  const [requested, setRequested] = useState(false);
-  const clear = useCallback(() => setRequested(false), []);
+  const [finding, setFinding] = useState(false);
+  const finderId = useId();
+  const trigger = useRef<HTMLButtonElement>(null);
   return {
-    request: { requested, clear },
+    request: { finding, setFinding, finderId, trigger },
     shortcut: {
       sectionId: 'speciesData',
       label: t('speciesMatrix.findField'),
       icon: <Search size={15} aria-hidden="true" />,
-      onOpen: () => setRequested(true)
+      controls: finderId,
+      expanded: finding,
+      onClose: () => setFinding(false),
+      onActivate: (button: HTMLButtonElement) => {
+        const wasExpanded = button.getAttribute('aria-expanded') === 'true';
+        trigger.current = button;
+        setFinding(!wasExpanded);
+      }
     }
   };
 }
@@ -56,25 +64,16 @@ function statValue(value: string | undefined) {
 
 export function SpeciesDataMatrix({ recordName, recordId, groups, finderRequest }: Props) {
   const { t, translateLiteral } = useLocalization();
-  const [finding, setFinding] = useState(false);
   const [query, setQuery] = useState('');
   const [changedOnly, setChangedOnly] = useState(false);
   const [highlighted, setHighlighted] = useState<string | null>(null);
-  const finderId = useId();
-  const finderButton = useRef<HTMLButtonElement>(null);
   const finderInput = useRef<HTMLInputElement>(null);
   const matrix = useRef<HTMLDivElement>(null);
-  const { requested, clear } = finderRequest;
+  const { finding, setFinding, finderId, trigger } = finderRequest;
 
   useLayoutEffect(() => {
-    if (requested) {
-      setFinding(true);
-      clear();
-    }
-  }, [requested, clear]);
-  useLayoutEffect(() => {
     if (finding) finderInput.current?.focus();
-  }, [finding, requested]);
+  }, [finding]);
   const fields = groups.flatMap(group => group.fields.map(field => ({ ...field, group: group.label })));
   const fieldsByKey = new Map(fields.map(field => [field.key, field]));
   const stats = speciesStatFields.map(([base, yieldKey]) => ({
@@ -99,8 +98,8 @@ export function SpeciesDataMatrix({ recordName, recordId, groups, finderRequest 
     setFinding(false);
     setHighlighted(field.key);
     requestAnimationFrame(() => {
-      const control = target.closest<HTMLElement>('button, input, select') ?? target;
-      const focusTarget = control.matches(':disabled') ? cell : control;
+      const control = target.closest<HTMLElement>('button, input, select, textarea') ?? cell.querySelector<HTMLElement>('input, select, textarea, button:not(.hover-tooltip-trigger)');
+      const focusTarget = !control || control.matches(':disabled') ? cell : control;
       focusTarget.focus({ preventScroll: true });
       // Searchable controls can have a non-focusable id on the labeled wrapper.
       if (!cell.contains(document.activeElement)) cell.focus({ preventScroll: true });
@@ -133,16 +132,12 @@ export function SpeciesDataMatrix({ recordName, recordId, groups, finderRequest 
         <span className="species-matrix-section-name">{t('editorSections.speciesData')}</span>
         <span className="species-matrix-count">{t('speciesMatrix.fieldCount', { count: fields.length })}</span>
       </div>
-      <button className="secondary-button compact-button" ref={finderButton} type="button" aria-expanded={finding}
-        aria-controls={finderId} onClick={() => setFinding(open => !open)}>
-        <Search size={15} aria-hidden="true" />{t('speciesMatrix.findField')}
-      </button>
     </div>
     <div id={finderId} hidden={!finding} className="species-matrix-finder" onKeyDown={event => {
       if (event.key === 'Escape') {
         event.stopPropagation();
         setFinding(false);
-        finderButton.current?.focus();
+        trigger.current?.focus();
       }
     }}>
       {finding ? <>

@@ -173,24 +173,26 @@ export function ZaBehaviorSection(props: Props) {
       {entry ? <div className="za-behavior-detail">
         <h3 data-localization-ignore="true">{entry.speciesName}</h3>
         <p>{t('behavior.za.scope')}</p>
-        <div className="za-behavior-field"><label htmlFor={profileId}>{t('behavior.za.profile')}</label>
-          <SearchableOptionInput id={profileId} ariaLabel={t('behavior.za.profile')} disabled={!editable} value={values.profile}
-            isFiniteCatalog localizeOptions={false} onChange={value => change('profile', value)}
-            options={[
-              ...(entry.profile === 'custom' ? [{ value: 'custom', label: t('behavior.za.custom') }] : []),
-              ...workflow.profiles.map(p => ({ value: p.value, label: t(`behavior.za.profile.${p.value}`) }))
-            ]} />
-        </div>
-        <p className="field-help">{t('behavior.za.profileHelp')}</p>
-        <div className="za-behavior-field"><label htmlFor={cityProfileId}>{t('behavior.za.cityProfile')}</label>
-          <SearchableOptionInput id={cityProfileId} ariaLabel={t('behavior.za.cityProfile')} disabled={!editable} value={values.cityProfile}
-            isFiniteCatalog localizeOptions={false} onChange={value => change('cityProfile', value)}
-            options={[
-              ...(entry.cityProfile === 'custom' ? [{ value: 'custom', label: t('behavior.za.custom') }] : []),
-              { value: 'default', label: t('behavior.za.cityProfileDefault') },
-              ...Object.keys(cityProfiles).map(value => ({ value, label: t(value === 'gentle' ? 'behavior.za.cityProfileGentle' : `behavior.za.profile.${value}`) }))
-            ]} />
-          <small>{t('behavior.za.cityProfileHelp')}</small>
+        <div className="za-behavior-profiles">
+          <div className="za-behavior-field"><label htmlFor={profileId}>{t('behavior.za.profile')}</label>
+            <SearchableOptionInput id={profileId} ariaLabel={t('behavior.za.profile')} disabled={!editable} value={values.profile}
+              isFiniteCatalog localizeOptions={false} onChange={value => change('profile', value)}
+              options={[
+                ...(entry.profile === 'custom' ? [{ value: 'custom', label: t('behavior.za.custom') }] : []),
+                ...workflow.profiles.map(p => ({ value: p.value, label: t(`behavior.za.profile.${p.value}`) }))
+              ]} />
+            <small>{t('behavior.za.profileHelp')}</small>
+          </div>
+          <div className="za-behavior-field"><label htmlFor={cityProfileId}>{t('behavior.za.cityProfile')}</label>
+            <SearchableOptionInput id={cityProfileId} ariaLabel={t('behavior.za.cityProfile')} disabled={!editable} value={values.cityProfile}
+              isFiniteCatalog localizeOptions={false} onChange={value => change('cityProfile', value)}
+              options={[
+                ...(entry.cityProfile === 'custom' ? [{ value: 'custom', label: t('behavior.za.custom') }] : []),
+                { value: 'default', label: t('behavior.za.cityProfileDefault') },
+                ...Object.keys(cityProfiles).map(value => ({ value, label: t(value === 'gentle' ? 'behavior.za.cityProfileGentle' : `behavior.za.profile.${value}`) }))
+              ]} />
+            <small>{t('behavior.za.cityProfileHelp')}</small>
+          </div>
         </div>
         <div className="za-behavior-fields">{workflow.fields.slice(2).map(renderNumber)}</div>
         <p className="field-help">{t('behavior.za.units')}</p>

@@ -60,7 +60,7 @@ export function PlaBattleWorkspace({ sessionKey, kind, page, selected, query, of
   ];
   return <section className="panel wide-panel pla-battle-editor" aria-labelledby="pla-battle-heading">
     <div className="panel-heading"><Icon size={18} aria-hidden="true" /><h2 id="pla-battle-heading">{title}</h2>{refresh}</div>
-    <SectionedEditorWorkspace sessionKey={sessionKey + ':' + kind} initialSection="data" pinnedBrowser compactFields
+    <SectionedEditorWorkspace sessionKey={sessionKey + ':' + kind} initialSection="data" compactFields
       browserVisibleRows={4} sessionBar={<>{sessionBar}{actions}</>}
       browserControls={<>
         <div className="items-toolbar trainers-toolbar">

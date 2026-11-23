@@ -1,0 +1,60 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+.editor-detail-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  align-items: start;
+  gap: .65rem;
+  min-width: 0;
+}
+
+.editor-detail-group {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: .5rem;
+}
+
+.editor-detail-group > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: .5rem;
+  padding: .36rem .65rem;
+  background: var(--color-surface-strong);
+  border-block-end: 1px solid var(--color-border);
+}
+
+.editor-detail-group > header h4 { margin: 0; font-size: .875rem; color: var(--color-text); }
+.editor-detail-total { color: var(--color-text-muted); font-size: .75rem; }
+.editor-detail-total strong { color: var(--color-text); font-variant-numeric: tabular-nums; }
+.editor-detail-list { display: grid; margin: 0; min-width: 0; font-size: .8125rem; }
+.editor-detail-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr);
+  gap: .5rem;
+  padding: .26rem .65rem;
+  align-items: baseline;
+}
+.editor-detail-list > div + div { border-block-start: 1px solid var(--color-border); }
+.editor-detail-list dt { color: var(--color-text-muted); overflow-wrap: anywhere; }
+.editor-detail-list dd { margin: 0; min-width: 0; color: var(--color-text); overflow-wrap: anywhere; }
+.editor-detail-list .editor-detail-path { grid-template-columns: minmax(0, 1fr); gap: .18rem; }
+.editor-detail-path dd {
+  font: .75rem/1.4 var(--km-font-family-mono, monospace);
+  user-select: text;
+}
+
+.pokemon-overview-identity {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  padding: .18rem .45rem;
+}
+.pokemon-overview-identity .pokemon-summary-sprite { width: 2rem; height: 2rem; flex: 0 0 auto; }
+.pokemon-overview-identity h3 { margin: 0; min-width: 0; overflow-wrap: anywhere; font-size: 1.05rem; }
+.pokemon-overview-identity span { color: var(--color-text-muted); font-size: .75rem; overflow-wrap: anywhere; }
+.pokemon-overview-stats > div { grid-template-columns: minmax(4rem, .7fr) minmax(0, 1.3fr); }
+.pokemon-overview-stats dd { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; align-items: center; font-variant-numeric: tabular-nums; }
+.pokemon-overview-track { display: block; block-size: .28rem; background: var(--color-border-strong); border-radius: 1rem; overflow: hidden; }
+.pokemon-overview-track > span { display: block; block-size: 100%; background: var(--color-accent-bright); }

@@ -5,7 +5,9 @@ import {
   createContext,
   useContext,
   useId,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type Dispatch,
   type ReactNode,
@@ -79,6 +81,23 @@ export function EditorSessionBar({
   const { t, translateLiteral } = useLocalization();
   const actionContext = useContext(EditorSessionActionsContext);
   const labelId = useId();
+  const barRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    const workspace = bar?.closest<HTMLElement>('.workspace-content');
+    if (!bar || !workspace) return;
+
+    const updateHeight = () => {
+      workspace.style.setProperty('--editor-sticky-height', `${bar.offsetHeight}px`);
+    };
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(bar);
+    return () => {
+      observer.disconnect();
+      workspace.style.removeProperty('--editor-sticky-height');
+    };
+  }, []);
   if (!actionContext) {
     throw new Error('Editor session bars must be rendered inside their actions provider.');
   }
@@ -98,6 +117,7 @@ export function EditorSessionBar({
       aria-labelledby={labelId}
       className="editor-session-bar"
       data-state={state}
+      ref={barRef}
       role="group"
     >
       <div className="editor-session-bar-summary">

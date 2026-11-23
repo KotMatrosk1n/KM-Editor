@@ -130,7 +130,7 @@ export function BlueberrySection({ editor, workflow, isStaging, isEditing, isEdi
           <RotateCcw size={16} aria-hidden="true" />{t('blueberry.restoreAll')}</button>
       </div> : null}
       <RecordEditorWorkspace id={editor} className="blueberry-layout" browser={
-        <div className="blueberry-list" role="group" aria-label={t('blueberry.records')}>
+        <div className="blueberry-list editor-record-ledger" role="group" aria-label={t('blueberry.records')}>
           {filtered.map(row => <button type="button" key={row.id} className="blueberry-row" aria-pressed={selected?.id === row.id} onClick={() => {
             setSelectedId(row.id);
             const detail = detailRef.current;

@@ -62,7 +62,7 @@ export default function SoundStudioSection({ paths, catalogRevision = '' }: { pa
     if (kind !== 'all' && (kind === 'event' ? entry.kind !== 'event' : entry.kind !== 'sample' && entry.kind !== 'reference')) continue;
     result.all++; result[entry.category] = (result[entry.category] ?? 0) + 1;
   } return result; }, [catalog, kind]);
-  const virtual = useVirtualizer({ count: filtered.length, getScrollElement: () => scroll.current, estimateSize: () => 70, overscan: 6 });
+  const virtual = useVirtualizer({ count: filtered.length, getScrollElement: () => scroll.current, estimateSize: () => 46, overscan: 6 });
   useEffect(() => { scroll.current?.scrollTo({ top: 0 }); }, [category, query, everywhere, kind]);
   usePublishCommonEditorDiagnostics(error ? [{ code: error, domain: 'workflow.soundStudio', severity: 'error', message: t(error === 'KM-AUDIO-SOURCE-UNAVAILABLE' ? 'soundStudio.sourceError' : error === 'KM-AUDIO-PLAYBACK-FAILED' ? 'soundStudio.playbackError' : 'soundStudio.decodeError') }] : []);
   const control = (action: () => Promise<void>) => { const active = player; void action().catch(() => { if (latestPlayer.current === active) setError('KM-AUDIO-PLAYBACK-FAILED'); }); };
@@ -78,10 +78,12 @@ export default function SoundStudioSection({ paths, catalogRevision = '' }: { pa
         {categories.map(value => <button className="editor-section-choice" type="button" key={value} aria-pressed={value === category && !everywhere} onClick={() => { setCategory(value); setEverywhere(false); }}><span>{t(`soundStudio.category.${value}`)}</span><span>{counts[value] ?? 0}</span></button>)}
       </aside>
       <div className="sound-studio__browser">
-        <label htmlFor="sound-search">{t('soundStudio.search')}</label><input id="sound-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder={t('soundStudio.searchHint')} />
-        <div className="sound-studio__filters"><label><input type="checkbox" checked={everywhere} onChange={event => setEverywhere(event.target.checked)} />{t('soundStudio.everywhere')}</label>
-          <SearchableOptionInput id="sound-entry-type" ariaLabel={t('soundStudio.entryType')} disabled={false} value={kind} onChange={setKind} options={['sample', 'event', 'all'].map(value => ({ value, label: t(`soundStudio.kind.${value}`) }))} /></div>
-        <small>{t('soundStudio.results', { count: filtered.length })}</small>
+        <input id="sound-search" type="search" aria-label={t('soundStudio.search')} value={query} onChange={event => setQuery(event.target.value)} placeholder={t('soundStudio.searchHint')} />
+        <div className="sound-studio__filters">
+          <SearchableOptionInput id="sound-entry-type" ariaLabel={t('soundStudio.entryType')} disabled={false} value={kind} onChange={setKind} options={['sample', 'event', 'all'].map(value => ({ value, label: t(`soundStudio.kind.${value}`) }))} />
+          <label><input type="checkbox" checked={everywhere} onChange={event => setEverywhere(event.target.checked)} />{t('soundStudio.everywhere')}</label>
+          <small>{t('soundStudio.results', { count: filtered.length })}</small>
+        </div>
         <div ref={scroll} className="sound-studio__catalog" role="listbox" tabIndex={0} aria-label={t('soundStudio.catalog')}
           aria-activedescendant={selected && virtual.getVirtualItems().some(row => filtered[row.index]?.id === selected.id) ? `sound-entry-${selected.id}` : undefined}
           onKeyDown={event => { if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || filtered.length === 0) return; event.preventDefault();
@@ -89,7 +91,7 @@ export default function SoundStudioSection({ paths, catalogRevision = '' }: { pa
             setSelected(filtered[next]); virtual.scrollToIndex(next); }}>
           <div style={{ height: virtual.getTotalSize(), position: 'relative' }}>{virtual.getVirtualItems().map(row => { const entry = filtered[row.index]; return <div key={entry.id} id={`sound-entry-${entry.id}`} role="option" aria-selected={selected?.id === entry.id}
             className="sound-studio__entry" style={{ position: 'absolute', width: '100%', height: row.size, transform: `translateY(${row.start}px)` }} onClick={() => setSelected(entry)}>
-            <strong>{entry.name}</strong><small>{entry.codec || t(`soundStudio.kind.${entry.kind === 'event' ? 'event' : 'all'}`)} · {t(`soundStudio.status.${entry.status}`)}</small></div>; })}</div>
+            <strong title={entry.name}>{entry.name}</strong><small>{entry.codec || t(`soundStudio.kind.${entry.kind === 'event' ? 'event' : 'all'}`)} · {t(`soundStudio.status.${entry.status}`)}</small></div>; })}</div>
           {!loading && filtered.length === 0 ? <p role="status">{t(catalog.length ? 'soundStudio.noResults' : 'soundStudio.empty')}</p> : null}
         </div>
       </div>

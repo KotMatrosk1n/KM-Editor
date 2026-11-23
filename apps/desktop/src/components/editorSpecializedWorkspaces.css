@@ -1,0 +1,310 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+.workspace-content[data-editor-workspace] .editor-browser-filter {
+  display: grid;
+  grid-template-columns: auto minmax(0, 24rem);
+  align-items: center;
+  gap: .55rem;
+  font-size: .85rem;
+}
+.workspace-content[data-editor-workspace] .editor-browser-filter input { min-width: 0; }
+
+.workspace-content[data-editor-workspace] :is(.editor-record-ledger, .editor-property-ledger) {
+  gap: 0;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--property-radius);
+}
+.workspace-content[data-editor-workspace] .editor-record-ledger .titan-swapper-rows {
+  display: grid;
+  gap: 0;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+}
+.workspace-content[data-editor-workspace] .editor-record-ledger :is(.titan-swapper-row, .blueberry-row),
+.workspace-content[data-editor-workspace] .tree-list.editor-record-ledger > button {
+  padding: .32rem .65rem;
+  min-height: 2.1rem;
+  border: 0;
+  border-radius: 0;
+  border-block-end: 1px solid var(--property-divider);
+  background: transparent;
+  color: var(--color-text);
+}
+.workspace-content[data-editor-workspace] .editor-record-ledger [aria-pressed='true'] {
+  background: var(--property-selected);
+  box-shadow: inset 3px 0 var(--color-accent);
+}
+.workspace-content[data-editor-workspace] .editor-record-ledger [aria-pressed='false']:hover { background: var(--color-control-hover); }
+.workspace-content[data-editor-workspace] .editor-record-ledger :focus-visible { outline-offset: -2px; }
+.workspace-content[data-editor-workspace] .titan-swapper-row > span:last-child,
+.workspace-content[data-editor-workspace] .blueberry-row-copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .1rem .65rem;
+}
+.workspace-content[data-editor-workspace] .titan-swapper-row-sprite {
+  inline-size: 1.8rem;
+  block-size: 1.8rem;
+  flex-basis: 1.8rem;
+}
+.workspace-content[data-editor-workspace] .titan-swapper-row-sprite img { max-width: 100%; max-height: 100%; }
+
+/* Split source and editable outcome for tools with comparisons. */
+.workspace-content[data-editor-workspace] :is(.titan-swapper-comparison, .tree-rules, .game-options-grid, .trainer-whiteout-columns) {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 21rem), 1fr));
+  align-items: start;
+  gap: var(--property-gap);
+}
+.workspace-content[data-editor-workspace] :is(.titan-swapper-panel, .titan-swapper-detail, .blueberry-panel, .blueberry-detail) { gap: .55rem; }
+.workspace-content[data-editor-workspace] :is(.titan-swapper-card, .blueberry-detail, .trainer-whiteout-detail, .trainer-dynamax-card) {
+  align-content: start;
+  gap: .45rem;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--property-radius);
+  padding: .55rem .65rem;
+  background: var(--color-surface-muted);
+}
+.workspace-content[data-editor-workspace] :is(.titan-swapper-card h4, .blueberry-detail-heading, .trainer-dynamax-heading, .trainer-whiteout-detail-heading) {
+  padding-block-end: .32rem;
+  border-block-end: 1px solid var(--property-divider);
+  margin: 0;
+}
+.workspace-content[data-editor-workspace] .titan-swapper-preview { min-height: 0; }
+.workspace-content[data-editor-workspace] .titan-swapper-preview img { width: 2.75rem; height: 2.75rem; object-fit: contain; }
+.workspace-content[data-editor-workspace] .titan-swapper-fields > .field {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: .4rem;
+  min-width: 0;
+}
+.workspace-content[data-editor-workspace] :is(.blueberry-amount, .blueberry-eligibility, .trainer-dynamax-field, .trainer-whiteout-field) {
+  gap: .25rem .6rem;
+  margin: 0;
+}
+.workspace-content[data-editor-workspace] .blueberry-amount {
+  grid-template-columns: minmax(8rem, 1fr) minmax(0, 9rem);
+  align-items: center;
+}
+.workspace-content[data-editor-workspace] .blueberry-facts,
+.workspace-content[data-editor-workspace] .trainer-whiteout-values {
+  background: var(--color-surface-strong);
+  padding: .35rem .55rem;
+  border-radius: .3rem;
+  margin: .2rem 0;
+}
+.workspace-content[data-editor-workspace] :is(.blueberry-facts, .trainer-whiteout-values) > div { padding-block: .15rem; }
+.workspace-content[data-editor-workspace] :is(.blueberry-help, .titan-swapper-phase-help) { margin: 0; }
+
+/* Progression and balance editors show each choice and its editable value together. */
+.workspace-content[data-editor-workspace] .obedience-grid { display: block; max-inline-size: 44rem; }
+.workspace-content[data-editor-workspace] .obedience-ledger-header {
+  padding: .38rem .65rem;
+  background: var(--color-surface-strong);
+  font-size: .85rem;
+  font-weight: 700;
+}
+.workspace-content[data-editor-workspace] .obedience-card {
+  grid-template-columns: minmax(0, 1fr) minmax(3.5rem, .4fr) minmax(0, 1fr);
+  align-items: center;
+  gap: .45rem;
+  padding: .27rem .65rem;
+  border: 0;
+  border-radius: 0;
+  border-block-start: 1px solid var(--property-divider);
+}
+.workspace-content[data-editor-workspace] .obedience-card small { color: var(--color-text-muted); padding-inline-start: .25rem; }
+.workspace-content[data-editor-workspace] .game-option-card {
+  border-radius: var(--property-radius);
+  background: var(--color-surface-muted);
+  padding: .28rem .65rem .55rem;
+}
+.workspace-content[data-editor-workspace] .game-option-choices { gap: 0; }
+.workspace-content[data-editor-workspace] .game-option-choice {
+  padding-block: .23rem;
+  border-block-start: 1px solid var(--property-divider);
+}
+.workspace-content[data-editor-workspace] .game-option-start {
+  padding: .35rem .55rem;
+  background: var(--color-surface-strong);
+  border-radius: .3rem;
+}
+.workspace-content[data-editor-workspace] :is(.y-comm-setting, .poke-jobs-setting, .summary-stats-setting) {
+  max-inline-size: 58rem;
+  align-items: center;
+  padding: .45rem .65rem;
+  border-radius: var(--property-radius);
+  border-color: var(--color-border);
+  background: var(--color-surface-muted);
+}
+.workspace-content[data-editor-workspace] :is(.tree-summary, .tree-tabs, .tree-total) { padding-block: .35rem; }
+.workspace-content[data-editor-workspace] :is(.tree-layout, .tree-rules) { padding-block-start: .6rem; }
+.workspace-content[data-editor-workspace] .tree-row-grid {
+  gap: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--property-radius);
+}
+.workspace-content[data-editor-workspace] .tree-drop-row {
+  grid-template-columns: minmax(0, 1.55fr) minmax(8rem, .8fr);
+  align-items: center;
+  gap: .15rem .7rem;
+  padding: .3rem .55rem;
+  border: 0;
+  border-radius: 0;
+  background: var(--color-surface-muted);
+}
+.workspace-content[data-editor-workspace] .tree-drop-row + .tree-drop-row { border-block-start: 1px solid var(--property-divider); }
+.workspace-content[data-editor-workspace] :is(.tree-item-field, .tree-number-field) {
+  display: grid;
+  grid-template-columns: minmax(0, .85fr) minmax(0, 1fr);
+  gap: .4rem;
+  align-items: center;
+  min-width: 0;
+}
+.workspace-content[data-editor-workspace] :is(.tree-rules-controls, .tree-probability) > h3 {
+  padding-block: .28rem;
+  border-block-end: 1px solid var(--property-divider);
+}
+.workspace-content[data-editor-workspace] :is(.habitat-coordinate-editor, .fashion-catalog-field-editor) {
+  align-content: start;
+  align-items: start;
+  gap: .55rem;
+}
+.workspace-content[data-editor-workspace] :is(.fashion-catalog-editor-grid, .za-dex-layout-workspace, .za-dex-layout-dexes, .za-dex-layout-inspectors) {
+  align-items: start;
+  gap: .65rem;
+}
+.workspace-content[data-editor-workspace] :is(.za-dex-layout-inspector, .za-dex-layout-dex-column, .za-dex-layout-destination, .za-dex-layout-selection) {
+  gap: .45rem;
+  min-width: 0;
+  padding: .5rem .65rem;
+  border-radius: var(--property-radius);
+}
+.workspace-content[data-editor-workspace] .za-dex-layout-row { min-height: 1.9rem; padding-block: .22rem; }
+
+.workspace-content[data-editor-workspace] .shiny-lock-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .4rem;
+}
+.workspace-content[data-editor-workspace] .shiny-lock-toolbar .items-search { flex: 1 1 13rem; }
+.workspace-content[data-editor-workspace] .shiny-lock-toolbar .metric {
+  display: flex;
+  align-items: baseline;
+  min-block-size: 0;
+  gap: .45rem;
+  padding: .35rem .55rem;
+}
+.workspace-content[data-editor-workspace] .shiny-lock-toolbar .metric-value { font-size: .875rem; }
+.workspace-content[data-editor-workspace] .shiny-lock-toolbar .compact-button { width: auto; white-space: normal; }
+
+.workspace-content[data-editor-workspace] .game-dump-section { gap: .65rem; }
+.workspace-content[data-editor-workspace] .game-dump-step-heading > span {
+  inline-size: 1.45rem;
+  block-size: 1.45rem;
+  color: var(--color-text);
+  background: var(--color-surface-strong);
+  border-color: var(--color-border);
+  border-radius: .3rem;
+}
+.workspace-content[data-editor-workspace] :is(.game-dump-review-bar, .game-dump-progress-panel, .game-dump-result, .spreadsheet-source-panel) {
+  padding: .5rem .65rem;
+  background: var(--color-surface-muted);
+  border-color: var(--color-border);
+  border-radius: var(--property-radius);
+}
+.workspace-content[data-editor-workspace] .game-dump-category-list {
+  gap: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--property-radius);
+}
+.workspace-content[data-editor-workspace] .game-dump-category {
+  align-items: center;
+  gap: .45rem .8rem;
+  padding: .38rem .65rem;
+  border: 0;
+  border-radius: 0;
+  background: var(--color-surface-muted);
+}
+.workspace-content[data-editor-workspace] .game-dump-category:first-child { border-start-start-radius: inherit; border-start-end-radius: inherit; }
+.workspace-content[data-editor-workspace] .game-dump-category:last-child { border-end-start-radius: inherit; border-end-end-radius: inherit; }
+.workspace-content[data-editor-workspace] .game-dump-category + .game-dump-category { border-block-start: 1px solid var(--property-divider); }
+.workspace-content[data-editor-workspace] .game-dump-category.is-selected { background: var(--color-surface-strong); }
+.workspace-content[data-editor-workspace] .game-dump-category-filters [aria-pressed='true'] {
+  color: var(--color-text);
+  background: var(--color-surface-strong);
+  border-color: var(--color-accent);
+}
+.workspace-content[data-editor-workspace] .spreadsheet-source-panel { gap: .55rem; }
+.workspace-content[data-editor-workspace] .spreadsheet-import-progress-heading { margin: 0; }
+.workspace-content[data-editor-workspace] .type-chart-source-summary { gap: .35rem; }
+.workspace-content[data-editor-workspace] .type-chart-source-summary > div { padding: .3rem .5rem; }
+
+@container workspace (max-width: 41rem) {
+  .workspace-content[data-editor-workspace] :is(.tree-drop-row, .titan-swapper-fields > .field, .blueberry-amount) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace-content[data-editor-workspace] .editor-browser-filter { grid-template-columns: minmax(0, 1fr); gap: .2rem; }
+}
+
+.workspace-content[data-editor-workspace] .game-dump-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+  gap: .4rem;
+}
+.workspace-content[data-editor-workspace] .game-dump-metrics .metric {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  min-height: 0;
+  gap: .4rem;
+  padding: .35rem .55rem;
+}
+.workspace-content[data-editor-workspace] .game-dump-metrics .metric-value { font-size: .95rem; }
+
+.workspace-content[data-editor-workspace] .za-behavior-browser { gap: .3rem; }
+.workspace-content[data-editor-workspace] .za-behavior-list {
+  border: 1px solid var(--color-border);
+  border-radius: var(--property-radius);
+  background: var(--color-surface-muted);
+}
+.workspace-content[data-editor-workspace] .za-behavior-entry {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: .15rem .65rem;
+  margin: 0;
+  min-height: 1.95rem;
+  padding: .25rem .65rem;
+  border: 0;
+  border-block-end: 1px solid var(--property-divider);
+  border-radius: 0;
+  background: transparent;
+}
+.workspace-content[data-editor-workspace] .za-behavior-entry.selected {
+  outline: 0;
+  background: var(--property-selected);
+  box-shadow: inset 3px 0 var(--color-accent);
+}
+.workspace-content[data-editor-workspace] .za-behavior-entry:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.workspace-content[data-editor-workspace] .za-behavior-detail { display: grid; gap: .55rem; }
+.workspace-content[data-editor-workspace] .za-behavior-detail > :is(p, h3, details, .za-behavior-fields, .za-behavior-actions) { margin: 0; }
+.workspace-content[data-editor-workspace] :is(.za-behavior-profiles, .za-behavior-fields) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  gap: .55rem;
+  align-items: stretch;
+}
+.workspace-content[data-editor-workspace] :is(.za-behavior-profiles, .za-behavior-fields) > .za-behavior-field {
+  padding: .42rem .58rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--property-radius);
+  background: var(--color-surface-muted);
+}
+.workspace-content[data-editor-workspace] .za-behavior-detail > .za-behavior-field { max-inline-size: 36rem; }
+.workspace-content[data-editor-workspace] .za-behavior-field small { color: var(--color-text-muted); opacity: 1; }

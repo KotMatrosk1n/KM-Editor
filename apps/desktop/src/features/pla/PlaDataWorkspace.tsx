@@ -76,7 +76,7 @@ export function PlaDataWorkspace({ sessionKey, kind, page, selected, query, offs
     ? String(stats.reduce((sum, value) => sum + Number(value), 0)) : '-';
   return <section className={`panel wide-panel pla-editor pla-data-editor pla-data-${kind}`} aria-labelledby="pla-editor-title">
     <div className="panel-heading"><Icon size={18} aria-hidden="true" /><h2 id="pla-editor-title">{title}</h2>{refresh}</div>
-    <SectionedEditorWorkspace sessionKey={sessionKey + ':' + kind} initialSection="data" pinnedBrowser compactFields
+    <SectionedEditorWorkspace sessionKey={sessionKey + ':' + kind} initialSection="data" compactFields
       browserVisibleRows={4} sessionBar={<>{sessionBar}{actions}</>}
       browserControls={<div className={kind === 'text' ? 'pla-text-browser-controls' : undefined}>
         {controls}
