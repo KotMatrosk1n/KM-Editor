@@ -92,7 +92,7 @@ export function PlaEconomyWorkspace({ sessionKey, kind, page, selected, query, o
   const selectedGroup = selected && isShop ? groups.get(selected.metadata.inventory) ?? [] : [];
   return <section className={`panel wide-panel pla-editor pla-economy-editor pla-economy-${kind}`} aria-labelledby="pla-editor-title">
     <div className="panel-heading"><Icon size={18} aria-hidden="true" /><h2 id="pla-editor-title">{t(workbenchSectionLocalization[section].label)}</h2>{refresh}</div>
-    <SectionedEditorWorkspace sessionKey={sessionKey + ':' + kind} initialSection="data" pinnedBrowser compactFields
+    <SectionedEditorWorkspace sessionKey={sessionKey + ':' + kind} initialSection="data" compactFields
       browserVisibleRows={4} sessionBar={<>{sessionBar}{actions}</>}
       browserControls={<>
         {controls}

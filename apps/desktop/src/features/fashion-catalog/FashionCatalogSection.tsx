@@ -580,97 +580,102 @@ export function FashionCatalogSection({
                     row: selectedRow.physicalIndex + 1
                   })}</span>
                 </div>
-                <label className="field-label" htmlFor="fashion-catalog-field">
-                  {t('fashionCatalog.editor.field')}
-                </label>
-                <SearchableOptionInput
-                  ariaLabel={t('fashionCatalog.editor.field')}
-                  data-km-source-site="fashion-catalog-field"
-                  disabled={false}
-                  id="fashion-catalog-field"
-                  isFiniteCatalog
-                  localizeOptions={false}
-                  onChange={setSelectedField}
-                  options={fields.map((candidate) => ({
-                    label: `${candidate.label}${
-                      candidate.readOnly ? ` - ${translateLiteral('Read-only')}` : ''
-                    }`,
-                    value: candidate.field
-                  }))}
-                  value={field.field}
-                />
-
-                <p className="field-hint">{t(field.hintKey)}</p>
-
-                {field.readOnly ? (
-                  <>
-                    <label className="field-label" htmlFor="fashion-catalog-value">
-                      {t('fashionCatalog.editor.value')}
-                    </label>
-                    <input
-                      id="fashion-catalog-value"
-                      readOnly
-                      type="text"
-                      value={getOptionLabel(
-                        catalogFile,
-                        field.field,
-                        sourceValue,
-                        presentation
-                      )}
-                    />
-                  </>
-                ) : field.valueKind === 'option' ? (
-                  <>
-                    <label className="field-label" htmlFor="fashion-catalog-value">
-                      {t('fashionCatalog.editor.value')}
+                <div className="fashion-catalog-properties">
+                  <div className="fashion-catalog-property">
+                    <label className="field-label" htmlFor="fashion-catalog-field">
+                      {t('fashionCatalog.editor.field')}
                     </label>
                     <SearchableOptionInput
-                      ariaLabel={t('fashionCatalog.editor.value')}
-                      data-km-source-site="fashion-catalog-value"
+                      ariaLabel={t('fashionCatalog.editor.field')}
+                      data-km-source-site="fashion-catalog-field"
                       disabled={false}
-                      emptyOptionDisabled={!field.optional}
-                      emptyOptionLabel={field.optional
-                        ? t('fashionCatalog.editor.clear')
-                        : t('fashionCatalog.editor.chooseOption')}
-                      id="fashion-catalog-value"
+                      id="fashion-catalog-field"
                       isFiniteCatalog
                       localizeOptions={false}
-                      maximumVisibleOptions={optionRenderLimit}
-                      onChange={updateDraftValue}
-                      options={options.map((option) => ({
-                        label: getOptionLabel(
-                          catalogFile,
-                          field.field,
-                          option,
-                          presentation
-                        ),
-                        value: option
+                      onChange={setSelectedField}
+                      options={fields.map((candidate) => ({
+                        label: `${candidate.label}${
+                          candidate.readOnly ? ` - ${translateLiteral('Read-only')}` : ''
+                        }`,
+                        value: candidate.field
                       }))}
-                      value={options.includes(draftValue) ? draftValue : ''}
+                      value={field.field}
                     />
-                    <p className="field-hint">
-                      {t('fashionCatalog.editor.provenOptions', { count: options.length })}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <label className="field-label" htmlFor="fashion-catalog-value">
-                      {t('fashionCatalog.editor.value')}
-                    </label>
-                    <input
-                      aria-invalid={numericDraftError ? true : undefined}
-                      id="fashion-catalog-value"
-                      onChange={(event) => updateDraftValue(event.target.value)}
-                      type="number"
-                      value={draftValue}
-                    />
-                    {numericDraftError ? (
-                      <p className="editable-field-error" role="alert">
-                        {numericDraftError}
-                      </p>
-                    ) : null}
-                  </>
-                )}
+
+                    <p className="field-hint">{t(field.hintKey)}</p>
+                  </div>
+                  <div className="fashion-catalog-property">
+                    {field.readOnly ? (
+                      <>
+                        <label className="field-label" htmlFor="fashion-catalog-value">
+                          {t('fashionCatalog.editor.value')}
+                        </label>
+                        <input
+                          id="fashion-catalog-value"
+                          readOnly
+                          type="text"
+                          value={getOptionLabel(
+                            catalogFile,
+                            field.field,
+                            sourceValue,
+                            presentation
+                          )}
+                        />
+                      </>
+                    ) : field.valueKind === 'option' ? (
+                      <>
+                        <label className="field-label" htmlFor="fashion-catalog-value">
+                          {t('fashionCatalog.editor.value')}
+                        </label>
+                        <SearchableOptionInput
+                          ariaLabel={t('fashionCatalog.editor.value')}
+                          data-km-source-site="fashion-catalog-value"
+                          disabled={false}
+                          emptyOptionDisabled={!field.optional}
+                          emptyOptionLabel={field.optional
+                            ? t('fashionCatalog.editor.clear')
+                            : t('fashionCatalog.editor.chooseOption')}
+                          id="fashion-catalog-value"
+                          isFiniteCatalog
+                          localizeOptions={false}
+                          maximumVisibleOptions={optionRenderLimit}
+                          onChange={updateDraftValue}
+                          options={options.map((option) => ({
+                            label: getOptionLabel(
+                              catalogFile,
+                              field.field,
+                              option,
+                              presentation
+                            ),
+                            value: option
+                          }))}
+                          value={options.includes(draftValue) ? draftValue : ''}
+                        />
+                        <p className="field-hint">
+                          {t('fashionCatalog.editor.provenOptions', { count: options.length })}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <label className="field-label" htmlFor="fashion-catalog-value">
+                          {t('fashionCatalog.editor.value')}
+                        </label>
+                        <input
+                          aria-invalid={numericDraftError ? true : undefined}
+                          id="fashion-catalog-value"
+                          onChange={(event) => updateDraftValue(event.target.value)}
+                          type="number"
+                          value={draftValue}
+                        />
+                        {numericDraftError ? (
+                          <p className="editable-field-error" role="alert">
+                            {numericDraftError}
+                          </p>
+                        ) : null}
+                      </>
+                    )}
+                  </div>
+                </div>
 
                 <p aria-live="polite" className="field-hint">
                   {t('fashionCatalog.editor.draftSummary', {

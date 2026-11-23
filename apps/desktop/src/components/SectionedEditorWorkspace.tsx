@@ -37,7 +37,7 @@ export function RecordEditorWorkspace({ id, className, browser, browserControls,
   const { t } = useLocalization();
   return <div className={`${className} editor-record-layout`}>
     <SectionedEditorWorkspace sessionKey={`${scope}:${id}`} initialSection="record"
-      pinnedBrowser compactFields alwaysOpen browser={browser} browserControls={browserControls} browserFooter={browserFooter} browserVisibleRows={browserVisibleRows}>
+      compactFields alwaysOpen browser={browser} browserControls={browserControls} browserFooter={browserFooter} browserVisibleRows={browserVisibleRows}>
       <EditorWorkspaceSection id="record" label={t('editorSections.details')}>{children}</EditorWorkspaceSection>
     </SectionedEditorWorkspace>
   </div>;
@@ -71,11 +71,10 @@ type WorkspaceProps = {
   browserControls?: ReactNode;
   browserFooter?: ReactNode;
   browserVisibleRows?: number;
-  pinnedBrowser?: boolean;
   compactFields?: boolean;
   alwaysOpen?: boolean;
   activeSectionRequest?: { sectionId: string };
-  sectionShortcut?: { sectionId: string; label: string; icon: ReactNode; onOpen: () => void };
+  sectionShortcut?: { sectionId: string; label: string; icon: ReactNode; controls: string; expanded: boolean; onActivate: (trigger: HTMLButtonElement) => void; onClose: () => void };
   sessionBar?: ReactNode;
   onActiveSectionChange?: (section: string | null) => void;
   children: ReactNode;
@@ -85,7 +84,7 @@ export function SectionedEditorWorkspace(props: WorkspaceProps) {
   return <WorkspaceSession key={props.sessionKey} {...props} />;
 }
 
-function WorkspaceSession({ sessionKey, initialSection = 'details', browser, browserControls, browserFooter, browserVisibleRows, pinnedBrowser, compactFields, alwaysOpen, activeSectionRequest, sectionShortcut, sessionBar, onActiveSectionChange, children }: WorkspaceProps) {
+function WorkspaceSession({ sessionKey, initialSection = 'details', browser, browserControls, browserFooter, browserVisibleRows, compactFields, alwaysOpen, activeSectionRequest, sectionShortcut, sessionBar, onActiveSectionChange, children }: WorkspaceProps) {
   const { t } = useLocalization();
   const { preferences } = useAppearancePreferences();
   const [session] = useState(() => sessionFor(sessionKey, initialSection));
@@ -95,8 +94,8 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
   collect(children, sections, headers, empty);
   const [requested, setRequested] = useState<string | null>(session.active);
   const active = requested !== null && sections.some(section => section.props.id === requested)
-    ? requested : requested === null || pinnedBrowser ? null : sections[0]?.props.id ?? null;
-  const [outgoing, setOutgoing] = useState<string | null>(null);
+    ? requested : requested === null || browser ? null : sections[0]?.props.id ?? null;
+  const [closing, setClosing] = useState<string | null>(null);
   const [tablePreference, setTablePreference] = useState(session.tableHeight);
   const [defaultTableHeight, setDefaultTableHeight] = useState(browserVisibleRows ? (browserVisibleRows + 1) * 40 + 2 : 164);
   const [tableMinimum, setTableMinimum] = useState(80);
@@ -119,6 +118,9 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
 
   useEffect(() => { onActiveSectionChange?.(active); }, [active, onActiveSectionChange]);
   useLayoutEffect(() => {
+    if (sectionShortcut?.expanded && sectionShortcut.sectionId !== active) sectionShortcut.onClose();
+  }, [active, sectionShortcut]);
+  useLayoutEffect(() => {
     if (activeSectionRequest) setRequested(activeSectionRequest.sectionId);
   }, [activeSectionRequest]);
   useLayoutEffect(() => { session.active = requested; }, [requested, session]);
@@ -134,7 +136,6 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
     let frame = 0;
     const measure = () => {
       if (!root.current || !chrome.current) return;
-      root.current.style.setProperty('--editor-chrome-height', `${chrome.current.offsetHeight}px`);
       const viewportBottom = (window.visualViewport?.height ?? window.innerHeight) + (window.visualViewport?.offsetTop ?? 0);
       const available = Math.max(160, viewportBottom - Math.max(0, root.current.getBoundingClientRect().top) - 18);
       const sessionHeight = root.current.querySelector(':scope > .editor-session-bar')?.getBoundingClientRect().height ?? 0;
@@ -152,7 +153,7 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
         minimumTableHeight = Math.ceil(headingHeight + rowHeight + borders + scrollbar);
       }
       setTableMinimum(minimumTableHeight);
-      // Reserve a usable content area after measuring every persistent control, including wrapped labels.
+      // Leave room for the selected record below its browser.
       setTableMax(Math.max(minimumTableHeight, Math.floor(available - fixed - Math.min(220, available * .3))));
     };
     const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); };
@@ -169,7 +170,7 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
       window.removeEventListener('resize', schedule);
       window.visualViewport?.removeEventListener('resize', schedule);
     };
-  }, [browserVisibleRows]);
+  }, [browserVisibleRows, Boolean(sessionBar)]);
 
   useLayoutEffect(() => {
     const token = ++generation.current;
@@ -181,11 +182,6 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
     const from = animations.current.length ? container.getBoundingClientRect().height : settledHeight.current;
     const oldPanel = old ? panels.current.get(old) : undefined;
     const nextPanel = active ? panels.current.get(active) : undefined;
-    const interruptedStyle = (panel: HTMLElement | undefined) => panel && animations.current.some(animation =>
-      (animation.effect as KeyframeEffect | null)?.target === panel)
-      ? { opacity: getComputedStyle(panel).opacity, transform: getComputedStyle(panel).transform } : undefined;
-    const oldStyle = interruptedStyle(oldPanel);
-    const nextStyle = interruptedStyle(nextPanel);
     animations.current.forEach(animation => animation.cancel());
     animations.current = [];
     if (oldPanel && old !== active && oldPanel.contains(document.activeElement)) {
@@ -196,22 +192,21 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
     if (reduced || old === active || typeof container.animate !== 'function') {
       container.style.height = 'auto';
       delete container.dataset.transitioning;
-      setOutgoing(null);
+      setClosing(null);
       return;
     }
     container.style.height = `${destination}px`;
-    setOutgoing(old);
     container.dataset.transitioning = 'true';
     const duration = active ? 280 : 240;
     animations.current.push(container.animate([{ height: `${from}px` }, { height: `${destination}px` }], {
       duration, easing: active ? 'cubic-bezier(.2,.7,.2,1)' : 'ease-in'
     }));
-    if (oldPanel) animations.current.push(oldPanel.animate([
-      oldStyle ?? { opacity: 1, transform: 'translateY(0)' }, { opacity: 0, transform: 'translateY(6px)' }
-    ], { duration: active ? 110 : 200, easing: 'ease-in', fill: 'forwards' }));
+    if (!active && oldPanel) animations.current.push(oldPanel.animate([
+      { opacity: 1 }, { opacity: 0 }
+    ], { duration: 200, easing: 'ease-in', fill: 'forwards' }));
     if (nextPanel) animations.current.push(nextPanel.animate([
-      nextStyle ?? { opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'translateY(0)' }
-    ], { duration: 220, delay: old ? 50 : 20, easing: 'ease-out', fill: 'backwards' }));
+      { opacity: .75, transform: 'translateY(4px)' }, { opacity: 1, transform: 'translateY(0)' }
+    ], { duration: 180, easing: 'ease-out' }));
     nextPanel?.querySelectorAll<HTMLElement>('[data-editor-disclosure-group]').forEach((group, index) => {
       animations.current.push(group.animate([
         { opacity: .65, transform: 'translateY(3px)' }, { opacity: 1, transform: 'translateY(0)' }
@@ -219,7 +214,7 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
     });
     void Promise.all(animations.current.map(animation => animation.finished.catch(() => undefined))).then(() => {
       if (token === generation.current) {
-        setOutgoing(null);
+        setClosing(null);
         animations.current.forEach(animation => animation.cancel());
         animations.current = [];
         container.style.height = 'auto';
@@ -253,10 +248,9 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
   };
 
   return <div className="sectioned-editor-workspace" data-reduced-motion={reduced || undefined}
-    data-pinned-browser={pinnedBrowser || undefined} data-compact-fields={compactFields || undefined} ref={root}>
-    {pinnedBrowser ? null : sessionBar}
+    data-record-browser={Boolean(browser) || undefined} data-compact-fields={compactFields || undefined} ref={root}>
+    {sessionBar}
     <div className="editor-workspace-chrome" ref={chrome}>
-      {pinnedBrowser ? sessionBar : null}
       {headers.filter(header => !header.props.afterBrowser).map((header, index) => <Fragment key={index}>{header}</Fragment>)}
       {browserControls}
       {browser ? <>
@@ -296,6 +290,7 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
             if (active && panels.current.get(active)?.contains(document.activeElement)) {
               selectors.current.get(active)?.focus({ preventScroll: true });
             }
+            setClosing(!reduced && active === section.id ? active : null);
             setRequested(active === section.id ? null : section.id);
           }}>
           <span className="editor-section-label" title={section.label}>{section.label}</span>
@@ -304,11 +299,14 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
             {section.invalid ? <span className="editor-section-invalid" title={t('editorSections.invalid')} aria-label={t('editorSections.invalid')}>!</span> : null}
           </span>
         </button>)}
-        {sectionShortcut && active !== sectionShortcut.sectionId && sections.some(section => section.props.id === sectionShortcut.sectionId) ?
-          <button type="button" className="secondary-button compact-button editor-section-shortcut" onClick={() => {
-            setRequested(sectionShortcut.sectionId);
-            sectionShortcut.onOpen();
-          }}>{sectionShortcut.icon}{sectionShortcut.label}</button> : null}
+        {sectionShortcut && sections.some(section => section.props.id === sectionShortcut.sectionId) ?
+          <button type="button" className="secondary-button compact-button editor-section-shortcut"
+            aria-controls={sectionShortcut.controls} aria-expanded={active === sectionShortcut.sectionId && sectionShortcut.expanded}
+            onClick={event => {
+              setClosing(null);
+              setRequested(sectionShortcut.sectionId);
+              sectionShortcut.onActivate(event.currentTarget);
+            }}>{sectionShortcut.icon}{sectionShortcut.label}</button> : null}
       </div> : null}
       {sections.length === 0 ? empty.map((content, index) => <Fragment key={index}>{content}</Fragment>) : null}
     </div>
@@ -316,7 +314,7 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
       <div className="editor-workspace-surface" ref={surface}>
         {sections.map(({ props: section }) => {
           const visible = active === section.id;
-          const leaving = outgoing === section.id && !visible;
+          const leaving = active === null && closing === section.id && !reduced;
           return <div id={`${prefix}-${section.id}-panel`} key={section.id} role="region"
             aria-label={alwaysOpen ? section.label : undefined}
             aria-labelledby={alwaysOpen ? undefined : `${prefix}-${section.id}-selector`} aria-hidden={!visible || undefined}

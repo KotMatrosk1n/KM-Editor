@@ -30,23 +30,22 @@
 }
 .randomizer-settings {
   display: grid;
-  grid-template-columns: minmax(175px, 210px) minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr);
+  gap: .6rem;
   min-width: 0;
 }
-.randomizer-settings-nav { display: grid; gap: 8px; position: sticky; top: 12px; }
+.randomizer-settings-nav { display: flex; flex-wrap: wrap; gap: .35rem; }
 .randomizer-group-button {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  padding: 14px 12px;
-  min-height: 48px;
+  gap: .4rem;
+  padding: .3rem .55rem;
+  min-height: 2.15rem;
   color: var(--color-text-soft);
   background: var(--color-surface-muted);
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: .4rem;
   text-align: start;
   cursor: pointer;
   font-weight: 750;
@@ -55,11 +54,11 @@
 .randomizer-group-active {
   color: var(--color-text);
   border-color: var(--color-gold);
-  box-shadow: inset 3px 0 var(--color-gold);
+  box-shadow: inset 0 -2px var(--color-gold);
   background: rgb(var(--color-gold-rgb) / 9%);
 }
 .randomizer-group-count { padding: 2px 7px; border-radius: 12px; background: var(--color-popover); font-size: 0.75rem; }
-.randomizer-settings-content { min-width: 0; display: grid; gap: 20px; }
+.randomizer-settings-content { min-width: 0; display: grid; gap: .65rem; }
 .randomizer-settings-heading { display: grid; gap: 6px; }
 .randomizer-settings-heading h2 { margin: 0; font-size: 1.15rem; }
 .randomizer-settings-heading p, .randomizer-number-setting p, .randomizer-setting p {
@@ -69,16 +68,16 @@
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
-.randomizer-settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; }
+.randomizer-settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: .4rem; }
 .randomizer-trainer-main { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.randomizer-accordion-list { display: grid; gap: 10px; }
+.randomizer-accordion-list { display: grid; gap: .35rem; }
 .randomizer-category-card { min-width: 0; border: 1px solid var(--color-border); border-radius: 10px; overflow: clip; }
 .randomizer-category-card summary {
   display: flex;
   align-items: center;
   gap: 10px;
   cursor: pointer;
-  padding: 14px;
+  padding: .4rem .6rem;
   font-weight: 750;
   list-style: none;
   background: var(--color-surface-muted);
@@ -87,13 +86,13 @@
 .randomizer-category-card[open] summary > svg:last-child { transform: rotate(180deg); }
 .randomizer-category-card summary > svg { flex-shrink: 0; }
 .randomizer-category-state { margin-inline-start: auto; font-size: 0.75rem; color: var(--color-text-soft); }
-.randomizer-category-fields { display: grid; gap: 12px; padding: 12px; }
-.randomizer-setting { display: flex; align-items: start; gap: 12px; padding: 14px; border: 1px solid var(--color-border); border-radius: 8px; min-width: 0; }
+.randomizer-category-fields { display: grid; gap: .4rem; padding: .4rem; }
+.randomizer-setting { display: flex; align-items: start; gap: .5rem; padding: .4rem .6rem; border: 1px solid var(--color-border); border-radius: .4rem; min-width: 0; }
 .randomizer-setting input { flex: 0 0 auto; margin-top: 3px; width: 18px; height: 18px; }
-.randomizer-setting > div { min-width: 0; display: grid; gap: 6px; }
+.randomizer-setting > div { min-width: 0; display: grid; gap: .15rem; }
 .randomizer-setting label, .randomizer-number-setting label { font-weight: 750; font-size: 0.85rem; cursor: pointer; }
 .randomizer-setting-enabled { background: rgb(var(--color-gold-rgb) / 5%); }
-.randomizer-child-fields, .randomizer-trainer-fields { min-width: 0; margin: 0; padding: 0; border: 0; display: grid; gap: 14px; }
+.randomizer-child-fields, .randomizer-trainer-fields { min-width: 0; margin: 0; padding: 0; border: 0; display: grid; gap: .4rem; }
 .randomizer-child-fields { grid-template-columns: repeat(auto-fit, minmax(min(100%, 235px), 1fr)); }
 .randomizer-child-fields:disabled, .randomizer-trainer-fields:disabled { opacity: 0.6; }
 .randomizer-trainer-fields h3 { margin: 8px 0 0; font-size: 0.9rem; }
@@ -102,11 +101,6 @@
 .randomizer-percent-input { display: flex; align-items: center; gap: 8px; }
 .randomizer-percent-input input { max-width: 130px; }
 .randomizer-percent-input input[aria-invalid='true'] { border-color: var(--color-danger); }
-@container randomizer-workspace (max-width: 800px) {
-  .randomizer-settings { grid-template-columns: minmax(0, 1fr); }
-  .randomizer-settings-nav { position: static; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); }
-  .randomizer-group-button { padding: 10px; }
-}
 @container randomizer-workspace (max-width: 520px) {
   .randomizer-trainer-main { grid-template-columns: minmax(0, 1fr); }
   .randomizer-group-button { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }

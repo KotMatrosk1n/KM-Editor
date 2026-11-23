@@ -42,7 +42,7 @@
   align-items: center;
   gap: 7px;
   margin: 0;
-  padding: 7px 9px;
+  padding: 5px 9px;
   border-bottom: 1px solid var(--color-border);
   border-radius: 6px 6px 0 0;
   background: color-mix(in srgb, var(--color-accent) 7%, var(--color-surface));
@@ -57,7 +57,7 @@
   font-variant-numeric: tabular-nums;
 }
 .species-matrix-group > .muted { margin: 6px 9px; font-size: .76rem; }
-.species-matrix-group > .species-matrix-field { padding: 4px 8px; }
+.species-matrix-group > .species-matrix-field { padding: 2px 8px; }
 .species-matrix-group > .species-matrix-field + .species-matrix-field {
   border-top: 1px solid color-mix(in srgb, var(--color-border) 65%, transparent);
 }

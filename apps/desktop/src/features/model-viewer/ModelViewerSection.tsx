@@ -206,11 +206,17 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
           <div className="model-viewer__toolbar"><strong>{t('modelViewer.models', { count: catalog.length })}</strong>
             <button type="button" onClick={() => { setTextureChanges([]); setAssetChanges(null); setRevision(value => value + 1); }} disabled={loading || dirty || disabled}>{t('modelViewer.reload')}</button>
           </div>
-          <label htmlFor="model-category">{t('modelViewer.category')}</label>
-          <SearchableOptionInput id="model-category" ariaLabel={t('modelViewer.category')} disabled={false} isFiniteCatalog localizeOptions={false}
-            value={category} onChange={setCategory} options={[{ value: 'all', label: t('modelViewer.all') }, ...categories.map(value => ({ value, label: t(`modelViewer.category.${value}`) }))]} />
-          <label htmlFor="model-search">{t('modelViewer.search')}</label>
-          <input id="model-search" type="search" value={query} onChange={event => setQuery(event.target.value)} />
+          <div className="model-viewer__filters">
+            <div className="model-viewer__filter">
+              <label htmlFor="model-category">{t('modelViewer.category')}</label>
+              <SearchableOptionInput id="model-category" ariaLabel={t('modelViewer.category')} disabled={false} isFiniteCatalog localizeOptions={false}
+                value={category} onChange={setCategory} options={[{ value: 'all', label: t('modelViewer.all') }, ...categories.map(value => ({ value, label: t(`modelViewer.category.${value}`) }))]} />
+            </div>
+            <div className="model-viewer__filter">
+              <label htmlFor="model-search">{t('modelViewer.search')}</label>
+              <input id="model-search" type="search" value={query} onChange={event => setQuery(event.target.value)} />
+            </div>
+          </div>
           <div className="model-viewer__catalog" aria-busy={loading}>
             <div className="model-viewer__catalog-content">
             {loading ? <LoadingProgress label={t('modelViewer.loading')} /> : groups.length === 0 ? <p role="status">{t('modelViewer.empty')}</p> :
