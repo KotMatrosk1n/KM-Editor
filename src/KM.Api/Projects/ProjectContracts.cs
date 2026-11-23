@@ -87,7 +87,9 @@ public sealed record ProjectPathsDto
 
 public sealed record OpenProjectRequest(ProjectPathsDto Paths);
 
-public sealed record ValidateProjectRequest(ProjectPathsDto Paths);
+public sealed record ValidateProjectRequest(ProjectPathsDto Paths, bool ReportProgress = false);
+
+public sealed record ProjectPathCheckProgressDto(ProjectPathRoleDto Role, bool Completed);
 
 public sealed record RefreshFileGraphRequest(ProjectPathsDto Paths);
 

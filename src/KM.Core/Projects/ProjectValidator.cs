@@ -51,44 +51,56 @@ public sealed class ProjectValidator
 
     internal ProjectHealth Validate(
         ProjectPaths paths,
-        Func<ProjectPaths, ProjectFileGraphSummary> createFileGraphSummary)
+        Func<ProjectPaths, ProjectFileGraphSummary> createFileGraphSummary,
+        Action<ProjectPathRole, bool>? reportPathCheck = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(createFileGraphSummary);
 
-        var baseRomFs = ValidateRequiredDirectory(ProjectPathRole.BaseRomFs, paths.BaseRomFsPath, "Base RomFS");
-        var baseExeFs = ValidateRequiredDirectory(ProjectPathRole.BaseExeFs, paths.BaseExeFsPath, "Base ExeFS");
-        var outputRoot = ValidateOptionalOutputRoot(paths.OutputRootPath);
-        var saveFile = ValidateOptionalSaveFile(paths.SaveFilePath);
-        var scarletVioletSupportFolder = ValidateSupportFolder(
+        PathValidationDraft CheckPath(
+            ProjectPathRole role,
+            Func<PathValidationDraft> validate,
+            string? safetyLabel = null,
+            bool isDirectory = true,
+            bool visible = true)
+        {
+            if (visible) reportPathCheck?.Invoke(role, false);
+            var result = validate();
+            if (safetyLabel is not null) AddPhysicalPathSafetyDiagnostic(result, safetyLabel, isDirectory);
+            if (visible) reportPathCheck?.Invoke(role, true);
+            return result;
+        }
+
+        var baseRomFs = CheckPath(ProjectPathRole.BaseRomFs,
+            () => ValidateRequiredDirectory(ProjectPathRole.BaseRomFs, paths.BaseRomFsPath, "Base RomFS"),
+            "Base RomFS");
+        var baseExeFs = CheckPath(ProjectPathRole.BaseExeFs,
+            () => ValidateRequiredDirectory(ProjectPathRole.BaseExeFs, paths.BaseExeFsPath, "Base ExeFS"),
+            "Base ExeFS");
+        var isScarletViolet = paths.SelectedGame is ProjectGame.Scarlet or ProjectGame.Violet;
+        var isZa = paths.SelectedGame is ProjectGame.ZA;
+        var scarletVioletSupportFolder = CheckPath(ProjectPathRole.ScarletVioletSupportFolder, () => ValidateSupportFolder(
             ProjectPathRole.ScarletVioletSupportFolder,
             paths.ScarletVioletSupportFolderPath,
-            paths.SelectedGame is ProjectGame.Scarlet or ProjectGame.Violet,
-            "scarletVioletSupportFolderPath");
-        var pokemonLegendsZASupportFolder = ValidateSupportFolder(
+            isScarletViolet,
+            "scarletVioletSupportFolderPath"),
+            isScarletViolet ? "S/V support folder" : null,
+            visible: isScarletViolet);
+        var pokemonLegendsZASupportFolder = CheckPath(ProjectPathRole.PokemonLegendsZASupportFolder, () => ValidateSupportFolder(
             ProjectPathRole.PokemonLegendsZASupportFolder,
             paths.PokemonLegendsZASupportFolderPath,
-            paths.SelectedGame is ProjectGame.ZA,
-            "pokemonLegendsZASupportFolderPath");
-
-        AddPhysicalPathSafetyDiagnostic(baseRomFs, "Base RomFS", isDirectory: true);
-        AddPhysicalPathSafetyDiagnostic(baseExeFs, "Base ExeFS", isDirectory: true);
-        AddPhysicalPathSafetyDiagnostic(outputRoot, "Output root", isDirectory: true);
-        AddPhysicalPathSafetyDiagnostic(saveFile, "Save file", isDirectory: false);
-        if (paths.SelectedGame is ProjectGame.Scarlet or ProjectGame.Violet)
-        {
-            AddPhysicalPathSafetyDiagnostic(
-                scarletVioletSupportFolder,
-                "S/V support folder",
-                isDirectory: true);
-        }
-        else if (paths.SelectedGame is ProjectGame.ZA)
-        {
-            AddPhysicalPathSafetyDiagnostic(
-                pokemonLegendsZASupportFolder,
-                "Pokemon Legends Z-A support folder",
-                isDirectory: true);
-        }
+            isZa,
+            "pokemonLegendsZASupportFolderPath"),
+            isZa ? "Pokemon Legends Z-A support folder" : null,
+            visible: isZa);
+        var plaSupportFolder = paths.SelectedGame == ProjectGame.PLA
+            ? CheckPath(ProjectPathRole.PokemonLegendsArceusSupportFolder,
+                () => ValidatePlaSupport(paths.PokemonLegendsArceusSupportFolderPath))
+            : null;
+        var saveFile = CheckPath(ProjectPathRole.SaveFile, () => ValidateOptionalSaveFile(paths.SaveFilePath),
+            "Save file", isDirectory: false);
+        var outputRoot = CheckPath(ProjectPathRole.OutputRoot, () => ValidateOptionalOutputRoot(paths.OutputRootPath),
+            "Output root");
 
         AddBasePathSafetyDiagnostics(baseRomFs, baseExeFs);
         AddOutputRootSafetyDiagnostics(outputRoot, baseRomFs, baseExeFs);
@@ -115,7 +127,7 @@ public sealed class ProjectValidator
             saveFile.ToResult(),
             scarletVioletSupportFolder.ToResult(),
             pokemonLegendsZASupportFolder.ToResult(),
-        }.Concat(paths.SelectedGame == ProjectGame.PLA ? new[] { ValidatePlaSupport(paths.PokemonLegendsArceusSupportFolderPath).ToResult() } : []).ToArray();
+        }.Concat(plaSupportFolder is not null ? new[] { plaSupportFolder.ToResult() } : []).ToArray();
         var diagnostics = pathResults.SelectMany(result => result.Diagnostics).ToArray();
         var state = ResolveHealthState(baseRomFs, baseExeFs, outputRoot, scarletVioletSupportFolder, pokemonLegendsZASupportFolder);
         var graph = CreateFileGraphSummary(

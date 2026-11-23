@@ -21,6 +21,8 @@ import { BetaEditorsSettings } from './features/settings/BetaEditorsSettings';
 import './components/advancedEditorWorkspace.css';
 import './components/editorWorkspaceProperties.css';
 import './components/editorSpecializedWorkspaces.css';
+import './features/project-setup/projectSetup.css';
+import './features/pokemon/pokemonDetailSections.css';
 import './features/type-chart/typeChartTheme.css';
 import { handleRowClipboardShortcut } from './authoring/rowClipboardShortcuts';
 import { buildZaTrainerChangeUpdates, trainerAiFlagEnabled, toggleTrainerAiFlag } from './features/trainers/trainerAiFlags';
@@ -31,6 +33,7 @@ import {
   AlertTriangle,
   ArrowDown,
   ArrowLeftRight,
+  ArrowRight,
   ArrowUp,
   CheckCircle,
   ChevronDown,
@@ -327,7 +330,7 @@ import {
   toDesktopErrorDiagnostics,
   toProjectBridgeDiagnostics
 } from './uiErrorDiagnostics';
-import { formatDiagnosticMessage } from './diagnostics';
+import { formatDiagnosticMessage, formatDiagnosticSummary } from './diagnostics';
 import {
   clearLegacyProjectPathDraft,
   clearLegacyValidatedProjectPathCache,
@@ -1409,6 +1412,11 @@ const pathStatusLabels = {
   valid: 'Valid',
   wrongKind: 'Wrong kind'
 } as const;
+
+type ProjectSetupValidation = {
+  checking: ProjectPathRole | null;
+  completed: ProjectPathRole[];
+};
 
 const applyProgressStepIndex = {
   verifying: 1,
@@ -3175,6 +3183,7 @@ export function App({
   const activeSectionLabel = t(getWorkbenchSectionLabelKey(activeSection));
   const activeWikiUrl = getSectionWikiUrl(activeSection, selectedGame);
   const [isProjectScopeTransitioning, setIsProjectScopeTransitioning] = useState(false);
+  const [projectSetupValidation, setProjectSetupValidation] = useState<ProjectSetupValidation | null>(null);
   const isBusy =
     projectStatus === 'opening' ||
     projectStatus === 'validating' ||
@@ -8668,10 +8677,36 @@ export function App({
       projectScopeGenerationRef.current += 1;
       setProjectStatus('validating');
       setBridgeDiagnostics([]);
+      setProjectSetupValidation({ checking: null, completed: [] });
 
       try {
         const paths = createProjectPaths(draftPaths);
-        const response = await bridge.validateProject({ paths });
+        const showPathHighlights = document.documentElement.dataset.kmMotion !== 'reduce'
+          && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        let progressUpdates = Promise.resolve();
+        const response = await bridge.validateProject({ paths }, ({ role, completed }) => {
+          const showUpdate = () => {
+            if (projectValidationRunRef.current !== runId) return;
+            setProjectSetupValidation((previous) => {
+              if (!previous) return previous;
+              return completed
+                ? { checking: null, completed: [...previous.completed, role] }
+                : { ...previous, checking: role };
+            });
+          };
+          if (!showPathHighlights) {
+            showUpdate();
+            return;
+          }
+          progressUpdates = progressUpdates.then(async () => {
+            showUpdate();
+            if (!completed || role === 'outputRoot') {
+              // Fast checks can finish together. Show each active row and the final progress value.
+              await new Promise<void>((resolve) => window.setTimeout(resolve, 75));
+            }
+          });
+        });
+        await progressUpdates;
         if (projectValidationRunRef.current !== runId) {
           return;
         }
@@ -8708,6 +8743,8 @@ export function App({
           return;
         }
         setBridgeDiagnostics(toBridgeDiagnostics(error));
+      } finally {
+        if (projectValidationRunRef.current === runId) setProjectSetupValidation(null);
       }
     } finally {
       finishProjectScopeTransition(transition);
@@ -20340,7 +20377,7 @@ export function App({
           data-editor-workspace={['workflow', 'hidden'].includes(
             getWorkbenchCapabilityRegistration(activeSection).navigationKind
           ) ? '' : undefined}
-          inert={isProjectScopeTransitioning ? true : undefined}
+          inert={isProjectScopeTransitioning && activeSection !== 'health' ? true : undefined}
         >
           <EditorLayoutScope.Provider value={JSON.stringify([activeProjectId, selectedGame])}>
           <Fragment
@@ -20351,7 +20388,6 @@ export function App({
               draftPaths={draftPaths}
               health={health}
               isDesktopAvailable={desktopServices.isAvailable}
-              bridgeDiagnostics={bridgeDiagnostics}
               isBusy={isBusy || hasCriticalWriteOperation}
               isOutputRootCreating={isOutputRootCreating}
               hasSvCacheRequestError={currentSvCacheRequestError}
@@ -20388,6 +20424,7 @@ export function App({
               projectStatus={projectStatus}
               selectedGame={selectedGame}
               svCacheStatus={currentSvCacheStatus}
+              validation={projectSetupValidation}
             />
           ) : null}
           <div className="km-retained-workbench" hidden={activeSection !== 'workbench'}>
@@ -22169,7 +22206,10 @@ export function App({
             />
           ) : null}
           <CommonBottomDiagnosticsSection
-            diagnostics={bottomDiagnostics}
+            compact={activeSection === 'health'}
+            diagnostics={activeSection === 'health' && health
+              ? deduplicateDiagnostics([...bottomDiagnostics, ...health.diagnostics])
+              : bottomDiagnostics}
             showProjectSetupConfirmations={activeSection === 'health'}
           />
           {personalWorkspaceError && activeSection === 'workbench' ? (
@@ -22469,7 +22509,6 @@ function WorkflowLoadingPanel({ label }: { label: string }) {
 }
 
 function HealthSection({
-  bridgeDiagnostics,
   draftPaths,
   hasSvCacheRequestError,
   hasSvCacheWarmupError,
@@ -22492,9 +22531,9 @@ function HealthSection({
   projectRelocationAction,
   projectStatus,
   selectedGame,
-  svCacheStatus
+  svCacheStatus,
+  validation
 }: {
-  bridgeDiagnostics: ApiDiagnostic[];
   draftPaths: ProjectPathDraft;
   hasSvCacheRequestError: boolean;
   hasSvCacheWarmupError: boolean;
@@ -22518,19 +22557,30 @@ function HealthSection({
   projectStatus: 'idle' | 'validating' | 'opening' | 'open';
   selectedGame: ProjectGame;
   svCacheStatus: TrinityCacheStatus | null;
+  validation: ProjectSetupValidation | null;
 }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const outputRootPath = draftPaths.outputRootPath.trim();
   const gameDefinition = gameDefinitions[selectedGame];
   const GameIcon = gameDefinition.icon;
-  const visiblePathFields = pathFields.filter((pathField) =>
-    isProjectPathFieldVisible(pathField, selectedGame)
-  );
+  const visiblePathFields = pathFields.filter((field) => isProjectPathFieldVisible(field, selectedGame));
+  const supportField = visiblePathFields.find((field) => field.scope);
+  const baseFields = visiblePathFields.filter((field) => field.role === 'baseRomFs' || field.role === 'baseExeFs');
+  const saveField = visiblePathFields.find((field) => field.role === 'saveFile');
+  const outputField = visiblePathFields.find((field) => field.role === 'outputRoot');
+  const isValidating = projectStatus === 'validating' || validation !== null;
+  const completedCount = validation?.completed.length ?? 0;
+  const activeField = visiblePathFields.find((field) => field.role === validation?.checking);
+  const validationMessage = activeField
+    ? t('projectPaths.progress.checking', { field: translateLiteral(activeField.label) })
+    : completedCount === visiblePathFields.length
+      ? t('projectPaths.progress.finishing')
+      : t('settings.cache.status.validatingPaths');
   const canShowSvCacheProgress = isProjectCacheGame(selectedGame);
-  const cacheSourceState: CacheProgressSourceState = !health
-    ? projectStatus === 'validating' || projectStatus === 'opening'
-      ? 'validating'
-      : 'unvalidated'
+  const cacheSourceState: CacheProgressSourceState = isValidating || projectStatus === 'opening'
+    ? 'validating'
+    : !health
+      ? 'unvalidated'
     : hasSvCacheRequestError
       ? 'error'
       : hasValidProjectCacheSource(selectedGame, health)
@@ -22540,28 +22590,84 @@ function HealthSection({
     ? t('settings.cache.swsh.title')
     : getTrinityCacheTitle(selectedGame);
 
-  return (
-    <>
-      <section aria-labelledby="project-gate-heading" className="panel project-gate">
-        <div className="panel-heading">
-          <FolderOpen aria-hidden="true" size={18} />
-          <h2 className="context-help-heading" id="project-gate-heading">
-            <span>Project Paths</span>
-            <ContextHelp label="Project Paths">{t('projectPaths.help.statuses')}</ContextHelp>
-          </h2>
-        </div>
+  const renderPath = (field: ProjectPathField) => {
+    const result = health?.paths.find((path) => path.role === field.role);
+    const issue = result?.diagnostics.find(({ severity }) => severity === 'error')
+      ?? result?.diagnostics.find(({ severity }) => severity === 'warning');
+    const inputId = `${field.field}-input`;
+    const statusId = `${field.field}-status`;
+    const issueId = `${field.field}-issue`;
+    const label = translateLiteral(field.label);
+    const value = draftPaths[field.field];
+    const checking = validation?.checking === field.role;
+    const checked = validation?.completed.includes(field.role);
+    const hasIssue = Boolean(issue);
+    const StatusIcon = checking ? Search : hasIssue ? AlertTriangle
+      : result?.status === 'valid' ? CheckCircle : null;
+    const statusClass = result?.status === 'notSet' && !hasIssue
+      ? 'path-status path-status-muted'
+      : getPathStatusClassName(result);
+    const statusLabel = checking
+      ? translateLiteral('Checking')
+      : translateLiteral(result ? pathStatusLabels[result.status] : 'Not checked');
 
-        <div className="selected-game-banner">
-          <div className="selected-game-label">
-            <GameIcon aria-hidden="true" size={22} />
-            <span>{gameDefinition.title}</span>
+    return (
+      <div className="project-setup-path path-field" data-checking={checking || undefined}
+        data-checked={checked || undefined} key={field.role}>
+        <div className="project-setup-path-heading">
+          <FieldLabel help={t(field.helpKey)} htmlFor={inputId} label={label} />
+          <small className={statusClass} id={statusId}>
+            {StatusIcon ? <StatusIcon aria-hidden="true" size={13} /> : null}
+            {statusLabel}
+          </small>
+        </div>
+        <div className="path-input-row">
+          <input
+            aria-describedby={hasIssue ? `${statusId} ${issueId}` : statusId}
+            aria-invalid={issue?.severity === 'error' || undefined}
+            disabled={isBusy}
+            id={inputId}
+            onChange={(event) => onSetDraftPath(field.field, event.target.value)}
+            placeholder={translateLiteral('Not set')}
+            title={value || undefined}
+            value={value}
+          />
+          <button
+            aria-label={t('projectPaths.browseFor', { field: label })}
+            className="secondary-button icon-button"
+            disabled={!isDesktopAvailable || isBusy}
+            onClick={() => onPickProjectPath(field)}
+            title={t('projectPaths.browseFor', { field: label })}
+            type="button"
+          >
+            {field.kind === 'file' ? <Save aria-hidden="true" size={16} /> : <FolderOpen aria-hidden="true" size={16} />}
+          </button>
+        </div>
+        {issue ? <p className="project-setup-path-issue" data-severity={issue.severity} id={issueId}>
+          {formatDiagnosticSummary(issue, translateLiteral, t)}
+        </p> : null}
+      </div>
+    );
+  };
+
+  return (
+      <section aria-labelledby="project-gate-heading" className="panel project-gate project-setup">
+        <header className="project-setup-header">
+          <div className="project-setup-identity">
+            <h2 className="context-help-heading" id="project-gate-heading">
+              <FolderOpen aria-hidden="true" size={18} />
+              <span>{t('workbench.section.health.label')}</span>
+              <ContextHelp label={t('workbench.section.health.label')}>{t('projectPaths.help.statuses')}</ContextHelp>
+            </h2>
+            <div className="project-setup-game">
+              <GameIcon aria-hidden="true" size={18} />
+              <strong>{translateLiteral(gameDefinition.label)}</strong>
+              <span className="context-help-heading">
+                <code>{gameDefinition.titleId}</code>
+                <ContextHelp label={t('projectPaths.titleIdLabel')}>{t('projectPaths.help.titleId')}</ContextHelp>
+              </span>
+            </div>
           </div>
-          <span className="context-help-heading">
-            <code>{gameDefinition.titleId}</code>
-            <ContextHelp label={t('projectPaths.titleIdLabel')}>
-              {t('projectPaths.help.titleId')}
-            </ContextHelp>
-          </span>
           <button
             className="secondary-button"
             disabled={isBusy || pendingEditCount > 0}
@@ -22571,119 +22677,87 @@ function HealthSection({
             <ArrowLeftRight aria-hidden="true" size={18} />
             <span>Change Game</span>
           </button>
-        </div>
+        </header>
 
-        <div className="path-form">
-          {visiblePathFields.map((pathField) => {
-            const pathValidation = health?.paths.find((path) => path.role === pathField.role);
-            const inputId = `${pathField.field}-input`;
-
-            return (
-              <div className="path-field" key={pathField.field}>
-                <FieldLabel
-                  help={t(pathField.helpKey)}
-                  htmlFor={inputId}
-                  label={pathField.label}
-                />
-                <div className="path-input-row">
-                  <input
-                    aria-describedby={`${pathField.field}-status`}
-                    disabled={isBusy}
-                    id={inputId}
-                    onChange={(event) => onSetDraftPath(pathField.field, event.target.value)}
-                    placeholder="Not set"
-                    value={draftPaths[pathField.field]}
-                  />
-                  <button
-                    aria-label={`Browse for ${pathField.label}`}
-                    className="secondary-button icon-button"
-                    disabled={!isDesktopAvailable || isBusy}
-                    onClick={() => onPickProjectPath(pathField)}
-                    title={`Browse for ${pathField.label}`}
-                    type="button"
-                  >
-                    {pathField.kind === 'file' ? (
-                      <Save aria-hidden="true" size={18} />
-                    ) : (
-                      <FolderOpen aria-hidden="true" size={18} />
-                    )}
-                  </button>
-                </div>
-                <small
-                  className={getPathStatusClassName(pathValidation)}
-                  id={`${pathField.field}-status`}
+        <div className="project-setup-columns">
+          <section aria-labelledby="project-setup-sources" className="project-setup-column">
+            <h3 id="project-setup-sources"><Layers aria-hidden="true" size={16} />{translateLiteral('Source files')}</h3>
+            {baseFields.map(renderPath)}
+            {supportField ? (
+              <div className="project-setup-support">
+                {renderPath(supportField)}
+                <button
+                  aria-busy={isSupportSearchRunning || undefined}
+                  className="secondary-button project-setup-find"
+                  disabled={!isDesktopAvailable || isBusy || isSupportSearchRunning}
+                  onClick={onRequestSupportSearch}
+                  title="Search local drives for oo2core_8_win64.dll and fill the folder."
+                  type="button"
                 >
-                  {pathValidation ? pathStatusLabels[pathValidation.status] : 'Not checked'}
-                </small>
+                  <BusyActionContent
+                    busyLabel="Finding oo2core_8_win64.dll"
+                    icon={<Search aria-hidden="true" size={16} />}
+                    isBusy={isSupportSearchRunning}
+                    label="Find oo2core_8_win64.dll"
+                    size={16}
+                  />
+                </button>
               </div>
-            );
-          })}
+            ) : null}
+            {saveField ? renderPath(saveField) : null}
+          </section>
+
+          <section aria-labelledby="project-setup-output" className="project-setup-column">
+            <h3 id="project-setup-output"><Package aria-hidden="true" size={16} />{t('projectPaths.outputHeading')}</h3>
+            {outputField ? renderPath(outputField) : null}
+            <div className="project-setup-output-actions">
+              <button
+                className="secondary-button"
+                disabled={!isDesktopAvailable || isBusy || outputRootPath.length === 0}
+                onClick={onOpenOutputRoot}
+                type="button"
+              >
+                <ExternalLink aria-hidden="true" size={16} />
+                <span>Open Output Root</span>
+              </button>
+              <button
+                aria-busy={isOutputRootCreating || undefined}
+                className="secondary-button"
+                disabled={!isDesktopAvailable || isBusy || isOutputRootCreating || outputRootPath.length > 0}
+                onClick={onCreateOutputRootFolder}
+                type="button"
+              >
+                <BusyActionContent
+                  busyLabel="Creating Output Root Folder"
+                  icon={<Plus aria-hidden="true" size={16} />}
+                  isBusy={isOutputRootCreating}
+                  label="Create Output Root Folder"
+                  size={16}
+                />
+              </button>
+              {projectRelocationAction}
+            </div>
+          </section>
         </div>
 
-        <div className="action-row">
+        <div className="project-setup-validation">
           <button
-            aria-busy={(projectStatus === 'validating') || undefined}
-            className="secondary-button"
+            aria-busy={isValidating || undefined}
+            className="primary-button"
             disabled={isBusy}
             onClick={onValidateProject}
             type="button"
           >
-            <BusyActionContent
-              busyLabel="Validating"
-              icon={<RefreshCw aria-hidden="true" size={18} />}
-              isBusy={projectStatus === 'validating'}
-              label="Validate Paths"
-              size={18}
-            />
+            <ClipboardCheck aria-hidden="true" size={18} />
+            <span>Validate Paths</span>
           </button>
-          <button
-            className="secondary-button"
-            disabled={!isDesktopAvailable || isBusy || outputRootPath.length === 0}
-            onClick={onOpenOutputRoot}
-            type="button"
-          >
-            <ExternalLink aria-hidden="true" size={18} />
-            <span>Open Output Root</span>
-          </button>
-          {projectRelocationAction}
-          <button
-            aria-busy={isOutputRootCreating || undefined}
-            className="secondary-button"
-            disabled={
-              !isDesktopAvailable ||
-              isBusy ||
-              isOutputRootCreating ||
-              outputRootPath.length > 0
-            }
-            onClick={onCreateOutputRootFolder}
-            type="button"
-          >
-            <BusyActionContent
-              busyLabel="Creating Output Root Folder"
-              icon={<Plus aria-hidden="true" size={18} />}
-              isBusy={isOutputRootCreating}
-              label="Create Output Root Folder"
-              size={18}
-            />
-          </button>
-          {isTrinityCacheGame(selectedGame) || selectedGame === 'pla' ? (
-            <button
-              aria-busy={isSupportSearchRunning || undefined}
-              className="secondary-button"
-              disabled={!isDesktopAvailable || isBusy || isSupportSearchRunning}
-              onClick={onRequestSupportSearch}
-              title="Search local drives for oo2core_8_win64.dll and fill the folder."
-              type="button"
-            >
-              <BusyActionContent
-                busyLabel="Finding oo2core_8_win64.dll"
-                icon={<Search aria-hidden="true" size={18} />}
-                isBusy={isSupportSearchRunning}
-                label="Find oo2core_8_win64.dll"
-                size={18}
-              />
-            </button>
-          ) : null}
+          <div className="project-setup-validation-progress" aria-live="polite" data-active={isValidating}>
+            {isValidating ? <>
+              <span>{validationMessage}</span>
+              <progress aria-label={translateLiteral('Validation')} max={visiblePathFields.length}
+                value={validation ? completedCount : undefined} />
+            </> : null}
+          </div>
         </div>
 
         {canShowSvCacheProgress ? (
@@ -22699,9 +22773,6 @@ function HealthSection({
           />
         ) : null}
       </section>
-
-      <DiagnosticsSection diagnostics={[...bridgeDiagnostics, ...(health?.diagnostics ?? [])]} />
-    </>
   );
 }
 
@@ -22796,14 +22867,27 @@ function SvCacheProgressPanel({
             ? `Persistent ${cacheTitle} warmup is off in Minimal mode.`
             : effectiveStatus!.message;
 
-  const running = isRetrying || isChecking || isValidatingPaths || (isWarming && !isWarmupPaused && !isError);
-  const measured = !isMinimal && effectiveStatus !== null && !isAwaitingValidation && !isValidatingPaths;
+  const measured = !isMinimal && effectiveStatus !== null && totalUnitCount > 0;
+  const sizeLabel = effectiveStatus ? formatCacheSizeLabel(
+    effectiveStatus.cacheSizeBytes, formatLocale, t('settings.cache.size.none'), translateLiteral('Unavailable')
+  ) : null;
+  const statusLabel = translateLiteral(isRetrying
+    ? isWarmupPaused ? 'Retrying cache build' : 'Retrying cache check'
+    : phaseLabel);
   return (
-    <LoadingProgress className="sv-cache-progress-panel" label={cacheTitle}
-      status={running ? 'running' : isError ? 'error' : isWarmupPaused ? 'paused' : isReady && !isMinimal ? 'complete' : 'idle'}
-      statusLabel={translateLiteral(isRetrying ? isWarmupPaused ? 'Retrying cache build' : 'Retrying cache check' : phaseLabel)}
-      detail={translateLiteral(message)}
-      completed={measured ? completedUnitCount : undefined} total={measured ? totalUnitCount : undefined}>
+    <details className="project-setup-disclosure">
+      <summary>
+        <Layers aria-hidden="true" size={16} />
+        <strong>{cacheTitle}</strong>
+        <span className="project-setup-cache-state">{statusLabel}</span>
+        {measured ? <span>{percent}%</span> : null}
+        {sizeLabel ? <span>{sizeLabel}</span> : null}
+        <ChevronDown aria-hidden="true" size={16} />
+      </summary>
+      <div className="project-setup-cache-detail">
+      <p>{translateLiteral(message)}</p>
+      {measured ? <progress aria-label={translateLiteral('Progress')} max={totalUnitCount}
+        value={completedUnitCount} /> : null}
       <dl className="work-progress-detail">
         <div>
           <dt>Mode</dt>
@@ -22844,14 +22928,7 @@ function SvCacheProgressPanel({
         <div>
           <dt>{t('settings.cache.size.label')}</dt>
           <dd>
-            {effectiveStatus
-              ? formatCacheSizeLabel(
-                  effectiveStatus.cacheSizeBytes,
-                  formatLocale,
-                  t('settings.cache.size.none'),
-                  translateLiteral('Unavailable')
-                )
-              : translateLiteral('Unavailable')}
+            {sizeLabel ?? translateLiteral('Unavailable')}
           </dd>
         </div>
       </dl>
@@ -22874,7 +22951,8 @@ function SvCacheProgressPanel({
           </button>
         </div>
       ) : null}
-    </LoadingProgress>
+      </div>
+    </details>
   );
 }
 
@@ -24516,6 +24594,7 @@ function ZaPokemonDexPlacementEditor({
   dexEditor,
   draft,
   editSessionActive,
+  hasStagedPlacement,
   isPokemonUpdating,
   onDraftChange,
   onStageSwap,
@@ -24525,6 +24604,7 @@ function ZaPokemonDexPlacementEditor({
   dexEditor: PokemonDexEditor;
   draft: ZaPokemonDexSwapDraftSnapshot | null;
   editSessionActive: boolean;
+  hasStagedPlacement: boolean;
   isPokemonUpdating: boolean;
   onDraftChange: (draft: ZaPokemonDexSwapDraftSnapshot | null) => void;
   onStageSwap?: (
@@ -24535,6 +24615,10 @@ function ZaPokemonDexPlacementEditor({
   pokemon: PokemonRecord;
 }) {
   const { t, translateLiteral } = useLocalization();
+  const [lastStagedSwap, setLastStagedSwap] = useState<{
+    source: PokemonDexPlacement;
+    target: PokemonDexPlacement;
+  } | null>(null);
   const currentPlacement =
     dexEditor.placements.find((placement) => placement.speciesId === pokemon.speciesId) ?? null;
   const defaultDestinationDexKind: PokemonDexPlacement['dexKind'] =
@@ -24564,12 +24648,15 @@ function ZaPokemonDexPlacementEditor({
           }
     );
   };
-  const formatPlacementLabel = useCallback(
-    (placement: PokemonDexPlacement) =>
+  const formatSlot = useCallback((placement: PokemonDexPlacement) =>
       `${translateLiteral(formatPokemonDexKind(placement.dexKind))} #${formatPokemonDexNumber(
         placement.displayedNumber
-      )} - ${placement.label}`,
+      )}`,
     [translateLiteral]
+  );
+  const formatPlacementLabel = useCallback(
+    (placement: PokemonDexPlacement) => `${formatSlot(placement)} · ${placement.label}`,
+    [formatSlot]
   );
 
   useEffect(() => {
@@ -24616,19 +24703,19 @@ function ZaPokemonDexPlacementEditor({
     currentPlacement !== null &&
     targetPlacement !== null &&
     targetPlacement.speciesId !== currentPlacement.speciesId;
+  const occupies = (species: PokemonDexPlacement, slot: PokemonDexPlacement) =>
+    dexEditor.placements.some(placement => placement.speciesId === species.speciesId
+      && placement.dexKind === slot.dexKind && placement.displayedNumber === slot.displayedNumber);
+  const stagedSwap = hasStagedPlacement && lastStagedSwap?.source.speciesId === pokemon.speciesId
+    && occupies(lastStagedSwap.source, lastStagedSwap.target) && occupies(lastStagedSwap.target, lastStagedSwap.source)
+    ? lastStagedSwap : null;
+  const preview = currentPlacement && targetPlacement ? { source: currentPlacement, target: targetPlacement } : null;
+  const displayedSwap = preview ?? stagedSwap;
 
   return (
-    <div className="inspector-block za-pokemon-dex-placement-block">
-      <div className="za-pokemon-dex-placement-heading">
-        <div>
-          <h4>{translateLiteral('Pokédex Placement')}</h4>
-          <p>
-            {translateLiteral(
-              'Swap occupied slots so Pokédex numbers stay unique and both Pokédexes remain complete.'
-            )}
-          </p>
-        </div>
-        <ArrowLeftRight aria-hidden="true" size={18} />
+    <div className="inspector-block za-pokemon-dex-placement-block pokemon-detail-panel">
+      <div className="pokemon-detail-heading">
+        <h4>{translateLiteral('Pokédex Placement')}</h4>
       </div>
 
       {!dexEditor.canEdit ? (
@@ -24643,17 +24730,11 @@ function ZaPokemonDexPlacementEditor({
         </div>
       ) : currentPlacement ? (
         <>
-          <dl className="za-pokemon-dex-current">
-            <div>
+          <div className="pokemon-detail-fields pokemon-dex-fields">
+            <dl className="pokemon-detail-reference">
               <dt>{translateLiteral('Current placement')}</dt>
-              <dd>
-                {translateLiteral(formatPokemonDexKind(currentPlacement.dexKind))}{' '}
-                #{formatPokemonDexNumber(currentPlacement.displayedNumber)}
-              </dd>
-            </div>
-          </dl>
-
-          <div className="za-pokemon-dex-swap-controls">
+              <dd>{formatSlot(currentPlacement)}</dd>
+            </dl>
             <div className="path-field">
               <FieldLabel
                 help={t('fieldHelp.catalog.pokemon.dexDestination')}
@@ -24663,7 +24744,7 @@ function ZaPokemonDexPlacementEditor({
               <SearchableOptionInput
                 ariaLabel={translateLiteral('Destination Pokédex')}
                 data-km-source-site="za-pokemon-destination-dex-option"
-                disabled={!editSessionActive || !canEditPokemon || !dexEditor.canEdit}
+                disabled={!editSessionActive || !canEditPokemon || !dexEditor.canEdit || isPokemonUpdating}
                 id="za-pokemon-destination-dex"
                 isFiniteCatalog
                 localizeOptions={false}
@@ -24699,7 +24780,7 @@ function ZaPokemonDexPlacementEditor({
               />
               <SearchableOptionInput
                 ariaLabel={translateLiteral('Occupied destination slot')}
-                disabled={!editSessionActive || !canEditPokemon || !dexEditor.canEdit}
+                disabled={!editSessionActive || !canEditPokemon || !dexEditor.canEdit || isPokemonUpdating}
                 emptyOptionLabel="Choose a Pokédex slot"
                 id="za-pokemon-destination-slot"
                 onChange={(value) => {
@@ -24713,29 +24794,7 @@ function ZaPokemonDexPlacementEditor({
             </div>
           </div>
 
-          {targetPlacement ? (
-            <div className="za-pokemon-dex-swap-preview" role="status">
-              <strong>{translateLiteral('Swap preview')}</strong>
-              <span>
-                <span data-localization-ignore="true">
-                  {formatPlacementLabel(currentPlacement)}
-                </span>{' '}
-                →{' '}
-                {translateLiteral(formatPokemonDexKind(targetPlacement.dexKind))} #
-                {formatPokemonDexNumber(targetPlacement.displayedNumber)}
-              </span>
-              <span>
-                <span data-localization-ignore="true">
-                  {formatPlacementLabel(targetPlacement)}
-                </span>{' '}
-                →{' '}
-                {translateLiteral(formatPokemonDexKind(currentPlacement.dexKind))} #
-                {formatPokemonDexNumber(currentPlacement.displayedNumber)}
-              </span>
-            </div>
-          ) : null}
-
-          <div className="draft-action-row">
+          <div className="draft-action-row pokemon-detail-actions">
             <button
               aria-busy={isPokemonUpdating || undefined}
               className="primary-button"
@@ -24759,6 +24818,7 @@ function ZaPokemonDexPlacementEditor({
                     isSubmittedDraftCurrent
                   );
                   if (didStage && isSubmittedDraftCurrent()) {
+                    setLastStagedSwap({ source: currentPlacement, target: targetPlacement });
                     onDraftChange(null);
                   }
                 }
@@ -24778,6 +24838,20 @@ function ZaPokemonDexPlacementEditor({
               </span>
             ) : null}
           </div>
+          {displayedSwap ? (
+            <div className="pokemon-dex-preview" role="status">
+              <strong>{preview ? translateLiteral('Swap preview') : t('pokemon.dexSwapStaged')}</strong>
+              <dl>
+                {[[displayedSwap.source, displayedSwap.target], [displayedSwap.target, displayedSwap.source]]
+                  .map(([occupant, slot]) => (
+                    <div key={occupant.speciesId}>
+                      <dt data-localization-ignore="true">{occupant.label}</dt>
+                      <dd><span>{formatSlot(occupant)}</span><ArrowRight size={14} aria-hidden="true" /><span>{formatSlot(slot)}</span></dd>
+                    </div>
+                  ))}
+              </dl>
+            </div>
+          ) : null}
         </>
       ) : (
         <p className="empty-copy">
@@ -24980,6 +25054,10 @@ function SelectedPokemonPanel({
     [editableFields, pokemon]
   );
   const alphaMove = editorFamily === 'za' ? pokemon?.alphaMove ?? null : null;
+  const alphaMoveOptions = useMemo(
+    () => alphaMove?.options.map(({ value, label }) => ({ value, label: formatPokemonAlphaMove(value, label) })) ?? [],
+    [alphaMove?.options]
+  );
   const alphaMoveDraftKey = pokemon
     ? `${pokemon.speciesId.toString()}:${pokemon.form.toString()}`
     : '';
@@ -25015,6 +25093,10 @@ function SelectedPokemonPanel({
   const pokemonDraftRecordKey = pokemon?.personalId.toString() ?? null;
   const learnsetStageSource = useRef<{ scope: string; rows: PokemonLearnsetMove[]; evolutions: PokemonEvolutionRecord[] } | null>(null);
   const [isEvolutionStagePending, setIsEvolutionStagePending] = useState(false);
+  const [evolutionDisclosure, setEvolutionDisclosure] = useState<{
+    personalId: number;
+    row: number | 'new';
+  } | null>(null);
   const learnsetScope = JSON.stringify([ordinaryDraftProject, pokemon?.personalId]);
   const learnsetProject = JSON.stringify(ordinaryDraftProject);
   const latestLearnsetProject = useRef(learnsetProject);
@@ -26527,6 +26609,416 @@ function SelectedPokemonPanel({
   const hasNewEvolutionDraft = pokemonDraftRecordKey !== null && !!newEvolutionDraftsByPokemonId[pokemonDraftRecordKey];
   const hasNewLearnsetDraft = pokemonDraftRecordKey !== null && !!newLearnsetDraftsByPokemonId[pokemonDraftRecordKey];
 
+  const openEvolution = evolutionDisclosure?.personalId === pokemon?.personalId ? evolutionDisclosure?.row : undefined;
+  const evolutionEditorId = 'pokemon-evolution-row-editor';
+  const newEvolutionEditorId = 'pokemon-evolution-new-editor';
+  const expandedEvolutionEditor = pokemon && selectedEvolution && openEvolution === selectedEvolution.slot ? (
+    <div className="evolution-disclosure" id={evolutionEditorId}>
+      <div className="path-field">
+        <FieldLabel
+          help={t('fieldHelp.catalog.pokemon.evolutionMethod')}
+          htmlFor="pokemon-evolution-method"
+          label={translateLiteral('Method')}
+        />
+        <SearchableOptionInput
+          wrapSelectedValue
+          ariaLabel={translateLiteral('Method')}
+          disabled={!canEditEvolutionFields}
+          id="pokemon-evolution-method"
+          onChange={(nextMethod) => {
+            const nextOption = findEvolutionMethodOption(
+              selectedEvolutionMethodOptions,
+              nextMethod
+            );
+            const nextArgument = getDefaultEvolutionArgumentDraft(nextOption);
+            setEvolutionMethodDraft(nextMethod);
+            setEvolutionArgumentDraft(nextArgument);
+            if (nextOption?.usesLevel === false) {
+              setEvolutionLevelDraft('0');
+            }
+            updateSelectedEvolutionDraft({
+              argument: nextArgument,
+              ...(nextOption?.usesLevel === false ? { level: '0' } : {}),
+              method: nextMethod
+            });
+          }}
+          options={selectedEvolutionMethodOptions}
+          value={evolutionMethodDraft}
+        />
+      </div>
+      {usesSeparateEvolutionArgument(selectedEvolutionMethodOption) ? (
+        <div className="path-field">
+          <FieldLabel
+            help={t('fieldHelp.catalog.pokemon.evolutionArgument')}
+            htmlFor="pokemon-evolution-argument"
+            label={translateLiteral(selectedEvolutionMethodOption?.argumentLabel ?? 'Argument')}
+          />
+          {selectedEvolutionMethodOption?.argumentOptions.length ? (
+            <SearchableOptionInput
+              wrapSelectedValue
+              ariaLabel={translateLiteral(
+                selectedEvolutionMethodOption.argumentLabel
+              )}
+              disabled={!canEditEvolutionFields}
+              id="pokemon-evolution-argument"
+              localizeOptions={!evolutionArgumentUsesGameText(selectedEvolutionMethodOption.argumentKind)}
+              onChange={(value) => {
+                setEvolutionArgumentDraft(value);
+                updateSelectedEvolutionDraft({ argument: value });
+              }}
+              options={selectedEvolutionArgumentOptions}
+              value={evolutionArgumentDraft}
+            />
+          ) : (
+            <input
+              disabled={!canEditEvolutionFields}
+              id="pokemon-evolution-argument"
+              max={65535}
+              min={0}
+              onChange={(event) => {
+                setEvolutionArgumentDraft(event.target.value);
+                updateSelectedEvolutionDraft({ argument: event.target.value });
+              }}
+              type="number"
+              value={evolutionArgumentDraft}
+            />
+          )}
+        </div>
+      ) : selectedEvolutionMethodOption ? (
+        <EvolutionStoredArgument value={evolutionArgumentDraft} />
+      ) : null}
+      <div className="path-field">
+        <FieldLabel
+          help={t('fieldHelp.catalog.pokemon.evolutionTargetSpecies')}
+          htmlFor="pokemon-evolution-species"
+          label={translateLiteral('Species')}
+        />
+        {pokemonSpeciesOptions.length > 0 ? (
+          <SearchableOptionInput
+            wrapSelectedValue
+            ariaLabel={translateLiteral('Species')}
+            disabled={!canEditEvolutionFields}
+            id="pokemon-evolution-species"
+            onChange={handleSelectedEvolutionSpeciesChange}
+            options={addCurrentPokemonFieldOption(
+              pokemonSpeciesOptions,
+              evolutionSpeciesDraft,
+              'Species',
+              pokemonSpeciesLabels
+            )}
+            value={evolutionSpeciesDraft}
+          />
+        ) : (
+          <input
+            disabled={!canEditEvolutionFields}
+            id="pokemon-evolution-species"
+            max={65535}
+            min={0}
+            onChange={(event) =>
+              handleSelectedEvolutionSpeciesChange(event.target.value)
+            }
+            type="number"
+            value={evolutionSpeciesDraft}
+          />
+        )}
+      </div>
+      <div className="path-field">
+        <FieldLabel
+          help={t('fieldHelp.catalog.pokemon.evolutionTargetForm')}
+          htmlFor="pokemon-evolution-form"
+          label={translateLiteral('Form')}
+        />
+        <SearchableOptionInput
+          wrapSelectedValue
+          ariaLabel={translateLiteral('Form')}
+          disabled={!canEditEvolutionFields}
+          id="pokemon-evolution-form"
+          onChange={(value) => {
+            setEvolutionFormDraft(value);
+            updateSelectedEvolutionDraft({ form: value });
+          }}
+          options={selectedEvolutionFormOptions}
+          value={evolutionFormDraft}
+        />
+      </div>
+      <div className="path-field">
+        <FieldLabel
+          help={`${t('fieldHelp.catalog.pokemon.evolutionLevel')}${
+            selectedEvolutionUsesLevel
+              ? ''
+              : ` ${t('za.pokemon.evolutions.levelIgnoredHelp')}`
+          }`}
+          htmlFor="pokemon-evolution-level"
+          label={
+            selectedEvolutionUsesLevel
+              ? translateLiteral('Level')
+              : t('za.pokemon.evolutions.levelNotUsed')
+          }
+        />
+        <input
+          disabled={!canEditEvolutionFields || !selectedEvolutionUsesLevel}
+          id="pokemon-evolution-level"
+          max={evolutionMaximumLevel}
+          min={0}
+          onChange={(event) => {
+            setEvolutionLevelDraft(event.target.value);
+            updateSelectedEvolutionDraft({ level: event.target.value });
+          }}
+          title={
+            selectedEvolutionUsesLevel
+              ? undefined
+              : t('za.pokemon.evolutions.levelIgnoredHelp')
+          }
+          type="number"
+          value={evolutionLevelDraft}
+        />
+      </div>
+      <div className="learnset-button-row">
+        <button
+          aria-busy={isPokemonUpdating || undefined}
+          className="primary-button"
+          disabled={!canSaveSelectedEvolution}
+          onClick={() => void saveSelectedEvolution()}
+          title="Save Changes"
+          type="button"
+        >
+          <BusyActionContent
+            busyLabel="Saving"
+            icon={<Save aria-hidden="true" size={16} />}
+            isBusy={isPokemonUpdating}
+            label="Save Changes"
+          />
+        </button>
+        <span
+          aria-live="polite"
+          className={`draft-action-summary evolution-draft-status ${
+            selectedEvolutionDraftStatus === 'Invalid'
+              ? 'editable-field-error'
+              : ''
+          }`}
+        >
+          {selectedEvolutionDraftStatus}
+        </span>
+        <button
+          aria-label="Move evolution row up"
+          className="secondary-button icon-button"
+          disabled={!canModifyEvolutionStructure || previousEvolutionSlot === null}
+          onClick={() => moveEvolutionRow(-1)}
+          title="Move evolution row up"
+          type="button"
+        >
+          <ArrowUp aria-hidden="true" size={16} />
+        </button>
+        <button
+          aria-label="Move evolution row down"
+          className="secondary-button icon-button"
+          disabled={
+            !canModifyEvolutionStructure || nextEvolutionSlot === null
+          }
+          onClick={() => moveEvolutionRow(1)}
+          title="Move evolution row down"
+          type="button"
+        >
+          <ArrowDown aria-hidden="true" size={16} />
+        </button>
+        <button
+          aria-label="Remove evolution row"
+          className="secondary-button icon-button danger-icon-button"
+          disabled={!canModifyEvolutionStructure}
+          onClick={() => {
+            if (!canModifyEvolutionStructure) return;
+            setEvolutionDisclosure(null);
+            setEvolutionDraftsByPokemonId(current => {
+              const drafts = { ...(current[pokemon.personalId] ?? {}) };
+              if (drafts[selectedEvolution.slot]?.action === 'add') delete drafts[selectedEvolution.slot];
+              else drafts[selectedEvolution.slot] = { ...createPokemonEvolutionDraftFields(selectedEvolution), action: 'remove' };
+              return replaceEvolutionDraftRecord(current, pokemon.personalId, orderEvolutionDraftRows(sourceEvolutionRows, drafts,
+                orderedEvolutions.filter(row => row.slot !== selectedEvolution.slot).map(row => row.slot)));
+            });
+          }}
+          title="Remove evolution row"
+          type="button"
+        >
+          <Trash2 aria-hidden="true" size={16} />
+        </button>
+      </div>
+    </div>
+  ) : null;
+  const expandedNewEvolutionEditor = pokemon && openEvolution === 'new' ? (
+    <div className="evolution-disclosure" id={newEvolutionEditorId}>
+      <div className="path-field">
+        <FieldLabel
+          help={t('fieldHelp.catalog.pokemon.evolutionMethod')}
+          htmlFor="pokemon-new-evolution-method"
+          label={translateLiteral('New method')}
+        />
+        <SearchableOptionInput
+          wrapSelectedValue
+          ariaLabel={translateLiteral('New method')}
+          disabled={!canEditEvolution}
+          id="pokemon-new-evolution-method"
+          onChange={(nextMethod) => {
+            const nextOption = findEvolutionMethodOption(
+              newEvolutionMethodOptions,
+              nextMethod
+            );
+            setNewEvolutionMethodDraft(nextMethod);
+            setNewEvolutionArgumentDraft(getDefaultEvolutionArgumentDraft(nextOption));
+            if (nextOption?.usesLevel === false) {
+              setNewEvolutionLevelDraft('0');
+            }
+          }}
+          options={newEvolutionMethodOptions}
+          value={newEvolutionMethodDraft}
+        />
+      </div>
+      {usesSeparateEvolutionArgument(newEvolutionMethodOption) ? (
+        <div className="path-field">
+          <FieldLabel
+            help={t('fieldHelp.catalog.pokemon.evolutionArgument')}
+            htmlFor="pokemon-new-evolution-argument"
+            label={translateLiteral(
+              newEvolutionMethodOption?.argumentLabel ?? 'New argument'
+            )}
+          />
+          {newEvolutionMethodOption?.argumentOptions.length ? (
+            <SearchableOptionInput
+              wrapSelectedValue
+              ariaLabel={translateLiteral(newEvolutionMethodOption.argumentLabel)}
+              disabled={!canEditEvolution}
+              id="pokemon-new-evolution-argument"
+              localizeOptions={!evolutionArgumentUsesGameText(newEvolutionMethodOption.argumentKind)}
+              onChange={setNewEvolutionArgumentDraft}
+              options={newEvolutionArgumentOptions}
+              value={newEvolutionArgumentDraft}
+            />
+          ) : (
+            <input
+              disabled={!canEditEvolution}
+              id="pokemon-new-evolution-argument"
+              max={65535}
+              min={0}
+              onChange={(event) => setNewEvolutionArgumentDraft(event.target.value)}
+              type="number"
+              value={newEvolutionArgumentDraft}
+            />
+          )}
+        </div>
+      ) : newEvolutionMethodOption ? (
+        <EvolutionStoredArgument value={newEvolutionArgumentDraft} />
+      ) : null}
+      <div className="path-field">
+        <FieldLabel
+          help={t('fieldHelp.catalog.pokemon.evolutionTargetSpecies')}
+          htmlFor="pokemon-new-evolution-species"
+          label={translateLiteral('New species')}
+        />
+        {pokemonSpeciesOptions.length > 0 ? (
+          <SearchableOptionInput
+            wrapSelectedValue
+            ariaLabel={translateLiteral('New species')}
+            disabled={!canEditEvolution}
+            id="pokemon-new-evolution-species"
+            onChange={handleNewEvolutionSpeciesChange}
+            options={addCurrentPokemonFieldOption(
+              pokemonSpeciesOptions,
+              newEvolutionSpeciesDraft,
+              'Species',
+              pokemonSpeciesLabels
+            )}
+            value={newEvolutionSpeciesDraft}
+          />
+        ) : (
+          <input
+            disabled={!canEditEvolution}
+            id="pokemon-new-evolution-species"
+            max={65535}
+            min={0}
+            onChange={(event) =>
+              handleNewEvolutionSpeciesChange(event.target.value)
+            }
+            type="number"
+            value={newEvolutionSpeciesDraft}
+          />
+        )}
+      </div>
+      <div className="path-field">
+        <FieldLabel
+          help={t('fieldHelp.catalog.pokemon.evolutionTargetForm')}
+          htmlFor="pokemon-new-evolution-form"
+          label={translateLiteral('New form')}
+        />
+        <SearchableOptionInput
+          wrapSelectedValue
+          ariaLabel={translateLiteral('New form')}
+          disabled={!canEditEvolution}
+          id="pokemon-new-evolution-form"
+          onChange={setNewEvolutionFormDraft}
+          options={newEvolutionFormOptions}
+          value={newEvolutionFormDraft}
+        />
+      </div>
+      <div className="path-field">
+        <FieldLabel
+          help={`${t('fieldHelp.catalog.pokemon.evolutionLevel')}${
+            newEvolutionUsesLevel
+              ? ''
+              : ` ${t('za.pokemon.evolutions.levelIgnoredHelp')}`
+          }`}
+          htmlFor="pokemon-new-evolution-level"
+          label={
+            newEvolutionUsesLevel
+              ? translateLiteral('New level')
+              : t('za.pokemon.evolutions.levelNotUsed')
+          }
+        />
+        <input
+          disabled={!canEditEvolution || !newEvolutionUsesLevel}
+          id="pokemon-new-evolution-level"
+          max={evolutionMaximumLevel}
+          min={0}
+          onChange={(event) => setNewEvolutionLevelDraft(event.target.value)}
+          title={
+            newEvolutionUsesLevel
+              ? undefined
+              : t('za.pokemon.evolutions.levelIgnoredHelp')
+          }
+          type="number"
+          value={newEvolutionLevelDraft}
+        />
+      </div>
+      <div className="learnset-button-row">
+        <button
+        aria-label="Add evolution row"
+        className="primary-button"
+        disabled={!canAddEvolution}
+        onClick={() => {
+          if (!canAddEvolution) return;
+          const slot = Math.max(-1, ...sourceEvolutionRows.map(row => row.slot), ...Object.keys(evolutionDraftsBySlot).map(Number)) + 1;
+          setEvolutionDraftsByPokemonId(current => {
+            const drafts = { ...(current[pokemon.personalId] ?? {}), [slot]: { ...newEvolutionCreationDraft, action: 'add' as const } };
+            return replaceEvolutionDraftRecord(current, pokemon.personalId, orderEvolutionDraftRows(sourceEvolutionRows, drafts,
+              [...orderedEvolutions.map(row => row.slot), slot]));
+          });
+          onSelectPokemonEvolution(slot);
+          setEvolutionDisclosure({ personalId: pokemon.personalId, row: slot });
+          setNewEvolutionDraftsByPokemonId(current => {
+            const next = { ...current }; delete next[pokemon.personalId]; return next;
+          });
+        }}
+        type="button"
+      >
+        <Plus aria-hidden="true" size={16} />
+        <span>{translateLiteral('Add Row')}</span>
+        </button>
+        <button className="secondary-button" onClick={() => setEvolutionDisclosure(null)} type="button">
+          {translateLiteral('Cancel')}
+        </button>
+      </div>
+    </div>
+  ) : null;
+
+
   return (
     <SectionedEditorWorkspace
       sessionKey={`${ordinaryDraftProject?.projectId ?? 'project'}:${editorFamily}:pokemon`}
@@ -26690,39 +27182,10 @@ function SelectedPokemonPanel({
           {editorFamily === 'za' && alphaMove ? (
             <EditorWorkspaceSection id="alphaMove" label={translateLiteral('Alpha Move')}
               modified={alphaMoveDraftState.isChanged} invalid={!alphaMoveDraftState.isValid}>
-            <div className="inspector-block za-pokemon-alpha-move-block">
+            <div className="inspector-block za-pokemon-alpha-move-block pokemon-detail-panel">
               <h4>Alpha Move</h4>
               {alphaMove ? (
-                <>
-                  <dl className="item-provenance-list compact-dl">
-                    <div>
-                      <dt>Current</dt>
-                      <dd>
-                        {alphaMove.moveId === null ? (
-                          'Unavailable'
-                        ) : (
-                          <span data-localization-ignore="true">
-                            {formatPokemonAlphaMove(alphaMove.moveId, alphaMove.moveName)}
-                          </span>
-                        )}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Vanilla</dt>
-                      <dd>
-                        {alphaMove.vanillaMoveId === null ? (
-                          'Unavailable'
-                        ) : (
-                          <span data-localization-ignore="true">
-                            {formatPokemonAlphaMove(
-                              alphaMove.vanillaMoveId,
-                              alphaMove.vanillaMoveName
-                            )}
-                          </span>
-                        )}
-                      </dd>
-                    </div>
-                  </dl>
+                <div className="pokemon-detail-fields pokemon-alpha-fields">
                   <div
                     className={`path-field editable-field-control ${
                       alphaMoveDraftState.isChanged ? 'editable-field-changed' : ''
@@ -26741,6 +27204,7 @@ function SelectedPokemonPanel({
                       ariaDescribedBy={alphaMoveDescriptionIds || undefined}
                       ariaInvalid={alphaMoveDraftState.error ? true : undefined}
                       disabled={!canEditAlphaMove}
+                      emptyOptionLabel={alphaMove.moveId === null ? translateLiteral('Unavailable') : undefined}
                       id="pokemon-alpha-exclusive-move"
                       onChange={(value) => {
                         setAlphaMoveDraftsByPokemonKey((currentDrafts) => {
@@ -26753,7 +27217,8 @@ function SelectedPokemonPanel({
                           return nextDrafts;
                         });
                       }}
-                      options={alphaMove.options}
+                      localizeOptions={false}
+                      options={alphaMoveOptions}
                       value={alphaMoveDraft}
                     />
                     {alphaMoveDisabledReason ? (
@@ -26769,7 +27234,16 @@ function SelectedPokemonPanel({
                       <small className="editable-field-status">Changed</small>
                     ) : null}
                   </div>
-                  <div className="draft-action-row">
+                  <dl className="pokemon-detail-reference">
+                    <dt>{translateLiteral('Vanilla')}</dt>
+                    <dd>{alphaMove.vanillaMoveId === null
+                      ? translateLiteral('Unavailable')
+                      : <span data-localization-ignore="true">
+                          {formatPokemonAlphaMove(alphaMove.vanillaMoveId, alphaMove.vanillaMoveName)}
+                        </span>}
+                    </dd>
+                  </dl>
+                  <div className="pokemon-alpha-restore">
                     <button
                       className="secondary-button"
                       disabled={!canResetAlphaMoveDraftToVanilla}
@@ -26809,7 +27283,7 @@ function SelectedPokemonPanel({
                       <span className="draft-action-summary">Modified from vanilla</span>
                     ) : null}
                   </div>
-                </>
+                </div>
               ) : (
                 <p className="empty-copy">
                   Alpha-exclusive move data is unavailable for this project.
@@ -26831,6 +27305,10 @@ function SelectedPokemonPanel({
               dexEditor={dexEditor}
               draft={selectedDexSwapDraft}
               editSessionActive={editSession !== null}
+              hasStagedPlacement={editSession?.pendingEdits.some(edit =>
+                isDexLayoutPendingEdit(edit) ||
+                (edit.domain === 'workflow.pokemon' && edit.recordId === 'dex-placement' && edit.field === 'dexPlacement')
+              ) ?? false}
               isPokemonUpdating={isPokemonUpdating}
               onDraftChange={updateSelectedDexSwapDraft}
               onStageSwap={
@@ -27533,487 +28011,78 @@ function SelectedPokemonPanel({
           <EditorWorkspaceSection id="evolutions" label={translateLiteral('Evolutions')}
             modified={evolutionDraftReview.changes.length > 0 || evolutionDraftReview.invalidCount > 0 || hasNewEvolutionDraft}
             invalid={evolutionDraftReview.invalidCount > 0 || (hasNewEvolutionDraft && !isNewEvolutionDraftValid)}>
-          <div className={`inspector-block ${editorFamily}-pokemon-evolutions-block`}>
-            <h4>Evolutions</h4>
-            <div className="learnset-editor">
-              {orderedEvolutions.length > 0 ? (
-                <ul className="learnset-list">
-                  {orderedEvolutions.map((evolution) => {
-                    const evolutionMethodOption = evolutionMethodOptions.find(
-                      (option) => option.value === evolution.method
-                    );
-                    const evolutionSpeciesLabel = formatReferenceLabel(
-                      pokemonSpeciesLabels,
-                      evolution.species,
-                      'Species'
-                    );
-                    const evolutionFormLabel = formatEvolutionFormReference(
-                      pokemonSpeciesLabels,
-                      evolution.species,
-                      evolution.form,
-                      editorFamily
-                    );
-                    const evolutionSpriteName = getPokemonSpriteNameForSpecies(
-                      pokemonRecords,
-                      evolution.species,
-                      evolution.form,
-                      editorFamily,
-                      evolutionSpeciesLabel
-                    );
-
-                    return (
-                      <li key={evolution.slot}>
-                        <button
-                          className={`learnset-row evolution-row ${
-                            selectedEvolution?.slot === evolution.slot
-                              ? 'learnset-row-selected'
-                              : ''
-                          }`}
-                          onClick={() => onSelectPokemonEvolution(evolution.slot)}
-                          type="button"
-                        >
-                          <PokemonSprite
-                            className="pokemon-row-sprite"
-                            name={getReferenceSpriteName(evolutionSpriteName)}
-                            preferStatic
-                          />
-                          <span title={`Slot ${evolution.slot + 1}`}>#{evolution.slot + 1}</span>
-                          <span
-                            data-localization-ignore="true"
-                            title={formatEvolutionMethodSummary(evolution)}
-                          >
-                            {formatEvolutionMethodSummary(evolution)}
-                          </span>
-                          <strong data-localization-ignore="true" title={evolutionSpeciesLabel}>
-                            {evolutionSpeciesLabel}
-                          </strong>
-                          <span data-localization-ignore="true" title={evolutionFormLabel}>
-                            {evolutionFormLabel}
-                          </span>
-                          <span
-                            title={
-                              evolutionMethodOption?.usesLevel === false
-                                ? t('za.pokemon.evolutions.storedLevelNotUsed', {
-                                    level: evolution.level
-                                  })
-                                : undefined
-                            }
-                          >
-                            {evolutionMethodOption?.usesLevel === false
-                              ? t('za.pokemon.evolutions.levelNotUsed')
-                              : `Lv. ${evolution.level}`}
-                          </span>
-                          <span
-                            data-localization-ignore="true"
-                            title={formatEvolutionArgumentSummary(evolution)}
-                          >
-                            {formatEvolutionArgumentSummary(evolution)}
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : (
-                <p className="empty-copy">No evolution entries.</p>
-              )}
-
-              {selectedEvolution ? (
-                <div className="learnset-edit-grid evolution-edit-grid">
-                  <div className="path-field">
-                    <FieldLabel
-                      help={t('fieldHelp.catalog.pokemon.evolutionMethod')}
-                      htmlFor="pokemon-evolution-method"
-                      label={translateLiteral('Method')}
-                    />
-                    <SearchableOptionInput
-                      wrapSelectedValue
-                      ariaLabel={translateLiteral('Method')}
-                      disabled={!canEditEvolutionFields}
-                      id="pokemon-evolution-method"
-                      onChange={(nextMethod) => {
-                        const nextOption = findEvolutionMethodOption(
-                          selectedEvolutionMethodOptions,
-                          nextMethod
-                        );
-                        const nextArgument = getDefaultEvolutionArgumentDraft(nextOption);
-                        setEvolutionMethodDraft(nextMethod);
-                        setEvolutionArgumentDraft(nextArgument);
-                        if (nextOption?.usesLevel === false) {
-                          setEvolutionLevelDraft('0');
-                        }
-                        updateSelectedEvolutionDraft({
-                          argument: nextArgument,
-                          ...(nextOption?.usesLevel === false ? { level: '0' } : {}),
-                          method: nextMethod
-                        });
-                      }}
-                      options={selectedEvolutionMethodOptions}
-                      value={evolutionMethodDraft}
-                    />
-                  </div>
-                  {usesSeparateEvolutionArgument(selectedEvolutionMethodOption) ? (
-                    <div className="path-field">
-                      <FieldLabel
-                        help={t('fieldHelp.catalog.pokemon.evolutionArgument')}
-                        htmlFor="pokemon-evolution-argument"
-                        label={translateLiteral(
-                          selectedEvolutionMethodOption?.argumentLabel ?? 'Argument'
-                        )}
-                      />
-                      {selectedEvolutionMethodOption?.argumentOptions.length ? (
-                        <SearchableOptionInput
-                          wrapSelectedValue
-                          ariaLabel={translateLiteral(
-                            selectedEvolutionMethodOption.argumentLabel
-                          )}
-                          disabled={!canEditEvolutionFields}
-                          id="pokemon-evolution-argument"
-                          localizeOptions={!evolutionArgumentUsesGameText(selectedEvolutionMethodOption.argumentKind)}
-                          onChange={(value) => {
-                            setEvolutionArgumentDraft(value);
-                            updateSelectedEvolutionDraft({ argument: value });
-                          }}
-                          options={selectedEvolutionArgumentOptions}
-                          value={evolutionArgumentDraft}
-                        />
-                      ) : (
-                        <input
-                          disabled={!canEditEvolutionFields}
-                          id="pokemon-evolution-argument"
-                          max={65535}
-                          min={0}
-                          onChange={(event) => {
-                            setEvolutionArgumentDraft(event.target.value);
-                            updateSelectedEvolutionDraft({ argument: event.target.value });
-                          }}
-                          type="number"
-                          value={evolutionArgumentDraft}
-                        />
-                      )}
-                    </div>
-                  ) : null}
-                  <div className="path-field">
-                    <FieldLabel
-                      help={t('fieldHelp.catalog.pokemon.evolutionTargetSpecies')}
-                      htmlFor="pokemon-evolution-species"
-                      label={translateLiteral('Species')}
-                    />
-                    {pokemonSpeciesOptions.length > 0 ? (
-                      <SearchableOptionInput
-                        wrapSelectedValue
-                        ariaLabel={translateLiteral('Species')}
-                        disabled={!canEditEvolutionFields}
-                        id="pokemon-evolution-species"
-                        onChange={handleSelectedEvolutionSpeciesChange}
-                        options={addCurrentPokemonFieldOption(
-                          pokemonSpeciesOptions,
-                          evolutionSpeciesDraft,
-                          'Species',
-                          pokemonSpeciesLabels
-                        )}
-                        value={evolutionSpeciesDraft}
-                      />
-                    ) : (
-                      <input
-                        disabled={!canEditEvolutionFields}
-                        id="pokemon-evolution-species"
-                        max={65535}
-                        min={0}
-                        onChange={(event) =>
-                          handleSelectedEvolutionSpeciesChange(event.target.value)
-                        }
-                        type="number"
-                        value={evolutionSpeciesDraft}
-                      />
-                    )}
-                  </div>
-                  <div className="path-field">
-                    <FieldLabel
-                      help={t('fieldHelp.catalog.pokemon.evolutionTargetForm')}
-                      htmlFor="pokemon-evolution-form"
-                      label={translateLiteral('Form')}
-                    />
-                    <SearchableOptionInput
-                      wrapSelectedValue
-                      ariaLabel={translateLiteral('Form')}
-                      disabled={!canEditEvolutionFields}
-                      id="pokemon-evolution-form"
-                      onChange={(value) => {
-                        setEvolutionFormDraft(value);
-                        updateSelectedEvolutionDraft({ form: value });
-                      }}
-                      options={selectedEvolutionFormOptions}
-                      value={evolutionFormDraft}
-                    />
-                  </div>
-                  <div className="path-field">
-                    <FieldLabel
-                      help={`${t('fieldHelp.catalog.pokemon.evolutionLevel')}${
-                        selectedEvolutionUsesLevel
-                          ? ''
-                          : ` ${t('za.pokemon.evolutions.levelIgnoredHelp')}`
-                      }`}
-                      htmlFor="pokemon-evolution-level"
-                      label={
-                        selectedEvolutionUsesLevel
-                          ? translateLiteral('Level')
-                          : t('za.pokemon.evolutions.levelNotUsed')
-                      }
-                    />
-                    <input
-                      disabled={!canEditEvolutionFields || !selectedEvolutionUsesLevel}
-                      id="pokemon-evolution-level"
-                      max={evolutionMaximumLevel}
-                      min={0}
-                      onChange={(event) => {
-                        setEvolutionLevelDraft(event.target.value);
-                        updateSelectedEvolutionDraft({ level: event.target.value });
-                      }}
-                      title={
-                        selectedEvolutionUsesLevel
-                          ? undefined
-                          : t('za.pokemon.evolutions.levelIgnoredHelp')
-                      }
-                      type="number"
-                      value={evolutionLevelDraft}
-                    />
-                  </div>
-                  <div className="learnset-button-row">
-                    <button
-                      aria-busy={isPokemonUpdating || undefined}
-                      className="primary-button"
-                      disabled={!canSaveSelectedEvolution}
-                      onClick={() => void saveSelectedEvolution()}
-                      title="Save Changes"
-                      type="button"
-                    >
-                      <BusyActionContent
-                        busyLabel="Saving"
-                        icon={<Save aria-hidden="true" size={16} />}
-                        isBusy={isPokemonUpdating}
-                        label="Save Changes"
-                      />
-                    </button>
-                    <span
-                      aria-live="polite"
-                      className={`draft-action-summary evolution-draft-status ${
-                        selectedEvolutionDraftStatus === 'Invalid'
-                          ? 'editable-field-error'
-                          : ''
-                      }`}
-                    >
-                      {selectedEvolutionDraftStatus}
-                    </span>
-                    <button
-                      aria-label="Move evolution row up"
-                      className="secondary-button icon-button"
-                      disabled={!canModifyEvolutionStructure || previousEvolutionSlot === null}
-                      onClick={() => moveEvolutionRow(-1)}
-                      title="Move evolution row up"
-                      type="button"
-                    >
-                      <ArrowUp aria-hidden="true" size={16} />
-                    </button>
-                    <button
-                      aria-label="Move evolution row down"
-                      className="secondary-button icon-button"
-                      disabled={
-                        !canModifyEvolutionStructure || nextEvolutionSlot === null
-                      }
-                      onClick={() => moveEvolutionRow(1)}
-                      title="Move evolution row down"
-                      type="button"
-                    >
-                      <ArrowDown aria-hidden="true" size={16} />
-                    </button>
-                    <button
-                      aria-label="Remove evolution row"
-                      className="secondary-button icon-button danger-icon-button"
-                      disabled={!canModifyEvolutionStructure}
-                      onClick={() => {
-                        if (!canModifyEvolutionStructure) return;
-                        setEvolutionDraftsByPokemonId(current => {
-                          const drafts = { ...(current[pokemon.personalId] ?? {}) };
-                          if (drafts[selectedEvolution.slot]?.action === 'add') delete drafts[selectedEvolution.slot];
-                          else drafts[selectedEvolution.slot] = { ...createPokemonEvolutionDraftFields(selectedEvolution), action: 'remove' };
-                          return replaceEvolutionDraftRecord(current, pokemon.personalId, orderEvolutionDraftRows(sourceEvolutionRows, drafts,
-                            orderedEvolutions.filter(row => row.slot !== selectedEvolution.slot).map(row => row.slot)));
-                        });
-                      }}
-                      title="Remove evolution row"
-                      type="button"
-                    >
-                      <Trash2 aria-hidden="true" size={16} />
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="learnset-edit-grid evolution-edit-grid">
-                <div className="path-field">
-                  <FieldLabel
-                    help={t('fieldHelp.catalog.pokemon.evolutionMethod')}
-                    htmlFor="pokemon-new-evolution-method"
-                    label={translateLiteral('New method')}
-                  />
-                  <SearchableOptionInput
-                    wrapSelectedValue
-                    ariaLabel={translateLiteral('New method')}
-                    disabled={!canEditEvolution}
-                    id="pokemon-new-evolution-method"
-                    onChange={(nextMethod) => {
-                      const nextOption = findEvolutionMethodOption(
-                        newEvolutionMethodOptions,
-                        nextMethod
-                      );
-                      setNewEvolutionMethodDraft(nextMethod);
-                      setNewEvolutionArgumentDraft(getDefaultEvolutionArgumentDraft(nextOption));
-                      if (nextOption?.usesLevel === false) {
-                        setNewEvolutionLevelDraft('0');
-                      }
-                    }}
-                    options={newEvolutionMethodOptions}
-                    value={newEvolutionMethodDraft}
-                  />
-                </div>
-                {usesSeparateEvolutionArgument(newEvolutionMethodOption) ? (
-                  <div className="path-field">
-                    <FieldLabel
-                      help={t('fieldHelp.catalog.pokemon.evolutionArgument')}
-                      htmlFor="pokemon-new-evolution-argument"
-                      label={translateLiteral(
-                        newEvolutionMethodOption?.argumentLabel ?? 'New argument'
-                      )}
-                    />
-                    {newEvolutionMethodOption?.argumentOptions.length ? (
-                      <SearchableOptionInput
-                        wrapSelectedValue
-                        ariaLabel={translateLiteral(newEvolutionMethodOption.argumentLabel)}
-                        disabled={!canEditEvolution}
-                        id="pokemon-new-evolution-argument"
-                        localizeOptions={!evolutionArgumentUsesGameText(newEvolutionMethodOption.argumentKind)}
-                        onChange={setNewEvolutionArgumentDraft}
-                        options={newEvolutionArgumentOptions}
-                        value={newEvolutionArgumentDraft}
-                      />
-                    ) : (
-                      <input
-                        disabled={!canEditEvolution}
-                        id="pokemon-new-evolution-argument"
-                        max={65535}
-                        min={0}
-                        onChange={(event) => setNewEvolutionArgumentDraft(event.target.value)}
-                        type="number"
-                        value={newEvolutionArgumentDraft}
-                      />
-                    )}
-                  </div>
-                ) : null}
-                <div className="path-field">
-                  <FieldLabel
-                    help={t('fieldHelp.catalog.pokemon.evolutionTargetSpecies')}
-                    htmlFor="pokemon-new-evolution-species"
-                    label={translateLiteral('New species')}
-                  />
-                  {pokemonSpeciesOptions.length > 0 ? (
-                    <SearchableOptionInput
-                      wrapSelectedValue
-                      ariaLabel={translateLiteral('New species')}
-                      disabled={!canEditEvolution}
-                      id="pokemon-new-evolution-species"
-                      onChange={handleNewEvolutionSpeciesChange}
-                      options={addCurrentPokemonFieldOption(
-                        pokemonSpeciesOptions,
-                        newEvolutionSpeciesDraft,
-                        'Species',
-                        pokemonSpeciesLabels
-                      )}
-                      value={newEvolutionSpeciesDraft}
-                    />
-                  ) : (
-                    <input
-                      disabled={!canEditEvolution}
-                      id="pokemon-new-evolution-species"
-                      max={65535}
-                      min={0}
-                      onChange={(event) =>
-                        handleNewEvolutionSpeciesChange(event.target.value)
-                      }
-                      type="number"
-                      value={newEvolutionSpeciesDraft}
-                    />
-                  )}
-                </div>
-                <div className="path-field">
-                  <FieldLabel
-                    help={t('fieldHelp.catalog.pokemon.evolutionTargetForm')}
-                    htmlFor="pokemon-new-evolution-form"
-                    label={translateLiteral('New form')}
-                  />
-                  <SearchableOptionInput
-                    wrapSelectedValue
-                    ariaLabel={translateLiteral('New form')}
-                    disabled={!canEditEvolution}
-                    id="pokemon-new-evolution-form"
-                    onChange={setNewEvolutionFormDraft}
-                    options={newEvolutionFormOptions}
-                    value={newEvolutionFormDraft}
-                  />
-                </div>
-                <div className="path-field">
-                  <FieldLabel
-                    help={`${t('fieldHelp.catalog.pokemon.evolutionLevel')}${
-                      newEvolutionUsesLevel
-                        ? ''
-                        : ` ${t('za.pokemon.evolutions.levelIgnoredHelp')}`
-                    }`}
-                    htmlFor="pokemon-new-evolution-level"
-                    label={
-                      newEvolutionUsesLevel
-                        ? translateLiteral('New level')
-                        : t('za.pokemon.evolutions.levelNotUsed')
-                    }
-                  />
-                  <input
-                    disabled={!canEditEvolution || !newEvolutionUsesLevel}
-                    id="pokemon-new-evolution-level"
-                    max={evolutionMaximumLevel}
-                    min={0}
-                    onChange={(event) => setNewEvolutionLevelDraft(event.target.value)}
-                    title={
-                      newEvolutionUsesLevel
-                        ? undefined
-                        : t('za.pokemon.evolutions.levelIgnoredHelp')
-                    }
-                    type="number"
-                    value={newEvolutionLevelDraft}
-                  />
-                </div>
-                <button
-                  aria-label="Add evolution row"
-                  className="secondary-button learnset-add-button"
-                  disabled={!canAddEvolution}
-                  onClick={() => {
-                    if (!canAddEvolution) return;
-                    const slot = Math.max(-1, ...sourceEvolutionRows.map(row => row.slot), ...Object.keys(evolutionDraftsBySlot).map(Number)) + 1;
-                    setEvolutionDraftsByPokemonId(current => {
-                      const drafts = { ...(current[pokemon.personalId] ?? {}), [slot]: { ...newEvolutionCreationDraft, action: 'add' as const } };
-                      return replaceEvolutionDraftRecord(current, pokemon.personalId, orderEvolutionDraftRows(sourceEvolutionRows, drafts,
-                        [...orderedEvolutions.map(row => row.slot), slot]));
-                    });
-                    onSelectPokemonEvolution(slot);
-                    setNewEvolutionDraftsByPokemonId(current => {
-                      const next = { ...current }; delete next[pokemon.personalId]; return next;
-                    });
-                  }}
-                  type="button"
-                >
-                  <Plus aria-hidden="true" size={16} />
-                  <span>Add Row</span>
-                </button>
-              </div>
+          <div className={`inspector-block ${editorFamily}-pokemon-evolutions-block pokemon-detail-panel`}>
+            <div className="pokemon-detail-heading">
+              <h4>{translateLiteral('Evolutions')}</h4>
+              <button
+                aria-controls={openEvolution === 'new' ? newEvolutionEditorId : undefined}
+                aria-expanded={openEvolution === 'new'}
+                className="secondary-button"
+                disabled={!canEditEvolution || isPokemonUpdating || isEvolutionStagePending}
+                onClick={() => setEvolutionDisclosure(openEvolution === 'new' ? null : { personalId: pokemon.personalId, row: 'new' })}
+                type="button"
+              >
+                <Plus aria-hidden="true" size={16} />
+                {translateLiteral('Add Row')}
+              </button>
             </div>
+            {expandedNewEvolutionEditor}
+            {orderedEvolutions.length > 0 ? (
+              <ul className="evolution-record-list">
+                {orderedEvolutions.map((evolution, index) => {
+                  const draft = evolutionDraftsBySlot[evolution.slot];
+                  const method = parseOptionalInteger(draft?.method ?? '') ?? evolution.method;
+                  const species = parseOptionalInteger(draft?.species ?? '') ?? evolution.species;
+                  const form = parseOptionalInteger(draft?.form ?? '') ?? evolution.form;
+                  const level = parseOptionalInteger(draft?.level ?? '') ?? evolution.level;
+                  const argument = parseOptionalInteger(draft?.argument ?? '') ?? evolution.argument;
+                  const methodOption = evolutionMethodOptions.find(option => option.value === method) ?? null;
+                  const methodLabel = methodOption?.label ?? formatEvolutionMethodSummary(evolution);
+                  const speciesLabel = formatReferenceLabel(pokemonSpeciesLabels, species, 'Species');
+                  const formLabel = formatEvolutionFormReference(pokemonSpeciesLabels, species, form, editorFamily);
+                  const spriteName = getPokemonSpriteNameForSpecies(pokemonRecords, species, form, editorFamily, speciesLabel);
+                  const argumentValue = methodOption?.argumentOptions.find(option => option.value === argument)?.label
+                    || (evolution.method === method && evolution.argument === argument ? evolution.argumentValue : '') || String(argument);
+                  const argumentLabel = methodOption?.argumentLabel ?? evolution.argumentLabel;
+                  const usesLevel = methodOption?.usesLevel ?? true;
+                  const usesArgument = methodOption ? usesSeparateEvolutionArgument(methodOption)
+                    : evolution.argumentKind !== 'level' && evolution.argumentKind !== 'none';
+                  const condition = [
+                    usesLevel && level > 0 ? t('pokemon.evolutionLevelSummary', { level }) : null,
+                    usesArgument ? `${translateLiteral(argumentLabel)} · ${argumentValue}` : null
+                  ].filter(Boolean).join(' / ');
+                  const expanded = openEvolution === evolution.slot;
+
+                  return (
+                    <li key={evolution.slot}>
+                      <button
+                        aria-controls={expanded ? evolutionEditorId : undefined}
+                        aria-expanded={expanded}
+                        className="evolution-record-row"
+                        onClick={() => {
+                          onSelectPokemonEvolution(evolution.slot);
+                          setEvolutionDisclosure(expanded ? null : { personalId: pokemon.personalId, row: evolution.slot });
+                        }}
+                        type="button"
+                      >
+                        <span className="evolution-record-slot">
+                          <PokemonSprite className="pokemon-row-sprite" name={getReferenceSpriteName(spriteName)} preferStatic />
+                          #{index + 1}
+                        </span>
+                        <span className="evolution-record-method" data-localization-ignore="true">{methodLabel}</span>
+                        <strong className="evolution-record-target" data-localization-ignore="true">{speciesLabel}</strong>
+                        <span className="evolution-record-form" data-localization-ignore="true">{formLabel}</span>
+                        <span className="evolution-record-condition" data-localization-ignore="true">{condition}</span>
+                        <ChevronDown className="evolution-record-chevron" size={15} aria-hidden="true" />
+                      </button>
+                      {expanded ? expandedEvolutionEditor : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="empty-copy">{translateLiteral('No evolution entries.')}</p>
+            )}
           </div>
           </EditorWorkspaceSection>
         </>
@@ -60101,12 +60170,17 @@ function formatEvolutionMethodSummary(evolution: PokemonEvolutionRecord) {
   return `${evolution.method.toString().padStart(3, '0')} ${methodName}`;
 }
 
-function formatEvolutionArgumentSummary(evolution: PokemonEvolutionRecord) {
-  if (evolution.argumentKind === 'none' || evolution.argumentKind === 'level') {
-    return 'Arg -';
-  }
-
-  return `${evolution.argumentLabel} ${evolution.argumentValue || evolution.argument}`;
+function EvolutionStoredArgument({ value }: { value: string }) {
+  const { t } = useLocalization();
+  return (
+    <details className="evolution-stored-argument">
+      <summary>{t('pokemon.evolutionStoredArgument')}</summary>
+      <div className="evolution-stored-value">
+        <output aria-label={t('pokemon.evolutionStoredArgument')}>{value}</output>
+        <span>{t('pokemon.evolutionStoredArgumentHelp')}</span>
+      </div>
+    </details>
+  );
 }
 
 function filterMoves(

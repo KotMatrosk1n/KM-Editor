@@ -635,7 +635,7 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.LoadPla => DispatchLoadPla(requestJson),
                 KmCommandNames.StagePla => DispatchStagePla(requestJson),
                 KmCommandNames.OpenProject => DispatchOpenProject(requestJson),
-                KmCommandNames.ValidateProject => DispatchValidateProject(requestJson),
+                KmCommandNames.ValidateProject => DispatchValidateProject(requestJson, reportProgress),
                 KmCommandNames.RefreshFileGraph => DispatchRefreshFileGraph(requestJson),
                 KmCommandNames.ListWorkflows => DispatchListWorkflows(requestJson),
                 KmCommandNames.LoadItemsWorkflow => DispatchLoadItemsWorkflow(requestJson),
@@ -2085,11 +2085,14 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
         return SerializeSuccess(response, request.RequestId);
     }
 
-    private string DispatchValidateProject(string requestJson)
+    private string DispatchValidateProject(string requestJson, Action<ProjectPathCheckProgressDto>? reportProgress)
     {
         var request = DeserializeRequest<ValidateProjectRequest>(requestJson);
         var validatedProject = projectWorkspaceService.ValidateAndOpen(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths));
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.ReportProgress && reportProgress is not null
+                ? (role, completed) => reportProgress(new(ProjectBridgeMapper.ToDto(role), completed))
+                : null);
         var health = ReconcileOutputOnProjectActivation(
             validatedProject.Id.ToString(),
             request.Payload.Paths,

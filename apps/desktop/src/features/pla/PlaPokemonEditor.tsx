@@ -45,10 +45,10 @@ export function PlaPokemonEditor(props: PlaEditorProps) {
   const enabled = props.session !== null && editor.isCurrentScope;
   const busy = loading || staging || props.isBusy;
   const fieldLabel = (field: PlaField) => field.key.startsWith('tutor.') ? field.label : t(`pla.field.${field.key}`);
-  const input = (field: PlaField, value: string, change: (value: string) => void, disabled: boolean, id: string) => {
+  const input = (field: PlaField, value: string, change: (value: string) => void, disabled: boolean, id: string, label = fieldLabel(field)) => {
     const invalid = !isPlaFieldValueValid(field, value);
-    if (field.kind === 'boolean') return <input type="checkbox" id={id} aria-label={fieldLabel(field)} checked={value === '1'} disabled={disabled} onChange={event => change(event.target.checked ? '1' : '0')} />;
-    if (field.choices) return <SearchableOptionInput id={id} ariaLabel={fieldLabel(field)} ariaInvalid={invalid || undefined} value={value} disabled={disabled} onChange={change}
+    if (field.kind === 'boolean') return <input type="checkbox" id={id} aria-label={label} checked={value === '1'} disabled={disabled} onChange={event => change(event.target.checked ? '1' : '0')} />;
+    if (field.choices) return <SearchableOptionInput id={id} ariaLabel={label} ariaInvalid={invalid || undefined} value={value} disabled={disabled} onChange={change}
       options={(field.choices.some(choice => choice.value === value) ? field.choices : [{ value, label: value }, ...field.choices]).map(choice =>
         ['method', 'growthRate'].includes(field.key) && field.choices?.some(item => item.value === choice.value)
           ? { ...choice, label: t(`pla.choice.${field.key}.${choice.value}`) }
@@ -88,7 +88,9 @@ export function PlaPokemonEditor(props: PlaEditorProps) {
     const change = (next: string[][]) => setValue(kind, 'entries', JSON.stringify(next.map(row => row.map(value => /^\d+$/u.test(value) ? Number(value) : value))));
     return <PlaPokemonRows key={`${kind}:${record.id}`} kind={kind} rows={rows} fields={page.rowFields} enabled={enabled}
       source={props} recordId={record.id} recordLabel={recordName(record.label)} busy={busy || loading}
-      onChange={change} fieldLabel={fieldLabel} renderInput={input} />;
+      onChange={change} fieldLabel={fieldLabel} renderInput={input}
+      canSave={kind === 'evolutions' && enabled && !busy && editor.hasDraft(kind, record) && !editor.invalidKinds.includes(kind)}
+      onSave={kind === 'evolutions' ? () => void editor.stage(['evolutions']) : undefined} />;
   };
   const refresh = <button type="button" className="secondary-button compact-button" disabled={loading || busy} onClick={editor.refresh}><RefreshCw size={16} aria-hidden="true" />{translateLiteral('Refresh')}</button>;
   return <><section className="panel wide-panel pla-editor pla-data-editor pla-pokemon-section" aria-labelledby="pla-editor-title">
@@ -170,7 +172,7 @@ export function PlaPokemonEditor(props: PlaEditorProps) {
         </EditorWorkspaceSection>
         <EditorWorkspaceSection id="evolutions" label={t('pla.kind.evolutions')}
           modified={editor.hasDraft('evolutions')} invalid={editor.invalidKinds.includes('evolutions')}>
-            <div className="inspector-block pla-pokemon-evolutions-block">{rowEditor('evolutions')}<p className="field-note">{t('pla.notice.evolutions')}</p></div>
+            <div className="inspector-block pokemon-detail-panel pla-pokemon-evolutions-block">{rowEditor('evolutions')}<p className="field-note">{t('pla.notice.evolutions')}</p></div>
         </EditorWorkspaceSection>
       </> : null}
       <EditorWorkspaceSection id="tutors" label={t('pla.kind.tutors')}
