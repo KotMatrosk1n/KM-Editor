@@ -7,6 +7,7 @@ using KM.Core.Workflows;
 using KM.Formats.SwSh;
 using KM.SwSh.Items;
 using KM.SwSh.Moves;
+using KM.SwSh.Restoration;
 using KM.SwSh.Workflows;
 using System.Globalization;
 using System.Security;
@@ -486,7 +487,6 @@ public sealed class SwShPokemonWorkflowService
             personalIds);
         var evolutionItemOptions = CreateEvolutionItemOptions(
             itemRecords, itemDisplayNames, evolutions.Values.SelectMany(rows => rows));
-        var displaySpeciesNames = speciesNames.Count > 0 ? speciesNames : Array.Empty<string>();
         var learnsetMoveOptions = SwShMoveAvailability.CreateMoveOptions(
             moveNames,
             usableMoveIds,
@@ -524,6 +524,10 @@ public sealed class SwShPokemonWorkflowService
             }
 
             var presentSpeciesIds = SwShSpeciesAvailability.CreatePresentSpeciesIds(personalTable.Records);
+            var displaySpeciesNames = AddRestoredSpeciesNames(speciesNames, presentSpeciesIds);
+            var spriteNames = spriteSpeciesNames.Count > 0
+                ? AddRestoredSpeciesNames(spriteSpeciesNames, presentSpeciesIds)
+                : displaySpeciesNames;
             var evolutionMethodOptions = CreateEvolutionMethodOptions(
                 itemOptions,
                 evolutionItemOptions,
@@ -544,7 +548,7 @@ public sealed class SwShPokemonWorkflowService
                     record,
                     vanillaTable?.Records.ElementAtOrDefault(record.PersonalId) is { } vanilla && vanilla.Form == record.Form ? vanilla : null,
                     displaySpeciesNames,
-                    spriteSpeciesNames.Count > 0 ? spriteSpeciesNames : displaySpeciesNames,
+                    spriteNames,
                     abilityNames,
                     itemDisplayNames,
                     moveNames,
@@ -1369,12 +1373,24 @@ public sealed class SwShPokemonWorkflowService
     {
         var owners = new Dictionary<int, PokemonFormOwner>();
         var ambiguousPersonalIds = new HashSet<int>();
-        if (records.Any(r => r.PersonalId == KM.SwSh.Restoration.SwShRestorationSpecies.AnnihilapeRow))
-            owners.Add(KM.SwSh.Restoration.SwShRestorationSpecies.AnnihilapeRow, new(KM.SwSh.Restoration.SwShRestorationSpecies.Annihilape, 0));
+        var reservedBaseSpecies = SwShRestorationSpecies.BaseSpecies
+            .Where(species => species > SwShEffectivePokemonCatalog.MaximumSpecies)
+            .ToDictionary(SwShRestorationSpecies.BaseRow);
+        foreach (var record in records)
+        {
+            if (reservedBaseSpecies.TryGetValue(record.PersonalId, out var species)
+                && (!record.IsEmpty || species == SwShRestorationSpecies.Annihilape))
+            {
+                owners.Add(record.PersonalId, new(species, 0));
+            }
+        }
 
         foreach (var record in records)
         {
-            if (record.PersonalId is <= 0 or > SwShEffectivePokemonCatalog.MaximumSpecies)
+            var species = record.PersonalId is > 0 and <= SwShEffectivePokemonCatalog.MaximumSpecies
+                ? record.PersonalId
+                : reservedBaseSpecies.GetValueOrDefault(record.PersonalId);
+            if (species == 0)
             {
                 continue;
             }
@@ -1442,7 +1458,7 @@ public sealed class SwShPokemonWorkflowService
                     continue;
                 }
 
-                var owner = new PokemonFormOwner(record.PersonalId, localFormIndex);
+                var owner = new PokemonFormOwner(species, localFormIndex);
                 if (owners.TryGetValue(personalId, out var existingOwner)
                     && existingOwner.SpeciesId != owner.SpeciesId)
                 {
@@ -1568,9 +1584,9 @@ public sealed class SwShPokemonWorkflowService
         if (formOwners.TryGetValue(personal.PersonalId, out var owner))
         {
             var formLabel = ResolveFormLabel(personal, owner);
-            var speciesName = owner.SpeciesId == KM.SwSh.Restoration.SwShRestorationSpecies.Annihilape
-                && (owner.SpeciesId >= speciesNames.Count || string.IsNullOrWhiteSpace(speciesNames[owner.SpeciesId]))
-                ? "Annihilape" : GetIndexedName(owner.SpeciesId, speciesNames, "Pokemon");
+            var speciesName = owner.SpeciesId < speciesNames.Count && !string.IsNullOrWhiteSpace(speciesNames[owner.SpeciesId])
+                ? speciesNames[owner.SpeciesId]
+                : SwShRestorationSpecies.DisplayName(owner.SpeciesId) ?? $"Pokemon {owner.SpeciesId}";
 
             return new PokemonDisplayIdentity(
                 owner.SpeciesId,
@@ -1720,6 +1736,36 @@ public sealed class SwShPokemonWorkflowService
         }
 
         return $"{fallbackPrefix} {id}";
+    }
+
+    private static IReadOnlyList<string> AddRestoredSpeciesNames(
+        IReadOnlyList<string> names,
+        IReadOnlySet<int> presentSpeciesIds)
+    {
+        var missingNames = presentSpeciesIds
+            .Where(species => species > SwShEffectivePokemonCatalog.MaximumSpecies)
+            .Where(species => species >= names.Count || string.IsNullOrWhiteSpace(names[species]))
+            .ToDictionary(species => species, SwShRestorationSpecies.DisplayName);
+        if (missingNames.Count == 0)
+        {
+            return names;
+        }
+
+        var expanded = names.ToArray();
+        var lastSpecies = missingNames.Keys.Max();
+        if (lastSpecies >= expanded.Length)
+        {
+            var originalLength = expanded.Length;
+            Array.Resize(ref expanded, lastSpecies + 1);
+            Array.Fill(expanded, string.Empty, originalLength, expanded.Length - originalLength);
+        }
+
+        foreach (var (species, name) in missingNames)
+        {
+            expanded[species] = name ?? string.Empty;
+        }
+
+        return expanded;
     }
 
     private static IReadOnlyList<SwShPokemonEditableFieldOption> CreateGenderRatioOptions()
