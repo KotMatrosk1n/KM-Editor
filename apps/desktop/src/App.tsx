@@ -26143,9 +26143,10 @@ function SelectedPokemonPanel({
         parsedEvolutionSpecies,
         pokemonSpeciesLabels,
         evolutionFormDraft,
-        editorFamily
+        editorFamily,
+        pokemonRecords
       ),
-    [editorFamily, evolutionFormDraft, parsedEvolutionSpecies, pokemonSpeciesLabels]
+    [editorFamily, evolutionFormDraft, parsedEvolutionSpecies, pokemonRecords, pokemonSpeciesLabels]
   );
   const parsedNewEvolutionMethod = parseEditableIntegerDraft(
     newEvolutionMethodDraft,
@@ -26165,9 +26166,10 @@ function SelectedPokemonPanel({
         parsedNewEvolutionSpecies,
         pokemonSpeciesLabels,
         newEvolutionFormDraft,
-        editorFamily
+        editorFamily,
+        pokemonRecords
       ),
-    [editorFamily, newEvolutionFormDraft, parsedNewEvolutionSpecies, pokemonSpeciesLabels]
+    [editorFamily, newEvolutionFormDraft, parsedNewEvolutionSpecies, pokemonRecords, pokemonSpeciesLabels]
   );
   const parsedNewEvolutionForm = parseEditableIntegerDraft(
     newEvolutionFormDraft,
@@ -26353,13 +26355,13 @@ function SelectedPokemonPanel({
     const previousForm = parseOptionalInteger(evolutionFormDraft) ?? selectedEvolution?.form ?? 0;
     const resolvedForm =
       targetSpeciesId !== null && targetSpeciesId !== previousSpeciesId
-        ? resolveSpeciesChangeForm({
+        ? resolveEvolutionSpeciesChangeForm({
             gameFamily: editorFamily,
             pokemonRecords,
+            speciesLabels: pokemonSpeciesLabels,
             previousForm,
             sourceForm: selectedEvolution?.form ?? 0,
             sourceSpeciesId: selectedEvolution?.species ?? null,
-            speciesField: { options: pokemonSpeciesOptions },
             targetSpeciesId
           })
         : null;
@@ -26382,13 +26384,13 @@ function SelectedPokemonPanel({
     const previousForm = parseOptionalInteger(newEvolutionFormDraft) ?? 0;
     const resolvedForm =
       targetSpeciesId !== null && targetSpeciesId !== previousSpeciesId
-        ? resolveSpeciesChangeForm({
+        ? resolveEvolutionSpeciesChangeForm({
             gameFamily: editorFamily,
             pokemonRecords,
+            speciesLabels: pokemonSpeciesLabels,
             previousForm,
             sourceForm: 0,
             sourceSpeciesId: null,
-            speciesField: { options: pokemonSpeciesOptions },
             targetSpeciesId
           })
         : null;
@@ -28037,7 +28039,7 @@ function SelectedPokemonPanel({
                   const methodOption = evolutionMethodOptions.find(option => option.value === method) ?? null;
                   const methodLabel = methodOption?.label ?? formatEvolutionMethodSummary(evolution);
                   const speciesLabel = formatReferenceLabel(pokemonSpeciesLabels, species, 'Species');
-                  const formLabel = formatEvolutionFormReference(pokemonSpeciesLabels, species, form, editorFamily);
+                  const formLabel = formatEvolutionFormReference(pokemonSpeciesLabels, species, form, editorFamily, pokemonRecords);
                   const spriteName = getPokemonSpriteNameForSpecies(pokemonRecords, species, form, editorFamily, speciesLabel);
                   const argumentValue = methodOption?.argumentOptions.find(option => option.value === argument)?.label
                     || (evolution.method === method && evolution.argument === argument ? evolution.argumentValue : '') || String(argument);
@@ -59438,9 +59440,10 @@ function formatEvolutionFormReference(
   speciesLabels: ReadonlyMap<number, string>,
   speciesId: number,
   form: number,
-  gameFamily: EditorUiFamily = 'swsh'
+  gameFamily: EditorUiFamily,
+  pokemonRecords: readonly PokemonRecord[]
 ) {
-  return createEvolutionFormOptions(speciesId, speciesLabels, form.toString(), gameFamily).find(
+  return createEvolutionFormOptions(speciesId, speciesLabels, form.toString(), gameFamily, pokemonRecords).find(
     (option) => option.value === form
   )?.label ?? `Form ${form}`;
 }
@@ -59449,15 +59452,22 @@ function createEvolutionFormOptions(
   speciesId: number | null,
   speciesLabels: ReadonlyMap<number, string>,
   draftValue: string,
-  gameFamily: EditorUiFamily = 'swsh'
+  gameFamily: EditorUiFamily = 'swsh',
+  pokemonRecords: readonly PokemonRecord[] = []
 ): EditableFieldOption[] {
   const formValues = new Set<number>([0]);
   const parsedDraft = Number.parseInt(draftValue, 10);
   const maximumForm = getPokemonEvolutionMaximumForm(gameFamily);
 
   const context = createEvolutionFormOptionContext(speciesId, speciesLabels, gameFamily);
+  const projectLabels = speciesId === null
+    ? new Map<number, string>()
+    : getProjectEvolutionFormLabels(speciesId, gameFamily, pokemonRecords, maximumForm);
   if (context !== null) {
     addKnownSpeciesFormValues(context, formValues);
+    for (const form of projectLabels.keys()) {
+      formValues.add(form);
+    }
     if (
       Number.isInteger(parsedDraft) &&
       parsedDraft >= 0 &&
@@ -59475,9 +59485,72 @@ function createEvolutionFormOptions(
   return [...formValues]
     .sort((left, right) => left - right)
     .map((form) => ({
-      label: context === null ? (form === 0 ? 'Base' : `Form ${form}`) : formatSpeciesFormOptionLabel(form, context),
+      label: context === null
+        ? (form === 0 ? 'Base' : `Form ${form}`)
+        : formatSpeciesFormOptionLabel(form, context, projectLabels.get(form)),
       value: form
     }));
+}
+
+function resolveEvolutionSpeciesChangeForm({
+  gameFamily,
+  pokemonRecords,
+  previousForm,
+  sourceForm,
+  sourceSpeciesId,
+  speciesLabels,
+  targetSpeciesId
+}: {
+  gameFamily: EditorUiFamily;
+  pokemonRecords: readonly PokemonRecord[];
+  previousForm: number;
+  sourceForm: number;
+  sourceSpeciesId: number | null;
+  speciesLabels: ReadonlyMap<number, string>;
+  targetSpeciesId: number;
+}) {
+  const formOptions = createEvolutionFormOptions(targetSpeciesId, speciesLabels, '', gameFamily, pokemonRecords);
+  return resolveSpeciesChangeForm({
+    gameFamily,
+    previousForm,
+    sourceForm,
+    sourceSpeciesId,
+    speciesField: { options: [{ value: targetSpeciesId, formOptions }] },
+    targetSpeciesId
+  });
+}
+
+function getProjectEvolutionFormLabels(
+  speciesId: number,
+  gameFamily: EditorUiFamily,
+  pokemonRecords: readonly PokemonRecord[],
+  maximumForm: number
+): Map<number, string> {
+  const speciesRecords = pokemonRecords.filter(record => record.speciesId === speciesId);
+  if (gameFamily !== 'swsh') {
+    return new Map(speciesRecords
+      .filter(record => record.personal.isPresentInGame && record.form >= 0 && record.form <= maximumForm)
+      .map(record => [record.form, record.formLabel]));
+  }
+
+  const base = findSwShPokemonFormRecord(speciesRecords, speciesId, 0);
+  const recordsByPersonalId = new Map(speciesRecords.map(record => [record.personalId, record]));
+  const labels = new Map<number, string>();
+  const formCount = Math.max(1, base?.personal.formCount ?? 0);
+  // Sword and Shield stores evolution form IDs as offsets in the base species' personal range.
+  for (let form = 0; form < formCount && form <= maximumForm; form++) {
+    if (form > 0 && base?.personal.formStatsIndex === 0 && base.personal.isPresentInGame) {
+      // Cosmetic forms can share the base personal record.
+      labels.set(form, '');
+      continue;
+    }
+    const personalId = getSwShPokemonFormPersonalId(speciesId, form, base);
+    const record = personalId === null ? undefined : recordsByPersonalId.get(personalId);
+    if (record?.personal.isPresentInGame) {
+      labels.set(form, record.formLabel);
+    }
+  }
+  return labels;
 }
 
 function createPokemonEvolutionDraftFields(
