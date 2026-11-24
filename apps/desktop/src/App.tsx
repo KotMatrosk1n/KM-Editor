@@ -26551,6 +26551,16 @@ function SelectedPokemonPanel({
     }
     if (latestLearnsetScope.current === learnsetScope) {
       const evolutionSlots = planEvolutionDraftStage(sourceEvolutionRows, payloadBeforeStage.evolutionSlots, editorFamily === 'swsh').slots;
+      setEvolutionDisclosure(current => {
+        if (current?.personalId !== pokemon.personalId || current.row === 'new') {
+          return current;
+        }
+        const slot = evolutionSlots.get(current.row);
+        if (slot === undefined) {
+          return null;
+        }
+        return slot === current.row ? current : { ...current, row: slot };
+      });
       if (latestEvolutionSelection.current !== null) onSelectPokemonEvolution(evolutionSlots.get(latestEvolutionSelection.current) ?? null);
       const slots = stagedLearnsetSlotMap(sourceLearnsetRows, payloadBeforeStage.learnsetSlots);
       setSelectedLearnsetSlot(current => slots.get(current) ?? current);
