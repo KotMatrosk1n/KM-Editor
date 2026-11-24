@@ -27,8 +27,11 @@ public static class SwShRestorationMegaItemProtection
             if (main.Flags.HasFlag(flag) && !NsoFile.ComputeHash(segment.DecompressedData).SequenceEqual(segment.Hash))
                 throw new InvalidDataException("The executable segment checksum is invalid.");
         var text = main.Text.DecompressedData;
-        var installed = text.AsSpan(Offset, Length).SequenceEqual(Protected);
-        if (!installed && Convert.ToHexString(SHA256.HashData(text.AsSpan(Offset, Length))) != OriginalHash)
+        var routine = text.AsSpan(Offset, Length).ToArray();
+        if (game == ProjectGame.Sword && SwShRestorationBattleHeapPatcher.IsInstalled(main, game))
+            SwShRestorationBattleHeapPatcher.NormalizeSwordMegaPadding(routine, Offset);
+        var installed = routine.AsSpan().SequenceEqual(Protected);
+        if (!installed && Convert.ToHexString(SHA256.HashData(routine)) != OriginalHash)
             throw new InvalidDataException("The battle item protection routine contains incompatible changes.");
         var dependencies = text.AsSpan(0x789050, 0x50).ToArray()
             .Concat(text.AsSpan(0x7890F0, 0x50).ToArray()).Concat(text.AsSpan(0x7DD650, 0x60).ToArray()).ToArray();
@@ -52,6 +55,8 @@ public static class SwShRestorationMegaItemProtection
             .Any(region => SwShExeFsReservedRegionLedger.Overlaps(region, Offset, Length)))
             throw new InvalidDataException("Mega Stone protection overlaps another executable feature.");
         if (current.Installed == enabled) return source;
+        if (!enabled && game == ProjectGame.Sword && SwShRestorationBattleHeapPatcher.IsInstalled(current.Main, game))
+            throw new InvalidDataException("Remove the battle heap repair before restoring the native battle item routine.");
         var text = current.Main.Text.DecompressedData.ToArray();
         (enabled ? Protected.AsSpan() : original.Main.Text.DecompressedData.AsSpan(Offset, Length)).CopyTo(text.AsSpan(Offset));
         var output = current.Main.Write(textDecompressedData: text);

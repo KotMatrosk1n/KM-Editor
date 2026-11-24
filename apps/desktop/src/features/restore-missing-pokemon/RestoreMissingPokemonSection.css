@@ -32,3 +32,18 @@
 .restoration-external-help { margin: 0; min-width: 24ch; max-width: 30rem; overflow-wrap: anywhere; }
 @media (max-width: 1600px) { .restoration-sources { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 900px) { .restoration-sources { grid-template-columns: 1fr; } }
+
+.restoration-integrity {
+  display: grid;
+  gap: .375em;
+  padding: .625em .75em;
+  border: 1px solid var(--border);
+  border-radius: .5em;
+  overflow-wrap: anywhere;
+}
+.restoration-integrity h3 { margin: 0; font-size: 1em; }
+.restoration-integrity dl { display: grid; gap: .25em .75em; margin: 0; }
+.restoration-integrity dl > div { display: flex; flex-wrap: wrap; gap: .125em .75em; }
+.restoration-integrity dt { flex: 1 1 11em; }
+.restoration-integrity dd { flex: 2 1 17em; margin: 0; }
+.restoration-integrity details p { margin: .25em 0 0; }

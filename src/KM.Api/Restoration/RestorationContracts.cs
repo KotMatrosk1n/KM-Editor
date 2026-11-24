@@ -17,12 +17,14 @@ public sealed record RestorationEntryDto(int SpeciesId, string Name, string? Def
     public bool UpdateAvailable { get; init; }
     public bool AvailableForAssignment { get; init; }
 }
+public sealed record RestorationRepairStatusDto(string Id, string State, string? Detail);
 public sealed record RestorationWorkflowDto(bool CanEdit, string Revision, IReadOnlyList<RestorationEntryDto> Entries,
     IReadOnlyList<ApiDiagnostic> Diagnostics)
 {
     public bool CanRepairAudio { get; init; }
     public bool AudioRepairStaged { get; init; }
     public bool CanRepairPokedex { get; init; }
+    public IReadOnlyList<RestorationRepairStatusDto> Repairs { get; init; } = [];
 }
 public sealed record RestorationPreparationDto(string Id, string DefinitionId, string Status, string Phase, int CompletedSpecies,
     int TotalSpecies, string? PreparedHash, IReadOnlyDictionary<int, int[]> UnavailableSourceMoves, IReadOnlyList<ApiDiagnostic> Diagnostics)
@@ -50,7 +52,8 @@ public sealed record RestorationSelectionDto(string DefinitionId, string Prepare
 public sealed record StageRestorationRequest(ProjectPathsDto Paths, EditSessionDto? Session,
     string? DefinitionId = null, string? PreparedHash = null, bool? Enabled = null,
     bool RemoveAssets = false, bool UpdateAssets = false, bool AdoptExternal = false,
-    IReadOnlyList<RestorationSelectionDto>? Selections = null, bool ReportProgress = false, bool RepairAudio = false);
+    IReadOnlyList<RestorationSelectionDto>? Selections = null, bool ReportProgress = false, bool RepairAudio = false,
+    bool CheckIntegrity = false);
 public sealed record StageRestorationResponse(RestorationWorkflowDto Workflow, EditSessionDto Session, IReadOnlyList<ApiDiagnostic> Diagnostics)
 {
     public bool AudioRepairUpToDate { get; init; }

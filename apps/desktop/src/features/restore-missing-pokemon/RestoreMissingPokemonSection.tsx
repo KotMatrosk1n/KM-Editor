@@ -20,7 +20,7 @@ type Props = {
   workflow: RestorationWorkflow | null; paths: ProjectPaths; bridge: RestorationProjectBridgeApi; session: EditSession | null;
   isEditing: boolean; isEditStarting: boolean; isStaging: boolean; isLoading: boolean;
   onStartEditSession: () => void; onCancelEditSession: (discard: () => void) => void;
-  onStage: (selections: RestorationSelection[], repairAudio?: boolean) => Promise<boolean>;
+  onStage: (selections: RestorationSelection[], checkIntegrity?: boolean) => Promise<boolean>;
   onDirtyStateChange: (dirty: boolean) => void; onRefresh: () => void; panelOutput: WorkflowPanelOutput;
   desktopServices?: DesktopServices;
 };
@@ -178,14 +178,23 @@ export function RestoreMissingPokemonSection({ workflow, paths, bridge, session,
     {isEditing ? <EditorSessionBarActions>
       <button className="primary-button" type="button" onClick={() => void stage()} disabled={!canStage}>
         <Save size={16} aria-hidden="true" /> {t('restoration.stage')}</button>
-      {workflow?.canRepairAudio ? <button className="secondary-button" type="button"
-        disabled={!canEdit || isStaging || removing !== null || workflow.audioRepairStaged}
+      <button className="secondary-button" type="button"
+        disabled={!canEdit || isStaging || removing !== null}
         onClick={() => { setError(null); void onStage([], true); }}>
-        {t('restoration.checkAudio')}</button> : null}
+        {t('restoration.checkIntegrity')}</button>
       <button className="secondary-button" type="button" onClick={() => onCancelEditSession(() => { preparationIntents.current.clear(); setDrafts({}); })} disabled={isStaging}>
         <X size={16} aria-hidden="true" /> {t('restoration.cancel')}</button>
       <span>{t('restoration.drafts', { count: Object.keys(drafts).length, staged: pendingCount })}</span>
     </EditorSessionBarActions> : null}
+    {workflow?.repairs.length ? <div className="restoration-integrity" aria-live="polite">
+      <h3>{t('restoration.integrityRepairs')}</h3>
+      <dl>{workflow.repairs.map(repair => <div key={repair.id}>
+        <dt>{t('restoration.integrityRepair.' + repair.id)}</dt>
+        <dd><span data-repair-state={repair.state}>{t('restoration.integrityState.' + repair.state)}</span>
+          {repair.detail ? <details><summary>{t('restoration.integrityDetails')}</summary><p>{repair.detail}</p></details> : null}
+        </dd>
+      </div>)}</dl>
+    </div> : null}
     <div className="restoration-guidance">
       <p>{t('restoration.familyHelp')}</p>
       <p>{t('restoration.removeHelp')}</p>
