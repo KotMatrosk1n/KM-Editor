@@ -36,7 +36,9 @@ public static partial class SwShRestorationModelMemoryPatcher
         foreach (var word in Words)
             if (Segment(main, word.Area).Length < word.Offset(game) + 36)
                 throw new InvalidDataException("The model memory executable has a truncated initialization.");
-        bool Matches(Budget word, uint expected) => Word(Segment(main, word.Area), word.Offset(game)) == expected;
+        var battleInstalled = SwShRestorationBattleHeapPatcher.IsInstalled(main, game);
+        bool Matches(Budget word, uint expected) => (battleInstalled && IsBattleHook(word, game)
+            ? SwShRestorationBattleHeapPatcher.ExpandedMainRequest : Word(Segment(main, word.Area), word.Offset(game))) == expected;
         var original = Words.All(word => Matches(word, word.Original));
         // Existing installations expanded the shared preview child but left both Pokédex parents at retail sizes.
         var installed = Words.All(word => Matches(word, word.Expanded));
@@ -84,6 +86,8 @@ public static partial class SwShRestorationModelMemoryPatcher
 
     private static byte[] Rewrite(byte[] baseline, byte[] source, ProjectGame game, bool expanded)
     {
+        if (!expanded && SwShRestorationBattleHeapPatcher.IsInstalled(NsoFile.Parse(source), game))
+            source = SwShRestorationBattleHeapPatcher.RestoreFromBase(baseline, source, game);
         var original = Read(baseline, game); var current = Read(source, game);
         if (original.Installed) throw new InvalidDataException("Base ExeFS must contain the original model memory budgets.");
         SwShExeFsMainComparison.EnsureCompatibleBaseLayout(original.Main, current.Main, Owner);
@@ -96,7 +100,8 @@ public static partial class SwShRestorationModelMemoryPatcher
         var text = current.Main.Text.DecompressedData.ToArray();
         var ro = current.Main.Ro.DecompressedData.ToArray();
         var data = current.Main.Data.DecompressedData.ToArray();
-        foreach (var word in Words)
+        var battleInstalled = SwShRestorationBattleHeapPatcher.IsInstalled(current.Main, game);
+        foreach (var word in Words.Where(word => !battleInstalled || !IsBattleHook(word, game)))
             Put(word.Area == "main.text" ? text : word.Area == "main.ro" ? ro : data,
                 word.Offset(game), expanded ? word.Expanded : word.Original);
         var output = current.Main.Write(textDecompressedData: text, roDecompressedData: ro, dataDecompressedData: data);
@@ -123,6 +128,9 @@ public static partial class SwShRestorationModelMemoryPatcher
             MainPath, word.Area, word.Offset(game), 4, word.Label, "payload-only")).ToArray();
     internal static IReadOnlyList<SwShExeFsReservedRegion> Reservations() =>
         [.. Reservations(ProjectGame.Sword), .. Reservations(ProjectGame.Shield)];
+    private static bool IsBattleHook(Budget word, ProjectGame game) =>
+        word.Area == "main.text" && word.Offset(game) == SwShRestorationBattleHeapPatcher.MainRequest;
+
     private static byte[] Segment(NsoFile main, string area) =>
         (area == "main.text" ? main.Text : area == "main.ro" ? main.Ro : main.Data).DecompressedData;
     private static uint Word(byte[] bytes, int offset) => BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offset, 4));

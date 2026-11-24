@@ -103,6 +103,12 @@ public static class SwShExecutableMergeSupport
         if (GameForBuild(Convert.ToHexString(NsoFile.Parse(original).BuildId)) is not { } game) return true;
         var beforeOptions = NsoFile.Parse(original);
         var afterOptions = NsoFile.Parse(merged);
+        try
+        {
+            if (!KM.SwSh.Restoration.SwShRestorationBattleHeapPatcher.ValidateChanges(beforeOptions, afterOptions, merged, game))
+                return false;
+        }
+        catch (InvalidDataException) { return false; }
         if (KM.SwSh.Restoration.SwShRestorationModelMemoryPatcher.Reservations(game).Any(region =>
             !Segment(beforeOptions, region.Area).AsSpan(region.StartOffset!.Value, region.Length!.Value)
                 .SequenceEqual(Segment(afterOptions, region.Area).AsSpan(region.StartOffset.Value, region.Length.Value))))

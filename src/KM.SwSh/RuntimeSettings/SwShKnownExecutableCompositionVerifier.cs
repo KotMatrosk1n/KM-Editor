@@ -85,6 +85,7 @@ public static class SwShKnownExecutableCompositionVerifier
             var recognizedTransformation = false;
 
             if (!NormalizeSpecies(retail, ref normalized, expectedGame, ref recognizedTransformation)
+                || !NormalizeBattleHeap(retail, ref normalized, expectedGame, ref recognizedTransformation)
                 || !NormalizeMegaItems(retail, ref normalized, expectedGame, ref recognizedTransformation)
                 || !NormalizeModelMemory(retail, ref normalized, expectedGame, ref recognizedTransformation)
                 || !NormalizeSoundMemory(retail, ref normalized, expectedGame, ref recognizedTransformation)
@@ -149,6 +150,14 @@ public static class SwShKnownExecutableCompositionVerifier
     {
         if (!KM.SwSh.Restoration.SwShRestorationSpeciesPatcher.Read(normalized, game).Installed) return true;
         normalized = KM.SwSh.Restoration.SwShRestorationSpeciesPatcher.RestoreFromBase(retail, normalized, game);
+        recognizedTransformation = true;
+        return true;
+    }
+
+    private static bool NormalizeBattleHeap(byte[] retail, ref byte[] normalized, ProjectGame game, ref bool recognizedTransformation)
+    {
+        if (!KM.SwSh.Restoration.SwShRestorationBattleHeapPatcher.IsInstalled(NsoFile.Parse(normalized), game)) return true;
+        normalized = KM.SwSh.Restoration.SwShRestorationBattleHeapPatcher.RestoreFromBase(retail, normalized, game);
         recognizedTransformation = true;
         return true;
     }

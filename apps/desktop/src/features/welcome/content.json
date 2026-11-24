@@ -43,7 +43,13 @@
             },
             {
               "body": {
-                "en": "Restored footsteps and pokemon cries in Sword projects with large restoration sound banks. Use Check Audio to stage the repair for an existing project."
+                "en": "Restored footsteps and pokemon cries in Sword projects with large restoration sound banks. Use Check Integrity to stage the repair for an existing project.",
+                "de": "Schritte und Pokémon-Rufe in Schwert-Projekten mit großen Soundbänken für Wiederherstellungen wurden repariert. Verwende „Integrität prüfen“, um die Reparatur für ein bestehendes Projekt vorzumerken.",
+                "es": "Se restauraron los pasos y los gritos de los Pokémon en proyectos de Espada con bancos de sonido de restauración grandes. Usa «Comprobar integridad» para preparar la reparación en un proyecto existente.",
+                "fr": "Les bruits de pas et les cris des Pokémon ont été rétablis dans les projets Épée utilisant de grandes banques de sons de restauration. Utilisez « Vérifier l’intégrité » pour préparer la réparation dans un projet existant.",
+                "ru": "В проектах Sword с большими банками звуков восстановлены звуки шагов и крики покемонов. Чтобы подготовить исправление в существующем проекте, нажмите «Проверить целостность».",
+                "uk": "У проєктах Sword із великими банками звуків відновлено звуки кроків і крики покемонів. Щоб підготувати виправлення в наявному проєкті, натисніть «Перевірити цілісність».",
+                "zh": "修复了使用大型还原音效库的《剑》项目中的脚步声和宝可梦叫声。在已有项目中，使用「检查完整性」暂存修复。"
               },
               "audience": [
                 "swsh"

@@ -106,6 +106,19 @@ public sealed partial class ProjectBridgeDispatcher
         var paths = ProjectBridgeMapper.ToCore(stage.Payload.Paths);
         var payload = stage.Payload;
         if (!payload.ReportProgress) reportProgress = null;
+        if (payload.CheckIntegrity)
+        {
+            if (payload.RepairAudio || payload.Selections is not null || payload.DefinitionId is not null
+                || payload.PreparedHash is not null || payload.Enabled is not null
+                || payload.RemoveAssets || payload.UpdateAssets || payload.AdoptExternal)
+                return SerializeFailure(SwShRestorationService.SessionCode, "Check restoration integrity without a Pokemon selection.", stage.RequestId);
+            var state = SwShRestorationStateStore.Read(paths).State;
+            var repair = new SwShRestorationService().StageIntegrity(paths,
+                payload.Session is null ? null : EditSessionBridgeMapper.ToCore(payload.Session), state.Selections.Any(selection => selection.Enabled));
+            reportProgress?.Invoke(new("refreshing"));
+            return SerializeSuccess(new StageRestorationResponse(LoadRestoration(paths, repair.Session),
+                EditSessionBridgeMapper.ToDto(repair.Session), repair.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray()), stage.RequestId);
+        }
         if (payload.RepairAudio)
         {
             if (payload.Selections is not null || payload.DefinitionId is not null || payload.PreparedHash is not null || payload.Enabled is not null
@@ -182,6 +195,8 @@ public sealed partial class ProjectBridgeDispatcher
         {
             CanRepairAudio = SwShRestorationService.CanRepairAudio(paths),
             AudioRepairStaged = pending.Any(SwShRestorationService.IsAudioRepair),
+            Repairs = SwShRestorationService.InspectIntegrity(paths, pending, state.State.Selections.Any(selection => selection.Enabled))
+                .Select(repair => new RestorationRepairStatusDto(repair.Id, repair.State.ToString(), repair.Detail)).ToArray(),
             CanRepairPokedex = !pending.Any(SwShRestorationService.IsPokedexRepair)
                 && !intents.Values.Any(intent => intent.Enabled || intent.UpdateAssets)
                 && SwShRestorationService.CanRepairPokedex(paths),
