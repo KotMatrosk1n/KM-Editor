@@ -2559,6 +2559,8 @@
     "moves.runtimeVariant.plus": "Capacité Plus",
     "moves.runtimeVariant.boss": "Capacité Boss",
     "moves.runtimeVariant.unknown": "Variante {variant}",
+    "moves.saveToSession": "Enregistrer dans la session",
+    "moves.noFlags": "Aucun indicateur disponible pour cette capacité.",
     "moves.runtimeVariant.heading": "Variante d'exécution",
     "moves.runtimeVariant.label": "Variante",
     "moves.runtimeVariant.draftRetention": "Les brouillons sont conservés lors du changement de variante ou de ligne de temporisation. La préparation envoie ensemble tous les brouillons valides de cette capacité.",

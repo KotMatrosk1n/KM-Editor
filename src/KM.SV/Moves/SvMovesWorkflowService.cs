@@ -423,7 +423,7 @@ internal sealed class SvMovesWorkflowService
                 new(3, statChanges.Stat3, FormatStat(statChanges.Stat3), statChanges.Stat3Stage, statChanges.Stat3Chance),
             ],
             flags,
-            new SvMoveProvenance(source.RelativePath, source.SourceLayer, source.FileState));
+            new SvMoveProvenance(source.RelativePath, source.SourceLayer, source.FileState, source.StoragePath));
     }
 
     private static IReadOnlyList<SvMoveFlagRecord> ToFlagRecords(global::SvMoveData move)

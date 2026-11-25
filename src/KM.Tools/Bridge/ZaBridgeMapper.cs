@@ -2101,7 +2101,8 @@ public static class ZaBridgeMapper
         return new MoveProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
-            ProjectBridgeMapper.ToDto(provenance.FileState));
+            ProjectBridgeMapper.ToDto(provenance.FileState),
+            provenance.SourcePath);
     }
 
     private static TextEntryRecordDto ToDto(ZaTextEntryRecord entry)

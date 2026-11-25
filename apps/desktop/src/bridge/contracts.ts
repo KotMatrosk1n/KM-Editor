@@ -1832,6 +1832,7 @@ export const stagePokemonDexMegaSyncResponseSchema = z.strictObject({
 export const moveProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
+  sourcePath: z.string().nullish(),
   sourceLayer: projectFileLayerSchema,
 });
 

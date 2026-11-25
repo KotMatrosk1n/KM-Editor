@@ -466,6 +466,7 @@ export function getMoveEditableFieldGroup(field: NumericMoveEditableField) {
     field.field === 'turnMin' ||
     field.field === 'turnMax' ||
     field.field === 'recoil' ||
+    field.field === 'rawHealing' ||
     (field.field === 'quality' && field.options.length > 0)
   ) {
     return 'Secondary Effects';
@@ -473,7 +474,6 @@ export function getMoveEditableFieldGroup(field: NumericMoveEditableField) {
 
   if (
     field.field === 'effectSequence' ||
-    field.field === 'rawHealing' ||
     field.field === 'quality'
   ) {
     return 'Advanced / Raw';

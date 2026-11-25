@@ -9,7 +9,8 @@ namespace KM.SwSh.Moves;
 public sealed record SwShMoveProvenance(
     string SourceFile,
     ProjectFileLayer SourceLayer,
-    ProjectFileGraphEntryState FileState);
+    ProjectFileGraphEntryState FileState,
+    string? SourcePath = null);
 
 public sealed record SwShMoveStatChangeRecord(
     int Slot,

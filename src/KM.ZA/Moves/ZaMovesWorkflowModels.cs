@@ -10,7 +10,8 @@ namespace KM.ZA.Moves;
 public sealed record ZaMoveProvenance(
     string SourceFile,
     ProjectFileLayer SourceLayer,
-    ProjectFileGraphEntryState FileState);
+    ProjectFileGraphEntryState FileState,
+    string? SourcePath = null);
 
 public sealed record ZaMoveStatChangeRecord(
     int Slot,

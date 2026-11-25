@@ -2559,6 +2559,8 @@
     "moves.runtimeVariant.plus": "Plus Move",
     "moves.runtimeVariant.boss": "Boss Move",
     "moves.runtimeVariant.unknown": "Variant {variant}",
+    "moves.saveToSession": "Save to Session",
+    "moves.noFlags": "No flags are available for this move.",
     "moves.runtimeVariant.heading": "Runtime Variant",
     "moves.runtimeVariant.label": "Variant",
     "moves.runtimeVariant.draftRetention": "Drafts are retained while variants and timing rows change. Stage submits every valid draft for this move together.",

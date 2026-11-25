@@ -6,6 +6,7 @@ import { learnsetDraftsEqual, projectLearnsetDraftRows, replaceLearnsetDraftReco
 import { LearnsetClipboardActions } from './features/pokemon/LearnsetClipboardActions';
 import { InteractiveTableRow, VirtualTableBody } from './components/VirtualTable';
 import { EditorLayoutScope, RecordEditorWorkspace, EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, SectionedEditorWorkspace } from './components/SectionedEditorWorkspace';
+import { MoveDetails, MoveEditorWorkspace, MoveFlagCount, type MoveFieldControl, type MoveFieldGroup } from './features/moves/MoveEditorWorkspace';
 import { EditorDetailGroup, EditorDetailValue, PokemonDetailsStats } from './components/EditorRecordDetails';
 import { SpeciesDataMatrix, useSpeciesFieldFinder } from './components/SpeciesDataMatrix';
 import { PokemonSearchBox, PokemonTable, filterPokemonRecords, formatPokemonTypes, type PokemonSelectionRecord } from './components/PokemonSelection';
@@ -355,11 +356,6 @@ import { getContextualItemEditableFields } from './itemsEditor';
 import {
   evaluateMoveFieldsUpdate,
   formatMoveAccuracy,
-  formatMoveEffectChance,
-  formatMoveHealingValue,
-  formatMoveHitRange,
-  formatMoveInflictedEffectTurns,
-  formatMoveRecoilValue,
   getEditableMoveFieldValue,
   getMoveEditableFieldGroup,
   getMoveEditableFieldLabel,
@@ -28214,6 +28210,7 @@ function MovesSection({
     [filteredMoves, moves, selectedMoveId]
   );
   const canEditMoves = workflow?.summary.availability === 'available';
+  const [flagRequest, setFlagRequest] = useState<{ sectionId: string }>();
   const pendingMoveIds = useMemo(() => getPendingMoveIds(editSession), [editSession]);
   const usesRuntimeMoveData = moves.some((move) => move.hasRuntimeData);
   const selectedRuntimeVariant = selectedMove
@@ -28224,44 +28221,42 @@ function MovesSection({
     : null;
 
   const browserControls = (
-        <div className="items-toolbar moves-toolbar">
-          <label className="search-box items-search">
-            <Search aria-hidden="true" size={18} />
-            <input
-              aria-label="Search moves"
-              disabled={!workflow}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search moves"
-              type="search"
-              value={searchText}
-            />
-          </label>
-          <Metric
-            label="Loaded records"
-            value={workflow ? workflow.stats.totalMoveCount.toString() : '0'}
-          />
-          <Metric
-            label="Enabled"
-            value={workflow ? workflow.stats.enabledMoveCount.toString() : '0'}
-          />
-          <Metric
-            label="Active flags"
-            value={workflow ? workflow.stats.activeFlagCount.toString() : '0'}
-          />
-        </div>
+    <div className="items-toolbar moves-toolbar">
+      <label className="search-box items-search">
+        <Search aria-hidden="true" size={18} />
+        <input
+          aria-label="Search moves"
+          disabled={!workflow}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Search moves"
+          type="search"
+          value={searchText}
+        />
+      </label>
+      <Metric
+        label="Loaded records"
+        value={workflow ? workflow.stats.totalMoveCount.toString() : '0'}
+      />
+      <Metric
+        label="Enabled"
+        value={workflow ? workflow.stats.enabledMoveCount.toString() : '0'}
+      />
+      <Metric
+        label="Active flags"
+        value={workflow ? workflow.stats.activeFlagCount.toString() : '0'}
+      />
+    </div>
   );
 
-  const editorHeader = <>
-        {workflow ? (
-          <EditorSessionBar
-            canEdit={canEditMoves && selectedMove !== null}
-            isEditing={editSession !== null}
-            isStarting={isEditStarting}
-            label="Moves"
-            onStart={onStartEditSession}
-          />
-        ) : null}
-  </>;
+  const editorHeader = workflow ? (
+    <EditorSessionBar
+      canEdit={canEditMoves && selectedMove !== null}
+      isEditing={editSession !== null}
+      isStarting={isEditStarting}
+      label="Moves"
+      onStart={onStartEditSession}
+    />
+  ) : null;
 
   return (
     <>
@@ -28271,7 +28266,7 @@ function MovesSection({
           <h2 id="moves-heading">Moves</h2>
         </div>
         {workflow ? (
-          <SelectedMovePanel browserControls={browserControls} editorHeader={editorHeader} browser={
+          <SelectedMovePanel flagRequest={flagRequest} browserControls={browserControls} editorHeader={editorHeader} browser={
             <div
               aria-colcount={8}
               aria-label="Moves"
@@ -28287,9 +28282,7 @@ function MovesSection({
                 <span role="columnheader">Power</span>
                 <span role="columnheader">Acc</span>
                 <span role="columnheader">{usesRuntimeMoveData ? 'Cooldown' : 'PP'}</span>
-                <span role="columnheader">
-                  {usesRuntimeMoveData ? t('moves.runtimeVariant.label') : 'Flags'}
-                </span>
+                <span role="columnheader">Flags</span>
               </div>
               <VirtualTableBody
                 getKey={(move) => move.moveId}
@@ -28305,15 +28298,20 @@ function MovesSection({
                   const runtimeView = move.hasRuntimeData
                     ? getMoveRuntimeView(move, runtimeVariant)
                     : null;
-                  const runtimeVariantCount = move.hasRuntimeData
-                    ? getMoveRuntimeVariants(move).length
-                    : 0;
+                  const flagCount = move.hasRuntimeData
+                    ? workflow.editableFields.filter(field =>
+                        field.field.startsWith('battle.' + runtimeVariant + '.') &&
+                        getMoveEditableFieldGroup(field) === 'Runtime Flags' &&
+                        getEditableMoveFieldValue(move, field.field) === 1
+                      ).length
+                    : move.flags.filter(flag => flag.enabled).length;
 
                   return (
                     <InteractiveTableRow
                       className={`moves-row ${isSelected ? 'moves-row-selected' : ''} ${
                         pendingMoveIds.has(move.moveId) ? 'moves-row-pending' : ''
                       }`}
+                      aria-selected={isSelected}
                       onClick={() => onSelectMove(move.moveId)}
                       role="row"
                     >
@@ -28353,17 +28351,10 @@ function MovesSection({
                           : move.pp}
                       </span>
                       <span role="cell">
-                        {move.hasRuntimeData && runtimeVariant !== null
-                          ? t(
-                              `moves.list.runtimeSummary.${isSelected ? 'selected' : 'available'}.${
-                                runtimeVariantCount === 1 ? 'one' : 'other'
-                              }`,
-                              {
-                                count: runtimeVariantCount,
-                                label: formatLocalizedMoveRuntimeVariantLabel(runtimeVariant, t)
-                              }
-                            )
-                          : formatMoveActiveFlags(move)}
+                        <MoveFlagCount count={flagCount} name={move.name} onOpen={() => {
+                          onSelectMove(move.moveId);
+                          setFlagRequest({ sectionId: 'flags' });
+                        }} />
                       </span>
                     </InteractiveTableRow>
                   );
@@ -28502,6 +28493,14 @@ function getLocalizedMoveEditableFieldHelp(
   };
   const key = keyByMember[getMoveFieldMember(field.field)];
   return key ? t(key) : undefined;
+}
+
+function getMoveFlagGroup(field: string) {
+  const name = field.split('.').at(-1)!.toLowerCase();
+  if (/contact|punch|sound|dance|powder|bite|bullet|slicing|wind/.test(name)) return 'Flags: Move properties';
+  if (/protect|reflect|snatch|substitute|floating|effectiveness|guard/.test(name)) return 'Flags: Protection and immunity';
+  if (/metronome|mirr|sleeptalk|assist|copycat|mimic|instruct|encore|mefirst/.test(name)) return 'Flags: Move interactions';
+  return 'Flags: Battle behavior';
 }
 
 function formatLocalizedMoveFieldGroup(
@@ -29012,6 +29011,7 @@ function SelectedMovePanel({
   browser,
   browserControls,
   editorHeader,
+  flagRequest,
   baselineValues,
   canEditMoves,
   editSession,
@@ -29032,6 +29032,7 @@ function SelectedMovePanel({
   browser: ReactNode;
   browserControls: ReactNode;
   editorHeader: ReactNode;
+  flagRequest?: { sectionId: string };
   baselineValues: Record<string, number | null> | null;
   canEditMoves: boolean;
   editSession: EditSession | null;
@@ -29230,7 +29231,10 @@ function SelectedMovePanel({
   const moveFieldGroups = useMemo(
     () =>
       orderMoveEditableFieldGroups(
-        groupNumericEditableFields(moveFields, getMoveEditableFieldGroup)
+        groupNumericEditableFields(moveFields.filter(field => field.field !== 'canUseMove'), field => {
+          const group = getMoveEditableFieldGroup(field);
+          return group.endsWith('Flags') ? getMoveFlagGroup(field.field) : group;
+        })
       ),
     [moveFields]
   );
@@ -29368,17 +29372,6 @@ function SelectedMovePanel({
   const nextMoveDraftTarget = nextMoveDraftKey === null
     ? null
     : moves.find((candidate) => candidate.moveId.toString() === nextMoveDraftKey) ?? null;
-  const activeFlags = move?.flags.filter((flag) => flag.enabled) ?? [];
-  const qualityField = moveFields.find((field) => field.field === 'quality');
-  const mappedQualityLabel = move
-    ? (qualityField?.options.find((option) => option.value === move.quality)?.label ?? null)
-    : null;
-  const visibleStatChanges =
-    move?.statChanges.filter(
-      (statChange) =>
-        statChange.stat > 0 ||
-        (statChange.stat === 0 && (statChange.stage !== 0 || statChange.percent !== 0))
-    ) ?? [];
   const canSaveMoveDrafts =
     move !== null &&
     editSession !== null &&
@@ -29403,725 +29396,502 @@ function SelectedMovePanel({
     ? formatMoveRuntimeRowStatus(selectedRuntimeView, t)
     : null;
 
-  return (
-    <SectionedEditorWorkspace sessionKey={`${ordinaryDraftProject?.projectId ?? 'project'}:${ordinaryDraftProject?.game ?? 'game'}:moves`}
-      initialSection="moveData" browserVisibleRows={4} browser={browser}
-      browserControls={browserControls} sessionBar={editorHeader} compactFields>
-      <EditorWorkspaceHeader>
-      <PublishedLocalEditorValidationDiagnostics
-        domain="workflow.moves"
-        issues={
-          move
-            ? [
-                ...moveDraftSummary.invalidFields,
-                ...moveRelationalValidationIssues.map((issue) => ({
-                  field: issue.fields.join(','),
-                  message: issue.message
-                })),
-                ...moveDecimalValidationIssues
-              ]
-            : []
+  const renderMoveField = (move: MoveRecord, field: NumericEditableField): MoveFieldControl => {
+    const currentValue = getEditableMoveFieldValue(move, field.field);
+    const draftValue = moveDrafts[field.field] ?? '';
+    const draftState = getTrainerFieldDraftState(
+      draftValue,
+      currentValue,
+      field,
+      moveDraftContext
+    );
+    const relationalIssue = moveRelationalValidationIssues.find((issue) =>
+      issue.fields.includes(field.field)
+    );
+    const decimalOptionIssue = moveDecimalValidationIssues.find(
+      (issue) => issue.field === field.field
+    )?.message ?? null;
+    const effectiveDraftState = decimalOptionIssue || relationalIssue
+      ? {
+          ...draftState,
+          error: decimalOptionIssue ?? relationalIssue?.message ?? null,
+          isValid: false
         }
+      : draftState;
+
+    const playerDamageAttackId = parseMovePlayerDamageField(field.field);
+    const playerDamageRow = playerDamageAttackId === null
+      ? null
+      : move.playerDamageRows.find(
+          (candidate) => candidate.attackId === playerDamageAttackId
+        ) ?? null;
+    const playerDamageDescriptorId = playerDamageRow === null
+      ? undefined
+      : `move-player-damage-${move.moveId}-${playerDamageRow.attackId}-descriptor`;
+    const playerDamageDisabledReason = playerDamageRow?.invocations.length === 0
+      ? t('moves.playerDamage.disabled.noInvoker', {
+          attackId: playerDamageRow.attackId
+        })
+      : undefined;
+    const fieldControl = (
+      <GiftPokemonDraftField
+        ariaDescribedBy={playerDamageDescriptorId}
+        currentValue={currentValue}
+        checkbox={field.valueKind === 'boolean' && field.minimumValue === 0 && field.maximumValue === 1 &&
+          field.options.every(option => option.value === 0 || option.value === 1)}
+        disabled={
+          !canEditMoves ||
+          editSession === null ||
+          playerDamageDisabledReason !== undefined
+        }
+        disabledReason={playerDamageDisabledReason}
+        draftState={effectiveDraftState}
+        draftValue={draftValue}
+        field={field}
+        helpDomain="moves"
+        helpGame={move.hasRuntimeData || ordinaryDraftProject?.game === 'za' ? 'za'
+          : ordinaryDraftProject?.game === 'scarlet' || ordinaryDraftProject?.game === 'violet' ? 'sv' : 'swsh'}
+        helpText={
+          playerDamageAttackId === null
+            ? getLocalizedMoveEditableFieldHelp(field, t, move.hasRuntimeData)
+            : t('moves.playerDamage.fieldHelp', {
+                attackId: playerDamageAttackId,
+                maximum: field.maximumValue ?? 999,
+                minimum: field.minimumValue ?? 0
+              })
+        }
+        idPrefix="move-field"
+        wrapSelectedValue
+        labelText={
+          playerDamageAttackId === null
+            ? formatLocalizedMoveEditableFieldLabel(field, t, move.hasRuntimeData)
+            : t('moves.playerDamage.fieldLabel', {
+                attackId: playerDamageAttackId
+              })
+        }
+        onChange={(value) => {
+          setMoveDraftsByMoveId((currentDrafts) => {
+            const recordKey = move.moveId.toString();
+            const nextSparseDrafts = {
+              ...(currentDrafts[recordKey] ?? {})
+            };
+            const defaultValue = (currentValue ?? '').toString();
+            if (value === defaultValue) {
+              delete nextSparseDrafts[field.field];
+            } else {
+              nextSparseDrafts[field.field] = value;
+            }
+
+            const nextRecords = { ...currentDrafts };
+            if (Object.keys(nextSparseDrafts).length === 0) {
+              delete nextRecords[recordKey];
+            } else {
+              nextRecords[recordKey] = nextSparseDrafts;
+            }
+            return nextRecords;
+          });
+        }}
+        preservedValue={baselineValues?.[field.field] ?? null}
       />
-      {editSession && !move ? (
-        <EmptySelectionEditorSessionActions
+    );
+    return {
+      id: field.field,
+      changed: effectiveDraftState.isChanged,
+      invalid: !effectiveDraftState.isValid,
+      input: playerDamageRow && playerDamageDescriptorId ? (
+        <div className="move-player-damage-control">
+          {fieldControl}
+          <MovePlayerDamageDescriptor id={playerDamageDescriptorId} row={playerDamageRow}
+            totalRows={move.playerDamageRows.length} />
+        </div>
+      ) : fieldControl
+    };
+  };
+
+  const availability = move
+    ? t(move.canUseMove ? 'moves.inspector.catalogEnabled' : 'moves.inspector.catalogDisabled')
+    : undefined;
+  const detailsFields = move ? moveFields.filter(field => field.field === 'canUseMove').map(field => renderMoveField(move, field)) : [];
+  const core: MoveFieldGroup[] = [];
+  const effects: MoveFieldGroup[] = [];
+  const advanced: MoveFieldGroup[] = [];
+  const flags: MoveFieldGroup[] = [];
+  if (move) {
+    for (const [groupIndex, group] of moveFieldGroups.entries()) {
+      const isTeraBlastGroup = group.group === 'Tera Blast';
+      const isPlayerDamageGroup = group.group === 'Boss Player Damage';
+      const isConventionalEffectsGroup = group.group === 'Conventional Effects';
+      const isRuntimeBehaviorGroup = group.group === 'Runtime Behavior';
+      const isRuntimeEffectsGroup = group.group === 'Runtime Effects';
+      const isRuntimeStatChangesGroup = group.group === 'Runtime Stat Changes';
+      const supportsSwShAllStats =
+        (ordinaryDraftProject?.game === 'sword' || ordinaryDraftProject?.game === 'shield') &&
+        group.group === 'Stat Changes' &&
+        group.fields.some((field) => /^stat[123]$/.test(field.field) &&
+          field.options.some((option) => option.value === 10));
+      const isRuntimeBattleGroup = group.fields.every((field) =>
+        field.field.startsWith('battle.')
+      );
+      const isAdvancedTimingGroup = group.fields.some((field) => {
+        const timingField = parseMoveTimingField(field.field);
+        return timingField !== null && timingField.occurrence !== null;
+      });
+      const isFirstAdvancedTimingGroup =
+        isAdvancedTimingGroup &&
+        !moveFieldGroups
+          .slice(0, groupIndex)
+          .some((candidate) =>
+            candidate.fields.some((field) => {
+              const timingField = parseMoveTimingField(field.field);
+              return timingField !== null && timingField.occurrence !== null;
+            })
+          );
+      const localizedMoveGroupLabel = isPlayerDamageGroup
+        ? t('moves.playerDamage.groupHeading')
+        : isConventionalEffectsGroup && move.hasRuntimeData
+          ? t('moves.groups.sharedConventionalEffects')
+          : formatLocalizedMoveFieldGroup(group.group, t, translateLiteral);
+      const semanticMoveGroupHelp = isTeraBlastGroup
+        ? t('moves.teraBlast.help')
+        : supportsSwShAllStats
+          ? t('moves.swshStats.help')
+        : isPlayerDamageGroup
+        ? t(
+            move.playerDamageRows.length === 1
+              ? 'moves.playerDamage.groupNote.one'
+              : 'moves.playerDamage.groupNote.other',
+            { count: move.playerDamageRows.length }
+          )
+        : isConventionalEffectsGroup
+          ? t(move.hasRuntimeData ? 'moves.flinch.zaHelp' : 'moves.flinch.help')
+          : isRuntimeBehaviorGroup
+            ? t('moves.runtimeBehavior.help')
+            : isRuntimeEffectsGroup
+              ? t('moves.runtimeEffects.help')
+              : isFirstAdvancedTimingGroup
+                ? t('moves.advancedEditor.help')
+                : null;
+      const runtimeBattleScopeHelp = isRuntimeBattleGroup
+        ? t('moves.runtimeBattle.scopeHelp')
+        : null;
+      const localizedMoveGroupHelp =
+        semanticMoveGroupHelp && runtimeBattleScopeHelp
+          ? `${semanticMoveGroupHelp} ${runtimeBattleScopeHelp}`
+          : semanticMoveGroupHelp ?? runtimeBattleScopeHelp;
+      const flagGroup = group.group.startsWith('Flags: ');
+      const label = flagGroup ? translateLiteral(group.group.slice(7)) : localizedMoveGroupLabel;
+      const layout = group.group.endsWith('Stat Changes') ? 'stats' : flagGroup ? 'flags' : undefined;
+      const notice = <>
+        {isTeraBlastGroup ? (
+          <button type="button" className="secondary-action"
+            disabled={!canEditMoves || editSession === null}
+            onClick={() => setMoveDraftsByMoveId(current => {
+              const drafts = { ...(current[move.moveId.toString()] ?? {}) };
+              for (const [field, value] of Object.entries(teraBlastDefaultFields)) {
+                if (getEditableMoveFieldValue(move, field) === value) delete drafts[field];
+                else drafts[field] = value.toString();
+              }
+              return { ...current, [move.moveId.toString()]: drafts };
+            })}>
+            {t('moves.teraBlast.restore')}
+          </button>
+        ) : null}
+        {isPlayerDamageGroup ? (
+          <>
+            <ScriptedBossMoveControllerAvailability
+              move={move}
+              profiles={scriptedBosses}
+            />
+          </>
+        ) : null}
+        {isRuntimeStatChangesGroup && selectedRuntimeStatRecipient ? (
+          <p className="field-note move-runtime-behavior-note">
+            <strong>{t('moves.statRecipient.label')}:</strong>{' '}
+            {selectedRuntimeStatRecipient.kind === 'user'
+              ? t('moves.statRecipient.user')
+              : selectedRuntimeStatRecipient.kind === 'hit-targets'
+                ? t('moves.statRecipient.hitTargets')
+                : selectedRuntimeStatRecipient.kind === 'move-target'
+                  ? t('moves.statRecipient.moveTarget', {
+                      target: translateLiteral(selectedRuntimeStatRecipient.targetName)
+                    })
+                  : t('moves.statRecipient.scripted')}{' '}
+            {t('moves.statRecipient.help')}
+          </p>
+        ) : null}
+      </>;
+      const destination = flagGroup ? flags
+        : group.group.startsWith('Advanced ') || ['Advanced / Raw', 'Move Data'].includes(group.group) ? advanced
+        : ['Core Stats', 'Targeting', 'Runtime Core', 'Timing'].includes(group.group) ? core : effects;
+      destination.push({ label, layout, notice, help: localizedMoveGroupHelp, fields: group.fields.map(field => renderMoveField(move, field)) });
+    }
+  }
+
+  const sessionActions = editSession && move ? (
+    <EditorSessionBarActions>
+      <button
+        aria-busy={isMoveUpdating || undefined}
+        className="primary-button"
+        disabled={!canSaveMoveDrafts}
+        onClick={async () => {
+          const fieldsBeforeStage = moveDraftPayload.fields;
+          const sourceMutation = await runSessionLocalEditorSourceMutation({
+            binding: moveDraftBinding,
+            didMutate: (didSave) => didSave,
+            mutation: () =>
+              onUpdateMoveFields(
+                move.moveId,
+                moveDraftSummary.changedFields.map((change) => ({
+                  field: change.field,
+                  value: change.value
+                }))
+              ),
+            reduceLatestPayload: (latestPayload) => ({
+              fields: removeMatchingFieldDraftValues(
+                latestPayload.fields,
+                fieldsBeforeStage
+              )
+            })
+          });
+          if (sourceMutation.kind === 'reservation-unavailable') {
+            setMoveSourceMutationError(sessionLocalDraftMutationBusyMessage);
+            return;
+          }
+          setMoveSourceMutationError(null);
+          if (sourceMutation.kind === 'source-mutated') {
+            setMoveDraftsByMoveId((currentDrafts) =>
+              updateSparseFieldDraftRecordAfterStage(
+                currentDrafts,
+                move.moveId,
+                fieldsBeforeStage
+              )
+            );
+          }
+        }}
+        type="button"
+      >
+        <BusyActionContent
+          busyLabel="Staging"
+          icon={<Save aria-hidden="true" size={16} />}
           isBusy={isMoveUpdating}
-          onCancel={() => cancelActiveEditSession(() => setMoveDraftsByMoveId({}))}
-          summary="No move selected."
+          label={t('moves.saveToSession')}
         />
+      </button>
+      {nextMoveDraftTarget ? (
+        <button
+          className="secondary-button"
+          disabled={isMoveUpdating}
+          onClick={() => onSelectMove(nextMoveDraftTarget.moveId)}
+          type="button"
+        >
+          {t('editorDrafts.reviewNext')}
+        </button>
       ) : null}
-      <PublishedInlineEditorError
-        domain="workflow.moves"
-        message={moveSourceMutationError}
-      />
-      </EditorWorkspaceHeader>
-      {move ? <EditorWorkspaceHeader afterBrowser>
-        <EditorRecordHeading name={move.name} id={move.moveId} />
-      </EditorWorkspaceHeader> : null}
+      <button
+        className="danger-button"
+        disabled={isMoveUpdating}
+        onClick={() =>
+          cancelActiveEditSession(() =>
+            setMoveDraftsByMoveId({})
+          )
+        }
+        type="button"
+      >
+        <X aria-hidden="true" size={16} />
+        <span>Cancel</span>
+      </button>
+      <span className="draft-action-summary">
+        {formatDraftSummary(moveDraftSummary)};{' '}
+        {t('editorDrafts.summary.moves', {
+          count: outstandingMoveDraftKeys.length
+        })}
+      </span>
+    </EditorSessionBarActions>
+  ) : null;
 
-      {move ? (
-        <>
-          <EditorWorkspaceSection id="details" label={t('editorSections.details')}>
-          <div className="editor-detail-columns editor-move-overview">
-            <EditorDetailGroup label={translateLiteral('Move Data')}>
-              <dl className="editor-detail-list">
-            <EditorDetailValue label={t('moves.inspector.catalogStatus')}>{t(
-                      move.canUseMove
-                        ? 'moves.inspector.catalogEnabled'
-                        : 'moves.inspector.catalogDisabled'
-                    )}</EditorDetailValue>
-            {move.hasRuntimeData && selectedRuntimeView ? (
-              <>
-                <EditorDetailValue label={t('moves.inspector.selectedRuntimeVariant')}>{formatLocalizedMoveRuntimeVariantLabel(selectedRuntimeView.variant, t)}</EditorDetailValue>
-                <EditorDetailValue label={t('moves.inspector.runtimeRowStatus')}>{selectedRuntimeRowStatus}</EditorDetailValue>
-                <EditorDetailValue label={t('moves.inspector.runtimeTypeCategory')}>{selectedRuntimeView.battleRow
-                      ? `${selectedRuntimeView.battleRow.typeName} / ${selectedRuntimeView.battleRow.damageTypeName}`
-                      : t('moves.inspector.missingBattleRow')}</EditorDetailValue>
-                <EditorDetailValue label={t('moves.inspector.runtimePower')}>{selectedRuntimeView.battleRow
-                      ? selectedRuntimeView.battleRow.power
-                      : t('moves.inspector.missingBattleRow')}</EditorDetailValue>
-                <EditorDetailValue label={t('moves.inspector.runtimeAccuracy')}>{selectedRuntimeView.timingRow
-                      ? `${selectedRuntimeView.timingRow.hitPercent}%`
-                      : t('moves.inspector.missingTimingRow')}</EditorDetailValue>
-                <EditorDetailValue label={t('moves.inspector.runtimeCooldown')}>{selectedRuntimeView.timingRow
-                      ? `${selectedRuntimeView.timingRow.cooldown}s`
-                      : t('moves.inspector.missingTimingRow')}</EditorDetailValue>
-                {selectedRuntimeView.variant === 2 ? (
-                  <EditorDetailValue label={t('moves.inspector.playerDamageRows')}>{selectedRuntimeView.playerDamageRows.length > 0
-                        ? t(
-                            selectedRuntimeView.playerDamageRows.length === 1
-                              ? 'moves.inspector.playerDamageRows.one'
-                              : 'moves.inspector.playerDamageRows.other',
-                            { count: selectedRuntimeView.playerDamageRows.length }
-                          )
-                        : t('moves.inspector.playerDamageRows.none')}</EditorDetailValue>
-                ) : null}
-              </>
-            ) : (
-              <EditorDetailValue label={translateLiteral('Type / category')}>{move.typeName} / {move.categoryName}</EditorDetailValue>
-            )}
-            <EditorDetailValue label={translateLiteral('Description')}>{move.description ?? 'No description text.'}</EditorDetailValue>
-              </dl>
-            </EditorDetailGroup>
-            <EditorDetailGroup label={translateLiteral('Source')}>
-              <dl className="editor-detail-list">
-                <EditorDetailValue label={t('moves.inspector.catalogSourceFile')} dataValue path>{move.provenance.sourceFile}</EditorDetailValue>
-                <EditorDetailValue label={t('moves.inspector.catalogSourceLayer')}>{formatSourceLayer(move.provenance.sourceLayer)}</EditorDetailValue>
-                <EditorDetailValue label={t('moves.inspector.catalogFileState')}>{formatFileState(move.provenance.fileState)}</EditorDetailValue>
-                {move.hasRuntimeData ? <EditorDetailValue label={t('moves.inspector.runtimeDataSources')} path>
-                  {move.runtimeSourceFiles.length > 0 ? move.runtimeSourceFiles.join(', ') : t('moves.inspector.noRuntimeDataSources')}
-                </EditorDetailValue> : null}
-              </dl>
-            </EditorDetailGroup>
-          </div>
-          </EditorWorkspaceSection>
-
-          <EditorWorkspaceSection id="moveData" label={translateLiteral('Move Data')}
-            modified={moveDraftSummary.changedFields.length > 0 || moveDraftSummary.invalidFields.length > 0 || moveRelationalValidationIssues.length > 0 || moveDecimalValidationIssues.length > 0}
-            invalid={moveDraftSummary.invalidFields.length > 0 || moveRelationalValidationIssues.length > 0 || moveDecimalValidationIssues.length > 0}>
-          <div className="item-edit-form move-edit-form">
-            <div className="editable-field-groups">
-              {move.hasRuntimeData && runtimeVariantOptions.length > 0 ? (
-                <fieldset className="editable-field-group">
-                  <legend className="context-help-heading">
-                    <span>{t('moves.runtimeVariant.heading')}</span>
-                    <ContextHelp label={t('moves.runtimeVariant.heading')}>
-                      {t('moves.runtimeVariant.help')} {t('moves.runtimeVariant.draftRetention')}
-                    </ContextHelp>
-                  </legend>
-                  <div className="path-field editable-field-control">
-                    <FieldLabel
-                      help={`${t('moves.runtimeVariant.help')} ${t('moves.runtimeVariant.draftRetention')}`}
-                      htmlFor="move-runtime-variant"
-                      label={t('moves.runtimeVariant.label')}
-                    />
-                    <SearchableOptionInput
-                      ariaLabel={t('moves.runtimeVariant.label')}
-                      disabled={false}
-                      id="move-runtime-variant"
-                      isFiniteCatalog
-                      onChange={(value) => onSelectRuntimeVariant(Number(value))}
-                      options={runtimeVariantSelectOptions}
-                      value={selectedRuntimeVariant?.toString() ?? ''}
-                    />
-                  </div>
-                </fieldset>
-              ) : null}
-              {selectedRuntimeVariant === 2 ? (
-                <ScriptedBossMoveOwnership move={move} profiles={scriptedBosses} />
-              ) : null}
-              {move.hasRuntimeData && timingProfileOptions.length > 1 ? (
-                <fieldset className="editable-field-group">
-                  <legend className="context-help-heading">
-                    <span>{t('moves.timingProfile.heading')}</span>
-                    <ContextHelp label={t('moves.timingProfile.heading')}>
-                      {t('moves.timingProfile.help')}
-                    </ContextHelp>
-                  </legend>
-                  <div className="path-field editable-field-control">
-                    <FieldLabel
-                      help={t('moves.timingProfile.help')}
-                      htmlFor="move-timing-profile"
-                      label={translateLiteral('Profile')}
-                    />
-                    <SearchableOptionInput
-                      ariaLabel={translateLiteral('Profile')}
-                      disabled={false}
-                      id="move-timing-profile"
-                      isFiniteCatalog
-                      onChange={(value) => {
-                        if (!timingProfileStorageKey) {
-                          return;
-                        }
-
-                        setTimingProfileByMoveVariant((current) => ({
-                          ...current,
-                          [timingProfileStorageKey]: Number(value)
-                        }));
-                      }}
-                      options={timingProfileSelectOptions}
-                      value={selectedTimingProfile?.toString() ?? ''}
-                    />
-                  </div>
-                </fieldset>
-              ) : null}
-              {move.hasRuntimeData && timingRowOptions.length > 1 ? (
-                <fieldset className="editable-field-group">
-                  <legend className="context-help-heading">
-                    <span>{translateLiteral('Timing Row')}</span>
-                    <ContextHelp label={translateLiteral('Timing Row')}>
-                      {t('moves.timingOccurrence.help')}
-                    </ContextHelp>
-                  </legend>
-                  <div className="path-field editable-field-control">
-                    <FieldLabel
-                      help={t('moves.timingOccurrence.help')}
-                      htmlFor="move-timing-occurrence"
-                      label={translateLiteral('Occurrence')}
-                    />
-                    <SearchableOptionInput
-                      ariaLabel={translateLiteral('Occurrence')}
-                      disabled={false}
-                      id="move-timing-occurrence"
-                      isFiniteCatalog
-                      onChange={(value) => {
-                        if (!timingOccurrenceStorageKey) {
-                          return;
-                        }
-
-                        setTimingOccurrenceByProfile((current) => ({
-                          ...current,
-                          [timingOccurrenceStorageKey]: Number(value)
-                        }));
-                      }}
-                      options={timingOccurrenceSelectOptions}
-                      value={selectedTimingOccurrence.toString()}
-                    />
-                  </div>
-                </fieldset>
-              ) : null}
-              <fieldset className="editable-field-group">
-                <legend>Read-only</legend>
-                <div className="editable-field-grid">
-                  <label className="path-field editable-field-control editable-field-disabled">
-                    <span>Move ID</span>
-                    <input disabled readOnly value={move.moveId} />
-                  </label>
-                  <label className="path-field editable-field-control editable-field-disabled">
-                    <span>Version</span>
-                    <input disabled readOnly value={move.version} />
-                  </label>
-                </div>
-              </fieldset>
-              {move.teraBlastBlockedReason ? (
-                <p className="field-note" role="status">{t('moves.teraBlast.unavailable')}</p>
-              ) : null}
-              {moveFieldGroups.map((group, groupIndex) => {
-                const isTeraBlastGroup = group.group === 'Tera Blast';
-                const isFlagsGroup = group.group.endsWith('Flags');
-                const isAdvancedGroup = group.group.startsWith('Advanced ');
-                const isPlayerDamageGroup = group.group === 'Boss Player Damage';
-                const isConventionalEffectsGroup = group.group === 'Conventional Effects';
-                const isRuntimeBehaviorGroup = group.group === 'Runtime Behavior';
-                const isRuntimeEffectsGroup = group.group === 'Runtime Effects';
-                const isRuntimeStatChangesGroup = group.group === 'Runtime Stat Changes';
-                const supportsSwShAllStats =
-                  (ordinaryDraftProject?.game === 'sword' || ordinaryDraftProject?.game === 'shield') &&
-                  group.group === 'Stat Changes' &&
-                  group.fields.some((field) => /^stat[123]$/.test(field.field) &&
-                    field.options.some((option) => option.value === 10));
-                const isRuntimeBattleGroup = group.fields.every((field) =>
-                  field.field.startsWith('battle.')
-                );
-                const isAdvancedTimingGroup = group.fields.some((field) => {
-                  const timingField = parseMoveTimingField(field.field);
-                  return timingField !== null && timingField.occurrence !== null;
-                });
-                const isFirstAdvancedTimingGroup =
-                  isAdvancedTimingGroup &&
-                  !moveFieldGroups
-                    .slice(0, groupIndex)
-                    .some((candidate) =>
-                      candidate.fields.some((field) => {
-                        const timingField = parseMoveTimingField(field.field);
-                        return timingField !== null && timingField.occurrence !== null;
-                      })
-                    );
-                const localizedMoveGroupLabel = isPlayerDamageGroup
-                  ? t('moves.playerDamage.groupHeading')
-                  : isConventionalEffectsGroup && move.hasRuntimeData
-                    ? t('moves.groups.sharedConventionalEffects')
-                    : formatLocalizedMoveFieldGroup(group.group, t, translateLiteral);
-                const semanticMoveGroupHelp = isTeraBlastGroup
-                  ? t('moves.teraBlast.help')
-                  : supportsSwShAllStats
-                    ? t('moves.swshStats.help')
-                  : isPlayerDamageGroup
-                  ? t(
-                      move.playerDamageRows.length === 1
-                        ? 'moves.playerDamage.groupNote.one'
-                        : 'moves.playerDamage.groupNote.other',
-                      { count: move.playerDamageRows.length }
-                    )
-                  : isConventionalEffectsGroup
-                    ? t(move.hasRuntimeData ? 'moves.flinch.zaHelp' : 'moves.flinch.help')
-                    : isRuntimeBehaviorGroup
-                      ? t('moves.runtimeBehavior.help')
-                      : isRuntimeEffectsGroup
-                        ? t('moves.runtimeEffects.help')
-                        : isFirstAdvancedTimingGroup
-                          ? t('moves.advancedEditor.help')
-                          : null;
-                const runtimeBattleScopeHelp = isRuntimeBattleGroup
-                  ? t('moves.runtimeBattle.scopeHelp')
-                  : null;
-                const localizedMoveGroupHelp =
-                  semanticMoveGroupHelp && runtimeBattleScopeHelp
-                    ? `${semanticMoveGroupHelp} ${runtimeBattleScopeHelp}`
-                    : semanticMoveGroupHelp ?? runtimeBattleScopeHelp;
-                return (
-                  <Fragment key={group.group}>
-                    <fieldset
-                      className={`editable-field-group${isFlagsGroup ? ' move-flags-field-group' : ''}${isAdvancedGroup ? ' move-advanced-field-group' : ''}${isPlayerDamageGroup ? ' move-player-damage-field-group' : ''}${isRuntimeEffectsGroup || isRuntimeStatChangesGroup ? ' move-runtime-field-group-wide' : ''}`}
-                    >
-                      <legend className="context-help-heading">
-                        <span>{localizedMoveGroupLabel}</span>
-                        {localizedMoveGroupHelp ? (
-                          <ContextHelp label={localizedMoveGroupLabel}>
-                            {localizedMoveGroupHelp}
-                          </ContextHelp>
-                        ) : null}
-                      </legend>
-                      {isTeraBlastGroup ? (
-                        <button type="button" className="secondary-action"
-                          disabled={!canEditMoves || editSession === null}
-                          onClick={() => setMoveDraftsByMoveId(current => {
-                            const drafts = { ...(current[move.moveId.toString()] ?? {}) };
-                            for (const [field, value] of Object.entries(teraBlastDefaultFields)) {
-                              if (getEditableMoveFieldValue(move, field) === value) delete drafts[field];
-                              else drafts[field] = value.toString();
-                            }
-                            return { ...current, [move.moveId.toString()]: drafts };
-                          })}>
-                          {t('moves.teraBlast.restore')}
-                        </button>
-                      ) : null}
-                      {isPlayerDamageGroup ? (
-                        <>
-                          <ScriptedBossMoveControllerAvailability
-                            move={move}
-                            profiles={scriptedBosses}
-                          />
-                        </>
-                      ) : null}
-                      {isRuntimeStatChangesGroup && selectedRuntimeStatRecipient ? (
-                        <p className="field-note move-runtime-behavior-note">
-                          <strong>{t('moves.statRecipient.label')}:</strong>{' '}
-                          {selectedRuntimeStatRecipient.kind === 'user'
-                            ? t('moves.statRecipient.user')
-                            : selectedRuntimeStatRecipient.kind === 'hit-targets'
-                              ? t('moves.statRecipient.hitTargets')
-                              : selectedRuntimeStatRecipient.kind === 'move-target'
-                                ? t('moves.statRecipient.moveTarget', {
-                                    target: translateLiteral(selectedRuntimeStatRecipient.targetName)
-                                  })
-                                : t('moves.statRecipient.scripted')}{' '}
-                          {t('moves.statRecipient.help')}
-                        </p>
-                      ) : null}
-                      <div
-                        className={`editable-field-grid${isFlagsGroup ? ' move-flags-field-grid' : ''}${isPlayerDamageGroup ? ' move-player-damage-field-grid' : ''}`}
-                      >
-                        {group.fields.map((field) => {
-                        const currentValue = getEditableMoveFieldValue(move, field.field);
-                        const draftValue = moveDrafts[field.field] ?? '';
-                        const draftState = getTrainerFieldDraftState(
-                          draftValue,
-                          currentValue,
-                          field,
-                          moveDraftContext
-                        );
-                        const relationalIssue = moveRelationalValidationIssues.find((issue) =>
-                          issue.fields.includes(field.field)
-                        );
-                        const decimalOptionIssue = moveDecimalValidationIssues.find(
-                          (issue) => issue.field === field.field
-                        )?.message ?? null;
-                        const effectiveDraftState = decimalOptionIssue || relationalIssue
-                          ? {
-                              ...draftState,
-                              error: decimalOptionIssue ?? relationalIssue?.message ?? null,
-                              isValid: false
-                            }
-                          : draftState;
-
-                        const playerDamageAttackId = parseMovePlayerDamageField(field.field);
-                        const playerDamageRow = playerDamageAttackId === null
-                          ? null
-                          : move.playerDamageRows.find(
-                              (candidate) => candidate.attackId === playerDamageAttackId
-                            ) ?? null;
-                        const playerDamageDescriptorId = playerDamageRow === null
-                          ? undefined
-                          : `move-player-damage-${move.moveId}-${playerDamageRow.attackId}-descriptor`;
-                        const playerDamageDisabledReason = playerDamageRow?.invocations.length === 0
-                          ? t('moves.playerDamage.disabled.noInvoker', {
-                              attackId: playerDamageRow.attackId
-                            })
-                          : undefined;
-                        const fieldControl = (
-                          <GiftPokemonDraftField
-                            ariaDescribedBy={playerDamageDescriptorId}
-                            currentValue={currentValue}
-                            disabled={
-                              !canEditMoves ||
-                              editSession === null ||
-                              playerDamageDisabledReason !== undefined
-                            }
-                            disabledReason={playerDamageDisabledReason}
-                            draftState={effectiveDraftState}
-                            draftValue={draftValue}
-                            field={field}
-                            helpDomain="moves"
-                            helpGame="za"
-                            helpText={
-                              playerDamageAttackId === null
-                                ? getLocalizedMoveEditableFieldHelp(field, t, move.hasRuntimeData)
-                                : t('moves.playerDamage.fieldHelp', {
-                                    attackId: playerDamageAttackId,
-                                    maximum: field.maximumValue ?? 999,
-                                    minimum: field.minimumValue ?? 0
-                                  })
-                            }
-                            idPrefix="move-field"
-                            labelText={
-                              playerDamageAttackId === null
-                                ? formatLocalizedMoveEditableFieldLabel(field, t, move.hasRuntimeData)
-                                : t('moves.playerDamage.fieldLabel', {
-                                    attackId: playerDamageAttackId
-                                  })
-                            }
-                            onChange={(value) => {
-                              setMoveDraftsByMoveId((currentDrafts) => {
-                                const recordKey = move.moveId.toString();
-                                const nextSparseDrafts = {
-                                  ...(currentDrafts[recordKey] ?? {})
-                                };
-                                const defaultValue = (currentValue ?? '').toString();
-                                if (value === defaultValue) {
-                                  delete nextSparseDrafts[field.field];
-                                } else {
-                                  nextSparseDrafts[field.field] = value;
-                                }
-
-                                const nextRecords = { ...currentDrafts };
-                                if (Object.keys(nextSparseDrafts).length === 0) {
-                                  delete nextRecords[recordKey];
-                                } else {
-                                  nextRecords[recordKey] = nextSparseDrafts;
-                                }
-                                return nextRecords;
-                              });
-                            }}
-                            preservedValue={baselineValues?.[field.field] ?? null}
-                          />
-                        );
-                        return playerDamageRow ? (
-                          <div className="move-player-damage-control" key={field.field}>
-                            {fieldControl}
-                            <MovePlayerDamageDescriptor
-                              id={playerDamageDescriptorId!}
-                              row={playerDamageRow}
-                              totalRows={move.playerDamageRows.length}
-                            />
-                          </div>
-                        ) : (
-                          <Fragment key={field.field}>{fieldControl}</Fragment>
-                        );
-                        })}
-                      </div>
-                    </fieldset>
-                  </Fragment>
-                );
-              })}
+  return (
+    <MoveEditorWorkspace
+      sessionKey={`${ordinaryDraftProject?.projectId ?? 'project'}:${ordinaryDraftProject?.game ?? 'game'}:moves`}
+      record={move ? { name: move.name, id: move.moveId } : null}
+      browser={browser} browserControls={browserControls} sessionBar={<>{editorHeader}{sessionActions}</>}
+      catalogStatus={availability} flagRequest={flagRequest}
+      flagNotice={move && !flags.length ? <p className="field-note">{move.hasRuntimeData
+        ? t('moves.inspector.missingBattleRow') : t('moves.noFlags')}</p> : undefined}
+      header={<>
+        <PublishedLocalEditorValidationDiagnostics
+          domain="workflow.moves"
+          issues={
+            move
+              ? [
+                  ...moveDraftSummary.invalidFields,
+                  ...moveRelationalValidationIssues.map((issue) => ({
+                    field: issue.fields.join(','),
+                    message: issue.message
+                  })),
+                  ...moveDecimalValidationIssues
+                ]
+              : []
+          }
+        />
+        {editSession && !move ? (
+          <EmptySelectionEditorSessionActions
+            isBusy={isMoveUpdating}
+            onCancel={() => cancelActiveEditSession(() => setMoveDraftsByMoveId({}))}
+            summary="No move selected."
+          />
+        ) : null}
+        <PublishedInlineEditorError
+          domain="workflow.moves"
+          message={moveSourceMutationError}
+        />
+      </>}
+      recordContext={move ? <>
+        {move.hasRuntimeData ? <div className="move-runtime-controls">
+          {runtimeVariantOptions.length > 0 ? (
+            <div className="path-field editable-field-control">
+              <FieldLabel
+                help={`${t('moves.runtimeVariant.help')} ${t('moves.runtimeVariant.draftRetention')}`}
+                htmlFor="move-runtime-variant"
+                label={t('moves.runtimeVariant.label')}
+              />
+              <SearchableOptionInput
+                ariaLabel={t('moves.runtimeVariant.label')}
+                disabled={false}
+                id="move-runtime-variant"
+                isFiniteCatalog
+                wrapSelectedValue
+                onChange={(value) => onSelectRuntimeVariant(Number(value))}
+                options={runtimeVariantSelectOptions}
+                value={selectedRuntimeVariant?.toString() ?? ''}
+              />
             </div>
-
-            {editSession ? (
-              <EditorSessionBarActions>
-                <button
-                  aria-busy={isMoveUpdating || undefined}
-                  className="primary-button"
-                  disabled={!canSaveMoveDrafts}
-                  onClick={async () => {
-                    const fieldsBeforeStage = moveDraftPayload.fields;
-                    const sourceMutation = await runSessionLocalEditorSourceMutation({
-                      binding: moveDraftBinding,
-                      didMutate: (didSave) => didSave,
-                      mutation: () =>
-                        onUpdateMoveFields(
-                          move.moveId,
-                          moveDraftSummary.changedFields.map((change) => ({
-                            field: change.field,
-                            value: change.value
-                          }))
-                        ),
-                      reduceLatestPayload: (latestPayload) => ({
-                        fields: removeMatchingFieldDraftValues(
-                          latestPayload.fields,
-                          fieldsBeforeStage
-                        )
-                      })
-                    });
-                    if (sourceMutation.kind === 'reservation-unavailable') {
-                      setMoveSourceMutationError(sessionLocalDraftMutationBusyMessage);
-                      return;
-                    }
-                    setMoveSourceMutationError(null);
-                    if (sourceMutation.kind === 'source-mutated') {
-                      setMoveDraftsByMoveId((currentDrafts) =>
-                        updateSparseFieldDraftRecordAfterStage(
-                          currentDrafts,
-                          move.moveId,
-                          fieldsBeforeStage
-                        )
-                      );
-                    }
-                  }}
-                  type="button"
-                >
-                  <BusyActionContent
-                    busyLabel="Staging"
-                    icon={<Save aria-hidden="true" size={16} />}
-                    isBusy={isMoveUpdating}
-                    label="Stage"
-                  />
-                </button>
-                {nextMoveDraftTarget ? (
-                  <button
-                    className="secondary-button"
-                    disabled={isMoveUpdating}
-                    onClick={() => onSelectMove(nextMoveDraftTarget.moveId)}
-                    type="button"
-                  >
-                    {t('editorDrafts.reviewNext')}
-                  </button>
-                ) : null}
-                <button
-                  className="danger-button"
-                  disabled={isMoveUpdating}
-                  onClick={() =>
-                    cancelActiveEditSession(() =>
-                      setMoveDraftsByMoveId({})
-                    )
-                  }
-                  type="button"
-                >
-                  <X aria-hidden="true" size={16} />
-                  <span>Cancel</span>
-                </button>
-                <span className="draft-action-summary">
-                  {formatDraftSummary(moveDraftSummary)};{' '}
-                  {t('editorDrafts.summary.moves', {
-                    count: outstandingMoveDraftKeys.length
-                  })}
-                </span>
-              </EditorSessionBarActions>
-            ) : null}
-            {onStageMoveVanilla ? (
-              <div className="za-encounter-revert-action">
-                <button
-                  aria-busy={isMoveUpdating || undefined}
-                  className="danger-button"
-                  disabled={!canRevertSelectedMove}
-                  onClick={async () => {
-                    const fieldsBeforeStage = moveDraftPayload.fields;
-                    const sourceMutation = await runSessionLocalEditorSourceMutation({
-                      binding: moveDraftBinding,
-                      didMutate: (didRestore) => didRestore,
-                      mutation: () => onStageMoveVanilla(move.moveId),
-                      reduceLatestPayload: (latestPayload) => ({
-                        fields: removeMatchingFieldDraftValues(
-                          latestPayload.fields,
-                          fieldsBeforeStage
-                        )
-                      })
-                    });
-                    if (sourceMutation.kind === 'reservation-unavailable') {
-                      setMoveSourceMutationError(sessionLocalDraftMutationBusyMessage);
-                      return;
-                    }
-                    setMoveSourceMutationError(null);
-                    if (sourceMutation.kind === 'source-mutated') {
-                      setMoveDraftsByMoveId((currentDrafts) =>
-                        updateSparseFieldDraftRecordAfterStage(
-                          currentDrafts,
-                          move.moveId,
-                          fieldsBeforeStage
-                        )
-                      );
-                    }
-                  }}
-                  title={moveRevertMessage}
-                  type="button"
-                >
-                  <BusyActionContent
-                    busyLabel={t('za.encounters.reverting')}
-                    icon={<RotateCcw aria-hidden="true" size={16} />}
-                    isBusy={isMoveUpdating}
-                    label={t('za.encounters.revertToVanilla')}
-                  />
-                </button>
-                <small className="editable-field-status">
-                  {moveRevertMessage}
-                </small>
-              </div>
-            ) : null}
-          </div>
-
-          </EditorWorkspaceSection>
-          {!move.hasRuntimeData ? (
-            <EditorWorkspaceSection id="reference" label={translateLiteral('Core Stats')}>
-          <div className="inspector-block">
-            <h4>Core Stats</h4>
-            <dl className="item-provenance-list compact-dl">
-              <div>
-                <dt>Power</dt>
-                <dd>{formatMovePower(move.power)}</dd>
-              </div>
-              <div>
-                <dt>Accuracy</dt>
-                <dd>{translateLiteral(formatMoveAccuracy(move.accuracy))}</dd>
-              </div>
-              <div>
-                <dt>{move.hasRuntimeData ? 'Cooldown' : 'PP'}</dt>
-                <dd>{move.hasRuntimeData ? `${move.timing?.cooldown ?? '-'}s` : move.pp}</dd>
-              </div>
-              <div>
-                <dt>Priority</dt>
-                <dd>{move.priority}</dd>
-              </div>
-              <div>
-                <dt>Crit stage</dt>
-                <dd>{move.critStage}</dd>
-              </div>
-              <div>
-                <dt>Max move</dt>
-                <dd>{move.maxMovePower}</dd>
-              </div>
-            </dl>
-          </div>
-
-          <div className="inspector-block">
-            <h4>Targeting</h4>
-            <dl className="item-provenance-list compact-dl">
-              <div>
-                <dt>Target</dt>
-                <dd>{move.targetName}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Hits')}</dt>
-                <dd>{translateLiteral(formatMoveHitRange(move.hitMin, move.hitMax))}</dd>
-              </div>
-            </dl>
-          </div>
-
-          <div className="inspector-block">
-            <h4>Secondary Effects</h4>
-            <dl className="item-provenance-list compact-dl">
-              <div>
-                <dt>Inflict</dt>
-                <dd>{move.inflictName}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Inflict chance')}</dt>
-                <dd>
-                  {translateLiteral(
-                    formatMoveEffectChance(move.inflictPercent, move.inflict !== 0)
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt>Inflict duration</dt>
-                <dd>{formatMoveInflictDuration(move.rawInflictCount)}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Inflicted-effect turns')}</dt>
-                <dd>
-                  {translateLiteral(formatMoveInflictedEffectTurns(move.turnMin, move.turnMax))}
-                </dd>
-              </div>
-              {mappedQualityLabel ? (
-                <div>
-                  <dt>{translateLiteral('Effect quality')}</dt>
-                  <dd>{translateLiteral(mappedQualityLabel)}</dd>
-                </div>
-              ) : null}
-              <div>
-                <dt>Flinch chance</dt>
-                <dd>{move.flinch}%</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Drain (+) / recoil (-)')}</dt>
-                <dd>{translateLiteral(formatMoveRecoilValue(move.recoil))}</dd>
-              </div>
-            </dl>
-          </div>
-
-          <div className="inspector-block">
-            <h4>Stat Changes</h4>
-            {visibleStatChanges.length > 0 ? (
-              <ul className="inspector-list">
-                {visibleStatChanges.map((statChange) => (
-                  <li key={statChange.slot}>
-                    {statChange.statName}: {statChange.stage} stage,{' '}
-                    {translateLiteral(formatMoveEffectChance(statChange.percent, true))}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="empty-copy">No stat change effects.</p>
-            )}
-          </div>
-
-          <div className="inspector-block">
-            <h4>{translateLiteral('Advanced / Raw')}</h4>
-            <dl className="item-provenance-list compact-dl">
-              {!mappedQualityLabel ? (
-                <div>
-                  <dt>{translateLiteral('Quality (raw)')}</dt>
-                  <dd>{move.quality}</dd>
-                </div>
-              ) : null}
-              <div>
-                <dt>Effect sequence ID</dt>
-                <dd>{move.effectSequence}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('HP recovery / cost (raw)')}</dt>
-                <dd>{translateLiteral(formatMoveHealingValue(move.rawHealing))}</dd>
-              </div>
-            </dl>
-          </div>
-
-          <div className="inspector-block">
-            <h4>Active Flags</h4>
-            {activeFlags.length > 0 ? (
-              <ul className="inspector-list">
-                {activeFlags.map((flag) => (
-                  <li key={flag.field}>{flag.label}</li>
-                ))}
-              </ul>
-            ) : (
-              <p className="empty-copy">No active flags.</p>
-            )}
-          </div>
-            </EditorWorkspaceSection>
           ) : null}
-        </>
-      ) : (
-        <p className="empty-copy">No move selected.</p>
-      )}
-    </SectionedEditorWorkspace>
+          {timingProfileOptions.length > 1 ? (
+            <div className="path-field editable-field-control">
+              <FieldLabel
+                help={t('moves.timingProfile.help')}
+                htmlFor="move-timing-profile"
+                label={translateLiteral('Profile')}
+              />
+              <SearchableOptionInput
+                ariaLabel={translateLiteral('Profile')}
+                disabled={false}
+                id="move-timing-profile"
+                isFiniteCatalog
+                wrapSelectedValue
+                onChange={(value) => {
+                  if (!timingProfileStorageKey) {
+                    return;
+                  }
+                  setTimingProfileByMoveVariant((current) => ({
+                    ...current,
+                    [timingProfileStorageKey]: Number(value)
+                  }));
+                }}
+                options={timingProfileSelectOptions}
+                value={selectedTimingProfile?.toString() ?? ''}
+              />
+            </div>
+          ) : null}
+          {timingRowOptions.length > 1 ? (
+            <div className="path-field editable-field-control">
+              <FieldLabel
+                help={t('moves.timingOccurrence.help')}
+                htmlFor="move-timing-occurrence"
+                label={translateLiteral('Occurrence')}
+              />
+              <SearchableOptionInput
+                ariaLabel={translateLiteral('Occurrence')}
+                disabled={false}
+                id="move-timing-occurrence"
+                isFiniteCatalog
+                wrapSelectedValue
+                onChange={(value) => {
+                  if (!timingOccurrenceStorageKey) {
+                    return;
+                  }
+                  setTimingOccurrenceByProfile((current) => ({
+                    ...current,
+                    [timingOccurrenceStorageKey]: Number(value)
+                  }));
+                }}
+                options={timingOccurrenceSelectOptions}
+                value={selectedTimingOccurrence.toString()}
+              />
+            </div>
+          ) : null}
+        </div> : null}
+        {move.teraBlastBlockedReason ? <p className="field-note" role="status">{t('moves.teraBlast.unavailable')}</p> : null}
+      </> : null}
+      details={move ? <MoveDetails
+        id={move.moveId} version={move.version} description={move.description}
+        sourceFile={move.provenance.sourcePath ?? move.provenance.sourceFile}
+        sourceLayer={formatSourceLayer(move.provenance.sourceLayer)}
+        fileState={formatFileState(move.provenance.fileState)}
+        runtimeFiles={move.runtimeSourceFiles} controls={detailsFields}
+        actions={<>
+          {selectedRuntimeVariant === 2 ? (
+            <ScriptedBossMoveOwnership move={move} profiles={scriptedBosses} />
+          ) : null}
+          {onStageMoveVanilla ? (
+            <div className="za-encounter-revert-action">
+              <button
+                aria-busy={isMoveUpdating || undefined}
+                className="danger-button"
+                disabled={!canRevertSelectedMove}
+                onClick={async () => {
+                  const fieldsBeforeStage = moveDraftPayload.fields;
+                  const sourceMutation = await runSessionLocalEditorSourceMutation({
+                    binding: moveDraftBinding,
+                    didMutate: (didRestore) => didRestore,
+                    mutation: () => onStageMoveVanilla(move.moveId),
+                    reduceLatestPayload: (latestPayload) => ({
+                      fields: removeMatchingFieldDraftValues(
+                        latestPayload.fields,
+                        fieldsBeforeStage
+                      )
+                    })
+                  });
+                  if (sourceMutation.kind === 'reservation-unavailable') {
+                    setMoveSourceMutationError(sessionLocalDraftMutationBusyMessage);
+                    return;
+                  }
+                  setMoveSourceMutationError(null);
+                  if (sourceMutation.kind === 'source-mutated') {
+                    setMoveDraftsByMoveId((currentDrafts) =>
+                      updateSparseFieldDraftRecordAfterStage(
+                        currentDrafts,
+                        move.moveId,
+                        fieldsBeforeStage
+                      )
+                    );
+                  }
+                }}
+                title={moveRevertMessage}
+                type="button"
+              >
+                <BusyActionContent
+                  busyLabel={t('za.encounters.reverting')}
+                  icon={<RotateCcw aria-hidden="true" size={16} />}
+                  isBusy={isMoveUpdating}
+                  label={t('za.encounters.revertToVanilla')}
+                />
+              </button>
+              <small className="editable-field-status">
+                {moveRevertMessage}
+              </small>
+            </div>
+          ) : null}
+        </>}
+        extra={selectedRuntimeView ? <>
+          <EditorDetailValue label={t('moves.inspector.runtimeRowStatus')}>{selectedRuntimeRowStatus}</EditorDetailValue>
+          {selectedRuntimeView.variant === 2 ? <EditorDetailValue label={t('moves.inspector.playerDamageRows')}>
+            {selectedRuntimeView.playerDamageRows.length}
+          </EditorDetailValue> : null}
+        </> : null}
+      /> : null}
+      detailsFields={detailsFields} core={core} effects={effects} advanced={advanced} flags={flags}
+    />
   );
 }
 
@@ -38439,6 +38209,7 @@ function CustomGiftPokemonFields({ pokemon, fields, drafts: localDrafts, disable
 
 function GiftPokemonDraftField({
   ariaDescribedBy,
+  checkbox,
   currentValue,
   disabled,
   disabledReason,
@@ -38452,9 +38223,11 @@ function GiftPokemonDraftField({
   idPrefix = 'pokemon-instance',
   labelText,
   onChange,
-  preservedValue
+  preservedValue,
+  wrapSelectedValue
 }: {
   ariaDescribedBy?: string;
+  checkbox?: boolean;
   currentValue: number | null;
   disabled: boolean;
   disabledReason?: string;
@@ -38469,6 +38242,7 @@ function GiftPokemonDraftField({
   labelText?: string;
   onChange: (value: string) => void;
   preservedValue?: number | null;
+  wrapSelectedValue?: boolean;
 }) {
   const inputId = `${idPrefix}-${field.field}`;
   const { contextualFormOptionContext, options } =
@@ -38519,7 +38293,11 @@ function GiftPokemonDraftField({
       }`}
     >
       <FieldLabel help={localizedFieldHelpText} htmlFor={inputId} label={localizedFieldLabel} />
-      {field.valueKind === 'boolean' ? (
+      {checkbox ? (
+        <input id={inputId} type="checkbox" aria-describedby={ariaDescribedBy}
+          aria-invalid={!draftState.isValid || undefined} disabled={effectiveDisabled}
+          checked={draftValue === '1'} onChange={event => onChange(event.target.checked ? '1' : '0')} />
+      ) : field.valueKind === 'boolean' ? (
         <SearchableOptionInput
           ariaDescribedBy={ariaDescribedBy}
           ariaLabel={localizedFieldLabel}
@@ -38529,6 +38307,7 @@ function GiftPokemonDraftField({
           isFiniteCatalog
           onChange={onChange}
           options={searchableBooleanOptions}
+          wrapSelectedValue={wrapSelectedValue}
           tooltipContent={localizedFieldHoverText}
           value={draftValue === '1' ? '1' : '0'}
         />
@@ -38546,6 +38325,7 @@ function GiftPokemonDraftField({
             field.label
           )}
           value={draftValue}
+          wrapSelectedValue={wrapSelectedValue}
         />
       ) : (
         <HoverTooltip content={localizedFieldHoverText}>
@@ -68069,30 +67849,7 @@ function formatMovePower(power: number) {
   return power === 0 ? '-' : power.toString();
 }
 
-function formatMoveInflictDuration(rawInflictCount: number) {
-  const labels: Record<number, string> = {
-    0: 'None',
-    1: 'Permanent',
-    2: 'Turn Count + Switch',
-    3: 'Permanent + Switch',
-    4: 'Turn Count + No Switch'
-  };
 
-  return labels[rawInflictCount] ?? `Raw ${rawInflictCount}`;
-}
-
-function formatMoveActiveFlags(move: MoveRecord) {
-  const activeFlags = move.flags.filter((flag) => flag.enabled);
-
-  if (activeFlags.length === 0) {
-    return '-';
-  }
-
-  return activeFlags
-    .slice(0, 3)
-    .map((flag) => flag.label)
-    .join(', ');
-}
 
 function formatProjectFileLayer(layer: ChangePlan['writes'][number]['sources'][number]['layer']) {
   return {

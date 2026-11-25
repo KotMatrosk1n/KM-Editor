@@ -402,7 +402,7 @@ public sealed class SwShMovesWorkflowService
                     moveNames,
                     moveDescriptions,
                     typeNames,
-                    CreateProvenance(source.GraphEntry)));
+                    CreateProvenance(source.GraphEntry, source.AbsolutePath)));
             }
             catch (InvalidDataException exception)
             {
@@ -812,13 +812,13 @@ public sealed class SwShMovesWorkflowService
             relativePath.Replace('/', Path.DirectorySeparatorChar));
     }
 
-    private static SwShMoveProvenance CreateProvenance(ProjectFileGraphEntry entry)
+    private static SwShMoveProvenance CreateProvenance(ProjectFileGraphEntry entry, string sourcePath)
     {
         var sourceLayer = entry.LayeredFile is not null
             ? ProjectFileLayer.Layered
             : ProjectFileLayer.Base;
 
-        return new SwShMoveProvenance(entry.RelativePath, sourceLayer, entry.State);
+        return new SwShMoveProvenance(entry.RelativePath, sourceLayer, entry.State, sourcePath);
     }
 
     private static SwShWorkflowSummary CreateSummary(

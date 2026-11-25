@@ -9,7 +9,8 @@ namespace KM.SV.Moves;
 public sealed record SvMoveProvenance(
     string SourceFile,
     ProjectFileLayer SourceLayer,
-    ProjectFileGraphEntryState FileState);
+    ProjectFileGraphEntryState FileState,
+    string? SourcePath = null);
 
 public sealed record SvMoveStatChangeRecord(
     int Slot,

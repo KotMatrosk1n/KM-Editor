@@ -1,0 +1,223 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+.moves-editor {
+  min-inline-size: 0;
+  container-type: inline-size;
+}
+
+.moves-editor .moves-row {
+  grid-template-columns: minmax(2.5rem, .4fr) minmax(7rem, 2fr) minmax(5rem, 1fr) minmax(5rem, 1fr) repeat(4, minmax(2.75rem, .55fr));
+  gap: .5rem;
+}
+
+.move-flag-count {
+  padding: .12rem .45rem;
+  min-inline-size: 2.25rem;
+  min-block-size: 1.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: .4rem;
+  color: var(--color-text);
+  background: var(--color-surface);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.move-flag-count:hover,
+.move-flag-count:focus-visible {
+  border-color: var(--color-accent-bright);
+}
+
+.move-record-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .35rem 1rem;
+}
+
+.move-catalog-status {
+  color: var(--color-text-muted);
+  font-size: .85rem;
+}
+
+.move-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  gap: .65rem;
+  align-items: start;
+}
+
+.move-group {
+  min-inline-size: 0;
+  margin: 0;
+  padding: .3rem .65rem .55rem;
+  border: 1px solid var(--color-border);
+  border-radius: .65rem;
+}
+
+.move-group legend {
+  max-inline-size: 100%;
+  color: var(--color-text);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.move-control {
+  min-inline-size: 0;
+}
+
+.move-control .path-field.editable-field-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(7rem, 1.15fr);
+  align-items: center;
+  gap: .3rem .55rem;
+  min-inline-size: 0;
+  padding: .28rem .2rem;
+  border-radius: .28rem;
+}
+
+.move-control + .move-control,
+.move-hit-bounds {
+  border-block-start: 1px solid var(--color-border);
+}
+
+.move-control .editable-field-label-row {
+  min-inline-size: 0;
+}
+
+.move-control .editable-field-label-row label,
+.move-control .searchable-option-input :where(button, span) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.move-control :is(.editable-field-status, .editable-field-error) {
+  grid-column: 1 / -1;
+}
+
+.move-description {
+  white-space: pre-line;
+}
+
+.move-control .path-field :is(input:not([type="checkbox"]), select, .searchable-option-selected-value) {
+  min-block-size: 2rem;
+}
+
+.move-control .path-field .searchable-option-selected-value {
+  align-content: center;
+  padding-block: .3rem;
+}
+
+.move-control .editable-field-control:has(input[type="checkbox"]) {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.move-control input[type="checkbox"] {
+  inline-size: 1.05rem;
+  block-size: 1.05rem;
+  margin: .2rem;
+  accent-color: var(--color-accent-bright);
+}
+
+.move-hit-bounds {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: .45rem;
+}
+
+.move-hit-bounds .path-field.editable-field-control {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.move-stat-grid [role="row"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr));
+  gap: .32rem;
+  border-block-end: 1px solid var(--color-border);
+}
+
+.move-stat-grid [role="row"]:last-child {
+  border-block-end: 0;
+}
+
+.move-stat-grid .move-stat-heading {
+  padding: .3rem .15rem;
+  font-weight: 650;
+  color: var(--color-text-muted);
+}
+
+.move-stat-grid .path-field.editable-field-control {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.move-stat-grid .editable-field-label-row {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.move-stat-grid .editable-field-label-row label {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.move-stat-grid .editable-field-label-row + * {
+  grid-column: 1;
+  grid-row: 1;
+  min-inline-size: 0;
+}
+
+.move-advanced {
+  margin-block-start: .65rem;
+  padding: .45rem .65rem;
+  border: 1px solid var(--color-border);
+  border-radius: .65rem;
+}
+
+.move-advanced > summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.move-advanced[open] > summary {
+  margin-block-end: .6rem;
+}
+
+.move-runtime-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  align-items: end;
+}
+
+.move-runtime-controls > .editable-field-control {
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+}
+
+.move-runtime-controls > :not(.editable-field-control) {
+  flex-basis: 100%;
+}
+
+@container (max-width: 38rem) {
+  .moves-editor .moves-row {
+    min-inline-size: 32rem;
+  }
+
+  .move-group {
+    padding-inline: .4rem;
+  }
+}
+
+@container (max-width: 25rem) {
+  .move-control .path-field.editable-field-control:not(:has(input[type="checkbox"])),
+  .move-stat-grid .path-field.editable-field-control {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .move-stat-grid .editable-field-label-row {
+    grid-row: auto;
+    grid-column: 1;
+  }
+}

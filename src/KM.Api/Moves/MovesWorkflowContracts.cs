@@ -39,7 +39,8 @@ public sealed record StageMoveVanillaRequest(
 public sealed record MoveProvenanceDto(
     string SourceFile,
     ProjectFileLayerDto SourceLayer,
-    ProjectFileGraphEntryStateDto FileState);
+    ProjectFileGraphEntryStateDto FileState,
+    string? SourcePath = null);
 
 public sealed record MoveStatChangeRecordDto(
     int Slot,

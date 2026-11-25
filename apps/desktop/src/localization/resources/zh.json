@@ -2559,6 +2559,8 @@
     "moves.runtimeVariant.plus": "Plus 招式",
     "moves.runtimeVariant.boss": "首领招式",
     "moves.runtimeVariant.unknown": "变体 {variant}",
+    "moves.saveToSession": "保存到会话",
+    "moves.noFlags": "此招式没有可用的标志。",
     "moves.runtimeVariant.heading": "运行时变体",
     "moves.runtimeVariant.label": "变体",
     "moves.runtimeVariant.draftRetention": "切换变体或时序行时会保留草稿。暂存会同时提交此招式的所有有效草稿。",

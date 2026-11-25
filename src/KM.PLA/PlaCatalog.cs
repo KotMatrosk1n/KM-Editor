@@ -71,6 +71,7 @@ internal sealed class PlaCatalog
     private readonly string[] typeNames;
     private readonly IReadOnlyDictionary<string, byte[]>? displayFiles;
     private readonly Dictionary<string, PlaMessageFile> messages = new(StringComparer.Ordinal);
+    private string[]? moveDescriptions;
     private readonly Dictionary<string, Dictionary<ulong, string>> messageLabels = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (PlaFlatBuffer Buffer, Dictionary<string, int> References)> tables = new(StringComparer.Ordinal);
 
@@ -331,7 +332,33 @@ internal sealed class PlaCatalog
         return new PlaRecord(id, kind == "moves" ? MoveLabel(int.Parse(id, CultureInfo.InvariantCulture))
             : kind == "tutors" ? $"{id}: {MoveLabel(Tutors[int.Parse(id, CultureInfo.InvariantCulture)].Move)}" : PokemonLabel(id), values)
         { ReadOnlyFields = kind == "moves" && id is "459" or "460" or "467" ? SpecialMoveFields : [],
-            Metadata = kind is "personal" or "learnsets" or "evolutions" or "compatibility"
-                ? new Dictionary<string, string> { ["formName"] = FormLabel(id) } : new Dictionary<string, string>() };
+            Metadata = kind switch
+            {
+                "moves" => MoveMetadata(int.Parse(id, CultureInfo.InvariantCulture), resource.Path),
+                "personal" or "learnsets" or "evolutions" or "compatibility" => new Dictionary<string, string> { ["formName"] = FormLabel(id) },
+                _ => new Dictionary<string, string>()
+            } };
+    }
+
+    private Dictionary<string, string> MoveMetadata(int id, string path)
+    {
+        var layered = Scope.OutputState(path).Exists;
+        var metadata = new Dictionary<string, string>
+        {
+            ["sourceFile"] = layered
+                ? PlaSourceScope.Resolve(Scope.Paths.OutputRootPath!, PlaSourceScope.OutputPath(path))
+                : PlaSourceScope.Resolve(Scope.Paths.BaseRomFsPath!, path),
+            ["sourceLayer"] = layered ? "layered" : "base",
+            ["fileState"] = layered ? "layeredOverride" : "baseOnly"
+        };
+
+        var descriptionPath = $"bin/message/{Scope.Language}/common/wazainfo";
+        moveDescriptions ??= File.Exists(PlaSourceScope.Resolve(Scope.Paths.BaseRomFsPath!, descriptionPath + ".dat"))
+            && File.Exists(PlaSourceScope.Resolve(Scope.Paths.BaseRomFsPath!, descriptionPath + ".tbl"))
+            ? Labels("wazainfo") : [];
+        if (id >= 0 && id < moveDescriptions.Length && !string.IsNullOrWhiteSpace(moveDescriptions[id]))
+            metadata["description"] = moveDescriptions[id];
+
+        return metadata;
     }
 }

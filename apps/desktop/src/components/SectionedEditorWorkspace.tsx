@@ -75,6 +75,7 @@ type WorkspaceProps = {
   compactFields?: boolean;
   alwaysOpen?: boolean;
   activeSectionRequest?: { sectionId: string };
+  sectionTransitionDuration?: number;
   sectionShortcut?: { sectionId: string; label: string; icon: ReactNode; controls: string; expanded: boolean; onActivate: (trigger: HTMLButtonElement) => void; onClose: () => void };
   sessionBar?: ReactNode;
   onActiveSectionChange?: (section: string | null) => void;
@@ -85,7 +86,7 @@ export function SectionedEditorWorkspace(props: WorkspaceProps) {
   return <WorkspaceSession key={props.sessionKey} {...props} />;
 }
 
-function WorkspaceSession({ sessionKey, initialSection = 'details', browser, browserControls, browserFooter, browserVisibleRows, compactFields, alwaysOpen, activeSectionRequest, sectionShortcut, sessionBar, onActiveSectionChange, children }: WorkspaceProps) {
+function WorkspaceSession({ sessionKey, initialSection = 'details', browser, browserControls, browserFooter, browserVisibleRows, compactFields, alwaysOpen, activeSectionRequest, sectionTransitionDuration, sectionShortcut, sessionBar, onActiveSectionChange, children }: WorkspaceProps) {
   const { t } = useLocalization();
   const { preferences } = useAppearancePreferences();
   const [session] = useState(() => sessionFor(sessionKey, initialSection));
@@ -198,7 +199,7 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
     }
     container.style.height = `${destination}px`;
     container.dataset.transitioning = 'true';
-    const duration = active ? 280 : 240;
+    const duration = sectionTransitionDuration ?? (active ? 280 : 240);
     animations.current.push(container.animate([{ height: `${from}px` }, { height: `${destination}px` }], {
       duration, easing: active ? 'cubic-bezier(.2,.7,.2,1)' : 'ease-in'
     }));
@@ -223,7 +224,7 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
         settledHeight.current = container.getBoundingClientRect().height;
       }
     });
-  }, [active, reduced]);
+  }, [active, reduced, sectionTransitionDuration]);
 
   useLayoutEffect(() => {
     const update = () => {

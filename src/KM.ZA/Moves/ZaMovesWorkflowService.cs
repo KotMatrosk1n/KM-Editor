@@ -968,7 +968,7 @@ internal sealed class ZaMovesWorkflowService
             move.SelfHeal,
             ToStatChangeRecords(move.StatAmps),
             flags,
-            new ZaMoveProvenance(source.RelativePath, source.SourceLayer, source.FileState));
+            new ZaMoveProvenance(source.RelativePath, source.SourceLayer, source.FileState, source.StoragePath));
     }
 
     private static ZaMoveRecord AddRuntimeData(
@@ -1448,7 +1448,7 @@ internal sealed class ZaMovesWorkflowService
             move.SelfHeal,
             StatChanges: [],
             Flags: [],
-            new ZaMoveProvenance(source.RelativePath, source.SourceLayer, source.FileState));
+            new ZaMoveProvenance(source.RelativePath, source.SourceLayer, source.FileState, source.StoragePath));
     }
 
     private static ZaMoveRecord AddGameModuleRuntimeData(

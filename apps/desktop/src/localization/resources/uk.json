@@ -2559,6 +2559,8 @@
     "moves.runtimeVariant.plus": "Посилений прийом",
     "moves.runtimeVariant.boss": "Босовий прийом",
     "moves.runtimeVariant.unknown": "Варіант {variant}",
+    "moves.saveToSession": "Зберегти в сеансі",
+    "moves.noFlags": "Для цього прийому немає доступних прапорців.",
     "moves.runtimeVariant.heading": "Варіант виконання",
     "moves.runtimeVariant.label": "Варіант",
     "moves.runtimeVariant.draftRetention": "Чернетки зберігаються під час зміни варіантів і рядків таймінгу. Підготовка надсилає разом усі припустимі чернетки цього прийому.",
