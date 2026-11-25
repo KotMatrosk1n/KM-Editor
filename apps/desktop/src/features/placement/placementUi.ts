@@ -59,7 +59,7 @@ export type PlacementObjectFieldChange = {
 export function getPlacementCategories(workflow: PlacementWorkflow | null) {
   if (!workflow) return [];
   const hasStructuredCategoryIds = workflow.objects.some((object) => object.categoryId?.trim());
-  if (workflow.categories?.length && hasStructuredCategoryIds) {
+  if (workflow.categories?.length && (hasStructuredCategoryIds || workflow.objects.length === 0)) {
     return workflow.categories;
   }
 

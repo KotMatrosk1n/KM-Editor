@@ -2164,11 +2164,11 @@ public sealed class SwShPlacementWorkflowService
                 hashLabels,
                 itemIdsByHash,
                 itemNames,
-                includeField: field => !IsFieldItemCanonicalRawAlias(
-                    field,
-                    usesHashStorage: fieldItem.ItemHashOffsets.Count > 0,
-                    usesDirectIdStorage: fieldItem.ItemHashOffsets.Count == 0
-                        && fieldItem.ItemIdOffsets.Count > 0)));
+                includeField: field => !IsCanonicalTransformAlias(field)
+                    && !field.Field.EndsWith(".Quantity", StringComparison.Ordinal))
+                .Select(field => IsCanonicalFieldItemEntry(field.Field, fieldItem)
+                    ? field with { IsReadOnly = true, Description = "Edit the primary item from Placement Data." }
+                    : field));
         }
 
         return fields;
@@ -2209,15 +2209,11 @@ public sealed class SwShPlacementWorkflowService
         return fields;
     }
 
-    private static bool IsFieldItemCanonicalRawAlias(
-        SwShPlacementRawField field,
-        bool usesHashStorage,
-        bool usesDirectIdStorage)
+    private static bool IsCanonicalFieldItemEntry(string field, SwShPlacementFieldItem fieldItem)
     {
-        return IsCanonicalTransformAlias(field)
-            || (usesHashStorage && field.Field.EndsWith(".Flags[0]", StringComparison.Ordinal))
-            || (usesDirectIdStorage && field.Field.EndsWith(".Items[0]", StringComparison.Ordinal))
-            || field.Field.EndsWith(".Quantity", StringComparison.Ordinal);
+        return fieldItem.ItemHashOffsets.Count > 0
+            ? field.EndsWith(".Flags[0]", StringComparison.Ordinal)
+            : fieldItem.ItemIdOffsets.Count > 0 && field.EndsWith(".Items[0]", StringComparison.Ordinal);
     }
 
     private static bool IsHiddenItemCanonicalRawAlias(SwShPlacementRawField field)

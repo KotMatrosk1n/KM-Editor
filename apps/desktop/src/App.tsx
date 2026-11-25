@@ -423,6 +423,8 @@ import {
   EditorSessionBarActions
 } from './components/EditorSessionBar';
 import { FieldLabel } from './components/FieldLabel';
+import { getPlacementEditorLayout, placementAxes } from './features/placement/placementEditorLayout';
+import './features/placement/placementEditor.css';
 import { ContextHelp } from './components/ContextHelp';
 import { HoverTooltip } from './components/HoverTooltip';
 import { editorPortalHostId } from './components/editorPortal';
@@ -613,7 +615,6 @@ import {
   type PlacementFieldControl,
   type PlacementObjectGroup,
   buildPlacementObjectGroups,
-  formatPlacementCoordinates,
   formatPlacementObjectDisplayLabel,
   formatPlacementObjectDisplayMap,
   getPlacementInspectorPrimaryData,
@@ -21440,6 +21441,7 @@ export function App({
                         isDetailLoading: isSwShPlacementDetailLoading,
                         isPageLoading: isSwShPlacementPageLoading,
                         isPageStale: isSwShPlacementPageStale,
+                        objects: swShPlacementPage?.objects ?? emptyPlacedObjects,
                         limit: swShPlacementPage?.limit ?? swShPlacementPageSize,
                         offset: swShPlacementPage?.offset ?? swShPlacementOffset,
                         onCategoryChange: (categoryId) => {
@@ -51655,6 +51657,8 @@ function SelectedBehaviorPanel({
   );
 }
 
+const emptyPlacedObjects: PlacedObjectRecord[] = [];
+
 type PlacementSectionProps = {
   editSession: EditSession | null;
   editorFamily: EditorUiFamily;
@@ -51674,6 +51678,7 @@ type PlacementSectionProps = {
     isPageLoading: boolean;
     isPageStale: boolean;
     limit: number;
+    objects: PlacedObjectRecord[];
     offset: number;
     onCategoryChange: (categoryId: string | null) => void;
     onPageChange: (offset: number) => void;
@@ -51719,7 +51724,7 @@ function PlacementSection({
   updateDiagnostics,
   workflow
 }: PlacementSectionProps) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
   const placementCategories = useMemo(() => getPlacementCategories(workflow), [workflow]);
   const supportsPlacementCategories =
@@ -51736,7 +51741,7 @@ function PlacementSection({
   const filteredObjects = useMemo(() => {
     const objects = workflow?.objects ?? [];
     if (remotePaging) {
-      return objects;
+      return remotePaging.objects;
     }
 
     return objects.filter((placedObject) => {
@@ -51784,9 +51789,7 @@ function PlacementSection({
   const selectedGroup =
     groupedObjects.find((group) =>
       selectedObject ? group.objects.some((placedObject) => placedObject.objectId === selectedObject.objectId) : false
-    ) ??
-    groupedObjects[0] ??
-    null;
+    ) ?? null;
   const canEditPlacement = workflow?.summary.availability === 'available';
   const isRemoteInteractionBlocked =
     (remotePaging?.isPageLoading ?? false) ||
@@ -51811,6 +51814,200 @@ function PlacementSection({
     setSelectedCategoryId(activeCategoryId);
   }, [activeCategoryId, placementCategories, selectedCategoryId, supportsPlacementCategories]);
 
+  const browserControls = (
+    <>
+      <div className="placement-toolbar">
+        <label className="search-box items-search">
+          <Search aria-hidden="true" size={18} />
+          <input
+            aria-label="Search placement"
+            disabled={!workflow}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Search placement"
+            type="search"
+            value={searchText}
+          />
+        </label>
+        <div className="placement-browser-counts">
+          <span>{t('placement.matchingObjects')} <strong>{remotePaging?.totalCount ?? filteredObjects.length}</strong></span>
+          <span>{translateLiteral('Catalog areas')} <strong>{workflow?.stats.totalAreaCount ?? 0}</strong></span>
+          <span>{translateLiteral('Staged objects')} <strong>{pendingPlacementObjectIds.size}</strong></span>
+        </div>
+      </div>
+      {supportsPlacementCategories && placementCategories.length > 0 ? (
+        <div
+          aria-label="Placement categories"
+          className="condition-tabs placement-category-tabs"
+          role="tablist"
+        >
+          {placementCategories.map((category) => (
+            <button
+              aria-selected={category.id === activeCategoryId}
+              className="condition-tab-button placement-category-tab"
+              disabled={isRemoteInteractionBlocked}
+              key={category.id}
+              onClick={() => {
+                if (remotePaging) {
+                  remotePaging.onCategoryChange(category.id);
+                } else {
+                  setSelectedCategoryId(category.id);
+                }
+              }}
+              role="tab"
+              title={category.description}
+              type="button"
+            >
+              <span>{category.label}</span>
+              <small>{category.objectCount}</small>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {remotePaging?.isPageLoading ? (
+        <LoadingProgress className="is-compact" label={t('placement.loadingMatches')} />
+      ) : null}
+      {remotePaging?.isPageStale && !remotePaging.isPageLoading ? (
+        <div aria-live="polite" className="placement-load-status" role="status">
+          <span>{t('placement.refreshFailed')}</span>
+          <button
+            className="secondary-button placement-retry-button"
+            disabled={isPlacementUpdating}
+            onClick={remotePaging.onRetry}
+            type="button"
+          >
+            <RefreshCw aria-hidden="true" size={14} />
+            <span>{t('placement.retry')}</span>
+          </button>
+        </div>
+      ) : null}
+    </>
+  );
+  const sessionBar = (
+    <EditorSessionBar
+      canEdit={
+        canEditPlacement &&
+        selectedObject !== null &&
+        canInteractWithSelectedPlacement
+      }
+      isEditing={editSession !== null}
+      isStarting={isEditStarting}
+      label="Placement"
+      onStart={onStartEditSession}
+    />
+  );
+  const browserFooter = remotePaging ? (
+    <nav className="placement-pagination" aria-label={t('placement.resultPages')}>
+      <span>
+        {remotePaging.totalCount === 0
+          ? t('placement.noMatches')
+          : t('placement.showingResults', {
+              end: Math.min(
+                remotePaging.offset + filteredObjects.length,
+                remotePaging.totalCount
+              ),
+              start: remotePaging.offset + 1,
+              total: remotePaging.totalCount
+            })}
+      </span>
+      <div className="placement-pagination-actions">
+        <button
+          className="secondary-button"
+          disabled={isRemoteInteractionBlocked || remotePaging.offset === 0}
+          onClick={() =>
+            remotePaging.onPageChange(
+              Math.max(0, remotePaging.offset - remotePaging.limit)
+            )
+          }
+          type="button"
+        >
+          {t('placement.previous')}
+        </button>
+        <button
+          className="secondary-button"
+          disabled={
+            isRemoteInteractionBlocked ||
+            remotePaging.offset + remotePaging.limit >= remotePaging.totalCount
+          }
+          onClick={() =>
+            remotePaging.onPageChange(remotePaging.offset + remotePaging.limit)
+          }
+          type="button"
+        >
+          {t('placement.next')}
+        </button>
+      </div>
+    </nav>
+  ) : null;
+  const browser = (draftsByObjectId: Record<string, Record<string, string>>) => (
+    <div
+      aria-busy={remotePaging?.isPageLoading || undefined}
+      aria-rowcount={(remotePaging?.totalCount ?? groupedObjects.length) + 1}
+      className="raid-rewards-table placement-object-table"
+      role="table"
+      tabIndex={0}
+      aria-label="Placed objects"
+    >
+      <div className="raid-rewards-row raid-rewards-row-heading placement-object-row" role="row">
+        <span role="columnheader">Object</span>
+        <span role="columnheader">Pokemon / Data</span>
+        <span role="columnheader">Position</span>
+      </div>
+      <VirtualTableBody
+        estimateSize={placementVirtualTableRowHeight}
+        getKey={(objectGroup) => objectGroup.key}
+        items={groupedObjects}
+        measureRows
+        resetKey={
+          remotePaging
+            ? `${remotePaging.categoryId ?? 'all'}:${remotePaging.offset}:${searchText}`
+            : undefined
+        }
+        renderRow={(objectGroup, rowIndex) => {
+          const isSelected = selectedObject
+            ? objectGroup.objects.some(
+                (placedObject) => placedObject.objectId === selectedObject.objectId
+              )
+            : false;
+          const isPending = objectGroup.objects.some((placedObject) =>
+            pendingPlacementObjectIds.has(placedObject.objectId)
+          );
+          const isUnstaged = objectGroup.objects.some((placedObject) =>
+            Object.hasOwn(draftsByObjectId, placedObject.objectId)
+          );
+          const nextObjectId = isSelected
+            ? selectedObject?.objectId ?? objectGroup.objects[0]?.objectId ?? null
+            : objectGroup.objects[0]?.objectId ?? null;
+          return (
+            <InteractiveTableRow
+              aria-rowindex={rowIndex + 2 + (remotePaging?.offset ?? 0)}
+              className={`raid-rewards-row placement-object-row ${
+                isSelected ? 'raid-rewards-row-selected' : ''
+              } ${isPending ? 'raid-rewards-row-pending' : ''}`}
+              disabled={isRemoteInteractionBlocked}
+              onClick={() => onSelectObject(nextObjectId)}
+              role="row"
+            >
+              <span className="placement-object-name" role="cell">
+                <strong>{objectGroup.label}</strong>
+                <small>{objectGroup.map}</small>
+                <PlacementRecordStatus isUnstaged={isUnstaged} isStaged={isPending} />
+              </span>
+              <span className="placement-primary-cell" role="cell">
+                {objectGroup.preview}
+              </span>
+              <span role="cell">{objectGroup.position}</span>
+            </InteractiveTableRow>
+          );
+        }}
+      />
+      {groupedObjects.length === 0 && !remotePaging?.isPageLoading ? (
+        <div aria-rowindex={2} className="raid-rewards-row placement-object-row placement-empty-row" role="row">
+          <span role="cell">{t('placement.noMatches')}</span>
+        </div>
+      ) : null}
+    </div>
+  );
+
   return (
     <>
       <section
@@ -51822,222 +52019,25 @@ function PlacementSection({
           <h2 id="placement-heading">Placement</h2>
         </div>
 
-        <div className="items-toolbar encounters-toolbar">
-          <label className="search-box items-search">
-            <Search aria-hidden="true" size={18} />
-            <input
-              aria-label="Search placement"
-              disabled={!workflow}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search placement"
-              type="search"
-              value={searchText}
-            />
-          </label>
-          <Metric
-            label={remotePaging ? t('placement.matchingObjects') : 'Loaded objects'}
-            value={
-              workflow
-                ? (remotePaging?.totalCount ?? workflow.stats.totalObjectCount).toString()
-                : '0'
-            }
-          />
-          <Metric
-            label="Areas"
-            value={workflow ? workflow.stats.totalAreaCount.toString() : '0'}
-          />
-          <Metric
-            label="Pending changes"
-            value={(editSession?.pendingEdits.length ?? 0).toString()}
-          />
-        </div>
-
         {workflow ? (
-          <EditorSessionBar
-            canEdit={
-              canEditPlacement &&
-              selectedObject !== null &&
-              canInteractWithSelectedPlacement
-            }
-            isEditing={editSession !== null}
-            isStarting={isEditStarting}
-            label="Placement"
-            onStart={onStartEditSession}
+          <SelectedPlacementPanel
+            browser={browser}
+            browserControls={browserControls}
+            browserFooter={browserFooter}
+            pendingObjectIds={pendingPlacementObjectIds}
+            sessionBar={sessionBar}
+            canEditPlacement={canEditPlacement && canInteractWithSelectedPlacement}
+            editSession={editSession}
+            editorFamily={editorFamily}
+            editableFields={workflow.editableFields}
+            isDetailsLoading={remotePaging?.isDetailLoading ?? false}
+            isPlacementUpdating={isPlacementUpdating}
+            onReviewDraftTarget={onReviewDraftTarget}
+            onUpdatePlacementObjectFields={onUpdatePlacementObjectFields}
+            onSelectObject={onSelectObject}
+            placementGroup={selectedGroup}
+            placedObject={selectedObject}
           />
-        ) : null}
-
-        {supportsPlacementCategories && placementCategories.length > 0 ? (
-          <div
-            aria-label="Placement categories"
-            className="condition-tabs placement-category-tabs"
-            role="tablist"
-          >
-            {placementCategories.map((category) => (
-              <button
-                aria-selected={category.id === activeCategoryId}
-                className="condition-tab-button placement-category-tab"
-                disabled={isRemoteInteractionBlocked}
-                key={category.id}
-                onClick={() => {
-                  if (remotePaging) {
-                    remotePaging.onCategoryChange(category.id);
-                  } else {
-                    setSelectedCategoryId(category.id);
-                  }
-                }}
-                role="tab"
-                title={category.description}
-                type="button"
-              >
-                <span>{category.label}</span>
-                <small>{category.objectCount}</small>
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-        {workflow ? (
-          <RecordEditorWorkspace id="placement" className="encounters-layout placement-layout" browser={
-            <div className="placement-browser-stack">
-              {remotePaging?.isPageLoading ? (
-                <LoadingProgress className="is-compact" label={t('placement.loadingMatches')} />
-              ) : null}
-              {remotePaging?.isPageStale && !remotePaging.isPageLoading ? (
-                <div aria-live="polite" className="placement-load-status" role="status">
-                  <span>{t('placement.refreshFailed')}</span>
-                  <button
-                    className="secondary-button placement-retry-button"
-                    disabled={isPlacementUpdating}
-                    onClick={remotePaging.onRetry}
-                    type="button"
-                  >
-                    <RefreshCw aria-hidden="true" size={14} />
-                    <span>{t('placement.retry')}</span>
-                  </button>
-                </div>
-              ) : null}
-              <div
-                aria-busy={remotePaging?.isPageLoading || undefined}
-                aria-rowcount={(remotePaging?.totalCount ?? groupedObjects.length) + 1}
-                className="raid-rewards-table placement-object-table"
-                role="table"
-                aria-label="Placed objects"
-              >
-                <div className="raid-rewards-row raid-rewards-row-heading placement-object-row" role="row">
-                  <span role="columnheader">Object</span>
-                  <span role="columnheader">Pokemon / Data</span>
-                  <span role="columnheader">Position</span>
-                </div>
-                <VirtualTableBody
-                  estimateSize={placementVirtualTableRowHeight}
-                  getKey={(objectGroup) => objectGroup.key}
-                  items={groupedObjects}
-                  measureRows
-                  resetKey={
-                    remotePaging
-                      ? `${remotePaging.categoryId ?? 'all'}:${remotePaging.offset}:${searchText}`
-                      : undefined
-                  }
-                  renderRow={(objectGroup, rowIndex) => {
-                    const isSelected = selectedObject
-                      ? objectGroup.objects.some(
-                          (placedObject) => placedObject.objectId === selectedObject.objectId
-                        )
-                      : false;
-                    const isPending = objectGroup.objects.some((placedObject) =>
-                      pendingPlacementObjectIds.has(placedObject.objectId)
-                    );
-                    const nextObjectId = isSelected
-                      ? selectedObject?.objectId ?? objectGroup.objects[0]?.objectId ?? null
-                      : objectGroup.objects[0]?.objectId ?? null;
-                    return (
-                      <InteractiveTableRow
-                        aria-rowindex={rowIndex + 2 + (remotePaging?.offset ?? 0)}
-                        className={`raid-rewards-row placement-object-row ${
-                          isSelected ? 'raid-rewards-row-selected' : ''
-                        } ${isPending ? 'raid-rewards-row-pending' : ''}`}
-                        disabled={isRemoteInteractionBlocked}
-                        onClick={() => onSelectObject(nextObjectId)}
-                        role="row"
-                      >
-                        <span className="placement-object-name" role="cell">
-                          <strong>{objectGroup.label}</strong>
-                          <small>{objectGroup.map}</small>
-                        </span>
-                        <span className="placement-primary-cell" role="cell">
-                          {objectGroup.preview}
-                        </span>
-                        <span role="cell">{objectGroup.position}</span>
-                      </InteractiveTableRow>
-                    );
-                  }}
-                />
-                {groupedObjects.length === 0 && !remotePaging?.isPageLoading ? (
-                  <div aria-rowindex={2} className="raid-rewards-row placement-object-row placement-empty-row" role="row">
-                    <span role="cell">{activeCategoryId === null ? 'No placement entries.' : `No entries in ${placementCategories.find((category) => category.id === activeCategoryId)?.label ?? 'placement'}.`}</span>
-                  </div>
-                ) : null}
-              </div>
-              {remotePaging ? (
-                <nav className="placement-pagination" aria-label={t('placement.resultPages')}>
-                  <span>
-                    {remotePaging.totalCount === 0
-                      ? t('placement.noMatches')
-                      : t('placement.showingResults', {
-                          end: Math.min(
-                            remotePaging.offset + groupedObjects.length,
-                            remotePaging.totalCount
-                          ),
-                          start: remotePaging.offset + 1,
-                          total: remotePaging.totalCount
-                        })}
-                  </span>
-                  <div className="placement-pagination-actions">
-                    <button
-                      className="secondary-button"
-                      disabled={isRemoteInteractionBlocked || remotePaging.offset === 0}
-                      onClick={() =>
-                        remotePaging.onPageChange(
-                          Math.max(0, remotePaging.offset - remotePaging.limit)
-                        )
-                      }
-                      type="button"
-                    >
-                      {t('placement.previous')}
-                    </button>
-                    <button
-                      className="secondary-button"
-                      disabled={
-                        isRemoteInteractionBlocked ||
-                        remotePaging.offset + remotePaging.limit >= remotePaging.totalCount
-                      }
-                      onClick={() =>
-                        remotePaging.onPageChange(remotePaging.offset + remotePaging.limit)
-                      }
-                      type="button"
-                    >
-                      {t('placement.next')}
-                    </button>
-                  </div>
-                </nav>
-              ) : null}
-            </div>
-          }>
-
-            <SelectedPlacementPanel
-              canEditPlacement={canEditPlacement && canInteractWithSelectedPlacement}
-              editSession={editSession}
-              editorFamily={editorFamily}
-              editableFields={workflow.editableFields}
-              isDetailsLoading={remotePaging?.isDetailLoading ?? false}
-              isPlacementUpdating={isPlacementUpdating}
-              onReviewDraftTarget={onReviewDraftTarget}
-              onUpdatePlacementObjectFields={onUpdatePlacementObjectFields}
-              onSelectObject={onSelectObject}
-              placementGroup={selectedGroup}
-              placedObject={selectedObject}
-            />
-          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">Open Placement from Workflows to load backend placement data.</p>
         )}
@@ -52049,6 +52049,9 @@ function PlacementSection({
 }
 
 function SelectedPlacementPanel({
+  browser,
+  browserControls,
+  browserFooter,
   canEditPlacement,
   editSession,
   editorFamily,
@@ -52058,9 +52061,14 @@ function SelectedPlacementPanel({
   onReviewDraftTarget,
   onSelectObject,
   onUpdatePlacementObjectFields,
+  pendingObjectIds,
   placementGroup,
-  placedObject
+  placedObject,
+  sessionBar
 }: {
+  browser: (drafts: Record<string, Record<string, string>>) => ReactNode;
+  browserControls: ReactNode;
+  browserFooter: ReactNode;
   canEditPlacement: boolean;
   editSession: EditSession | null;
   editorFamily: FieldHelpGame;
@@ -52073,8 +52081,10 @@ function SelectedPlacementPanel({
     objectId: string,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
+  pendingObjectIds: ReadonlySet<string>;
   placementGroup: PlacementObjectGroup | null;
   placedObject: PlacedObjectRecord | null;
+  sessionBar: ReactNode;
 }) {
   const [draftsByObjectId, setDraftsByObjectId] = useState<
     Record<string, Record<string, string>>
@@ -52089,26 +52099,12 @@ function SelectedPlacementPanel({
   const pokemonWorkflow = useWorkbenchStore((state) => state.pokemonWorkflow);
   const { t, translateLiteral } = useLocalization();
   const cancelActiveEditSession = useCancelActiveEditSession();
+  const layoutScope = useContext(EditorLayoutScope);
   const visibleFields = useMemo(
     () => (placedObject ? getPlacementFieldControls(placedObject, editableFields) : []),
     [editableFields, placedObject]
   );
-  const placementFieldGroups = useMemo(() => {
-    const groups: Array<{ group: string; fields: PlacementFieldControl[] }> = [];
-
-    for (const field of visibleFields) {
-      const groupName = field.group || 'Placement Data';
-      let group = groups.find((candidate) => candidate.group === groupName);
-      if (!group) {
-        group = { group: groupName, fields: [] };
-        groups.push(group);
-      }
-
-      group.fields.push(field);
-    }
-
-    return groups;
-  }, [visibleFields]);
+  const layout = useMemo(() => getPlacementEditorLayout(visibleFields), [visibleFields]);
   const placementDraftDefaults = useMemo(
     () =>
       placedObject
@@ -52154,9 +52150,6 @@ function SelectedPlacementPanel({
     !isReviewingPlacementDraft &&
     placementDraftSummary.changedFields.length > 0 &&
     placementDraftSummary.invalidFields.length === 0;
-  const inspectorPrimaryData = placedObject
-    ? getPlacementInspectorPrimaryData(placedObject)
-    : null;
 
   useEffect(() => {
     if (!placedObject) {
@@ -52306,28 +52299,306 @@ function SelectedPlacementPanel({
     );
   };
 
+  const renderPlacementField = (
+    field: PlacementFieldControl,
+    { label = field.label, showLabel = true, showRaw = false, showReadOnlyStatus = true } = {}
+  ) => {
+    const currentValue = placedObject ? getPlacementFieldValue(placedObject, field.field) : null;
+    const draftValue = drafts[field.field] ?? '';
+    const state = getPlacementDraftState(draftValue, currentValue, field);
+    const isInvalid = draftValue.trim() !== '' && !state.isValid;
+    const isChanged = state.canSubmit;
+    const isEditable = editSession !== null && !field.isReadOnly;
+    const isText = ['text', 'string', 'hash', 'boolean'].includes(field.valueKind);
+    const help = field.description
+      ? translateLiteral(field.description)
+      : getEditableFieldHelp(field, t, { domain: 'placement', game: editorFamily, label });
+    const fieldId = `placement-field-${field.field}`;
+    const errorId = `${fieldId}-error`;
+    const status = isInvalid
+      ? getPlacementFieldErrorText(field)
+      : isChanged ? 'Changed' : field.isReadOnly && showReadOnlyStatus ? 'Read-only' : null;
+    const showExactValue = showRaw || field.valueKind === 'hash' || /hash$/i.test(field.field);
+    const value = showExactValue ? field.value || field.displayValue : field.displayValue || field.value;
+    const resolved = field.displayValue && field.displayValue !== value ? field.displayValue : null;
+
+    return (
+      <div
+        className={`placement-field ${isChanged ? 'editable-field-changed' : ''} ${isInvalid ? 'editable-field-invalid' : ''}`}
+        key={field.field}
+      >
+        {showLabel && isEditable ? (
+          <FieldLabel help={help} htmlFor={fieldId} label={translateLiteral(label)} />
+        ) : showLabel || help ? (
+          <span className="placement-field-label">
+            {showLabel ? <span>{translateLiteral(label)}</span> : null}
+            {help ? <ContextHelp label={label}>{help}</ContextHelp> : null}
+          </span>
+        ) : null}
+        {isEditable && field.options.length > 0 ? (
+          <SearchableOptionInput
+            ariaLabel={translateLiteral(label)}
+            disabled={!canEditPlacement}
+            id={fieldId}
+            onChange={(next) => handlePlacementDraftChange(field, next)}
+            options={addDraftFallbackOption(field.options, draftValue, `${field.label} ${draftValue}`)}
+            value={draftValue}
+          />
+        ) : isEditable ? (
+          <input
+            aria-label={translateLiteral(label)}
+            aria-invalid={isInvalid || undefined}
+            aria-describedby={isInvalid ? errorId : undefined}
+            disabled={!canEditPlacement}
+            id={fieldId}
+            max={isText ? undefined : field.maximumValue}
+            min={isText ? undefined : field.minimumValue}
+            onChange={(event) => handlePlacementDraftChange(field, event.target.value)}
+            step={field.valueKind === 'integer' ? 1 : 'any'}
+            type={isText ? 'text' : 'number'}
+            value={draftValue}
+          />
+        ) : (
+          <span className="placement-selectable-value" id={fieldId}>
+            {value === field.value
+              ? <span data-localization-ignore="true">{value}</span>
+              : translateLiteral(value)}
+            {!showRaw && resolved ? <small>{translateLiteral(resolved)}</small> : null}
+          </span>
+        )}
+        {status ? (
+          <small id={isInvalid ? errorId : undefined} className={isInvalid ? 'editable-field-error' : 'editable-field-status'}>
+            {translateLiteral(status)}
+          </small>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderGroups = (groups: typeof layout.data) => groups.map(group => (
+    <EditorDetailGroup key={group.label} label={translateLiteral(group.label)}>
+      <div className="placement-field-list">
+        {group.fields.map(field => renderPlacementField(field))}
+      </div>
+    </EditorDetailGroup>
+  ));
+  const primaryData = placedObject ? getPlacementInspectorPrimaryData(placedObject) : null;
+  const dataFields = [
+    ...layout.transform.flatMap(row => row.cells),
+    ...layout.data.flatMap(group => group.fields)
+  ];
+  const dataFieldIds = new Set(dataFields.map(field => field?.field));
+  const layer = placedObject ? formatSourceLayer(placedObject.provenance.sourceLayer) : '';
+
   return (
-    <aside aria-label="Selected placement object provenance" className="encounter-inspector">
+    <>
       <PublishedLocalEditorValidationDiagnostics
         domain="workflow.placement"
         issues={placementDraftSummary.invalidFields}
       />
-      {editSession && !placedObject ? (
-        <EmptySelectionEditorSessionActions
-          isBusy={isPlacementUpdating || isReviewingPlacementDraft}
-          onCancel={() => cancelActiveEditSession(() => setDraftsByObjectId({}))}
-          stageLabel="Stage Changes"
-          summary={`${t('editorDrafts.summary.placement', {
-            count: outstandingPlacementDraftKeys.length
-          })}; ${t('editorDrafts.summary.unavailable', {
-            count: unavailablePlacementDraftKeys.length
-          })}`}
-        />
-      ) : null}
-      {editSession && !placedObject && (
-        nextPlacementDraftKey !== null || unavailablePlacementDraftKeys.length > 0
-      ) ? (
-        <div className="button-row">
+      <SectionedEditorWorkspace
+        sectionTransitionDuration={250}
+        browser={browser(draftsByObjectId)}
+        browserControls={browserControls}
+        browserFooter={browserFooter}
+        browserVisibleRows={4}
+        compactFields
+        initialSection="placement-data"
+        sessionBar={sessionBar}
+        sessionKey={`${layoutScope}:placement`}
+      >
+        <EditorWorkspaceHeader afterBrowser>
+          <div className="placement-selected">
+            {placedObject ? (
+              <div className="placement-selected-record">
+                <EditorRecordHeading name={formatPlacementObjectDisplayLabel(placedObject)} />
+                <div className="placement-selected-meta">
+                  <span>{placedObject.objectType}</span>
+                  <span>{formatPlacementObjectDisplayMap(placedObject)}</span>
+                  <span>{layer}</span>
+                  <PlacementRecordStatus
+                    isStaged={pendingObjectIds.has(placedObject.objectId)}
+                    isUnstaged={Object.hasOwn(draftsByObjectId, placedObject.objectId)}
+                  />
+                </div>
+              </div>
+            ) : <p className="empty-copy">No placement object selected.</p>}
+            {isDetailsLoading ? <LoadingProgress className="is-compact" label={t('placement.loadingDetails')} /> : null}
+            {placedObject && placementGroup && placementGroup.objects.length > 1 ? (
+              <PlacementObjectGroupBrowser
+                group={placementGroup}
+                onSelectObject={onSelectObject}
+                selectedObjectId={placedObject.objectId}
+              />
+            ) : null}
+          </div>
+        </EditorWorkspaceHeader>
+        {placedObject ? (
+          <>
+            <EditorWorkspaceSection
+              id="placement-data"
+              label={translateLiteral('Placement Data')}
+              invalid={placementDraftSummary.invalidFields.some(change => dataFieldIds.has(change.field))}
+              modified={placementDraftSummary.changedFields.some(change => dataFieldIds.has(change.field))}
+            >
+              <div className="placement-data-layout">
+                {layout.transform.length > 0 ? (
+                  <EditorDetailGroup label={translateLiteral('Transform')}>
+                    <table className="placement-transform-table">
+                      <thead>
+                        <tr><th scope="col">{translateLiteral('Transform')}</th>{placementAxes.map(axis => <th key={axis} scope="col">{axis}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        {layout.transform.map(row => (
+                          <tr key={row.label}>
+                            <th scope="row">{translateLiteral(row.label)}</th>
+                            {row.cells.map((field, index) => (
+                              <td key={placementAxes[index]}>
+                                {field ? renderPlacementField(field, {
+                                  label: `${row.label} ${placementAxes[index]}`,
+                                  showLabel: false,
+                                  showRaw: true
+                                }) : null}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </EditorDetailGroup>
+                ) : null}
+                {layout.data.length > 0 ? <div className="placement-data-fields">{renderGroups(layout.data)}</div> : null}
+                {layout.data.length === 0 && layout.transform.length === 0 && primaryData?.value ? (
+                  <EditorDetailGroup label={translateLiteral(primaryData.label)}>
+                    <span className="placement-summary-value placement-selectable-value">{primaryData.value}</span>
+                  </EditorDetailGroup>
+                ) : null}
+              </div>
+            </EditorWorkspaceSection>
+            <EditorWorkspaceSection id="details" label={t('editorSections.details')}>
+              <div className="editor-detail-columns placement-details">
+                <EditorDetailGroup label={translateLiteral('Provenance')}>
+                  <dl className="editor-detail-list">
+                    <EditorDetailValue label="Source file" dataValue path>{placedObject.provenance.sourceFile}</EditorDetailValue>
+                    {placedObject.archiveMember ? <EditorDetailValue label="Archive member" dataValue path>{placedObject.archiveMember}</EditorDetailValue> : null}
+                    <EditorDetailValue label="Layer">{layer}</EditorDetailValue>
+                    <EditorDetailValue label="File state">{formatFileState(placedObject.provenance.fileState)}</EditorDetailValue>
+                  </dl>
+                </EditorDetailGroup>
+                <EditorDetailGroup label={translateLiteral('Identity')}>
+                  <dl className="editor-detail-list">
+                    <EditorDetailValue label="Type" dataValue>{placedObject.objectType}</EditorDetailValue>
+                    {placedObject.map ? <EditorDetailValue label="Map" dataValue path>{placedObject.map}</EditorDetailValue> : null}
+                    <EditorDetailValue label="Object ID" dataValue path>{placedObject.objectId}</EditorDetailValue>
+                    {placedObject.scriptId ? <EditorDetailValue label="Link" dataValue path>{placedObject.scriptId}</EditorDetailValue> : null}
+                  </dl>
+                  {layout.identity.length > 0 ? (
+                    <div className="placement-field-list">
+                      {layout.identity.map(field => renderPlacementField(field))}
+                    </div>
+                  ) : null}
+                </EditorDetailGroup>
+              </div>
+            </EditorWorkspaceSection>
+            <EditorWorkspaceSection
+              id="technical"
+              label={translateLiteral('Technical')}
+              invalid={placementDraftSummary.invalidFields.some(change => !dataFieldIds.has(change.field))}
+              modified={placementDraftSummary.changedFields.some(change => !dataFieldIds.has(change.field))}
+            >
+              <div className="placement-technical-layout">
+                {renderGroups(layout.technical)}
+                {layout.arrays.length > 0 || layout.entryFields.length > 0 ? (
+                  <EditorDetailGroup label={translateLiteral('Entries')}>
+                    {layout.entryFields.length > 0 ? (
+                      <div className="placement-field-list">
+                        {layout.entryFields.map(field => renderPlacementField(field))}
+                      </div>
+                    ) : null}
+                    {layout.arrays.length > 0 ? (
+                      <div className="placement-entry-tables">
+                        {layout.arrays.map(array => {
+                          const isReadOnly = array.entries.length > 0 && array.entries.every(({ field }) => field.isReadOnly);
+                          return (
+                            <table className="placement-entry-table" key={array.path}>
+                              <caption>
+                                <strong>{translateLiteral(array.label)}</strong>
+                                {array.count ? <span>{translateLiteral('Count')} {array.count.value}</span> : null}
+                                {isReadOnly ? <span>{translateLiteral('Read-only')}</span> : null}
+                                <ContextHelp label={array.label}>{array.path}</ContextHelp>
+                              </caption>
+                              {array.entries.length ? (
+                                <>
+                                  <thead><tr><th scope="col">{translateLiteral('Index')}</th><th scope="col">{translateLiteral('Value')}</th></tr></thead>
+                                  <tbody>
+                                    {array.entries.map(({ index, field }) => (
+                                      <tr key={field.field}>
+                                        <th scope="row">{index}</th>
+                                        <td>{renderPlacementField(field, {
+                                          label: `${array.label} ${index}`,
+                                          showLabel: false,
+                                          showRaw: true,
+                                          showReadOnlyStatus: !isReadOnly
+                                        })}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </>
+                              ) : null}
+                            </table>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </EditorDetailGroup>
+                ) : null}
+                {layout.arrays.length === 0 && layout.technical.length === 0 && layout.entryFields.length === 0 ? (
+                  <p className="empty-copy">This object has no technical fields.</p>
+                ) : null}
+              </div>
+            </EditorWorkspaceSection>
+          </>
+        ) : null}
+      </SectionedEditorWorkspace>
+      {editSession ? (
+        <EditorSessionBarActions>
+          <button
+            aria-busy={isPlacementUpdating || undefined}
+            className="primary-button"
+            disabled={!canSavePlacementDrafts}
+            onClick={async () => {
+              if (!placedObject) {
+                return;
+              }
+
+              const submittedDraft = { ...drafts };
+              const didSave = await onUpdatePlacementObjectFields(
+                placedObject.objectId,
+                placementDraftSummary.changedFields.map((change) => ({
+                  field: change.field,
+                  value: change.value
+                }))
+              );
+              if (didSave) {
+                setDraftsByObjectId((currentDrafts) =>
+                  clearSubmittedKeyedEditorDraft(
+                    currentDrafts,
+                    placedObject.objectId,
+                    submittedDraft,
+                    areFieldDraftsEqual
+                  )
+                );
+              }
+            }}
+            type="button"
+          >
+            <BusyActionContent
+              busyLabel="Staging Changes"
+              icon={<Save aria-hidden="true" size={16} />}
+              isBusy={isPlacementUpdating}
+              label="Stage Changes"
+            />
+          </button>
           {nextPlacementDraftKey !== null ? (
             <button
               className="secondary-button"
@@ -52352,310 +52623,38 @@ function SelectedPlacementPanel({
               {t('editorDrafts.discardUnavailable')}
             </button>
           ) : null}
-        </div>
+          <button
+            className="danger-button"
+            disabled={isPlacementUpdating || isReviewingPlacementDraft}
+            onClick={() => cancelActiveEditSession(() => setDraftsByObjectId({}))}
+            type="button"
+          >
+            <X aria-hidden="true" size={16} />
+            <span>Cancel</span>
+          </button>
+          <span className="draft-action-summary">
+            {placedObject ? `${translateLiteral(formatDraftSummary(placementDraftSummary))} · ` : null}
+            {t('editorDrafts.summary.placement', {
+              count: outstandingPlacementDraftKeys.length
+            })} ·{' '}
+            {t('editorDrafts.summary.unavailable', {
+              count: unavailablePlacementDraftKeys.length
+            })}
+          </span>
+        </EditorSessionBarActions>
       ) : null}
-      <div className="panel-heading">
-        <MapPin aria-hidden="true" size={18} />
-        <h3>Selected Object</h3>
-      </div>
+    </>
+  );
+}
 
-      {isDetailsLoading ? (
-        <LoadingProgress className="is-compact" label={t('placement.loadingDetails')} />
-      ) : null}
-
-      {placedObject ? (
-        <>
-          <dl className="item-provenance-list">
-            <div>
-              <dt>Object</dt>
-              <dd>{formatPlacementObjectDisplayLabel(placedObject)}</dd>
-            </div>
-            <div>
-              <dt>Type</dt>
-              <dd>{placedObject.objectType}</dd>
-            </div>
-            <div>
-              <dt>Map</dt>
-              <dd>{formatPlacementObjectDisplayMap(placedObject)}</dd>
-            </div>
-            <div>
-              <dt>Archive member</dt>
-              <dd>{placedObject.archiveMember}</dd>
-            </div>
-            <div>
-              <dt>Source file</dt>
-              <dd>{placedObject.provenance.sourceFile}</dd>
-            </div>
-            <div>
-              <dt>Layer</dt>
-              <dd>{formatSourceLayer(placedObject.provenance.sourceLayer)}</dd>
-            </div>
-            <div>
-              <dt>File state</dt>
-              <dd>{formatFileState(placedObject.provenance.fileState)}</dd>
-            </div>
-          </dl>
-
-          {placementGroup && placementGroup.objects.length > 1 ? (
-            <PlacementObjectGroupBrowser
-              group={placementGroup}
-              onSelectObject={onSelectObject}
-              selectedObjectId={placedObject.objectId}
-            />
-          ) : null}
-
-          <div className="encounter-edit-form">
-            <dl className="encounter-slot-detail">
-              <div>
-                <dt>{inspectorPrimaryData?.label ?? 'Placement Data'}</dt>
-                <dd>{inspectorPrimaryData?.value ?? 'n/a'}</dd>
-              </div>
-              {inspectorPrimaryData?.isItem ? (
-                <>
-                  <div>
-                    <dt>Quantity</dt>
-                    <dd>{placedObject.quantity}</dd>
-                  </div>
-                  <div>
-                    <dt>Chance</dt>
-                    <dd>{placedObject.chance ?? 'n/a'}</dd>
-                  </div>
-                </>
-              ) : null}
-              <div>
-                <dt>Position</dt>
-                <dd>{formatPlacementCoordinates(placedObject)}</dd>
-              </div>
-              <div>
-                <dt>Link</dt>
-                <dd>{placedObject.scriptId || 'n/a'}</dd>
-              </div>
-            </dl>
-
-            <div className="editable-field-groups placement-field-groups">
-              {placementFieldGroups.map((group) => (
-                <fieldset className="editable-field-group" key={group.group}>
-                  <legend>{group.group}</legend>
-                  <div className="editable-field-grid placement-field-grid">
-                    {group.fields.map((field) => {
-                      const currentValue = getPlacementFieldValue(placedObject, field.field);
-                      const draftValue = drafts[field.field] ?? '';
-                      const draftState = getPlacementDraftState(draftValue, currentValue, field);
-                      const isInvalid =
-                        draftValue.trim() !== '' && draftState.isValid === false;
-                      const isChanged = draftState.canSubmit;
-                      const fieldOptions = field.options ?? [];
-                      const isFieldReadOnly = field.isReadOnly;
-                      const isTextLikePlacementField =
-                        field.valueKind === 'text' ||
-                        field.valueKind === 'string' ||
-                        field.valueKind === 'hash' ||
-                        field.valueKind === 'boolean';
-                      const resolvedDisplayHint =
-                        field.displayValue &&
-                        field.displayValue !== field.value &&
-                        !isChanged &&
-                        !isInvalid
-                          ? field.displayValue
-                          : null;
-                      const statusText = isInvalid
-                        ? getPlacementFieldErrorText(field)
-                        : isChanged
-                          ? 'Changed'
-                          : isFieldReadOnly
-                            ? 'Read-only'
-                            : resolvedDisplayHint;
-                      const localizedPlacementFieldLabel = translateLiteral(field.label);
-                      const localizedFieldHelpText = field.description
-                        ? translateLiteral(field.description)
-                        : getEditableFieldHelp(field, t, {
-                            domain: 'placement',
-                            game: editorFamily,
-                            label: localizedPlacementFieldLabel
-                          });
-                      const localizedFieldHoverText = isFieldReadOnly
-                        ? translateLiteral(
-                            field.description ||
-                              'This Placement field is visible but not editable yet.'
-                          )
-                        : field.description
-                          ? translateLiteral(field.description)
-                          : getEditableFieldHoverHelp(field, t, {
-                              domain: 'placement',
-                              game: editorFamily,
-                              label: localizedPlacementFieldLabel
-                            });
-
-                      return (
-                        <div
-                          className={`path-field editable-field-control ${
-                            isChanged ? 'editable-field-changed' : ''
-                          } ${isInvalid ? 'editable-field-invalid' : ''} ${
-                            isFieldReadOnly ? 'editable-field-disabled placement-read-only-field' : ''
-                          }`}
-                          key={field.field}
-                        >
-                          <FieldLabel
-                            help={localizedFieldHelpText}
-                            htmlFor={`placement-field-${field.field}`}
-                            label={localizedPlacementFieldLabel}
-                          />
-                          {isFieldReadOnly ? (
-                            <HoverTooltip content={localizedFieldHoverText}>
-                              <input
-                                aria-label={translateLiteral(field.label)}
-                                disabled
-                                id={`placement-field-${field.field}`}
-                                type="text"
-                                value={translateLiteral(field.displayValue || field.value)}
-                              />
-                            </HoverTooltip>
-                          ) : fieldOptions.length > 0 ? (
-                            <SearchableOptionInput
-                              ariaLabel={field.label}
-                              disabled={
-                                !canEditPlacement ||
-                                editSession === null ||
-                                isFieldReadOnly
-                              }
-                              id={`placement-field-${field.field}`}
-                              onChange={(value) =>
-                                handlePlacementDraftChange(field, value)
-                              }
-                              options={addDraftFallbackOption(
-                                fieldOptions,
-                                draftValue,
-                                `${field.label} ${draftValue}`
-                              )}
-                              value={draftValue}
-                            />
-                          ) : (
-                            <HoverTooltip content={localizedFieldHoverText}>
-                              <input
-                                aria-label={translateLiteral(field.label)}
-                                disabled={
-                                  !canEditPlacement ||
-                                  editSession === null ||
-                                  isFieldReadOnly
-                                }
-                                id={`placement-field-${field.field}`}
-                                onChange={(event) =>
-                                  handlePlacementDraftChange(field, event.target.value)
-                                }
-                                step={field.valueKind === 'integer' ? 1 : 'any'}
-                                max={isTextLikePlacementField ? undefined : field.maximumValue}
-                                min={isTextLikePlacementField ? undefined : field.minimumValue}
-                                type={isTextLikePlacementField ? 'text' : 'number'}
-                                value={draftValue}
-                              />
-                            </HoverTooltip>
-                          )}
-                          {statusText ? (
-                            <small
-                              className={
-                                isInvalid ? 'editable-field-error' : 'editable-field-status'
-                              }
-                            >
-                              {translateLiteral(statusText)}
-                            </small>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </fieldset>
-              ))}
-            </div>
-            {editSession ? (
-              <EditorSessionBarActions>
-                <button
-                  aria-busy={isPlacementUpdating || undefined}
-                  className="primary-button"
-                  disabled={!canSavePlacementDrafts}
-                  onClick={async () => {
-                    if (!placedObject) {
-                      return;
-                    }
-
-                    const submittedDraft = { ...drafts };
-                    const didSave = await onUpdatePlacementObjectFields(
-                      placedObject.objectId,
-                      placementDraftSummary.changedFields.map((change) => ({
-                        field: change.field,
-                        value: change.value
-                      }))
-                    );
-                    if (didSave) {
-                      setDraftsByObjectId((currentDrafts) =>
-                        clearSubmittedKeyedEditorDraft(
-                          currentDrafts,
-                          placedObject.objectId,
-                          submittedDraft,
-                          areFieldDraftsEqual
-                        )
-                      );
-                    }
-                  }}
-                  type="button"
-                >
-                  <BusyActionContent
-                    busyLabel="Staging Changes"
-                    icon={<Save aria-hidden="true" size={16} />}
-                    isBusy={isPlacementUpdating}
-                    label="Stage Changes"
-                  />
-                </button>
-                {nextPlacementDraftKey !== null ? (
-                  <button
-                    className="secondary-button"
-                    disabled={
-                      isPlacementUpdating ||
-                      isDetailsLoading ||
-                      isReviewingPlacementDraft
-                    }
-                    onClick={() => void reviewNextPlacementDraft()}
-                    type="button"
-                  >
-                    {t('editorDrafts.reviewNext')}
-                  </button>
-                ) : null}
-                {unavailablePlacementDraftKeys.length > 0 ? (
-                  <button
-                    className="danger-button"
-                    disabled={isPlacementUpdating || isReviewingPlacementDraft}
-                    onClick={discardUnavailablePlacementDrafts}
-                    type="button"
-                  >
-                    {t('editorDrafts.discardUnavailable')}
-                  </button>
-                ) : null}
-                <button
-                  className="danger-button"
-                  disabled={isPlacementUpdating || isReviewingPlacementDraft}
-                  onClick={() => cancelActiveEditSession(() => setDraftsByObjectId({}))}
-                  type="button"
-                >
-                  <X aria-hidden="true" size={16} />
-                  <span>Cancel</span>
-                </button>
-                <span className="draft-action-summary">
-                  {formatDraftSummary(placementDraftSummary)};{' '}
-                  {t('editorDrafts.summary.placement', {
-                    count: outstandingPlacementDraftKeys.length
-                  })};{' '}
-                  {t('editorDrafts.summary.unavailable', {
-                    count: unavailablePlacementDraftKeys.length
-                  })}
-                </span>
-              </EditorSessionBarActions>
-            ) : null}
-
-          </div>
-        </>
-      ) : (
-        <p className="empty-copy">No placement object selected.</p>
-      )}
-    </aside>
+function PlacementRecordStatus({ isStaged, isUnstaged }: { isStaged: boolean; isUnstaged: boolean }) {
+  const { translateLiteral } = useLocalization();
+  if (!isStaged && !isUnstaged) return null;
+  return (
+    <span className="placement-record-status">
+      {isUnstaged ? <span data-state="unstaged">{translateLiteral('Unstaged')}</span> : null}
+      {isStaged ? <span data-state="staged">{translateLiteral('Staged')}</span> : null}
+    </span>
   );
 }
 
