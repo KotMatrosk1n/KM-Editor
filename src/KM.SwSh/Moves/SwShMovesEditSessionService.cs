@@ -14,7 +14,7 @@ namespace KM.SwSh.Moves;
 
 public sealed class SwShMovesEditSessionService
 {
-    private const string MovesEditDomain = "workflow.moves";
+    internal const string MovesEditDomain = "workflow.moves";
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShMovesWorkflowService movesWorkflowService;

@@ -2,6 +2,7 @@
 
 using KM.Core.Diagnostics;
 using KM.Core.Files;
+using KM.SwSh.Moves;
 using KM.SwSh.Workflows;
 
 namespace KM.SwSh.Items;
@@ -105,4 +106,7 @@ public sealed record SwShItemsWorkflow(
     IReadOnlyList<SwShItemRecord> Items,
     IReadOnlyList<SwShItemEditableField> EditableFields,
     SwShItemsWorkflowStats Stats,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    internal IReadOnlyDictionary<int, SwShAvailableMoveType>? MoveTypes { get; init; }
+}

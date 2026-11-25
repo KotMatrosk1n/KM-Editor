@@ -7002,6 +7002,7 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
             EditSessionDomain.ShakingTrees => remainingDomains.Any(candidate => candidate is
                 EditSessionDomain.Pokemon or EditSessionDomain.Placement or EditSessionDomain.Encounters or EditSessionDomain.Text),
             EditSessionDomain.Items => remainingDomains.Any(candidate => candidate is
+                EditSessionDomain.Moves or
                 EditSessionDomain.Shops or
                 EditSessionDomain.RaidRewards or
                 EditSessionDomain.RaidBonusRewards),
@@ -7103,7 +7104,10 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
         return session with
         {
             PendingEdits = session.PendingEdits
-                .Where(edit => string.Equals(edit.Domain, domainName, StringComparison.Ordinal))
+                .Where(edit => string.Equals(edit.Domain, domainName, StringComparison.Ordinal)
+                    || (domain == EditSessionDomain.Items
+                        && edit.Domain == GetEditSessionDomainName(EditSessionDomain.Moves)
+                        && edit.Field == SwShMovesWorkflowService.TypeField))
                 .ToArray(),
         };
     }

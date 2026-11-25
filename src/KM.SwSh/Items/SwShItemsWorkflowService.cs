@@ -122,7 +122,7 @@ public sealed class SwShItemsWorkflowService
 
     private const int TechnicalRecordMachineGroup = 4;
     private const int TechnicalRecordFieldUseType = 2;
-    private const int TechnicalRecordTrSlotStart = 100;
+    internal const int TechnicalRecordTrSlotStart = 100;
     private const int TechnicalRecordLastSlot = 199;
 
     private static readonly IReadOnlyList<SwShItemEditableFieldOption> BooleanOptions =
@@ -492,10 +492,10 @@ public sealed class SwShItemsWorkflowService
         var moveNames = moveNamesSource is null
             ? Array.Empty<string>()
             : LoadMoveNames(moveNamesSource, diagnostics, readAllBytes, maximumTextLineCount);
-        var usableMoveIds = !includeEditorMetadata ? new HashSet<int>() : SwShMoveAvailability.LoadUsableMoveIds(
-            project,
-            readAllBytes,
-            maximumRecordCount);
+        var moveAvailability = includeEditorMetadata
+            ? SwShMoveAvailability.Load(project, readAllBytes, maximumRecordCount, includeMoveTypes: true)
+            : null;
+        var usableMoveIds = moveAvailability?.UsableMoveIds ?? new HashSet<int>();
         var editableFields = includeEditorMetadata ? CreateEditableFields(moveNames, usableMoveIds) : [];
 
         try
@@ -519,7 +519,10 @@ public sealed class SwShItemsWorkflowService
                 + (moveNamesSource is null ? 0 : 1)
                 + (usableMoveIds.Count > 0 ? 1 : 0);
 
-            return CreateWorkflow(summary, items, editableFields, sourceFileCount, diagnostics);
+            return CreateWorkflow(summary, items, editableFields, sourceFileCount, diagnostics) with
+            {
+                MoveTypes = moveAvailability?.UsableMoveTypes,
+            };
         }
         catch (InvalidDataException exception)
         {

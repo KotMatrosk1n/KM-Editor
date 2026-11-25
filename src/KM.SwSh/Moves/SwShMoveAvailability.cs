@@ -3,6 +3,7 @@
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using System.Collections.ObjectModel;
 using System.Globalization;
 
 namespace KM.SwSh.Moves;
@@ -11,7 +12,13 @@ internal sealed record SwShMoveAvailabilityResult(
     IReadOnlySet<int> UsableMoveIds,
     IReadOnlyDictionary<int, ProjectFileReference> UsableMoveSources,
     IReadOnlySet<string> ParsedSourcePaths,
-    bool HasSemanticData);
+    bool HasSemanticData)
+{
+    public IReadOnlyDictionary<int, SwShAvailableMoveType> UsableMoveTypes { get; init; } =
+        ReadOnlyDictionary<int, SwShAvailableMoveType>.Empty;
+}
+
+internal sealed record SwShAvailableMoveType(byte Type, ProjectFileReference Source);
 
 internal static class SwShMoveAvailability
 {
@@ -33,10 +40,11 @@ internal static class SwShMoveAvailability
         return Load(project, File.ReadAllBytes, maximumSourceCount: null);
     }
 
-    private static SwShMoveAvailabilityResult Load(
+    public static SwShMoveAvailabilityResult Load(
         OpenedProject project,
         Func<string, byte[]> readAllBytes,
-        int? maximumSourceCount)
+        int? maximumSourceCount,
+        bool includeMoveTypes = false)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(readAllBytes);
@@ -68,6 +76,7 @@ internal static class SwShMoveAvailability
                     records.Add(new MoveAvailabilityRecord(
                         checked((int)move.MoveId),
                         move.CanUseMove,
+                        move.Core.Type,
                         GetSourceLayer(source.GraphEntry),
                         source.GraphEntry.RelativePath));
                 }
@@ -92,17 +101,24 @@ internal static class SwShMoveAvailability
                 .ThenBy(record => record.RelativePath, StringComparer.OrdinalIgnoreCase)
                 .First())
             .ToArray();
-        var usableMoveSources = selectedRecords
+        var usableMoves = selectedRecords
             .Where(record => record.CanUseMove)
-            .ToDictionary(
-                record => record.MoveId,
-                record => new ProjectFileReference(record.SourceLayer, record.RelativePath));
+            .ToArray();
+        var usableMoveSources = usableMoves.ToDictionary(
+            record => record.MoveId,
+            record => new ProjectFileReference(record.SourceLayer, record.RelativePath));
 
-        return new SwShMoveAvailabilityResult(
+        var availability = new SwShMoveAvailabilityResult(
             usableMoveSources.Keys.ToHashSet(),
             usableMoveSources,
             parsedSourcePaths,
             records.Count > 0);
+        return !includeMoveTypes ? availability : availability with
+        {
+            UsableMoveTypes = usableMoves.ToDictionary(
+                record => record.MoveId,
+                record => new SwShAvailableMoveType(record.Type, usableMoveSources[record.MoveId])),
+        };
     }
 
     public static IReadOnlyList<TOption> CreateMoveOptions<TOption>(
@@ -219,6 +235,7 @@ internal static class SwShMoveAvailability
     private sealed record MoveAvailabilityRecord(
         int MoveId,
         bool CanUseMove,
+        byte Type,
         ProjectFileLayer SourceLayer,
         string RelativePath);
 
