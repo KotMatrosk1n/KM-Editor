@@ -25,6 +25,7 @@ import './components/editorSpecializedWorkspaces.css';
 import './features/project-setup/projectSetup.css';
 import './features/pokemon/pokemonDetailSections.css';
 import './features/type-chart/typeChartTheme.css';
+import './features/encounters/wildEncounters.css';
 import { handleRowClipboardShortcut } from './authoring/rowClipboardShortcuts';
 import { buildZaTrainerChangeUpdates, getTrainerAiFlagGroup, trainerAiFlagEnabled, toggleTrainerAiFlag } from './features/trainers/trainerAiFlags';
 import './features/trainers/trainerEditor.css';
@@ -37722,6 +37723,7 @@ function orderMoveEditableFieldGroups<TField extends NumericEditableField>(
 function getEncounterEditableFieldGroup(field: NumericEditableField) {
   if (
     field.field === raidBattleSpeciesFieldName ||
+    field.field === encounterSpeciesFieldName ||
     field.field === encounterFormFieldName ||
     field.field === heldItemIdFieldName
   ) {
@@ -45052,7 +45054,10 @@ function getProjectedEncounterSlot(
     form,
     levelMin: read(encounterLevelMinFieldName, slot.levelMin),
     levelMax: read(encounterLevelMaxFieldName, slot.levelMax),
-    weight: read(editorFamily === 'swsh' ? encounterProbabilityFieldName : zaEncounterWeightFieldName, slot.weight)
+    weight: read(editorFamily === 'za' ? zaEncounterWeightFieldName : encounterProbabilityFieldName, slot.weight),
+    alphaChancePercent: typeof slot.alphaChancePercent === 'number' && !isZaGuaranteedAlphaSlot(slot)
+      ? read(zaEncounterAlphaChanceFieldName, slot.alphaChancePercent)
+      : slot.alphaChancePercent
   };
 }
 
@@ -45190,6 +45195,7 @@ function SelectedEncounterPanel({
     : null;
   const isVerifiedZaScriptedBoss = isZaScriptedBossTable && scriptedBossProfile !== null;
   const isSwShEncounterTable = table !== null && !isSvEncounterTable && !isZaEncounterTable;
+  const getSlotNumber = (slot: EncounterSlotRecord) => isSwShEncounterTable ? slot.slot : slot.slot + 1;
   const defaultEncounterFields = useMemo(
     () =>
       editableFields
@@ -45544,6 +45550,29 @@ function SelectedEncounterPanel({
     () => groupNumericEditableFields(encounterFields, getEncounterEditableFieldGroup),
     [encounterFields]
   );
+  const encounterFieldSections = isZaEncounterTable
+    ? [
+        {
+          key: 'shared',
+          heading: t('za.encounters.sharedRecordHeading'),
+          help: t(isVerifiedZaScriptedBoss
+            ? 'za.encounters.bossActions.sharedRecordHelp'
+            : 'za.encounters.sharedRecordHelp'),
+          groups: encounterFieldGroups.filter(({ group }) => group !== 'Spawner Slot' && group !== 'Spawner Population')
+        },
+        {
+          key: 'slot',
+          heading: t('za.spawnSettings.slotGroup'),
+          help: t('za.encounters.selectedPlacementHelp'),
+          groups: encounterFieldGroups.filter(({ group }) => group === 'Spawner Slot')
+        },
+        {
+          key: 'population',
+          heading: t('za.spawnSettings.populationGroup'),
+          groups: encounterFieldGroups.filter(({ group }) => group === 'Spawner Population')
+        }
+      ].filter(({ groups }) => groups.length > 0)
+    : [{ key: 'encounter', heading: undefined, help: undefined, groups: encounterFieldGroups }];
   const scriptedBossActionEditorEntries = useMemo(() => {
     if (
       !scriptedBossProfile ||
@@ -46112,31 +46141,39 @@ function SelectedEncounterPanel({
   const zaPhaseConditionDisplay =
     isZaEncounterTable ? formatZaPhaseConditions(table?.phaseConditions, t) : null;
   const displayedEncounterSlots = table?.slots ?? [];
-  const getEncounterClipboardValues = (slot: EncounterSlotRecord) => {
-    if (!table) {
-      return {};
-    }
-    if (encounterSlot?.slot === slot.slot) {
+  const getEncounterDraftValues = useCallback((targetTableId: string, slot: EncounterSlotRecord) => {
+    if (table?.tableId === targetTableId && encounterSlot?.slot === slot.slot) {
       return selectedPlacementDrafts;
     }
-    const sharedKey =
-      editorFamily === 'za'
-        ? getZaEncounterGroupKey(table.tableId, slot)
-        : `${table.tableId}:${slot.slot}`;
-    const slotKey = `${table.tableId}:${slot.slot}`;
+    const slotKey = `${targetTableId}:${slot.slot}`;
+    const sharedKey = editorFamily === 'za' ? getZaEncounterGroupKey(targetTableId, slot) : slotKey;
     const levelKey =
-      editorFamily === 'swsh' ? table.tableId : editorFamily === 'za' ? sharedKey : null;
+      editorFamily === 'swsh' ? targetTableId : editorFamily === 'za' ? sharedKey : null;
     return {
-      ...(draftsBySlotKey[sharedKey] ?? {}),
-      ...(levelKey ? levelDraftsByScopeKey[levelKey] ?? {} : {}),
-      ...(editorFamily === 'za' ? zaSlotDraftsBySlotKey[slotKey] ?? {} : {}),
-      ...(editorFamily === 'za' ? zaAppearanceDraftsByTableId[table.tableId] ?? {} : {})
+      ...draftsBySlotKey[sharedKey],
+      ...(levelKey ? levelDraftsByScopeKey[levelKey] : undefined),
+      ...(editorFamily === 'za' ? zaSlotDraftsBySlotKey[slotKey] : undefined),
+      ...(editorFamily === 'za' ? zaAppearanceDraftsByTableId[targetTableId] : undefined)
     };
-  };
-  const encounterSlotPreviews = new Map(displayedEncounterSlots.map(slot => [
+  }, [
+    draftsBySlotKey, editorFamily, encounterSlot?.slot, levelDraftsByScopeKey,
+    selectedPlacementDrafts, table?.tableId, zaAppearanceDraftsByTableId, zaSlotDraftsBySlotKey
+  ]);
+  const projectLinkedEncounterSlot = useCallback(
+    (targetTable: EncounterTableRecord, slot: EncounterSlotRecord) => {
+      const values = getEncounterDraftValues(targetTable.tableId, slot);
+      return Object.keys(values).length > 0
+        ? getProjectedEncounterSlot(slot, editableFields, values, pokemonWorkflow, editorFamily)
+        : slot;
+    },
+    [editableFields, editorFamily, getEncounterDraftValues, pokemonWorkflow]
+  );
+  const encounterSlotPreviews = new Map(table ? displayedEncounterSlots.map((slot) => [
     slot.slot,
-    getProjectedEncounterSlot(slot, editableFields, getEncounterClipboardValues(slot), pokemonWorkflow, editorFamily)
-  ]));
+    getProjectedEncounterSlot(
+      slot, editableFields, getEncounterDraftValues(table.tableId, slot), pokemonWorkflow, editorFamily
+    )
+  ]) : []);
   const getEncounterSlotPreview = (slot: EncounterSlotRecord) => encounterSlotPreviews.get(slot.slot) ?? slot;
   const encounterWeightTotal = [...encounterSlotPreviews.values()].reduce((total, slot) => total + slot.weight, 0);
   const encounterClipboardDisabledReason = (
@@ -46180,14 +46217,14 @@ function SelectedEncounterPanel({
       const result = await onCopyEncounterSlot({
         slot: target.slot,
         tableId: table.tableId,
-        values: getEncounterClipboardValues(target.slot)
+        values: getEncounterDraftValues(table.tableId, target.slot)
       });
       if (result.kind === 'failure') {
         setEncounterClipboardFeedback({ isError: true, message: t(result.feedbackKey) });
         return;
       }
       const targetLabel = t('rowClipboard.encounter.target', {
-        slot: target.slot.slot + 1,
+        slot: getSlotNumber(target.slot),
         table: table.tableLabel ?? table.location
       });
       setEncounterClipboardSourceLabel(targetLabel);
@@ -46326,7 +46363,7 @@ function SelectedEncounterPanel({
         message: t('rowClipboard.feedback.pasteSuccess', {
           count: 1,
           target: t('rowClipboard.encounter.target', {
-            slot: targetSlot + 1,
+            slot: getSlotNumber(target.slot),
             table: table.tableLabel ?? table.location
           })
         })
@@ -46402,7 +46439,7 @@ function SelectedEncounterPanel({
   }, [zaEncounterAppearanceDraftDefaults, zaEncounterAppearanceDraftKey]);
 
   return (
-    <aside aria-label="Selected encounter provenance" className="encounter-inspector">
+    <aside aria-label="Selected encounter provenance" className="encounter-inspector wild-encounter-editor">
       <PublishedLocalEditorValidationDiagnostics
         domain="workflow.encounters"
         issues={encounterStagePlan.invalidFields}
@@ -46459,65 +46496,73 @@ function SelectedEncounterPanel({
       ) : null}
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
-        <h3>Selected Encounter</h3>
+        <h3>{table
+          ? isZaEncounterTable && isZaBossEncounterTable(table)
+            ? formatZaEncounterBrowserLocation(table, null)
+            : table.location
+          : translateLiteral('Selected Encounter')}</h3>
       </div>
 
       {table ? (
         <>
-          <dl className="item-provenance-list">
-            <div>
-              <dt>Location</dt>
-              <dd>
-                {isZaEncounterTable && isZaBossEncounterTable(table)
-                  ? formatZaEncounterBrowserLocation(table, null)
-                  : table.location}
-              </dd>
-            </div>
-            {isZaEncounterTable && table.locationDetails ? (
+          <details className="wild-encounter-disclosure">
+            <summary>{translateLiteral('Source')}</summary>
+            <dl className="item-provenance-list">
               <div>
-                <dt>Mission</dt>
-                <dd>{table.locationDetails}</dd>
+                <dt>Location</dt>
+                <dd>
+                  {isZaEncounterTable && isZaBossEncounterTable(table)
+                    ? formatZaEncounterBrowserLocation(table, null)
+                    : table.location}
+                </dd>
               </div>
-            ) : null}
-            {!svEncounterFacets ? (
+              {isZaEncounterTable && table.locationDetails ? (
+                <div>
+                  <dt>Mission</dt>
+                  <dd>{table.locationDetails}</dd>
+                </div>
+              ) : null}
+              {!svEncounterFacets ? (
+                <div>
+                  <dt>{isZaEncounterTable ? 'Spawner' : 'Table'}</dt>
+                  <dd>{isZaEncounterTable ? table.tableLabel ?? table.tableId : table.tableId}</dd>
+                </div>
+              ) : null}
+              {isZaEncounterTable && table.locationKey ? (
+                <div>
+                  <dt>Group</dt>
+                  <dd>{getZaEncounterZoneFamily(table).label}</dd>
+                </div>
+              ) : null}
+              {isZaEncounterTable && table.isPostgame === true ? (
+                <div>
+                  <dt>{t('za.encounters.availabilityLabel')}</dt>
+                  <dd>{t('za.encounters.availability.postgame')}</dd>
+                </div>
+              ) : null}
               <div>
-                <dt>{isZaEncounterTable ? 'Spawner' : 'Table'}</dt>
-                <dd>{isZaEncounterTable ? table.tableLabel ?? table.tableId : table.tableId}</dd>
+                <dt>Archive member</dt>
+                <dd>{table.archiveMember}</dd>
               </div>
-            ) : null}
-            {isZaEncounterTable && table.locationKey ? (
               <div>
-                <dt>Group</dt>
-                <dd>{getZaEncounterZoneFamily(table).label}</dd>
+                <dt>Source file</dt>
+                <dd>{table.provenance.sourceFile}</dd>
               </div>
-            ) : null}
-            {isZaEncounterTable && table.isPostgame === true ? (
               <div>
-                <dt>{t('za.encounters.availabilityLabel')}</dt>
-                <dd>{t('za.encounters.availability.postgame')}</dd>
+                <dt>Layer</dt>
+                <dd>{formatSourceLayer(table.provenance.sourceLayer)}</dd>
               </div>
-            ) : null}
-            <div>
-              <dt>Archive member</dt>
-              <dd>{table.archiveMember}</dd>
-            </div>
-            <div>
-              <dt>Source file</dt>
-              <dd>{table.provenance.sourceFile}</dd>
-            </div>
-            <div>
-              <dt>Layer</dt>
-              <dd>{formatSourceLayer(table.provenance.sourceLayer)}</dd>
-            </div>
-            <div>
-              <dt>File state</dt>
-              <dd>{formatFileState(table.provenance.fileState)}</dd>
-            </div>
-          </dl>
+              <div>
+                <dt>File state</dt>
+                <dd>{formatFileState(table.provenance.fileState)}</dd>
+              </div>
+            </dl>
+          </details>
 
           {isSvEncounterTable ? (
             <SvEncounterConditionBrowser
               onSelectTable={onSelectTable}
+              selectedRowWeight={encounterWeightTotal}
               table={table}
               tables={tables}
             />
@@ -46529,6 +46574,7 @@ function SelectedEncounterPanel({
                 onSelectTable(tableId);
               }}
               pendingRecordIds={getPendingEncounterRecordIds(editSession)}
+              projectSlot={projectLinkedEncounterSlot}
               selectedSlot={selectedSlot}
               table={table}
               tables={tables}
@@ -46643,1036 +46689,1043 @@ function SelectedEncounterPanel({
               </div>
             ) : null}
 
-            <div className="encounter-slot-header">
-              <strong>Slots</strong>
-              <span
-                className={
-                  isSvEncounterTable || isZaEncounterTable || encounterWeightTotal === 100
-                    ? `encounter-total-status ${
-                        isZaEncounterTable ? 'encounter-total-relative' : ''
-                      }`
-                    : 'encounter-total-status encounter-total-warning'
-                }
-              >
-                {isSvEncounterTable
-                  ? `Total lot weight: ${encounterWeightTotal}`
-                  : isZaEncounterTable
-                    ? t('za.spawnSettings.listedWeightTotal', {
-                        total: encounterWeightTotal
-                      })
-                    : `Total chance: ${encounterWeightTotal}%`}
-              </span>
-            </div>
-            <p className="field-note">{t('rowClipboard.discoveryHint')}</p>
-
-            {encounterSlot ? (
-              <>
-                <div className="encounter-slot-tabs" aria-label="Encounter slot list">
-                  {displayedEncounterSlots.map((slot) => {
-                    const preview = encounterSlotPreviews.get(slot.slot)!;
-                    const slotLabel = isZaEncounterTable && preview.isAlpha
-                      ? `${preview.species} Alpha`
-                      : preview.species;
-                    const slotBadge = formatEncounterSlotBadge(preview, {
-                      isScarletViolet: isSvEncounterTable,
-                      isPokemonLegendsZA: isZaEncounterTable
-                    });
-                    const slotCompletionStatus =
-                      isZaEncounterTable &&
-                      typeof slot.contributesToWildZoneCompletion === 'boolean'
-                        ? t(
-                            getZaWildZoneCompletionStatusKey(
-                              slot.contributesToWildZoneCompletion
-                                ? 'contributing'
-                                : 'excluded'
-                            )
-                          )
-                        : null;
-                    const slotSummary = isZaEncounterTable
-                      ? encounterWeightTotal > 0
-                        ? t('za.spawnSettings.slotSummaryWithShare', {
-                            levelMax: preview.levelMax,
-                            levelMin: preview.levelMin,
-                            share:
-                              formatEncounterSharePercent(
-                                preview.weight,
-                                encounterWeightTotal,
-                                formatLocale
-                              ) ?? '',
-                            weight: preview.weight
+            <div className="wild-encounter-workspace">
+              <section className="wild-encounter-list" aria-label={translateLiteral('Encounter slots')}>
+                <div className="encounter-slot-header wild-encounter-slot-header">
+                  <div className="editable-field-label-row">
+                    <strong>{translateLiteral('Slots')}</strong>
+                    <ContextHelp label={translateLiteral('Encounter slots')}>
+                      {t('rowClipboard.discoveryHint')}
+                    </ContextHelp>
+                  </div>
+                  <span
+                    className={
+                      isSvEncounterTable || isZaEncounterTable || encounterWeightTotal === 100
+                        ? `encounter-total-status ${
+                            isZaEncounterTable ? 'encounter-total-relative' : ''
+                          }`
+                        : 'encounter-total-status encounter-total-warning'
+                    }
+                  >
+                    {isSvEncounterTable
+                      ? `Total lot weight: ${encounterWeightTotal}`
+                      : isZaEncounterTable
+                        ? t('za.spawnSettings.listedWeightTotal', {
+                            total: encounterWeightTotal
                           })
-                        : t('za.spawnSettings.slotSummary', {
-                            levelMax: preview.levelMax,
-                            levelMin: preview.levelMin,
-                            weight: preview.weight
-                          })
-                      : formatEncounterSlotWeightSummary(
-                          preview,
-                          encounterWeightTotal,
-                          isSvEncounterTable,
-                          formatLocale
-                        );
-                    const encounterSlotAccessibleLabel = [
-                      t('rowClipboard.encounter.target', {
-                        slot: slot.slot + 1,
-                        table: table.tableLabel ?? table.location
-                      }),
-                      slotBadge,
-                      slotLabel,
-                      slot.isAlpha ? translateLiteral('Alpha') : null,
-                      slotCompletionStatus,
-                      slotSummary
-                    ]
-                      .filter(
-                        (part): part is string =>
-                          typeof part === 'string' && part.length > 0
-                      )
-                      .join('. ');
-
-                    return (
-                      <button
-                        aria-controls={
-                          encounterClipboardMenu?.slot.slot === slot.slot
-                            ? encounterSlotContextMenuId
-                            : undefined
-                        }
-                        aria-expanded={encounterClipboardMenu?.slot.slot === slot.slot}
-                        aria-haspopup="menu"
-                        aria-label={encounterSlotAccessibleLabel}
-                        data-km-source-site="encounter-slot-menu-trigger"
-                        aria-keyshortcuts="Control+C Control+V Meta+C Meta+V Shift+F10"
-                        aria-pressed={slot.slot === selectedSlot}
-                        className="slot-tab-button"
-                        key={slot.slot}
-                        onContextMenu={(event) => {
-                          event.preventDefault();
-                          onSelectSlot(slot.slot);
-                          setEncounterClipboardMenu({
-                            left: event.clientX,
-                            slot,
-                            top: event.clientY,
-                            triggerElement: event.currentTarget
-                          });
-                        }}
-                        onKeyDown={(event) => {
-                          if (handleRowClipboardShortcut(event,
-                            () => void handleCopyEncounterClipboardSlot({ slot, left: 0, top: 0, triggerElement: event.currentTarget }),
-                            () => void handlePasteEncounterClipboardSlot({ slot, left: 0, top: 0, triggerElement: event.currentTarget }))) return;
-                          if (!(event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10'))) {
-                            return;
-                          }
-                          event.preventDefault();
-                          event.stopPropagation();
-                          onSelectSlot(slot.slot);
-                          const bounds = event.currentTarget.getBoundingClientRect();
-                          setEncounterClipboardMenu({
-                            left: bounds.left + Math.min(32, bounds.width / 2),
-                            slot,
-                            top: bounds.top + Math.min(32, bounds.height / 2),
-                            triggerElement: event.currentTarget
-                          });
-                        }}
-                        onClick={() => onSelectSlot(slot.slot)}
-                        type="button"
-                      >
-                        <PokemonSprite className="slot-tab-sprite" editorFamily={editorFamily} form={preview.form}
-                          speciesId={preview.speciesId} spriteName={preview.spriteName} name={preview.species} preferStatic />
-                        <strong>{slotBadge}</strong>
-                        <span className="encounter-slot-name" title={slotLabel}>{slotLabel}</span>
-                        {isZaEncounterTable &&
-                        (slot.isAlpha ||
-                          typeof slot.contributesToWildZoneCompletion === 'boolean') ? (
-                          <div className="slot-tab-pills">
-                            {slot.isAlpha ? <span className="slot-tab-pill">Alpha</span> : null}
-                            {typeof slot.contributesToWildZoneCompletion === 'boolean' ? (
-                              <span
-                                className={`slot-tab-pill za-wild-zone-completion-status za-wild-zone-completion-status-${
+                        : `Total chance: ${encounterWeightTotal}%`}
+                  </span>
+                </div>
+                {encounterSlot ? (
+                  <>
+                    <div
+                      className="wild-encounter-slot-table"
+                      role="group"
+                      aria-label="Encounter slot list"
+                    >
+                      <div className="wild-encounter-slot-columns" aria-hidden="true">
+                        <span>#</span>
+                        <span className="wild-encounter-pokemon-column">{translateLiteral('Pokemon')}</span>
+                        <span>{translateLiteral('Levels')}</span>
+                        <span>{isSvEncounterTable ? translateLiteral('Lot weight') : isZaEncounterTable
+                          ? t('za.spawnSettings.weightLabel') : translateLiteral('Chance')}</span>
+                      </div>
+                      {displayedEncounterSlots.map((slot) => {
+                        const preview = encounterSlotPreviews.get(slot.slot)!;
+                        const slotLabel = isZaEncounterTable && preview.isAlpha
+                          ? `${preview.species} Alpha`
+                          : preview.species;
+                        const slotBadge = formatEncounterSlotBadge(preview, {
+                          isScarletViolet: isSvEncounterTable,
+                          isPokemonLegendsZA: isZaEncounterTable
+                        });
+                        const slotCompletionStatus =
+                          isZaEncounterTable &&
+                          typeof slot.contributesToWildZoneCompletion === 'boolean'
+                            ? t(
+                                getZaWildZoneCompletionStatusKey(
                                   slot.contributesToWildZoneCompletion
                                     ? 'contributing'
                                     : 'excluded'
-                                }`}
-                              >
-                                {slotCompletionStatus}
-                              </span>
-                            ) : null}
-                          </div>
-                        ) : null}
-                        <small>{slotSummary}</small>
-                      </button>
-                    );
-                  })}
-                </div>
-                {encounterClipboardFeedback ? (
-                  <p
-                    className={
-                      encounterClipboardFeedback.isError
-                        ? 'editable-field-error'
-                        : 'editable-field-status'
-                    }
-                    role={encounterClipboardFeedback.isError ? 'alert' : 'status'}
-                  >
-                    {encounterClipboardFeedback.message}
-                  </p>
-                ) : null}
-                {encounterClipboardMenu && table ? (
-                  <TrainerPartySlotContextMenu
-                    copyActionLabel={t('rowClipboard.menu.copyAction')}
-                    copyDisabledReason={encounterClipboardDisabledReason(
-                      encounterClipboardMenu.slot,
-                      'copy'
-                    )}
-                    id={encounterSlotContextMenuId}
-                    left={encounterClipboardMenu.left}
-                    menuLabel={t('rowClipboard.menu.label', {
-                      target: t('rowClipboard.encounter.target', {
-                        slot: encounterClipboardMenu.slot.slot + 1,
-                        table: table.tableLabel ?? table.location
-                      })
-                    })}
-                    noSourceSummaryLabel={t('rowClipboard.menu.noSource')}
-                    onClose={() => setEncounterClipboardMenu(null)}
-                    onCopy={() => void handleCopyEncounterClipboardSlot()}
-                    onPaste={() => void handlePasteEncounterClipboardSlot()}
-                    pasteActionLabel={t('rowClipboard.menu.pasteAction')}
-                    pasteDisabledReason={encounterClipboardDisabledReason(
-                      encounterClipboardMenu.slot,
-                      'paste'
-                    )}
-                    sourceLabel={encounterClipboardSourceLabel ?? undefined}
-                    targetLabel={t('rowClipboard.encounter.target', {
-                      slot: encounterClipboardMenu.slot.slot + 1,
-                      table: table.tableLabel ?? table.location
-                    })}
-                    top={encounterClipboardMenu.top}
-                    triggerElement={encounterClipboardMenu.triggerElement}
-                  />
-                ) : null}
-                {isSvEncounterTable && displayedEncounterSlots.length === 1 ? (
-                  <p className="empty-copy sv-encounter-slot-note">
-                    This exact S/V condition row has one slot. Use the condition browser above to
-                    inspect adjacent rows for this location.
-                  </p>
-                ) : null}
-
-                <dl className="encounter-slot-detail">
-                  {!isZaEncounterTable ? (
-                    <div>
-                      <dt>Species</dt>
-                      <dd>
-                        {getEncounterSlotPreview(encounterSlot).species}
-                      </dd>
-                    </div>
-                  ) : null}
-                  {isZaEncounterTable ? (
-                    <div>
-                      <dt>Encounter type</dt>
-                      <dd>{encounterSlot.encounterKind ?? (encounterSlot.isAlpha ? 'Alpha' : 'Wild')}</dd>
-                    </div>
-                  ) : null}
-                  {isZaEncounterTable && encounterSlot.encounterDataId ? (
-                    <div>
-                      <dt>Encounter data</dt>
-                      <dd>{encounterSlot.encounterDataId}</dd>
-                    </div>
-                  ) : null}
-                  {zaPhaseConditionDisplay ? (
-                    <div>
-                      <dt>{t('za.encounters.phaseConditionsLabel')}</dt>
-                      <dd>{zaPhaseConditionDisplay}</dd>
-                    </div>
-                  ) : null}
-                  {!isZaEncounterTable ? (
-                    <div>
-                      <dt>Levels</dt>
-                      <dd>
-                        {getEncounterSlotPreview(encounterSlot).levelMin}-{getEncounterSlotPreview(encounterSlot).levelMax}
-                      </dd>
-                    </div>
-                  ) : null}
-                  {!isZaEncounterTable ? (
-                    <div>
-                      <dt>{isSvEncounterTable ? 'Lot weight' : 'Probability'}</dt>
-                      <dd>{getEncounterSlotPreview(encounterSlot).weight}</dd>
-                    </div>
-                  ) : null}
-                  {isZaEncounterTable &&
-                  typeof encounterSlot.appearanceObjectCount === 'number' ? (
-                    <div>
-                      <dt>{t('za.spawnSettings.appearanceObjectsLabel')}</dt>
-                      <dd>{encounterSlot.appearanceObjectCount}</dd>
-                    </div>
-                  ) : null}
-                  {isSvEncounterTable || isZaEncounterTable ? (
-                    <div>
-                      <dt className="editable-field-label-row">
-                        <span>
-                          {isZaEncounterTable
-                            ? t('za.spawnSettings.listedShareLabel')
-                            : translateLiteral('Share in row')}
-                        </span>
-                        <ContextHelp
-                          label={
-                            isZaEncounterTable
-                              ? t('za.spawnSettings.listedShareLabel')
-                              : translateLiteral('Share in row')
-                          }
-                        >
-                          {isZaEncounterTable
-                            ? t('za.spawnSettings.listedShareHelp')
-                            : translateLiteral(
-                                'Calculated from this slot\'s lot weight divided by the selected condition row\'s total lot weight.'
-                              )}
-                        </ContextHelp>
-                      </dt>
-                      <dd>
-                        {isZaEncounterTable
-                          ? formatEncounterSharePercent(
-                              getEncounterSlotPreview(encounterSlot).weight,
+                                )
+                              )
+                            : null;
+                        const slotSummary = isZaEncounterTable
+                          ? encounterWeightTotal > 0
+                            ? t('za.spawnSettings.slotSummaryWithShare', {
+                                levelMax: preview.levelMax,
+                                levelMin: preview.levelMin,
+                                share:
+                                  formatEncounterSharePercent(
+                                    preview.weight,
+                                    encounterWeightTotal,
+                                    formatLocale
+                                  ) ?? '',
+                                weight: preview.weight
+                              })
+                            : t('za.spawnSettings.slotSummary', {
+                                levelMax: preview.levelMax,
+                                levelMin: preview.levelMin,
+                                weight: preview.weight
+                              })
+                          : formatEncounterSlotWeightSummary(
+                              preview,
                               encounterWeightTotal,
+                              isSvEncounterTable,
                               formatLocale
-                            ) ?? t('za.spawnSettings.unavailable')
-                          : formatEncounterLotShare(
-                              getEncounterSlotPreview(encounterSlot).weight,
-                              encounterWeightTotal,
-                              formatLocale
-                            )}
-                      </dd>
-                    </div>
-                  ) : null}
-                  {isSvEncounterTable ? (
-                    <div>
-                      <dt className="editable-field-label-row">
-                        <span>{translateLiteral('S/V Conditions')}</span>
-                        <ContextHelp label={translateLiteral('S/V Conditions')}>
-                          {translateLiteral(
-                            'Biome weights, height range, linked group spawn metadata, voice class, and outbreak weight from the S/V encounter row.'
-                          )}
-                        </ContextHelp>
-                      </dt>
-                      <dd>{encounterSlot.weather}</dd>
-                    </div>
-                  ) : null}
-                  {isZaEncounterTable &&
-                  typeof encounterSlot.contributesToWildZoneCompletion === 'boolean' ? (
-                    <div>
-                      <dt>{t('za.wildZoneCompletion.detailLabel')}</dt>
-                      <dd>
-                        {t(
-                          getZaWildZoneCompletionStatusKey(
-                            encounterSlot.contributesToWildZoneCompletion
-                              ? 'contributing'
-                              : 'excluded'
+                            );
+                        const encounterSlotAccessibleLabel = [
+                          t('rowClipboard.encounter.target', {
+                            slot: getSlotNumber(slot),
+                            table: table.tableLabel ?? table.location
+                          }),
+                          slotBadge,
+                          slotLabel,
+                          slot.isAlpha ? translateLiteral('Alpha') : null,
+                          slotCompletionStatus,
+                          slotSummary
+                        ]
+                          .filter(
+                            (part): part is string =>
+                              typeof part === 'string' && part.length > 0
                           )
-                        )}
-                      </dd>
-                    </div>
-                  ) : null}
-                </dl>
+                          .join('. ');
 
-                {isZaEncounterTable ? (
-                  <div className="za-encounter-ownership-summary">
-                    <span>
-                      <strong>{t('za.encounters.sharedRecordHeading')}</strong>
-                      {t(
-                        isVerifiedZaScriptedBoss
-                          ? 'za.encounters.bossActions.sharedRecordHelp'
-                          : 'za.encounters.sharedRecordHelp'
-                      )}
-                    </span>
-                    <span>
-                      <strong>{t('za.encounters.selectedPlacementHeading')}</strong>
-                      {t('za.encounters.selectedPlacementHelp')}
-                    </span>
+                        return (
+                          <button
+                            aria-controls={
+                              encounterClipboardMenu?.slot.slot === slot.slot
+                                ? encounterSlotContextMenuId
+                                : undefined
+                            }
+                            aria-expanded={encounterClipboardMenu?.slot.slot === slot.slot}
+                            aria-haspopup="menu"
+                            aria-label={encounterSlotAccessibleLabel}
+                            data-km-source-site="encounter-slot-menu-trigger"
+                            aria-keyshortcuts="Control+C Control+V Meta+C Meta+V Shift+F10"
+                            aria-pressed={slot.slot === selectedSlot}
+                            className="wild-encounter-slot-row"
+                            key={slot.slot}
+                            onContextMenu={(event) => {
+                              event.preventDefault();
+                              onSelectSlot(slot.slot);
+                              setEncounterClipboardMenu({
+                                left: event.clientX,
+                                slot,
+                                top: event.clientY,
+                                triggerElement: event.currentTarget
+                              });
+                            }}
+                            onKeyDown={(event) => {
+                              if (handleRowClipboardShortcut(event,
+                                () => void handleCopyEncounterClipboardSlot({ slot, left: 0, top: 0, triggerElement: event.currentTarget }),
+                                () => void handlePasteEncounterClipboardSlot({ slot, left: 0, top: 0, triggerElement: event.currentTarget }))) return;
+                              if (!(event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10'))) {
+                                return;
+                              }
+                              event.preventDefault();
+                              event.stopPropagation();
+                              onSelectSlot(slot.slot);
+                              const bounds = event.currentTarget.getBoundingClientRect();
+                              setEncounterClipboardMenu({
+                                left: bounds.left + Math.min(32, bounds.width / 2),
+                                slot,
+                                top: bounds.top + Math.min(32, bounds.height / 2),
+                                triggerElement: event.currentTarget
+                              });
+                            }}
+                            onClick={() => onSelectSlot(slot.slot)}
+                            type="button"
+                          >
+                            <span className="wild-encounter-slot-number">{getSlotNumber(slot)}</span>
+                            <PokemonSprite className="wild-encounter-slot-sprite" editorFamily={editorFamily} form={preview.form}
+                              speciesId={preview.speciesId} spriteName={preview.spriteName} name={preview.species} preferStatic />
+                            <span className="wild-encounter-slot-species">
+                              <strong>{slotLabel}</strong>
+                              {slotCompletionStatus ? (
+                                <small className={`za-wild-zone-completion-status za-wild-zone-completion-status-${
+                                  slot.contributesToWildZoneCompletion ? 'contributing' : 'excluded'
+                                }`}>{slotCompletionStatus}</small>
+                              ) : null}
+                            </span>
+                            <span className="wild-encounter-slot-levels">
+                              {preview.levelMin === preview.levelMax ? preview.levelMin : `${preview.levelMin}–${preview.levelMax}`}
+                            </span>
+                            <span className="wild-encounter-slot-weight">
+                              {isSvEncounterTable || isZaEncounterTable ? (
+                                <>
+                                  <strong>{preview.weight}</strong>
+                                  <small>{formatEncounterSharePercent(preview.weight, encounterWeightTotal, formatLocale)}</small>
+                                </>
+                              ) : `${preview.weight}%`}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {encounterClipboardFeedback ? (
+                      <p
+                        className={
+                          encounterClipboardFeedback.isError
+                            ? 'editable-field-error'
+                            : 'editable-field-status'
+                        }
+                        role={encounterClipboardFeedback.isError ? 'alert' : 'status'}
+                      >
+                        {encounterClipboardFeedback.message}
+                      </p>
+                    ) : null}
+                    {encounterClipboardMenu && table ? (
+                      <TrainerPartySlotContextMenu
+                        copyActionLabel={t('rowClipboard.menu.copyAction')}
+                        copyDisabledReason={encounterClipboardDisabledReason(
+                          encounterClipboardMenu.slot,
+                          'copy'
+                        )}
+                        id={encounterSlotContextMenuId}
+                        left={encounterClipboardMenu.left}
+                        menuLabel={t('rowClipboard.menu.label', {
+                          target: t('rowClipboard.encounter.target', {
+                            slot: getSlotNumber(encounterClipboardMenu.slot),
+                            table: table.tableLabel ?? table.location
+                          })
+                        })}
+                        noSourceSummaryLabel={t('rowClipboard.menu.noSource')}
+                        onClose={() => setEncounterClipboardMenu(null)}
+                        onCopy={() => void handleCopyEncounterClipboardSlot()}
+                        onPaste={() => void handlePasteEncounterClipboardSlot()}
+                        pasteActionLabel={t('rowClipboard.menu.pasteAction')}
+                        pasteDisabledReason={encounterClipboardDisabledReason(
+                          encounterClipboardMenu.slot,
+                          'paste'
+                        )}
+                        sourceLabel={encounterClipboardSourceLabel ?? undefined}
+                        targetLabel={t('rowClipboard.encounter.target', {
+                          slot: getSlotNumber(encounterClipboardMenu.slot),
+                          table: table.tableLabel ?? table.location
+                        })}
+                        top={encounterClipboardMenu.top}
+                        triggerElement={encounterClipboardMenu.triggerElement}
+                      />
+                    ) : null}
+                  </>
+                ) : <p className="empty-copy">{translateLiteral('No encounter slots')}</p>}
+              </section>
+
+              <WildEncounterSlotInspector>
+                  {encounterSlot ? (
+                    <>
+                      <div className="wild-encounter-selected-heading">
+                        <span>{translateLiteral('Slot')} {getSlotNumber(encounterSlot)}</span>
+                        <h4>{getEncounterSlotPreview(encounterSlot).species}</h4>
+                      </div>
+                      {isSvEncounterTable || isZaEncounterTable ? (
+                        <dl className="encounter-slot-detail">
+                          {isZaEncounterTable ? (
+                            <div>
+                              <dt>Encounter type</dt>
+                              <dd>{encounterSlot.encounterKind ?? (encounterSlot.isAlpha ? 'Alpha' : 'Wild')}</dd>
+                            </div>
+                          ) : null}
+                          {isZaEncounterTable && encounterSlot.encounterDataId ? (
+                            <div>
+                              <dt>Encounter data</dt>
+                              <dd>{encounterSlot.encounterDataId}</dd>
+                            </div>
+                          ) : null}
+                          {zaPhaseConditionDisplay ? (
+                            <div>
+                              <dt>{t('za.encounters.phaseConditionsLabel')}</dt>
+                              <dd>{zaPhaseConditionDisplay}</dd>
+                            </div>
+                          ) : null}
+                          {isZaEncounterTable ? (
+                            <div>
+                              <dt>{t('za.alphaSettings.chanceLabel')}</dt>
+                              <dd>{formatZaAlphaChance(getEncounterSlotPreview(encounterSlot), t) ?? t('za.alphaSettings.unavailable')}</dd>
+                            </div>
+                          ) : null}
+                          {isZaEncounterTable &&
+                          typeof encounterSlot.appearanceObjectCount === 'number' ? (
+                            <div>
+                              <dt>{t('za.spawnSettings.appearanceObjectsLabel')}</dt>
+                              <dd>{encounterSlot.appearanceObjectCount}</dd>
+                            </div>
+                          ) : null}
+                          <div>
+                              <dt className="editable-field-label-row">
+                                <span>
+                                  {isZaEncounterTable
+                                    ? t('za.spawnSettings.listedShareLabel')
+                                    : translateLiteral('Share in row')}
+                                </span>
+                                <ContextHelp
+                                  label={
+                                    isZaEncounterTable
+                                      ? t('za.spawnSettings.listedShareLabel')
+                                      : translateLiteral('Share in row')
+                                  }
+                                >
+                                  {isZaEncounterTable
+                                    ? t('za.spawnSettings.listedShareHelp')
+                                    : translateLiteral(
+                                        'Calculated from this slot\'s lot weight divided by the selected condition row\'s total lot weight.'
+                                      )}
+                                </ContextHelp>
+                              </dt>
+                              <dd>
+                                {isZaEncounterTable
+                                  ? formatEncounterSharePercent(
+                                      getEncounterSlotPreview(encounterSlot).weight,
+                                      encounterWeightTotal,
+                                      formatLocale
+                                    ) ?? t('za.spawnSettings.unavailable')
+                                  : formatEncounterLotShare(
+                                      getEncounterSlotPreview(encounterSlot).weight,
+                                      encounterWeightTotal,
+                                      formatLocale
+                                    )}
+                              </dd>
+                          </div>
+                          {isSvEncounterTable ? (
+                            <div>
+                              <dt className="editable-field-label-row">
+                                <span>{translateLiteral('S/V Conditions')}</span>
+                                <ContextHelp label={translateLiteral('S/V Conditions')}>
+                                  {translateLiteral(
+                                    'Biome weights, height range, linked group spawn metadata, voice class, and outbreak weight from the S/V encounter row.'
+                                  )}
+                                </ContextHelp>
+                              </dt>
+                              <dd>{encounterSlot.weather}</dd>
+                            </div>
+                          ) : null}
+                          {isZaEncounterTable &&
+                          typeof encounterSlot.contributesToWildZoneCompletion === 'boolean' ? (
+                            <div>
+                              <dt>{t('za.wildZoneCompletion.detailLabel')}</dt>
+                              <dd>
+                                {t(
+                                  getZaWildZoneCompletionStatusKey(
+                                    encounterSlot.contributesToWildZoneCompletion
+                                      ? 'contributing'
+                                      : 'excluded'
+                                  )
+                                )}
+                              </dd>
+                            </div>
+                          ) : null}
+                        </dl>
+                      ) : null}
+
+                    {isZaEncounterTable && table.playerPartner ? (
+                      <ZaEncounterPlayerPartnerEditor
+                        canEditEncounters={canEditEncounters}
+                        draftsByKey={playerPartnerDraftsByKey}
+                        editSession={editSession}
+                        isEditStarting={isEditStarting}
+                        isEncounterUpdating={isEncounterUpdating}
+                        onDraftsByKeyChange={setPlayerPartnerDraftsByKey}
+                        onStageVanilla={onStageEncounterVanilla}
+                        partner={table.playerPartner}
+                        pokemonWorkflow={pokemonWorkflow}
+                        tableId={table.tableId}
+                      />
+                    ) : null}
+                  </>
+                ) : null}
+
+                <div className="editable-field-groups" hidden={!encounterSlot}>
+                  {encounterSlot ? (
+                    <>
+                      {isZaScriptedBossTable ? (
+                        <fieldset className="editable-field-group za-scripted-boss-field-group">
+                          <legend>{t('za.encounters.bossActions.heading')}</legend>
+                          <ScriptedBossEncounterActions
+                            moveOwnership={scriptedMoveOwnership}
+                            profile={scriptedBossProfile}
+                            profiles={scriptedBosses}
+                            renderActionControl={(action: ScriptedBossAction) => {
+                              if (
+                                scriptedMoveOwnership?.authority === 'shared-primary-controller' ||
+                                action.selectorActionId === null ||
+                                !action.canEdit ||
+                                action.kind !== 'battle-move' ||
+                                action.variant === null
+                              ) {
+                                return null;
+                              }
+
+                              const entry = scriptedBossActionEditorEntries.find(
+                                (candidate) =>
+                                  candidate.action.selectorActionId === action.selectorActionId
+                              );
+                              if (!entry) {
+                                return null;
+                              }
+
+                              const selectorKey = action.selectorActionId.toString();
+                              const draftValue =
+                                scriptedBossDraftsBySelectorId[selectorKey] ??
+                                (action.moveId?.toString() ?? '');
+                              const draftState = getTrainerFieldDraftState(
+                                draftValue,
+                                action.moveId,
+                                entry.field
+                              );
+                              const selectedMoveId = Number.parseInt(draftValue, 10);
+                              const selectedCompatibility = Number.isInteger(selectedMoveId)
+                                ? entry.compatibilityByMoveId.get(selectedMoveId) ??
+                                  (selectedMoveId === action.moveId
+                                    ? {
+                                        reason: action.compatibilityReason,
+                                        state: action.compatibilityState
+                                      }
+                                    : null)
+                                : null;
+
+                              return (
+                                <div className="za-scripted-boss-action-control">
+                                  <TrainerDraftField
+                                    currentValue={action.moveId}
+                                    disabled={
+                                      !action.canEdit ||
+                                      !canEditEncounters ||
+                                      editSession === null
+                                    }
+                                    disabledReason={
+                                      !action.canEdit && action.lockReason
+                                        ? t(
+                                            `za.encounters.bossActions.lockReason.${action.lockReason}`
+                                          )
+                                        : undefined
+                                    }
+                                    draftState={draftState}
+                                    draftValue={draftValue}
+                                    emptyOptionLabel={
+                                      action.moveId === null
+                                        ? t('za.encounters.bossActions.invalidSelection')
+                                        : undefined
+                                    }
+                                    field={{
+                                      ...entry.field,
+                                      label: t('za.encounters.bossActions.replacementLabel')
+                                    }}
+                                    helpDomain="encounters"
+                                    helpGame="za"
+                                    idPrefix={`boss-action-${action.selectorActionId}`}
+                                    onChange={(value) =>
+                                      setScriptedBossDraftsBySelectorId((currentDrafts) => {
+                                        if (value.trim() === (action.moveId?.toString() ?? '')) {
+                                          return Object.fromEntries(
+                                            Object.entries(currentDrafts).filter(
+                                              ([candidateSelectorId]) =>
+                                                candidateSelectorId !== selectorKey
+                                            )
+                                          );
+                                        }
+
+                                        return { ...currentDrafts, [selectorKey]: value };
+                                      })
+                                    }
+                                  />
+                                  {selectedCompatibility ? (
+                                    <div
+                                      className={`za-scripted-boss-selection-compatibility is-${selectedCompatibility.state}`}
+                                      role="note"
+                                    >
+                                      <strong>
+                                        {t(
+                                          `za.encounters.bossActions.compatibility.${selectedCompatibility.state}.label`
+                                        )}
+                                      </strong>
+                                      <span>
+                                        {t(
+                                          selectedCompatibility.reason
+                                            ? `za.encounters.bossActions.compatibility.reason.${selectedCompatibility.reason}`
+                                            : `za.encounters.bossActions.compatibility.${selectedCompatibility.state}.help`
+                                        )}
+                                      </span>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              );
+                            }}
+                          />
+                        </fieldset>
+                      ) : null}
+                      {encounterFieldSections.map(({ key, heading, help, groups }) => (
+                        <section className="wild-encounter-field-section" key={key} aria-label={heading}>
+                          {heading && key === 'shared' ? (
+                            <div className="editable-field-label-row wild-encounter-scope-heading">
+                              <h5>{heading}</h5>
+                              {help ? <ContextHelp label={heading}>{help}</ContextHelp> : null}
+                            </div>
+                          ) : null}
+                          <div className="wild-encounter-field-grid">
+                            {groups.map((group) => (
+                              <fieldset
+                                className={`editable-field-group ${
+                                  isZaEncounterTable &&
+                                  (group.group === 'IVs' ||
+                                    group.group === 'Moves' ||
+                                    group.group === 'Strength Multipliers')
+                                    ? 'za-encounter-field-group-wide'
+                                    : ''
+                                }`}
+                                key={group.group}
+                              >
+                                <legend>
+                                  {group.group === 'Spawner Slot'
+                                    ? isZaEncounterTable ? t('za.spawnSettings.slotGroup') : translateLiteral('Lot weight')
+                                    : group.group === 'Spawner Population'
+                                      ? t('za.spawnSettings.populationGroup')
+                                      : group.group === 'Strength Multipliers'
+                                        ? t('za.encounters.strengthen.heading')
+                                      : translateLiteral(group.group)}
+                                  {key === 'slot' && heading && help ? <ContextHelp label={heading}>{help}</ContextHelp> : null}
+                                </legend>
+                                <div className="editable-field-grid">
+                                  {group.fields.map((field) => {
+                                    const currentValue = getEditableEncounterFieldValue(
+                                      encounterSlot,
+                                      field.field
+                                    );
+                                    const draftValue = selectedPlacementDrafts[field.field] ?? '';
+                                    const draftState = getTrainerFieldDraftState(
+                                      draftValue,
+                                      currentValue,
+                                      field
+                                    );
+
+                                    return (
+                                      <TrainerDraftField
+                                        currentValue={currentValue}
+                                        disabled={
+                                          !canEditEncounters ||
+                                          editSession === null ||
+                                          pendingEncounterPasteTargetTableId === table.tableId
+                                        }
+                                        disabledReason={
+                                          field.field === zaEncounterAlphaChanceFieldName
+                                            ? alphaChanceDisabledReason
+                                            : field.field === zaEncounterAlphaLevelBonusFieldName
+                                              ? alphaLevelBonusDisabledReason
+                                              : field.field === zaEncounterWeightFieldName
+                                                ? weightDisabledReason
+                                                : field.field === zaEncounterSlotMaxCountFieldName
+                                                  ? slotMaxCountDisabledReason
+                                                  : zaEncounterAppearanceFieldNames.has(field.field)
+                                                    ? appearanceCountDisabledReason
+                                                    : editorFamily === 'za'
+                                                      ? getPokemonInstanceIvStatDisabledReason(
+                                                          field.field,
+                                                          encounterFields,
+                                                          selectedPlacementDrafts
+                                                        ) ?? undefined
+                                                      : undefined
+                                        }
+                                        draftState={draftState}
+                                        draftValue={draftValue}
+                                        field={field}
+                                        formOptionContext={encounterFormOptionContext}
+                                        helpDomain="encounters"
+                                        helpGame={editorFamily}
+                                        idPrefix="encounter-field"
+                                        key={field.field}
+                                        onChange={(value) => {
+                                          if (!encounterDraftKey) {
+                                            return;
+                                          }
+
+                                          if (
+                                            encounterLevelDraftKey &&
+                                            encounterLevelFieldNames.includes(field.field)
+                                          ) {
+                                            const currentLevelDrafts =
+                                              levelDraftsByScopeKey[encounterLevelDraftKey] ??
+                                              encounterLevelDraftDefaults;
+                                            setLevelDraftsByScopeKey((currentDrafts) =>
+                                              setFieldDraftRecord(
+                                                currentDrafts,
+                                                encounterLevelDraftKey,
+                                                { ...currentLevelDrafts, [field.field]: value },
+                                                encounterLevelDraftDefaults
+                                              )
+                                            );
+                                            return;
+                                          }
+
+                                          if (
+                                            zaEncounterSlotDraftKey &&
+                                            zaEncounterSlotSpecificFieldNames.has(field.field)
+                                          ) {
+                                            setZaSlotDraftsBySlotKey((currentDrafts) =>
+                                              setFieldDraftRecord(
+                                                currentDrafts,
+                                                zaEncounterSlotDraftKey,
+                                                { ...zaSlotDrafts, [field.field]: value },
+                                                zaEncounterSlotDraftDefaults
+                                              )
+                                            );
+                                            return;
+                                          }
+
+                                          if (
+                                            zaEncounterAppearanceDraftKey &&
+                                            zaEncounterAppearanceFieldNames.has(field.field)
+                                          ) {
+                                            setZaAppearanceDraftsByTableId((currentDrafts) =>
+                                              setFieldDraftRecord(
+                                                currentDrafts,
+                                                zaEncounterAppearanceDraftKey,
+                                                { ...zaAppearanceDrafts, [field.field]: value },
+                                                zaEncounterAppearanceDraftDefaults
+                                              )
+                                            );
+                                            return;
+                                          }
+
+                                          const nextSlotDrafts = {
+                                            ...slotDrafts,
+                                            [field.field]: value
+                                          };
+                                          if (field.field === encounterSpeciesFieldName) {
+                                            const speciesField = defaultEncounterFields.find(
+                                              (candidate) =>
+                                                candidate.field === encounterSpeciesFieldName
+                                            );
+                                            const formField = defaultEncounterFields.find(
+                                              (candidate) => candidate.field === encounterFormFieldName
+                                            );
+                                            const previousSpeciesId =
+                                              parseEditableIntegerDraft(
+                                                slotDrafts[encounterSpeciesFieldName] ??
+                                                  encounterSlot.speciesId.toString(),
+                                                speciesField?.options
+                                              );
+                                            const targetSpeciesId = parseEditableIntegerDraft(
+                                              value,
+                                              speciesField?.options
+                                            );
+                                            const previousForm =
+                                              parseOptionalInteger(
+                                                slotDrafts[encounterFormFieldName] ??
+                                                  encounterSlot.form.toString()
+                                              ) ?? encounterSlot.form;
+
+                                            if (
+                                              formField &&
+                                              targetSpeciesId !== null &&
+                                              targetSpeciesId !== previousSpeciesId
+                                            ) {
+                                              const resolvedForm = resolveSpeciesChangeForm({
+                                                gameFamily: editorFamily,
+                                                pokemonRecords: pokemonWorkflow?.pokemon,
+                                                previousForm,
+                                                sourceForm: encounterSlot.form,
+                                                sourceSpeciesId: encounterSlot.speciesId,
+                                                speciesField,
+                                                targetSpeciesId
+                                              });
+                                              if (resolvedForm !== null) {
+                                                nextSlotDrafts[encounterFormFieldName] =
+                                                  resolvedForm.toString();
+                                              }
+                                            }
+                                          }
+
+                                          setDraftsBySlotKey((currentDrafts) =>
+                                            setFieldDraftRecord(
+                                              currentDrafts,
+                                              encounterDraftKey,
+                                              nextSlotDrafts,
+                                              encounterSlotDraftDefaults
+                                            )
+                                          );
+                                        }}
+                                      />
+                                    );
+                                  })}
+                                </div>
+                                {group.group === 'Spawner Slot' && isZaEncounterTable ? (
+                                  <div className="field-group-action-row za-spawner-field-note">
+                                    <small className="editable-field-status">
+                                      {t('za.spawnSettings.slotHelp')}
+                                    </small>
+                                  </div>
+                                ) : null}
+                                {group.group === 'Spawner Population' && isZaEncounterTable ? (
+                                  <div className="field-group-action-row za-spawner-field-note">
+                                    <small className="editable-field-status">
+                                      {encounterSlot &&
+                                      (encounterSlot.appearanceObjectCount ?? 0) > 1
+                                        ? t('za.spawnSettings.populationHelp.many', {
+                                            count: encounterSlot.appearanceObjectCount ?? 0
+                                          })
+                                        : t('za.spawnSettings.populationHelp.one')}
+                                    </small>
+                                    {hasInvalidZaAppearanceCountPair ? (
+                                      <small className="editable-field-error">
+                                        {t('za.spawnSettings.minExceedsMaxError')}
+                                      </small>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                                {group.group === 'Levels' ? (
+                                  <div className="field-group-action-row">
+                                    {isSwShEncounterTable ? (
+                                      <small className="editable-field-status">
+                                        Levels are stored per encounter condition. Stage edits for this
+                                        condition, or apply them to every available condition below.
+                                      </small>
+                                    ) : null}
+                                    {hasInvalidEncounterLevelPair ? (
+                                      <small className="editable-field-error">
+                                        Minimum level cannot be higher than maximum level.
+                                      </small>
+                                    ) : null}
+                                    {isSwShEncounterTable || isZaEncounterTable ? (
+                                      <button
+                                        aria-busy={isEncounterUpdating || undefined}
+                                        className="secondary-button"
+                                        disabled={!canApplyEncounterLevelsToScope}
+                                        onClick={async () => {
+                                        if (!table || !encounterSlot || !encounterDraftKey) {
+                                          return;
+                                        }
+
+                                        const submittedLevelDrafts = Object.fromEntries(
+                                          [...encounterLevelScopeDraftKeys].flatMap((scopeKey) => {
+                                            const submittedDraft = levelDraftsByScopeKey[scopeKey];
+                                            return submittedDraft
+                                              ? [[scopeKey, { ...submittedDraft }] as const]
+                                              : [];
+                                          })
+                                        );
+                                        const submittedSlotLevelFields = Object.fromEntries(
+                                          encounterLevelFieldNames.flatMap((field) =>
+                                            Object.prototype.hasOwnProperty.call(slotDrafts, field)
+                                              ? [[field, slotDrafts[field]!] as const]
+                                              : []
+                                          )
+                                        );
+                                        const didSave =
+                                          isSwShEncounterTable || isZaEncounterTable
+                                            ? await onUpdateEncounterSlotUpdates(
+                                                encounterLevelScopeUpdates
+                                              )
+                                            : await onUpdateEncounterSlotFields(
+                                                table.tableId,
+                                                encounterSlot.slot,
+                                                encounterLevelChanges
+                                              );
+                                        if (didSave) {
+                                          if (encounterLevelDraftKey) {
+                                            setLevelDraftsByScopeKey((currentDrafts) => {
+                                              let nextDrafts = currentDrafts;
+                                              for (const [scopeKey, submittedDraft] of Object.entries(
+                                                submittedLevelDrafts
+                                              )) {
+                                                nextDrafts = clearSubmittedKeyedEditorDraft(
+                                                  nextDrafts,
+                                                  scopeKey,
+                                                  submittedDraft,
+                                                  areFieldDraftsEqual
+                                                );
+                                              }
+                                              return nextDrafts;
+                                            });
+                                          } else {
+                                            setDraftsBySlotKey((currentDrafts) =>
+                                              updateSparseFieldDraftRecordAfterStage(
+                                                currentDrafts,
+                                                encounterDraftKey,
+                                                submittedSlotLevelFields
+                                              )
+                                            );
+                                          }
+                                        }
+                                        }}
+                                        title={
+                                          isSwShEncounterTable
+                                            ? 'Apply these level changes to every available condition in the current encounter table.'
+                                            : "Apply this slot's level changes to every editable table in the current zone."
+                                        }
+                                        type="button"
+                                      >
+                                        <BusyActionContent
+                                          busyLabel="Applying"
+                                          icon={null}
+                                          isBusy={isEncounterUpdating}
+                                          label={
+                                            isSwShEncounterTable
+                                              ? 'Apply to All Conditions'
+                                              : 'Apply to Entire Zone'
+                                          }
+                                        />
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                                {group.group === 'Moves' && isZaEncounterTable ? (
+                                  <div className="field-group-action-row za-spawner-field-note">
+                                    <small className="editable-field-status">
+                                      {encounterSlot.hasExplicitMoves
+                                        ? t('za.encounters.movesExplicitHelp')
+                                        : t('za.encounters.movesAutomaticHelp')}
+                                    </small>
+                                  </div>
+                                ) : null}
+                                {group.group === 'IVs' && isZaEncounterTable ? (
+                                  <div className="field-group-action-row za-spawner-field-note">
+                                    <small className="editable-field-status">
+                                      {t('za.encounters.ivHelp')}
+                                    </small>
+                                  </div>
+                                ) : null}
+                                {group.group === 'Strength Multipliers' && isZaEncounterTable ? (
+                                  <div className="field-group-action-row za-spawner-field-note">
+                                    <small className="editable-field-status">
+                                      {t('za.encounters.strengthen.help')}
+                                    </small>
+                                  </div>
+                                ) : null}
+                                {group.group === 'Shared Alpha Settings' &&
+                                isZaEncounterTable &&
+                                (zaAlphaChanceDisplay ||
+                                  zaAlphaLevelBonusDisplay ||
+                                  zaAlphaLevelRangeDisplay) ? (
+                                  <div className="field-group-action-row za-spawner-field-note">
+                                    {zaAlphaChanceDisplay ? (
+                                      <small className="editable-field-status">
+                                        {t('za.alphaSettings.chanceLabel')}: {zaAlphaChanceDisplay}
+                                      </small>
+                                    ) : null}
+                                    {zaAlphaLevelBonusDisplay ? (
+                                      <small className="editable-field-status">
+                                        {t('za.alphaSettings.levelBonusLabel')}: {zaAlphaLevelBonusDisplay}
+                                      </small>
+                                    ) : null}
+                                    {zaAlphaLevelRangeDisplay ? (
+                                      <small className="editable-field-status">
+                                        {t('za.alphaSettings.levelRangeLabel')}: {zaAlphaLevelRangeDisplay}
+                                      </small>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                              </fieldset>
+                            ))}
+                          </div>
+                        </section>
+                      ))}
+                    </>
+                  ) : null}
+                </div>
+
+                {editorFamily === 'swsh' ? (
+                  <div className="wild-encounter-held-items" hidden={!encounterSlot}>
+                    <WildHeldItems
+                      key={editSession?.sessionId ?? 'viewing'}
+                      workflow={pokemonWorkflow}
+                      chances={heldItemChanceWorkflow}
+                      session={editSession}
+                      speciesId={encounterSlot?.speciesId ?? null}
+                      form={encounterSlot?.form ?? null}
+                      recordId={encounterSlot ? `${table.tableId}#${encounterSlot.slot}` : null}
+                      onDirtyStateChange={setWildHeldItemsDirty}
+                    />
                   </div>
                 ) : null}
 
-                {isZaEncounterTable && table.playerPartner ? (
-                  <ZaEncounterPlayerPartnerEditor
-                    canEditEncounters={canEditEncounters}
-                    draftsByKey={playerPartnerDraftsByKey}
-                    editSession={editSession}
-                    isEditStarting={isEditStarting}
-                    isEncounterUpdating={isEncounterUpdating}
-                    onDraftsByKeyChange={setPlayerPartnerDraftsByKey}
-                    onStageVanilla={onStageEncounterVanilla}
-                    partner={table.playerPartner}
-                    pokemonWorkflow={pokemonWorkflow}
-                    tableId={table.tableId}
-                  />
-                ) : null}
-              </>
-            ) : null}
-
-            <div className="editable-field-groups" hidden={!encounterSlot}>
-              {encounterSlot ? (
-                <>
-                  {isZaScriptedBossTable ? (
-                    <fieldset className="editable-field-group za-scripted-boss-field-group">
-                      <legend>{t('za.encounters.bossActions.heading')}</legend>
-                      <ScriptedBossEncounterActions
-                        moveOwnership={scriptedMoveOwnership}
-                        profile={scriptedBossProfile}
-                        profiles={scriptedBosses}
-                        renderActionControl={(action: ScriptedBossAction) => {
-                          if (
-                            scriptedMoveOwnership?.authority === 'shared-primary-controller' ||
-                            action.selectorActionId === null ||
-                            !action.canEdit ||
-                            action.kind !== 'battle-move' ||
-                            action.variant === null
-                          ) {
-                            return null;
-                          }
-
-                          const entry = scriptedBossActionEditorEntries.find(
-                            (candidate) =>
-                              candidate.action.selectorActionId === action.selectorActionId
-                          );
-                          if (!entry) {
-                            return null;
-                          }
-
-                          const selectorKey = action.selectorActionId.toString();
-                          const draftValue =
-                            scriptedBossDraftsBySelectorId[selectorKey] ??
-                            (action.moveId?.toString() ?? '');
-                          const draftState = getTrainerFieldDraftState(
-                            draftValue,
-                            action.moveId,
-                            entry.field
-                          );
-                          const selectedMoveId = Number.parseInt(draftValue, 10);
-                          const selectedCompatibility = Number.isInteger(selectedMoveId)
-                            ? entry.compatibilityByMoveId.get(selectedMoveId) ??
-                              (selectedMoveId === action.moveId
-                                ? {
-                                    reason: action.compatibilityReason,
-                                    state: action.compatibilityState
-                                  }
-                                : null)
-                            : null;
-
-                          return (
-                            <div className="za-scripted-boss-action-control">
-                              <TrainerDraftField
-                                currentValue={action.moveId}
-                                disabled={
-                                  !action.canEdit ||
-                                  !canEditEncounters ||
-                                  editSession === null
-                                }
-                                disabledReason={
-                                  !action.canEdit && action.lockReason
-                                    ? t(
-                                        `za.encounters.bossActions.lockReason.${action.lockReason}`
-                                      )
-                                    : undefined
-                                }
-                                draftState={draftState}
-                                draftValue={draftValue}
-                                emptyOptionLabel={
-                                  action.moveId === null
-                                    ? t('za.encounters.bossActions.invalidSelection')
-                                    : undefined
-                                }
-                                field={{
-                                  ...entry.field,
-                                  label: t('za.encounters.bossActions.replacementLabel')
-                                }}
-                                helpDomain="encounters"
-                                helpGame="za"
-                                idPrefix={`boss-action-${action.selectorActionId}`}
-                                onChange={(value) =>
-                                  setScriptedBossDraftsBySelectorId((currentDrafts) => {
-                                    if (value.trim() === (action.moveId?.toString() ?? '')) {
-                                      return Object.fromEntries(
-                                        Object.entries(currentDrafts).filter(
-                                          ([candidateSelectorId]) =>
-                                            candidateSelectorId !== selectorKey
-                                        )
-                                      );
-                                    }
-
-                                    return { ...currentDrafts, [selectorKey]: value };
-                                  })
-                                }
-                              />
-                              {selectedCompatibility ? (
-                                <div
-                                  className={`za-scripted-boss-selection-compatibility is-${selectedCompatibility.state}`}
-                                  role="note"
-                                >
-                                  <strong>
-                                    {t(
-                                      `za.encounters.bossActions.compatibility.${selectedCompatibility.state}.label`
-                                    )}
-                                  </strong>
-                                  <span>
-                                    {t(
-                                      selectedCompatibility.reason
-                                        ? `za.encounters.bossActions.compatibility.reason.${selectedCompatibility.reason}`
-                                        : `za.encounters.bossActions.compatibility.${selectedCompatibility.state}.help`
-                                    )}
-                                  </span>
-                                </div>
-                              ) : null}
+                {encounterSlot ? (
+                  <>
+                    {isZaEncounterTable ? (
+                      <details className="wild-encounter-disclosure">
+                        <summary>{translateLiteral('Technical')}</summary>
+                        <section
+                          aria-label={t('za.encounters.advanced.ariaLabel')}
+                          className="za-encounter-advanced-data"
+                        >
+                          <div className="za-encounter-advanced-heading">
+                            <div>
+                              <h4>{t('za.encounters.advanced.heading')}</h4>
+                              <p>{t('za.encounters.advanced.help')}</p>
                             </div>
-                          );
-                        }}
-                      />
-                    </fieldset>
-                  ) : null}
-                  {encounterFieldGroups.map((group) => (
-                    <fieldset
-                      className={`editable-field-group ${
-                        isZaEncounterTable &&
-                        (group.group === 'IVs' ||
-                          group.group === 'Moves' ||
-                          group.group === 'Strength Multipliers')
-                          ? 'za-encounter-field-group-wide'
-                          : ''
-                      }`}
-                      key={group.group}
-                    >
-                      <legend>
-                        {group.group === 'Spawner Slot'
-                          ? t('za.spawnSettings.slotGroup')
-                          : group.group === 'Spawner Population'
-                            ? t('za.spawnSettings.populationGroup')
-                            : group.group === 'Strength Multipliers'
-                              ? t('za.encounters.strengthen.heading')
-                            : translateLiteral(group.group)}
-                      </legend>
-                      <div className="editable-field-grid">
-                        {group.fields.map((field) => {
-                          const currentValue = getEditableEncounterFieldValue(
-                            encounterSlot,
-                            field.field
-                          );
-                          const draftValue = selectedPlacementDrafts[field.field] ?? '';
-                          const draftState = getTrainerFieldDraftState(
-                            draftValue,
-                            currentValue,
-                            field
-                          );
+                            <span>{t('za.encounters.advanced.readOnly')}</span>
+                          </div>
+                          <dl className="za-encounter-advanced-grid">
+                            <div>
+                              <dt>{t('za.encounters.advanced.talentScale')}</dt>
+                              <dd>
+                                {formatOptionalEncounterRawValue(
+                                  encounterSlot.talentScale,
+                                  t('za.encounters.advanced.unavailable')
+                                )}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>{t('za.encounters.advanced.talentVCount')}</dt>
+                              <dd>
+                                {formatOptionalEncounterRawValue(
+                                  encounterSlot.talentVCount,
+                                  t('za.encounters.advanced.unavailable')
+                                )}
+                              </dd>
+                            </div>
+                            {encounterSlot.canEditStrengthenValues !== true ? (
+                              <div>
+                                <dt>{t('za.encounters.advanced.strengthenValues')}</dt>
+                                <dd>
+                                  {encounterSlot.strengthenValueSummary ??
+                                    t('za.encounters.advanced.notPresent')}
+                                </dd>
+                              </div>
+                            ) : null}
+                            {!isZaScriptedBossTable ? (
+                              <div>
+                                <dt>{t('za.encounters.advanced.moveStorage')}</dt>
+                                <dd>
+                                  {encounterSlot.hasExplicitMoves
+                                    ? t('za.encounters.advanced.explicitMoves')
+                                    : t('za.encounters.advanced.automaticMoves')}
+                                </dd>
+                              </div>
+                            ) : null}
+                            <div className="za-encounter-advanced-wide">
+                              <dt>{t('za.encounters.advanced.sharedConditions')}</dt>
+                              <dd>
+                                {formatEncounterReadOnlyList(
+                                  encounterSlot.encounterActivationConditions,
+                                  t('za.encounters.advanced.none')
+                                )}
+                              </dd>
+                            </div>
+                            <div className="za-encounter-advanced-wide">
+                              <dt>{t('za.encounters.advanced.itemDrops')}</dt>
+                              <dd>
+                                {formatEncounterReadOnlyList(
+                                  encounterSlot.itemDropSummaries,
+                                  t('za.encounters.advanced.none')
+                                )}
+                              </dd>
+                            </div>
+                          </dl>
+                        </section>
+                      </details>
+                    ) : null}
+                    {!isSvEncounterTable && !isZaEncounterTable ? (
+                      <div className="draft-action-row">
+                        <button
+                          aria-busy={isEncounterUpdating || undefined}
+                          className="danger-button"
+                          disabled={!canClearEncounterSlot}
+                          onClick={async () => {
+                            if (!table || !encounterSlot || !encounterDraftKey) {
+                              return;
+                            }
 
-                          return (
-                            <TrainerDraftField
-                              currentValue={currentValue}
-                              disabled={
-                                !canEditEncounters ||
-                                editSession === null ||
-                                pendingEncounterPasteTargetTableId === table.tableId
-                              }
-                              disabledReason={
-                                field.field === zaEncounterAlphaChanceFieldName
-                                  ? alphaChanceDisabledReason
-                                  : field.field === zaEncounterAlphaLevelBonusFieldName
-                                    ? alphaLevelBonusDisabledReason
-                                    : field.field === zaEncounterWeightFieldName
-                                      ? weightDisabledReason
-                                      : field.field === zaEncounterSlotMaxCountFieldName
-                                        ? slotMaxCountDisabledReason
-                                        : zaEncounterAppearanceFieldNames.has(field.field)
-                                          ? appearanceCountDisabledReason
-                                          : editorFamily === 'za'
-                                            ? getPokemonInstanceIvStatDisabledReason(
-                                                field.field,
-                                                encounterFields,
-                                                selectedPlacementDrafts
-                                              ) ?? undefined
-                                            : undefined
-                              }
-                              draftState={draftState}
-                              draftValue={draftValue}
-                              field={field}
-                              formOptionContext={encounterFormOptionContext}
-                              helpDomain="encounters"
-                              helpGame={editorFamily}
-                              idPrefix="encounter-field"
-                              key={field.field}
-                              onChange={(value) => {
-                                if (!encounterDraftKey) {
-                                  return;
-                                }
-
-                                if (
-                                  encounterLevelDraftKey &&
-                                  encounterLevelFieldNames.includes(field.field)
-                                ) {
-                                  const currentLevelDrafts =
-                                    levelDraftsByScopeKey[encounterLevelDraftKey] ??
-                                    encounterLevelDraftDefaults;
-                                  setLevelDraftsByScopeKey((currentDrafts) =>
-                                    setFieldDraftRecord(
-                                      currentDrafts,
-                                      encounterLevelDraftKey,
-                                      { ...currentLevelDrafts, [field.field]: value },
-                                      encounterLevelDraftDefaults
-                                    )
-                                  );
-                                  return;
-                                }
-
-                                if (
-                                  zaEncounterSlotDraftKey &&
-                                  zaEncounterSlotSpecificFieldNames.has(field.field)
-                                ) {
-                                  setZaSlotDraftsBySlotKey((currentDrafts) =>
-                                    setFieldDraftRecord(
-                                      currentDrafts,
-                                      zaEncounterSlotDraftKey,
-                                      { ...zaSlotDrafts, [field.field]: value },
-                                      zaEncounterSlotDraftDefaults
-                                    )
-                                  );
-                                  return;
-                                }
-
-                                if (
-                                  zaEncounterAppearanceDraftKey &&
-                                  zaEncounterAppearanceFieldNames.has(field.field)
-                                ) {
-                                  setZaAppearanceDraftsByTableId((currentDrafts) =>
-                                    setFieldDraftRecord(
-                                      currentDrafts,
-                                      zaEncounterAppearanceDraftKey,
-                                      { ...zaAppearanceDrafts, [field.field]: value },
-                                      zaEncounterAppearanceDraftDefaults
-                                    )
-                                  );
-                                  return;
-                                }
-
-                                const nextSlotDrafts = {
-                                  ...slotDrafts,
-                                  [field.field]: value
-                                };
-                                if (field.field === encounterSpeciesFieldName) {
-                                  const speciesField = defaultEncounterFields.find(
-                                    (candidate) =>
-                                      candidate.field === encounterSpeciesFieldName
-                                  );
-                                  const formField = defaultEncounterFields.find(
-                                    (candidate) => candidate.field === encounterFormFieldName
-                                  );
-                                  const previousSpeciesId =
-                                    parseEditableIntegerDraft(
-                                      slotDrafts[encounterSpeciesFieldName] ??
-                                        encounterSlot.speciesId.toString(),
-                                      speciesField?.options
-                                    );
-                                  const targetSpeciesId = parseEditableIntegerDraft(
-                                    value,
-                                    speciesField?.options
-                                  );
-                                  const previousForm =
-                                    parseOptionalInteger(
-                                      slotDrafts[encounterFormFieldName] ??
-                                        encounterSlot.form.toString()
-                                    ) ?? encounterSlot.form;
-
-                                  if (
-                                    formField &&
-                                    targetSpeciesId !== null &&
-                                    targetSpeciesId !== previousSpeciesId
-                                  ) {
-                                    const resolvedForm = resolveSpeciesChangeForm({
-                                      gameFamily: editorFamily,
-                                      pokemonRecords: pokemonWorkflow?.pokemon,
-                                      previousForm,
-                                      sourceForm: encounterSlot.form,
-                                      sourceSpeciesId: encounterSlot.speciesId,
-                                      speciesField,
-                                      targetSpeciesId
-                                    });
-                                    if (resolvedForm !== null) {
-                                      nextSlotDrafts[encounterFormFieldName] =
-                                        resolvedForm.toString();
-                                    }
-                                  }
-                                }
-
-                                setDraftsBySlotKey((currentDrafts) =>
-                                  setFieldDraftRecord(
-                                    currentDrafts,
-                                    encounterDraftKey,
-                                    nextSlotDrafts,
-                                    encounterSlotDraftDefaults
-                                  )
-                                );
-                              }}
-                            />
-                          );
-                        })}
-                      </div>
-                      {group.group === 'Spawner Slot' && isZaEncounterTable ? (
-                        <div className="field-group-action-row za-spawner-field-note">
-                          <small className="editable-field-status">
-                            {t('za.spawnSettings.slotHelp')}
-                          </small>
-                        </div>
-                      ) : null}
-                      {group.group === 'Spawner Population' && isZaEncounterTable ? (
-                        <div className="field-group-action-row za-spawner-field-note">
-                          <small className="editable-field-status">
-                            {encounterSlot &&
-                            (encounterSlot.appearanceObjectCount ?? 0) > 1
-                              ? t('za.spawnSettings.populationHelp.many', {
-                                  count: encounterSlot.appearanceObjectCount ?? 0
-                                })
-                              : t('za.spawnSettings.populationHelp.one')}
-                          </small>
-                          {hasInvalidZaAppearanceCountPair ? (
-                            <small className="editable-field-error">
-                              {t('za.spawnSettings.minExceedsMaxError')}
-                            </small>
-                          ) : null}
-                        </div>
-                      ) : null}
-                      {group.group === 'Levels' ? (
-                        <div className="field-group-action-row">
-                          {isSwShEncounterTable ? (
-                            <small className="editable-field-status">
-                              Levels are stored per encounter condition. Stage edits for this
-                              condition, or apply them to every available condition below.
-                            </small>
-                          ) : null}
-                          {hasInvalidEncounterLevelPair ? (
-                            <small className="editable-field-error">
-                              Minimum level cannot be higher than maximum level.
-                            </small>
-                          ) : null}
-                          {isSwShEncounterTable || isZaEncounterTable ? (
-                            <button
-                              aria-busy={isEncounterUpdating || undefined}
-                              className="secondary-button"
-                              disabled={!canApplyEncounterLevelsToScope}
-                              onClick={async () => {
-                              if (!table || !encounterSlot || !encounterDraftKey) {
-                                return;
-                              }
-
-                              const submittedLevelDrafts = Object.fromEntries(
-                                [...encounterLevelScopeDraftKeys].flatMap((scopeKey) => {
-                                  const submittedDraft = levelDraftsByScopeKey[scopeKey];
-                                  return submittedDraft
-                                    ? [[scopeKey, { ...submittedDraft }] as const]
-                                    : [];
-                                })
-                              );
-                              const submittedSlotLevelFields = Object.fromEntries(
-                                encounterLevelFieldNames.flatMap((field) =>
-                                  Object.prototype.hasOwnProperty.call(slotDrafts, field)
-                                    ? [[field, slotDrafts[field]!] as const]
-                                    : []
+                            const submittedClearFields = Object.fromEntries(
+                              encounterClearFieldNames.flatMap((field) =>
+                                Object.prototype.hasOwnProperty.call(slotDrafts, field)
+                                  ? [[field, slotDrafts[field]!] as const]
+                                  : []
+                              )
+                            );
+                            const didSave = await onUpdateEncounterSlotFields(
+                              table.tableId,
+                              encounterSlot.slot,
+                              [
+                                { field: encounterSpeciesFieldName, value: '0' },
+                                { field: encounterFormFieldName, value: '0' },
+                                { field: encounterProbabilityFieldName, value: '0' }
+                              ]
+                            );
+                            if (didSave) {
+                              setDraftsBySlotKey((currentDrafts) =>
+                                updateSparseFieldDraftRecordAfterStage(
+                                  currentDrafts,
+                                  encounterDraftKey,
+                                  submittedClearFields
                                 )
                               );
-                              const didSave =
-                                isSwShEncounterTable || isZaEncounterTable
-                                  ? await onUpdateEncounterSlotUpdates(
-                                      encounterLevelScopeUpdates
-                                    )
-                                  : await onUpdateEncounterSlotFields(
-                                      table.tableId,
-                                      encounterSlot.slot,
-                                      encounterLevelChanges
-                                    );
-                              if (didSave) {
-                                if (encounterLevelDraftKey) {
-                                  setLevelDraftsByScopeKey((currentDrafts) => {
-                                    let nextDrafts = currentDrafts;
-                                    for (const [scopeKey, submittedDraft] of Object.entries(
-                                      submittedLevelDrafts
-                                    )) {
-                                      nextDrafts = clearSubmittedKeyedEditorDraft(
-                                        nextDrafts,
-                                        scopeKey,
-                                        submittedDraft,
-                                        areFieldDraftsEqual
-                                      );
-                                    }
-                                    return nextDrafts;
-                                  });
-                                } else {
-                                  setDraftsBySlotKey((currentDrafts) =>
-                                    updateSparseFieldDraftRecordAfterStage(
-                                      currentDrafts,
-                                      encounterDraftKey,
-                                      submittedSlotLevelFields
-                                    )
-                                  );
-                                }
-                              }
-                              }}
-                              title={
-                                isSwShEncounterTable
-                                  ? 'Apply these level changes to every available condition in the current encounter table.'
-                                  : "Apply this slot's level changes to every editable table in the current zone."
-                              }
-                              type="button"
-                            >
-                              <BusyActionContent
-                                busyLabel="Applying"
-                                icon={null}
-                                isBusy={isEncounterUpdating}
-                                label={
-                                  isSwShEncounterTable
-                                    ? 'Apply to All Conditions'
-                                    : 'Apply to Entire Zone'
-                                }
-                              />
-                            </button>
-                          ) : null}
+                            }
+                          }}
+                          title="Set this SwSh encounter slot to Empty at 0% probability."
+                          type="button"
+                        >
+                          <BusyActionContent
+                            busyLabel="Clearing"
+                            icon={<Trash2 aria-hidden="true" size={16} />}
+                            isBusy={isEncounterUpdating}
+                            label="Clear Slot"
+                          />
+                        </button>
+                      </div>
+                    ) : null}
+                    {isZaEncounterTable && zaSpawnerCountWarnings.length > 0 ? (
+                      <div
+                        aria-label={t('za.spawnSettings.warningHeading')}
+                        className="za-spawner-count-warnings"
+                        role="status"
+                      >
+                        <AlertTriangle aria-hidden="true" size={16} />
+                        <div>
+                          <strong>{t('za.spawnSettings.warningHeading')}</strong>
+                          {zaSpawnerCountWarnings.map((warning) => (
+                            <small key={warning}>{warning}</small>
+                          ))}
                         </div>
-                      ) : null}
-                      {group.group === 'Moves' && isZaEncounterTable ? (
-                        <div className="field-group-action-row za-spawner-field-note">
-                          <small className="editable-field-status">
-                            {encounterSlot.hasExplicitMoves
-                              ? t('za.encounters.movesExplicitHelp')
-                              : t('za.encounters.movesAutomaticHelp')}
-                          </small>
-                        </div>
-                      ) : null}
-                      {group.group === 'IVs' && isZaEncounterTable ? (
-                        <div className="field-group-action-row za-spawner-field-note">
-                          <small className="editable-field-status">
-                            {t('za.encounters.ivHelp')}
-                          </small>
-                        </div>
-                      ) : null}
-                      {group.group === 'Strength Multipliers' && isZaEncounterTable ? (
-                        <div className="field-group-action-row za-spawner-field-note">
-                          <small className="editable-field-status">
-                            {t('za.encounters.strengthen.help')}
-                          </small>
-                        </div>
-                      ) : null}
-                      {group.group === 'Shared Alpha Settings' &&
-                      isZaEncounterTable &&
-                      (zaAlphaChanceDisplay ||
-                        zaAlphaLevelBonusDisplay ||
-                        zaAlphaLevelRangeDisplay) ? (
-                        <div className="field-group-action-row za-spawner-field-note">
-                          {zaAlphaChanceDisplay ? (
-                            <small className="editable-field-status">
-                              {t('za.alphaSettings.chanceLabel')}: {zaAlphaChanceDisplay}
-                            </small>
-                          ) : null}
-                          {zaAlphaLevelBonusDisplay ? (
-                            <small className="editable-field-status">
-                              {t('za.alphaSettings.levelBonusLabel')}: {zaAlphaLevelBonusDisplay}
-                            </small>
-                          ) : null}
-                          {zaAlphaLevelRangeDisplay ? (
-                            <small className="editable-field-status">
-                              {t('za.alphaSettings.levelRangeLabel')}: {zaAlphaLevelRangeDisplay}
-                            </small>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </fieldset>
-                  ))}
-                </>
-              ) : null}
-              {editorFamily === 'swsh' ? (
-                <WildHeldItems
-                  key={editSession?.sessionId ?? 'viewing'}
-                  workflow={pokemonWorkflow}
-                  chances={heldItemChanceWorkflow}
-                  session={editSession}
-                  speciesId={encounterSlot?.speciesId ?? null}
-                  form={encounterSlot?.form ?? null}
-                  recordId={encounterSlot ? `${table.tableId}#${encounterSlot.slot}` : null}
-                  onDirtyStateChange={setWildHeldItemsDirty}
-                />
-              ) : null}
-            </div>
+                      </div>
+                    ) : null}
 
-            {encounterSlot ? (
-              <>
-                {isZaEncounterTable ? (
-                  <section
-                    aria-label={t('za.encounters.advanced.ariaLabel')}
-                    className="za-encounter-advanced-data"
-                  >
-                    <div className="za-encounter-advanced-heading">
-                      <div>
-                        <h4>{t('za.encounters.advanced.heading')}</h4>
-                        <p>{t('za.encounters.advanced.help')}</p>
-                      </div>
-                      <span>{t('za.encounters.advanced.readOnly')}</span>
-                    </div>
-                    <dl className="za-encounter-advanced-grid">
-                      <div>
-                        <dt>{t('za.encounters.advanced.talentScale')}</dt>
-                        <dd>
-                          {formatOptionalEncounterRawValue(
-                            encounterSlot.talentScale,
-                            t('za.encounters.advanced.unavailable')
-                          )}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>{t('za.encounters.advanced.talentVCount')}</dt>
-                        <dd>
-                          {formatOptionalEncounterRawValue(
-                            encounterSlot.talentVCount,
-                            t('za.encounters.advanced.unavailable')
-                          )}
-                        </dd>
-                      </div>
-                      {encounterSlot.canEditStrengthenValues !== true ? (
-                        <div>
-                          <dt>{t('za.encounters.advanced.strengthenValues')}</dt>
-                          <dd>
-                            {encounterSlot.strengthenValueSummary ??
-                              t('za.encounters.advanced.notPresent')}
-                          </dd>
-                        </div>
-                      ) : null}
-                      {!isZaScriptedBossTable ? (
-                        <div>
-                          <dt>{t('za.encounters.advanced.moveStorage')}</dt>
-                          <dd>
-                            {encounterSlot.hasExplicitMoves
-                              ? t('za.encounters.advanced.explicitMoves')
-                              : t('za.encounters.advanced.automaticMoves')}
-                          </dd>
-                        </div>
-                      ) : null}
-                      <div className="za-encounter-advanced-wide">
-                        <dt>{t('za.encounters.advanced.sharedConditions')}</dt>
-                        <dd>
-                          {formatEncounterReadOnlyList(
-                            encounterSlot.encounterActivationConditions,
-                            t('za.encounters.advanced.none')
-                          )}
-                        </dd>
-                      </div>
-                      <div className="za-encounter-advanced-wide">
-                        <dt>{t('za.encounters.advanced.itemDrops')}</dt>
-                        <dd>
-                          {formatEncounterReadOnlyList(
-                            encounterSlot.itemDropSummaries,
-                            t('za.encounters.advanced.none')
-                          )}
-                        </dd>
-                      </div>
-                    </dl>
-                  </section>
-                ) : null}
-                {!isSvEncounterTable && !isZaEncounterTable ? (
-                  <div className="draft-action-row">
+                  </>
+                ) : (
+                  <p className="empty-copy">No encounter slot selected.</p>
+                )}
+
+                {isZaEncounterTable && onStageEncounterVanilla ? (
+                  <div className="za-encounter-revert-action">
                     <button
                       aria-busy={isEncounterUpdating || undefined}
                       className="danger-button"
-                      disabled={!canClearEncounterSlot}
+                      disabled={!canRevertSelectedZaEncounter}
                       onClick={async () => {
-                        if (!table || !encounterSlot || !encounterDraftKey) {
+                        if (!table || !encounterSlot) {
                           return;
                         }
 
-                        const submittedClearFields = Object.fromEntries(
-                          encounterClearFieldNames.flatMap((field) =>
-                            Object.prototype.hasOwnProperty.call(slotDrafts, field)
-                              ? [[field, slotDrafts[field]!] as const]
-                              : []
-                          )
-                        );
-                        const didSave = await onUpdateEncounterSlotFields(
+                        const didSave = await onStageEncounterVanilla(
                           table.tableId,
-                          encounterSlot.slot,
-                          [
-                            { field: encounterSpeciesFieldName, value: '0' },
-                            { field: encounterFormFieldName, value: '0' },
-                            { field: encounterProbabilityFieldName, value: '0' }
-                          ]
+                          encounterSlot.slot
                         );
-                        if (didSave) {
-                          setDraftsBySlotKey((currentDrafts) =>
-                            updateSparseFieldDraftRecordAfterStage(
-                              currentDrafts,
-                              encounterDraftKey,
-                              submittedClearFields
-                            )
-                          );
+                        if (!didSave) {
+                          return;
                         }
                       }}
-                      title="Set this SwSh encounter slot to Empty at 0% probability."
+                      title={selectedEncounterRevertMessage}
                       type="button"
                     >
                       <BusyActionContent
-                        busyLabel="Clearing"
-                        icon={<Trash2 aria-hidden="true" size={16} />}
+                        busyLabel={t('za.encounters.reverting')}
+                        icon={<RotateCcw aria-hidden="true" size={16} />}
                         isBusy={isEncounterUpdating}
-                        label="Clear Slot"
+                        label={t('za.encounters.revertToVanilla')}
                       />
                     </button>
+                    <small
+                      className={
+                        selectedEncounterHasLocalDrafts
+                          ? 'editable-field-error'
+                          : 'editable-field-status'
+                      }
+                    >
+                      {selectedEncounterRevertMessage}
+                    </small>
                   </div>
                 ) : null}
-                {isZaEncounterTable && zaSpawnerCountWarnings.length > 0 ? (
-                  <div
-                    aria-label={t('za.spawnSettings.warningHeading')}
-                    className="za-spawner-count-warnings"
-                    role="status"
-                  >
-                    <AlertTriangle aria-hidden="true" size={16} />
-                    <div>
-                      <strong>{t('za.spawnSettings.warningHeading')}</strong>
-                      {zaSpawnerCountWarnings.map((warning) => (
-                        <small key={warning}>{warning}</small>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-              </>
-            ) : (
-              <p className="empty-copy">No encounter slot selected.</p>
-            )}
-
-            {isZaEncounterTable && onStageEncounterVanilla ? (
-              <div className="za-encounter-revert-action">
-                <button
-                  aria-busy={isEncounterUpdating || undefined}
-                  className="danger-button"
-                  disabled={!canRevertSelectedZaEncounter}
-                  onClick={async () => {
-                    if (!table || !encounterSlot) {
-                      return;
-                    }
-
-                    const didSave = await onStageEncounterVanilla(
-                      table.tableId,
-                      encounterSlot.slot
-                    );
-                    if (!didSave) {
-                      return;
-                    }
-                  }}
-                  title={selectedEncounterRevertMessage}
-                  type="button"
-                >
-                  <BusyActionContent
-                    busyLabel={t('za.encounters.reverting')}
-                    icon={<RotateCcw aria-hidden="true" size={16} />}
-                    isBusy={isEncounterUpdating}
-                    label={t('za.encounters.revertToVanilla')}
-                  />
-                </button>
-                <small
-                  className={
-                    selectedEncounterHasLocalDrafts
-                      ? 'editable-field-error'
-                      : 'editable-field-status'
-                  }
-                >
-                  {selectedEncounterRevertMessage}
-                </small>
-              </div>
-            ) : null}
+              </WildEncounterSlotInspector>
+            </div>
           </div>
           {areaCopyRequest ? (
             <EncounterAreaCopyConfirmationModal
@@ -47753,6 +47806,77 @@ function SelectedEncounterPanel({
         <p className="empty-copy">No encounter table selected.</p>
       )}
     </aside>
+  );
+}
+
+function WildEncounterSlotInspector({
+  children
+}: {
+  children: ReactNode;
+}) {
+  const surface = useRef<HTMLElement>(null);
+  const content = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (!surface.current || !content.current) {
+      return;
+    }
+
+    const panel = surface.current;
+    const body = content.current;
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let height = body.offsetHeight;
+    let animation: Animation | undefined;
+    let frame = 0;
+
+    const animateHeight = () => {
+      const nextHeight = body.offsetHeight;
+      if (nextHeight === height) {
+        return;
+      }
+
+      const from = animation ? panel.getBoundingClientRect().height : height;
+      height = nextHeight;
+      animation?.cancel();
+
+      if (!reducedMotion.matches) {
+        panel.dataset.transitioning = 'true';
+        animation = panel.animate([{ height: `${from}px` }, { height: `${height}px` }], {
+          duration: 220,
+          easing: 'cubic-bezier(.2,.7,.2,1)'
+        });
+        animation.onfinish = () => {
+          animation = undefined;
+          delete panel.dataset.transitioning;
+        };
+      }
+    };
+    const observer = new ResizeObserver(() => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(animateHeight);
+    });
+    observer.observe(body);
+
+    const cancelMotion = () => {
+      animation?.cancel();
+      animation = undefined;
+      delete panel.dataset.transitioning;
+    };
+    reducedMotion.addEventListener('change', cancelMotion);
+    return () => {
+      observer.disconnect();
+      window.cancelAnimationFrame(frame);
+      cancelMotion();
+      reducedMotion.removeEventListener('change', cancelMotion);
+    };
+  }, []);
+
+  return (
+    <section aria-label="Selected encounter slot" className="wild-encounter-slot-inspector" ref={surface}>
+      <div className="wild-encounter-slot-content" ref={content}>
+        {children}
+      </div>
+    </section>
   );
 }
 
@@ -48119,17 +48243,29 @@ function ZaEncounterPlayerPartnerEditor({
 
 function SvEncounterConditionBrowser({
   onSelectTable,
+  selectedRowWeight,
   table,
   tables
 }: {
   onSelectTable: (tableId: string | null) => void;
+  selectedRowWeight: number;
   table: EncounterTableRecord;
   tables: EncounterTableRecord[];
 }) {
-  const conditionRows = useMemo(
-    () => buildSvEncounterConditionRows(table, tables),
-    [table, tables]
-  );
+  const { translateLiteral } = useLocalization();
+  const conditionRows = useMemo(() => {
+    const rows = buildSvEncounterConditionRows(table, tables);
+    const counts = new Map<string, number>();
+    const ordinals = new Map<string, number>();
+    for (const row of rows) {
+      counts.set(row.label, (counts.get(row.label) ?? 0) + 1);
+    }
+    return rows.map((row) => {
+      const ordinal = (ordinals.get(row.label) ?? 0) + 1;
+      ordinals.set(row.label, ordinal);
+      return { ...row, duplicateOrdinal: (counts.get(row.label) ?? 0) > 1 ? ordinal : null };
+    });
+  }, [table, tables]);
   const selectedRow =
     conditionRows.find((row) => row.tableId === table.tableId) ?? conditionRows[0] ?? null;
 
@@ -48145,13 +48281,12 @@ function SvEncounterConditionBrowser({
           {selectedRow.slotCount} {selectedRow.slotCount === 1 ? 'slot' : 'slots'} in the
           selected row
         </span>
-        <span>Lot weights are relative inside the selected row</span>
       </div>
 
       <div className="sv-encounter-condition-table" role="table" aria-label="S/V condition rows">
         <div className="sv-encounter-condition-row sv-encounter-condition-heading" role="row">
           <span role="columnheader">Area</span>
-          <span role="columnheader">Game</span>
+          <span role="columnheader">{translateLiteral('Version')}</span>
           <span role="columnheader">Terrain</span>
           <span role="columnheader">Time</span>
           <span role="columnheader">Biome</span>
@@ -48160,9 +48295,11 @@ function SvEncounterConditionBrowser({
           <span role="columnheader">Total weight</span>
         </div>
         {conditionRows.map((row) => (
-          <HoverTooltip content={row.label} describe={false} detail="full" key={row.tableId}>
+          <HoverTooltip content={`${row.label} · ${row.tableId}`} describe={false} detail="full" key={row.tableId}>
             <InteractiveTableRow
-              aria-label={row.label}
+              aria-label={row.duplicateOrdinal === null
+                ? row.label
+                : `${row.label} · ${translateLiteral('Row')} ${row.duplicateOrdinal}`}
               aria-selected={row.tableId === table.tableId}
               className={`sv-encounter-condition-row ${
                 row.tableId === table.tableId ? 'sv-encounter-condition-row-selected' : ''
@@ -48174,18 +48311,38 @@ function SvEncounterConditionBrowser({
               }}
               role="row"
             >
-              <span role="cell">{row.area}</span>
-              <span role="cell">{row.gameVersion}</span>
-              <span role="cell">{row.terrain}</span>
-              <span role="cell">{row.time}</span>
-              <span role="cell">{row.biome}</span>
-              <span role="cell">{row.flag}</span>
-              <span role="cell">{row.slotCount}</span>
-              <span role="cell">{row.totalWeight}</span>
+              <span role="cell" className="wild-encounter-area-cell">
+                {row.area}
+                {row.duplicateOrdinal !== null ? (
+                  <small className="wild-encounter-condition-ordinal">
+                    {translateLiteral('Row')} {row.duplicateOrdinal}
+                  </small>
+                ) : null}
+              </span>
+              <span role="cell" data-field-label={translateLiteral('Version')}>{row.gameVersion}</span>
+              <span role="cell" data-field-label={translateLiteral('Terrain')}>{row.terrain}</span>
+              <span role="cell" data-field-label={translateLiteral('Time')}>{row.time}</span>
+              <span role="cell" data-field-label={translateLiteral('Biome')}>{row.biome}</span>
+              <span role="cell" data-field-label={translateLiteral('Flag')}>{row.flag}</span>
+              <span role="cell" data-field-label={translateLiteral('Slots')}>{row.slotCount}</span>
+              <span role="cell" data-field-label={translateLiteral('Total weight')}>{row.tableId === table.tableId ? selectedRowWeight : row.totalWeight}</span>
             </InteractiveTableRow>
           </HoverTooltip>
         ))}
       </div>
+      <details className="wild-encounter-disclosure">
+        <summary>{translateLiteral('Condition details')}</summary>
+        <dl className="item-provenance-list">
+          <div>
+            <dt>{translateLiteral('Conditions')}</dt>
+            <dd>{selectedRow.label}</dd>
+          </div>
+          <div>
+            <dt>{translateLiteral('Table')}</dt>
+            <dd>{selectedRow.tableId}</dd>
+          </div>
+        </dl>
+      </details>
     </section>
   );
 }
@@ -48193,12 +48350,14 @@ function SvEncounterConditionBrowser({
 function ZaEncounterGroupBrowser({
   onSelectReference,
   pendingRecordIds,
+  projectSlot,
   selectedSlot,
   table,
   tables
 }: {
   onSelectReference: (tableId: string, slot: number) => void;
   pendingRecordIds: ReadonlySet<string>;
+  projectSlot: (table: EncounterTableRecord, slot: EncounterSlotRecord) => EncounterSlotRecord;
   selectedSlot: number | null;
   table: EncounterTableRecord;
   tables: EncounterTableRecord[];
@@ -48254,6 +48413,16 @@ function ZaEncounterGroupBrowser({
     () => buildZaEncounterGroups(groupingTables, tables),
     [groupingTables, tables]
   );
+  const projectedGroups = useMemo(
+    () => encounterGroups.map((group) => {
+      const placements = group.placements.map(({ table, slot }) => ({
+        table,
+        slot: projectSlot(table, slot)
+      }));
+      return { ...group, placements, slot: placements[0]!.slot };
+    }),
+    [encounterGroups, projectSlot]
+  );
   const displayedTableIds = new Set(displayedRows.map((row) => row.tableId));
   const displayedTables = displayedRows
     .filter(
@@ -48261,7 +48430,7 @@ function ZaEncounterGroupBrowser({
     )
     .map((row) => tableById.get(row.tableId))
     .filter((candidate): candidate is EncounterTableRecord => candidate !== undefined);
-  const visibleEncounterGroups = encounterGroups.filter((group) =>
+  const visibleEncounterGroups = projectedGroups.filter((group) =>
     group.placements.some((placement) => displayedTableIds.has(placement.table.tableId))
   );
   const rowByTableId = new Map(
@@ -48432,167 +48601,173 @@ function ZaEncounterGroupBrowser({
         </div>
       ) : null}
 
-      <div className="za-encounter-group-table" role="table" aria-label="Z-A linked encounters">
-        <div
-          className={`za-encounter-group-row za-encounter-group-heading ${
-            showCompletionRole ? 'za-encounter-group-row-with-completion' : ''
-          }`}
-          role="row"
-        >
-          <span role="columnheader">Pokemon</span>
-          <span role="columnheader">Used by</span>
-          <span role="columnheader">Levels</span>
-          <span role="columnheader">Source</span>
-          {showCompletionRole ? (
-            <span role="columnheader">{t('za.wildZoneCompletion.column')}</span>
-          ) : null}
-        </div>
-        {visibleEncounterGroups.map((group) => {
-          const groupLabel = formatZaEncounterGroupLabel(group);
-          const isSelected = group.key === selectedGroup.key;
-          const isPending = isZaEncounterGroupPending(group, pendingRecordIds);
-          const completionState = getZaWildZoneCompletionState(
-            group.placements.map(({ slot }) => slot)
-          );
-          const completionLabel =
-            completionState === 'notApplicable'
-              ? ''
-              : t(getZaWildZoneCompletionStatusKey(completionState));
-          return (
-            <InteractiveTableRow
-              aria-label={`${t('editorText.encounterGroupAria', {
-                name: groupLabel,
-                usage: translateLiteral(formatZaEncounterGroupUsage(group, table, activeBossCategoryKey)),
-                minimum: group.slot.levelMin,
-                maximum: group.slot.levelMax,
-                source: formatZaEncounterGroupSource(group)
-              })}${
-                completionLabel ? `, ${t('za.wildZoneCompletion.column')} ${completionLabel}` : ''
-              }`}
-              aria-selected={isSelected}
-              className={`za-encounter-group-row ${
-                isSelected ? 'za-encounter-group-row-selected' : ''
-              } ${isPending ? 'za-encounter-group-row-pending' : ''} ${
+      <div className="wild-encounter-linked-layout">
+        <div className="wild-encounter-linked-panel">
+          <h4>{t('za.encounters.sharedRecordHeading')}</h4>
+          <div className="za-encounter-group-table" role="table" aria-label="Z-A linked encounters">
+            <div
+              className={`za-encounter-group-row za-encounter-group-heading ${
                 showCompletionRole ? 'za-encounter-group-row-with-completion' : ''
               }`}
-              key={group.key}
-              onClick={() => selectGroup(group)}
               role="row"
             >
-              <span role="cell">{groupLabel}</span>
-              <span role="cell">
-                {formatZaEncounterGroupUsage(group, table, activeBossCategoryKey)}
-              </span>
-              <span role="cell">
-                {group.slot.levelMin}-{group.slot.levelMax}
-              </span>
-              <span role="cell">{formatZaEncounterGroupSource(group)}</span>
+              <span role="columnheader">Pokemon</span>
+              <span role="columnheader">Used by</span>
+              <span role="columnheader">Levels</span>
+              <span role="columnheader">Source</span>
               {showCompletionRole ? (
-                <span
-                  className={
-                    completionLabel
-                      ? `za-wild-zone-completion-status za-wild-zone-completion-status-${completionState}`
-                      : undefined
-                  }
-                  role="cell"
-                >
-                  {completionLabel}
-                </span>
+                <span role="columnheader">{t('za.wildZoneCompletion.column')}</span>
               ) : null}
-            </InteractiveTableRow>
-          );
-        })}
-      </div>
-
-      {selectedGroup.slotCount > 0 ? (
-        <div
-          className="za-encounter-placement-table"
-          role="table"
-          aria-label={`${selectedGroupLabel} linked spawners`}
-        >
-          <div
-            className={`za-encounter-placement-row za-encounter-placement-heading ${placementLayoutClass}`}
-            role="row"
-          >
-            <span role="columnheader">Spawner</span>
-            <span role="columnheader">Slot</span>
-            <span role="columnheader">{t('za.spawnSettings.weightLabel')}</span>
-            <span role="columnheader">Conditions</span>
-            {showPlacementAlphaChance ? (
-              <span role="columnheader">{t('za.alphaSettings.chanceLabel')}</span>
-            ) : null}
-            {selectedCompletionState !== 'notApplicable' ? (
-              <span role="columnheader">{t('za.wildZoneCompletion.column')}</span>
-            ) : null}
-          </div>
-          {selectedGroup.placements.map((placement) => {
-            const placementLabel = formatZaEncounterPlacementLabel(placement, rowByTableId);
-            const placementConditions = formatZaEncounterPlacementConditions(placement, t);
-            const isSelected =
-              placement.table.tableId === table.tableId && placement.slot.slot === selectedSlot;
-            const placementCompletionState = getZaWildZoneCompletionState([placement.slot]);
-            const placementCompletionLabel =
-              placementCompletionState === 'notApplicable'
-                ? ''
-                : t(getZaWildZoneCompletionStatusKey(placementCompletionState));
-            const placementAlphaChanceLabel = showPlacementAlphaChance
-              ? formatZaAlphaChance(placement.slot, t) ?? t('za.alphaSettings.unavailable')
-              : null;
-            const placementSummary = `${placementLabel}, ${t('za.spawnSettings.slotAria', {
-              slot: placement.slot.slot + 1,
-              weight: placement.slot.weight
-            })}, ${placementConditions}${
-              placementAlphaChanceLabel
-                ? `, ${t('za.alphaSettings.chanceLabel')} ${placementAlphaChanceLabel}`
-                : ''
-            }${
-              placementCompletionLabel
-                ? `, ${t('za.wildZoneCompletion.column')} ${placementCompletionLabel}`
-                : ''
-            }`;
-            return (
-              <HoverTooltip
-                content={placementSummary}
-                describe={false}
-                detail="full"
-                key={`${placement.table.tableId}:${placement.slot.slot}`}
-              >
+            </div>
+            {visibleEncounterGroups.map((group) => {
+              const groupLabel = formatZaEncounterGroupLabel(group);
+              const isSelected = group.key === selectedGroup.key;
+              const isPending = isZaEncounterGroupPending(group, pendingRecordIds);
+              const completionState = getZaWildZoneCompletionState(
+                group.placements.map(({ slot }) => slot)
+              );
+              const completionLabel =
+                completionState === 'notApplicable'
+                  ? ''
+                  : t(getZaWildZoneCompletionStatusKey(completionState));
+              return (
                 <InteractiveTableRow
-                  aria-label={placementSummary}
+                  aria-label={`${t('editorText.encounterGroupAria', {
+                    name: groupLabel,
+                    usage: translateLiteral(formatZaEncounterGroupUsage(group, table, activeBossCategoryKey)),
+                    minimum: group.slot.levelMin,
+                    maximum: group.slot.levelMax,
+                    source: formatZaEncounterGroupSource(group)
+                  })}${
+                    completionLabel ? `, ${t('za.wildZoneCompletion.column')} ${completionLabel}` : ''
+                  }`}
                   aria-selected={isSelected}
-                  className={`za-encounter-placement-row ${
-                    isSelected ? 'za-encounter-placement-row-selected' : ''
-                  } ${placementLayoutClass}`}
-                  onClick={() =>
-                    onSelectReference(placement.table.tableId, placement.slot.slot)
-                  }
+                  className={`za-encounter-group-row ${
+                    isSelected ? 'za-encounter-group-row-selected' : ''
+                  } ${isPending ? 'za-encounter-group-row-pending' : ''} ${
+                    showCompletionRole ? 'za-encounter-group-row-with-completion' : ''
+                  }`}
+                  key={group.key}
+                  onClick={() => selectGroup(group)}
                   role="row"
                 >
-                  <span role="cell">{placementLabel}</span>
-                  <span role="cell">{placement.slot.slot + 1}</span>
-                  <span role="cell">{placement.slot.weight}</span>
-                  <span role="cell">{placementConditions}</span>
-                  {placementAlphaChanceLabel ? (
-                    <span role="cell">{placementAlphaChanceLabel}</span>
-                  ) : null}
-                  {selectedCompletionState !== 'notApplicable' ? (
+                  <span role="cell">{groupLabel}</span>
+                  <span role="cell">
+                    {formatZaEncounterGroupUsage(group, table, activeBossCategoryKey)}
+                  </span>
+                  <span role="cell">
+                    {group.slot.levelMin}-{group.slot.levelMax}
+                  </span>
+                  <span role="cell">{formatZaEncounterGroupSource(group)}</span>
+                  {showCompletionRole ? (
                     <span
                       className={
-                        placementCompletionLabel
-                          ? `za-wild-zone-completion-status za-wild-zone-completion-status-${placementCompletionState}`
+                        completionLabel
+                          ? `za-wild-zone-completion-status za-wild-zone-completion-status-${completionState}`
                           : undefined
                       }
                       role="cell"
                     >
-                      {placementCompletionLabel}
+                      {completionLabel}
                     </span>
                   ) : null}
                 </InteractiveTableRow>
-              </HoverTooltip>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      ) : null}
+
+        <div className="wild-encounter-linked-panel">
+          <h4>{translateLiteral('Linked spawners')} <span>{selectedGroupLabel}</span></h4>
+          <div
+            className="za-encounter-placement-table"
+            role="table"
+            aria-label={`${selectedGroupLabel} linked spawners`}
+          >
+            <div
+              className={`za-encounter-placement-row za-encounter-placement-heading ${placementLayoutClass}`}
+              role="row"
+            >
+              <span role="columnheader">Spawner</span>
+              <span role="columnheader">Slot</span>
+              <span role="columnheader">{t('za.spawnSettings.weightLabel')}</span>
+              <span role="columnheader">Conditions</span>
+              {showPlacementAlphaChance ? (
+                <span role="columnheader">{t('za.alphaSettings.chanceLabel')}</span>
+              ) : null}
+              {selectedCompletionState !== 'notApplicable' ? (
+                <span role="columnheader">{t('za.wildZoneCompletion.column')}</span>
+              ) : null}
+            </div>
+            {selectedGroup.placements.map((placement) => {
+              const placementLabel = formatZaEncounterPlacementLabel(placement, rowByTableId);
+              const placementConditions = formatZaEncounterPlacementConditions(placement, t);
+              const isSelected =
+                placement.table.tableId === table.tableId && placement.slot.slot === selectedSlot;
+              const placementCompletionState = getZaWildZoneCompletionState([placement.slot]);
+              const placementCompletionLabel =
+                placementCompletionState === 'notApplicable'
+                  ? ''
+                  : t(getZaWildZoneCompletionStatusKey(placementCompletionState));
+              const placementAlphaChanceLabel = showPlacementAlphaChance
+                ? formatZaAlphaChance(placement.slot, t) ?? t('za.alphaSettings.unavailable')
+                : null;
+              const placementSummary = `${placementLabel}, ${t('za.spawnSettings.slotAria', {
+                slot: placement.slot.slot + 1,
+                weight: placement.slot.weight
+              })}, ${placementConditions}${
+                placementAlphaChanceLabel
+                  ? `, ${t('za.alphaSettings.chanceLabel')} ${placementAlphaChanceLabel}`
+                  : ''
+              }${
+                placementCompletionLabel
+                  ? `, ${t('za.wildZoneCompletion.column')} ${placementCompletionLabel}`
+                  : ''
+              }`;
+              return (
+                <HoverTooltip
+                  content={placementSummary}
+                  describe={false}
+                  detail="full"
+                  key={`${placement.table.tableId}:${placement.slot.slot}`}
+                >
+                  <InteractiveTableRow
+                    aria-label={placementSummary}
+                    aria-selected={isSelected}
+                    className={`za-encounter-placement-row ${
+                      isSelected ? 'za-encounter-placement-row-selected' : ''
+                    } ${placementLayoutClass}`}
+                    onClick={() =>
+                      onSelectReference(placement.table.tableId, placement.slot.slot)
+                    }
+                    role="row"
+                  >
+                    <span role="cell">{placementLabel}</span>
+                    <span role="cell">{placement.slot.slot + 1}</span>
+                    <span role="cell">{placement.slot.weight}</span>
+                    <span role="cell">{placementConditions}</span>
+                    {placementAlphaChanceLabel ? (
+                      <span role="cell">{placementAlphaChanceLabel}</span>
+                    ) : null}
+                    {selectedCompletionState !== 'notApplicable' ? (
+                      <span
+                        className={
+                          placementCompletionLabel
+                            ? `za-wild-zone-completion-status za-wild-zone-completion-status-${placementCompletionState}`
+                            : undefined
+                        }
+                        role="cell"
+                      >
+                        {placementCompletionLabel}
+                      </span>
+                    ) : null}
+                  </InteractiveTableRow>
+                </HoverTooltip>
+              );
+            })}
+          </div>
+        </div>
+      </div>
 
       <ZaWildZoneCompletionNote state={selectedCompletionState} />
 
