@@ -133,7 +133,8 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
-  useState
+  useState,
+  type CSSProperties
 } from 'react';
 import { useCoalescedTextInputState } from './components/useCoalescedTextInputState';
 import {
@@ -353,6 +354,8 @@ import {
 import { parseEditableIntegerDraft } from './editableFieldHelpers';
 import { getItemMachineCompatibilityRows, itemMachineCompatibilityGroup, setItemMachineCompatibilityDrafts, type ItemMachineCompatibilityRow } from './features/items/itemMachineCompatibility';
 import { getContextualItemEditableFields } from './itemsEditor';
+import { describeItemBehavior, isItemMachineField, itemPriceFields } from './itemEditorLayout';
+import { ItemBehavior, ItemDataLayout } from './features/items/ItemEditorWorkspace';
 import {
   evaluateMoveFieldsUpdate,
   formatMoveAccuracy,
@@ -23076,7 +23079,7 @@ function ItemsSection({
   selectedItemId,
   workflow
 }: ItemsSectionProps) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const showUnusedItems = useWorkbenchStore((state) => state.showUnusedItems);
   const setShowUnusedItems = useWorkbenchStore((state) => state.setShowUnusedItems);
   const loadedItems = useMemo(
@@ -23141,7 +23144,9 @@ function ItemsSection({
     () => loadedItems.find((item) => item.itemId === selectedItemId) ?? filteredItems[0] ?? null,
     [filteredItems, loadedItems, selectedItemId]
   );
-  const secondaryPriceLabels = getItemSecondaryPriceLabels(editorFamily);
+  const priceColumns = itemPriceFields.filter(([key]) =>
+    workflow?.editableFields.some(field => field.field === key)
+  );
 
   const browserControls = (
         <div className="items-toolbar">
@@ -23252,20 +23257,22 @@ function ItemsSection({
         {workflow ? (
           <SelectedItemPanel browserControls={browserControls} editorHeader={editorHeader} browser={
             <div
-              aria-colcount={8}
+              aria-colcount={4 + priceColumns.length}
               aria-label="Items"
               aria-rowcount={filteredItems.length + 1}
-              className="items-table"
+              className="items-table item-record-table"
               role="table"
+              style={{ '--item-price-columns': priceColumns.length } as CSSProperties}
             >
               <div className="items-row items-row-heading" role="row">
                 <span role="columnheader">ID</span>
                 <span role="columnheader">Name</span>
                 <span role="columnheader">Category</span>
-                <span role="columnheader">Buy</span>
-                <span role="columnheader">Sell</span>
-                <span role="columnheader">{secondaryPriceLabels.primary}</span>
-                <span role="columnheader">{secondaryPriceLabels.secondary}</span>
+                {priceColumns.map(([key, label]) => (
+                  <span role="columnheader" key={key}>
+                    {translateLiteral(editorFamily === 'sv' && key === 'wattsPrice' ? 'BP' : label)}
+                  </span>
+                ))}
                 <span role="columnheader">Source</span>
               </div>
               <VirtualTableBody
@@ -23276,16 +23283,16 @@ function ItemsSection({
                     className={`items-row ${selectedItem?.itemId === item.itemId ? 'items-row-selected' : ''} ${
                       pendingItemIds.has(item.itemId) ? 'items-row-pending' : ''
                     }`}
+                    aria-selected={selectedItem?.itemId === item.itemId}
                     onClick={() => onSelectItem(item.itemId)}
                     role="row"
                   >
                     <span role="cell">{item.itemId}</span>
                     <span role="cell">{item.name}</span>
                     <span role="cell">{item.category}</span>
-                    <span role="cell">{item.buyPrice}</span>
-                    <span role="cell">{item.sellPrice}</span>
-                    <span role="cell">{item.wattsPrice}</span>
-                    <span role="cell">{item.alternatePrice}</span>
+                    {priceColumns.map(([key]) => (
+                      <span role="cell" key={key}>{getEditableItemFieldValue(item, key)}</span>
+                    ))}
                     <span role="cell">{formatSourceLayer(item.provenance.sourceLayer)}</span>
                   </InteractiveTableRow>
                 )}
@@ -23318,17 +23325,6 @@ function ItemsSection({
       <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
     </>
   );
-}
-
-function getItemSecondaryPriceLabels(editorFamily: EditorUiFamily) {
-  switch (editorFamily) {
-    case 'sv':
-      return { primary: 'BP', secondary: 'Unused' };
-    case 'za':
-      return { primary: 'Mega Shards', secondary: 'Colorful Screws' };
-    default:
-      return { primary: 'Watts', secondary: 'Alt' };
-  }
 }
 
 type ItemEditorDraftPayload = OrdinaryFieldDraftPayload & {
@@ -23392,6 +23388,7 @@ function SelectedItemPanel({
   const [compatibilityDraftsByItemId, setCompatibilityDraftsByItemId] = useState<
     Record<string, Record<string, string>>
   >({});
+  const [itemSectionRequest, setItemSectionRequest] = useState<{ sectionId: string; focus: boolean }>();
   const [itemSourceMutationError, setItemSourceMutationError] = useState<string | null>(null);
   const [compatibilitySearchText, setCompatibilitySearchText] =
     useCoalescedTextInputState();
@@ -23400,10 +23397,6 @@ function SelectedItemPanel({
   const contextualEditableFields = useMemo(
     () => getContextualItemEditableFields(editableFields, editorFamily, item),
     [editableFields, editorFamily, item]
-  );
-  const itemFieldGroups = useMemo(
-    () => groupNumericEditableFields(contextualEditableFields, getItemEditableFieldGroup),
-    [contextualEditableFields]
   );
   const itemDraftDefaults = useMemo(
     () =>
@@ -23758,9 +23751,28 @@ function SelectedItemPanel({
     technicalMachineCompatibilityDraftDefaults
   ]);
 
+  const showMachineFields = item?.metadata.machineSlot != null ||
+    item?.metadata.isOwnedTechnicalMachineSlot === true || item?.metadata.machineMoveId != null;
+  const visibleItemFields = contextualEditableFields.filter(field =>
+    !isItemMachineField(field.field) || showMachineFields ||
+    itemDraftSummary.changedFields.some(change => change.field === field.field) ||
+    itemDraftSummary.invalidFields.some(issue => issue.field === field.field)
+  );
+  const behavior = item ? describeItemBehavior(
+    item,
+    editorFamily,
+    visibleItemFields,
+    field => getEditableItemFieldValue(item, field),
+    stagedItemChanges.filter(change =>
+      visibleItemFields.some(field => field.field === change.field && !getItemFieldDisabledReason(field, editorFamily, item))
+    ),
+    id => items.find(entry => entry.itemId === id)?.name
+  ) : [];
+
   return (
     <SectionedEditorWorkspace sessionKey={`${ordinaryDraftProject?.projectId ?? 'project'}:${editorFamily}:items`}
       initialSection="itemData" browserVisibleRows={4} browser={browser}
+      activeSectionRequest={itemSectionRequest} sectionTransitionDuration={250}
       browserControls={browserControls} sessionBar={<>{editorHeader}{editSession && item ? (
               <EditorSessionBarActions>
                 <button
@@ -23878,9 +23890,12 @@ function SelectedItemPanel({
       {item ? (
         <>
           <EditorWorkspaceSection id="details" label={t('editorSections.details')}>
-          <div className="editor-detail-columns">
+          <div className="item-editor-columns">
             <EditorDetailGroup label={translateLiteral('Item')}>
               <dl className="editor-detail-list">
+                <EditorDetailValue label={translateLiteral('ID')} dataValue>{item.itemId}</EditorDetailValue>
+                <EditorDetailValue label={translateLiteral('Name')} dataValue>{item.name}</EditorDetailValue>
+                <EditorDetailValue label={translateLiteral('Category')}>{item.category}</EditorDetailValue>
                 <EditorDetailValue label={translateLiteral('Shared row')}>{formatSharedItemIds(item)}</EditorDetailValue>
                 {editorFamily === 'za' && item.metadata.machineMoveId !== null ? <>
                   <EditorDetailValue label={translateLiteral('Current TM move')}>{item.metadata.machineMoveName ?? item.metadata.machineMoveId}</EditorDetailValue>
@@ -23911,91 +23926,86 @@ function SelectedItemPanel({
           </EditorWorkspaceSection>
 
           <EditorWorkspaceSection id="itemData" label={translateLiteral('Item Data')}
-            modified={itemDraftSummary.changedFields.length > 0 || itemDraftSummary.invalidFields.length > 0}
-            invalid={itemDraftSummary.invalidFields.length > 0}>
+            modified={itemDraftSummary.changedFields.length > 0 || itemDraftSummary.invalidFields.length > 0 || localTechnicalMachineCompatibilityDraftCount > 0}
+            invalid={itemDraftSummary.invalidFields.length > 0 || hasUnavailableTechnicalMachineCompatibilityDrafts || hasConflictingTechnicalMachineDrafts}>
           <div className="item-edit-form">
 
-            <div className="editable-field-groups">
-              {editorFamily === 'za' && item.metadata.machineMoveId !== null ? (
-                <p className="field-note">
-                  Changing a TM move migrates compatible Pokemon rows and synchronizes the disc icon in the same
-                  reviewed output.
-                </p>
-              ) : null}
-              {editorFamily === 'za' &&
-              item.metadata.isProjectedTechnicalMachineSlot &&
+            {item.sharedItemIds.length > 1 ? (
+              <p className="field-note item-shared-warning" role="status">
+                <AlertTriangle aria-hidden="true" size={16} />
+                {translateLiteral('Changes affect every item that shares this row.')} {formatSharedItemIds(item)}
+              </p>
+            ) : null}
+            {editorFamily === 'za' && item.metadata.isProjectedTechnicalMachineSlot &&
               item.metadata.baseMachineMoveId === null ? (
                 <p className="field-note">{t('za.items.tmProjected.assignmentHelp')}</p>
               ) : null}
-              {itemFieldGroups.map((group) => (
-                <fieldset
-                  className={[
-                    'editable-field-group',
-                    group.group === 'Use Flags' ? 'item-field-group-wide' : '',
-                    group.group === 'Use Flags' ? 'item-use-flags-group' : ''
-                  ].filter(Boolean).join(' ')}
-                  key={group.group}
-                >
-                  <legend>{group.group}</legend>
-                  <div className="editable-field-grid">
-                    {group.fields.map((field) => {
-                      const currentValue = getEditableItemFieldValue(item, field.field);
-                      const draftValue = fieldDrafts[field.field] ?? '';
-                      const draftState = getTrainerFieldDraftState(
-                        draftValue,
-                        currentValue,
-                        field
-                      );
-                      const disabledReason =
-                        getItemFieldDisabledReason(field, editorFamily, item) ??
-                        (field.field === itemMachineMoveIdFieldName &&
-                          !hasLocalTechnicalMachineMoveDraft
-                          ? technicalMachineMoveDraftBlockedReason
-                          : null);
+            <ItemDataLayout
+              fields={visibleItemFields}
+              keyFor={field => field.field}
+              hasIssue={field => itemDraftSummary.invalidFields.some(issue => issue.field === field.field)}
+              machineHelp={editorFamily === 'za' && item.metadata.machineMoveId !== null ? (
+                <ContextHelp label={translateLiteral('TM assignment')}>
+                  {translateLiteral('Changing a TM move migrates compatible Pokemon rows and synchronizes the disc icon in the same reviewed output.')}
+                </ContextHelp>
+              ) : undefined}
+              renderField={field => {
+                const currentValue = getEditableItemFieldValue(item, field.field);
+                const draftValue = fieldDrafts[field.field] ?? '';
+                const draftState = getTrainerFieldDraftState(
+                  draftValue,
+                  currentValue,
+                  field
+                );
+                const disabledReason =
+                  getItemFieldDisabledReason(field, editorFamily, item) ??
+                  (field.field === itemMachineMoveIdFieldName &&
+                    !hasLocalTechnicalMachineMoveDraft
+                    ? technicalMachineMoveDraftBlockedReason
+                    : null);
 
-                      return (
-                        <GiftPokemonDraftField
-                          currentValue={currentValue}
-                          disabled={
-                            !canEditItems ||
-                            editSession === null ||
-                            disabledReason !== null
-                          }
-                          disabledReason={disabledReason ?? undefined}
-                          draftState={draftState}
-                          draftValue={draftValue}
-                          field={field}
-                          helpDomain="items"
-                          helpGame={editorFamily}
-                          helpText={field.helpText}
-                          idPrefix="item-field"
-                          key={field.field}
-                          onChange={(value) => {
-                            const nextDrafts = synchronizeLinkedItemPriceDrafts(
-                              field.field,
-                              value,
-                              {
-                                ...fieldDrafts,
-                                [field.field]: value
-                              },
-                              itemDraftDefaults
-                            );
-                            setFieldDraftsByItemId((currentDrafts) =>
-                              setSparseFieldDraftRecord(
-                                currentDrafts,
-                                getItemStorageDraftKey(item),
-                                nextDrafts,
-                                itemDraftDefaults
-                              )
-                            );
-                          }}
-                        />
+                return (
+                  <GiftPokemonDraftField
+                    checkbox
+                    wrapSelectedValue
+                    currentValue={currentValue}
+                    disabled={
+                      !canEditItems ||
+                      editSession === null ||
+                      disabledReason !== null
+                    }
+                    disabledReason={disabledReason ?? undefined}
+                    draftState={draftState}
+                    draftValue={draftValue}
+                    field={field}
+                    helpDomain="items"
+                    helpGame={editorFamily}
+                    helpText={field.helpText}
+                    idPrefix="item-field"
+                    key={field.field}
+                    onChange={(value) => {
+                      const nextDrafts = synchronizeLinkedItemPriceDrafts(
+                        field.field,
+                        value,
+                        {
+                          ...fieldDrafts,
+                          [field.field]: value
+                        },
+                        itemDraftDefaults
                       );
-                    })}
-                  </div>
-                </fieldset>
-              ))}
-            </div>
+                      setFieldDraftsByItemId((currentDrafts) =>
+                        setSparseFieldDraftRecord(
+                          currentDrafts,
+                          getItemStorageDraftKey(item),
+                          nextDrafts,
+                          itemDraftDefaults
+                        )
+                      );
+                    }}
+                  />
+                );
+              }}
+            />
             {onStageItemVanilla ? (
               <div className="za-encounter-revert-action">
                 <button
@@ -24047,12 +24057,15 @@ function SelectedItemPanel({
                 </small>
               </div>
             ) : null}
-          </div>
-          </EditorWorkspaceSection>
-
-          {showTechnicalMachineCompatibility ? (
-            <EditorWorkspaceSection id="compatibility" label={t('za.items.compatibility.heading')}
-              modified={localTechnicalMachineCompatibilityDraftCount > 0} invalid={hasUnavailableTechnicalMachineCompatibilityDrafts || hasConflictingTechnicalMachineDrafts}>
+            {showTechnicalMachineCompatibility ? (
+              <details className="item-disclosure" key={item.itemId}>
+                <summary>
+                  {t('za.items.compatibility.heading')}
+                  {localTechnicalMachineCompatibilityDraftCount > 0 ? <span className="editable-field-status"> ({localTechnicalMachineCompatibilityDraftCount})</span> : null}
+                  {hasUnavailableTechnicalMachineCompatibilityDrafts || hasConflictingTechnicalMachineDrafts ? (
+                    <span className="editable-field-error">{translateLiteral('Review required')}</span>
+                  ) : null}
+                </summary>
             <section className="inspector-block za-tm-compatibility-block">
               <div className="za-tm-compatibility-heading">
                 <h4>{t('za.items.compatibility.heading')}</h4>
@@ -24210,24 +24223,14 @@ function SelectedItemPanel({
                 </div>
               )}
             </section>
-            </EditorWorkspaceSection>
-          ) : null}
+              </details>
+            ) : null}
+          </div>
+          </EditorWorkspaceSection>
 
-          {item.detailGroups.map((group) => (
-            <EditorWorkspaceSection id={`detail-${encodeURIComponent(group.label)}`} label={translateLiteral(group.label)} key={group.label}>
-            <section className="inspector-block" key={group.label}>
-              <h4>{group.label}</h4>
-              <dl className="item-provenance-list compact-dl">
-                {group.details.map((detail) => (
-                  <div key={`${group.label}:${detail.label}`}>
-                    <dt>{detail.label}</dt>
-                    <dd>{detail.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-            </EditorWorkspaceSection>
-          ))}
+          <EditorWorkspaceSection id="behavior" label={translateLiteral('In-Game Behavior')}>
+            <ItemBehavior groups={behavior} onEdit={() => setItemSectionRequest({ sectionId: 'itemData', focus: true })} />
+          </EditorWorkspaceSection>
         </>
       ) : (
         <p className="empty-copy">No item selected.</p>
@@ -37639,53 +37642,6 @@ function groupNumericEditableFields<TField extends NumericEditableField>(
   return groups;
 }
 
-function getItemEditableFieldGroup(field: ItemEditableField & { group?: string }) {
-  const fieldName = field.field.toLocaleLowerCase();
-
-  if (field.group) {
-    return field.group;
-  }
-
-  if (
-    field.field === itemMachineMoveIdFieldName ||
-    field.field === itemTechnicalMachineNumberFieldName
-  ) {
-    return 'Technical Machine';
-  }
-
-  if (
-    field.field === 'buyPrice' ||
-    field.field === 'sellPrice' ||
-    field.field === 'wattsPrice' ||
-    field.field === 'alternatePrice'
-  ) {
-    return 'Prices';
-  }
-
-  if (
-    field.field === 'pouch' ||
-    fieldName.includes('sort') ||
-    fieldName.includes('category')
-  ) {
-    return 'Identity and Inventory';
-  }
-
-  if (field.valueKind === 'boolean') {
-    return 'Use Flags';
-  }
-
-  if (
-    fieldName.includes('heal') ||
-    fieldName.startsWith('ev') ||
-    fieldName.includes('friendship') ||
-    fieldName.includes('pp')
-  ) {
-    return 'Use Effects';
-  }
-
-  return 'Item Data';
-}
-
 function toNumericEditableField(field: MoveEditableField): NumericEditableField {
   return {
     field: field.field,
@@ -38293,10 +38249,17 @@ function GiftPokemonDraftField({
       }`}
     >
       <FieldLabel help={localizedFieldHelpText} htmlFor={inputId} label={localizedFieldLabel} />
-      {checkbox ? (
-        <input id={inputId} type="checkbox" aria-describedby={ariaDescribedBy}
-          aria-invalid={!draftState.isValid || undefined} disabled={effectiveDisabled}
-          checked={draftValue === '1'} onChange={event => onChange(event.target.checked ? '1' : '0')} />
+      {field.valueKind === 'boolean' && checkbox ? (
+        <input
+          id={inputId}
+          type="checkbox"
+          className="km-choice-control"
+          aria-describedby={ariaDescribedBy}
+          aria-invalid={!draftState.isValid || undefined}
+          disabled={effectiveDisabled}
+          checked={draftValue === '1'}
+          onChange={event => onChange(event.target.checked ? '1' : '0')}
+        />
       ) : field.valueKind === 'boolean' ? (
         <SearchableOptionInput
           ariaDescribedBy={ariaDescribedBy}

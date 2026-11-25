@@ -74,7 +74,7 @@ type WorkspaceProps = {
   browserVisibleRows?: number;
   compactFields?: boolean;
   alwaysOpen?: boolean;
-  activeSectionRequest?: { sectionId: string };
+  activeSectionRequest?: { sectionId: string; focus?: boolean };
   sectionTransitionDuration?: number;
   sectionShortcut?: { sectionId: string; label: string; icon: ReactNode; controls: string; expanded: boolean; onActivate: (trigger: HTMLButtonElement) => void; onClose: () => void };
   sessionBar?: ReactNode;
@@ -123,7 +123,10 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
     if (sectionShortcut?.expanded && sectionShortcut.sectionId !== active) sectionShortcut.onClose();
   }, [active, sectionShortcut]);
   useLayoutEffect(() => {
-    if (activeSectionRequest) setRequested(activeSectionRequest.sectionId);
+    if (activeSectionRequest) {
+      setRequested(activeSectionRequest.sectionId);
+      if (activeSectionRequest.focus) selectors.current.get(activeSectionRequest.sectionId)?.focus({ preventScroll: true });
+    }
   }, [activeSectionRequest]);
   useLayoutEffect(() => { session.active = requested; }, [requested, session]);
 

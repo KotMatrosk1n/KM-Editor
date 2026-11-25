@@ -164,7 +164,18 @@ internal sealed class PlaEconomyCatalog
         {
             var item = ItemId(id);
             var table = edited is null ? items : new PlaItemTable(edited);
-            return new(id, ItemLabel(item), Keys[kind].ToDictionary(key => key, key => Number(table.Value(item, key))));
+            var layered = catalog.Scope.OutputState(ItemsPath).Exists;
+            return new(id, ItemLabel(item), Keys[kind].ToDictionary(key => key, key => Number(table.Value(item, key))))
+            {
+                Metadata = new Dictionary<string, string>
+                {
+                    ["sourceFile"] = layered
+                        ? PlaSourceScope.Resolve(catalog.Scope.Paths.OutputRootPath!, PlaSourceScope.OutputPath(ItemsPath))
+                        : PlaSourceScope.Resolve(catalog.Scope.Paths.BaseRomFsPath!, ItemsPath),
+                    ["sourceLayer"] = layered ? "layered" : "base",
+                    ["fileState"] = layered ? "layeredOverride" : "baseOnly",
+                },
+            };
         }
         var source = tables[kind];
         var buffer = edited is null ? source.Buffer : new PlaFlatBuffer(edited);
