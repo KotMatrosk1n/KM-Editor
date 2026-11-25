@@ -72,7 +72,12 @@ internal sealed class PlaWorkflowCache(PlaCacheManager manager)
         static string Root(string? path) => string.IsNullOrWhiteSpace(path) ? "" : OperatingSystem.IsWindows()
             ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)).ToUpperInvariant() : Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
         var key = JsonSerializer.Serialize(new[] { Root(scope.Paths.BaseRomFsPath), Root(scope.Paths.BaseExeFsPath),
-            Root(scope.Paths.PokemonLegendsArceusSupportFolderPath), scope.Language, kind == "moves" ? "moves-v2" : kind, textFile ?? "",
+            Root(scope.Paths.PokemonLegendsArceusSupportFolderPath), scope.Language, kind switch
+            {
+                "moves" => "moves-v2",
+                "items" => "items-with-provenance",
+                _ => kind,
+            }, textFile ?? "",
             layered ? Root(scope.Paths.OutputRootPath) : "" });
         return new("editor-listing", PlaSourceScope.Hash(Encoding.UTF8.GetBytes(key)),
             PlaWildCatalog.Supports(kind) || PlaEventCatalog.Supports(kind) || kind == "weather" || PlaSettingsCatalog.Supports(kind)
