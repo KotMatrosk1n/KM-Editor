@@ -21,13 +21,6 @@
 .sectioned-editor-workspace .trainers-toolbar .metric { min-height: 0; padding: 6px 8px; }
 .sectioned-editor-workspace .trainers-toolbar .metric-label { font-size: .75rem; }
 .sectioned-editor-workspace .trainers-toolbar .metric-value { font-size: .875rem; }
-.sectioned-editor-workspace .trainer-selection-details { display: block; flex-shrink: 0; padding: 8px 12px; }
-.sectioned-editor-workspace .trainer-selection-details > .panel-heading { margin-bottom: 6px; }
-.sectioned-editor-workspace .trainer-selection-details > .item-provenance-list {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr)); gap: 6px 12px; margin: 0;
-}
-.sectioned-editor-workspace .trainer-selection-details .item-provenance-list :is(dt, dd) { font-size: .75rem; }
-.sectioned-editor-workspace .trainer-selection-details .item-provenance-list dd { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sectioned-editor-workspace .trainer-edit-form { margin: 0; padding: 0; border: 0; }
 .sectioned-editor-workspace .trainer-party-header { padding-top: 0; border-top: 0; flex-wrap: wrap; }
 .sectioned-editor-workspace .editor-workspace-resizer {

@@ -340,7 +340,8 @@ internal sealed class ZaTrainersWorkflowService
                 ClassSourceLayer: null,
                 source.FileState,
                 source.FileState,
-                ClassFileState: null),
+                ClassFileState: null,
+                source.StoragePath),
             trainer.Rank,
             trainer.MegaEvolution,
             trainer.LastHand);
@@ -497,7 +498,8 @@ internal sealed class ZaTrainersWorkflowService
                 ClassSourceLayer: null,
                 source.FileState,
                 source.FileState,
-                ClassFileState: null),
+                ClassFileState: null,
+                source.StoragePath),
             trainer.Rank,
             trainer.MegaEvolution,
             trainer.LastHand)

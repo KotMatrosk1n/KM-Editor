@@ -2,6 +2,20 @@
 
 type TrainerFamily = 'swsh' | 'sv' | 'za';
 
+// Display groups only. The stored masks and the S/V doubles alias are owned by the flag controls.
+export function getTrainerAiFlagGroup(family: TrainerFamily, bit: number) {
+  if (family === 'swsh' && [6, 7, 8, 11].includes(bit)) {
+    return 'trainers.layout.aiFireGym';
+  }
+  if (bit <= 2 || (family !== 'za' && bit === 5)) {
+    return 'trainers.layout.aiMoveScoring';
+  }
+  if (family === 'swsh' ? [3, 4, 9].includes(bit) : family === 'sv' && bit === 3) {
+    return 'trainers.layout.aiBattleBehavior';
+  }
+  return 'trainers.layout.aiTrainerActions';
+}
+
 export function buildZaTrainerChangeUpdates(trainers: readonly { trainerId: number; aiFlags: number }[]) {
   return trainers.flatMap(({ trainerId, aiFlags }) => {
     const enabled = aiFlags | (1 << 7);

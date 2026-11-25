@@ -30,7 +30,8 @@ public sealed record ZaTrainerProvenance(
     ProjectFileLayer? ClassSourceLayer,
     ProjectFileGraphEntryState FileState,
     ProjectFileGraphEntryState TeamFileState,
-    ProjectFileGraphEntryState? ClassFileState);
+    ProjectFileGraphEntryState? ClassFileState,
+    string? StoragePath = null);
 
 public sealed record ZaTrainerPokemonRecord(
     int Slot,
