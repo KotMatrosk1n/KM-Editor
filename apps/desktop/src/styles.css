@@ -8409,7 +8409,6 @@ h2 {
   grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, 160px));
 }
 
-.placement-category-tabs,
 .trainer-category-tabs {
   margin-top: 12px;
 }
@@ -8440,25 +8439,6 @@ h2 {
   color: #10192b;
   background: var(--color-gold);
   border-color: transparent;
-}
-
-.placement-read-only-field input:disabled {
-  color: var(--color-text-muted);
-  background-color: var(--color-canvas);
-  border-style: dashed;
-  opacity: 1;
-  text-overflow: ellipsis;
-}
-
-.placement-layout {
-  grid-template-columns: minmax(360px, 0.78fr) minmax(560px, 1.22fr);
-}
-
-.placement-browser-stack {
-  display: grid;
-  gap: 10px;
-  align-content: start;
-  min-width: 0;
 }
 
 .placement-object-table {
@@ -8527,18 +8507,6 @@ h2 {
 .placement-pagination .secondary-button {
   min-height: 34px;
   padding: 7px 12px;
-}
-
-.placement-field-groups {
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
-}
-
-.placement-field-groups .editable-field-group {
-  padding: 10px;
-}
-
-.placement-field-grid {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 178px), 1fr));
 }
 
 .placement-object-row,
@@ -14347,7 +14315,6 @@ input {
   .encounters-layout,
   .flagwork-layout,
   .royal-candy-layout,
-  .placement-layout,
   .behavior-layout,
   .shiny-lock-toolbar,
   .swsh-pokemon-layout,
@@ -14588,10 +14555,7 @@ input {
   .encounter-inspector > .item-provenance-list,
   .compact-dl,
   .trainer-field-grid,
-  .encounter-field-grid,
-  .placement-layout,
-  .placement-field-grid,
-  .placement-field-groups {
+  .encounter-field-grid {
     grid-template-columns: 1fr;
   }
 

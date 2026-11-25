@@ -1,0 +1,199 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+.placement-toolbar, .placement-browser-counts, .placement-selected-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem 1rem;
+}
+.placement-toolbar > .items-search {
+  flex: 1 1 16rem;
+  min-width: 0;
+  margin: 0;
+}
+.placement-browser-counts, .placement-selected-meta {
+  color: var(--color-text-muted);
+  font-size: .8125rem;
+}
+.placement-browser-counts strong {
+  margin-inline-start: .2rem;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+.placement-category-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .375rem;
+}
+.placement-category-tabs .placement-category-tab {
+  max-width: 100%;
+  margin: 0;
+  padding: .26rem .5rem;
+  text-align: start;
+}
+.placement-category-tab span {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.placement-category-tabs .placement-category-tab[aria-selected='true'] {
+  color: var(--color-text);
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-control));
+  box-shadow: inset 0 -2px 0 var(--color-accent);
+}
+.placement-category-tabs .placement-category-tab[aria-selected='true'] small {
+  color: var(--color-text);
+  background: var(--color-control);
+  border-color: var(--color-accent);
+}
+.placement-object-table {
+  --editor-row-height: 56px;
+}
+.placement-selected {
+  display: grid;
+  gap: .4rem;
+  min-width: 0;
+  padding: .33rem .18rem 0;
+}
+.placement-selected-record {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .25rem .85rem;
+  min-width: 0;
+}
+.placement-selected .editor-record-heading h3 {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.placement-selected-meta {
+  gap: .25rem .8rem;
+  overflow-wrap: anywhere;
+}
+.placement-record-status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+  font-size: .7rem;
+  font-weight: 800;
+}
+.placement-record-status > span {
+  padding: 1px .32rem;
+  border: 1px solid currentColor;
+  border-radius: .25rem;
+  line-height: 1.25;
+}
+.placement-record-status [data-state='unstaged'] { color: var(--color-gold); }
+.placement-record-status [data-state='staged'] { color: var(--color-success); }
+
+.placement-data-layout, .placement-data-fields, .placement-technical-layout, .placement-entry-tables {
+  display: grid;
+  align-items: start;
+  gap: .65rem;
+  min-width: 0;
+}
+.placement-technical-layout {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18.5rem), 1fr));
+}
+.placement-entry-tables {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  padding: .45rem;
+}
+.placement-technical-layout > .editor-detail-group:has(> .placement-entry-tables) {
+  grid-column: 1 / -1;
+}
+@container editorWorkspace (min-width: 48rem) {
+  .placement-data-layout:has(> .editor-detail-group + .placement-data-fields) {
+    grid-template-columns: minmax(28rem, 1.6fr) minmax(0, 1fr);
+  }
+}
+.placement-transform-table, .placement-entry-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  text-align: start;
+  font-size: .8125rem;
+}
+.placement-transform-table thead th:first-child {
+  width: clamp(4.65rem, 21%, 6.2rem);
+}
+.placement-entry-table thead th:first-child { width: 3.4rem; }
+.placement-transform-table :is(th, td), .placement-entry-table :is(th, td) {
+  padding: .24rem .35rem;
+  border-block-end: 1px solid var(--color-border);
+  text-align: start;
+  vertical-align: top;
+}
+.placement-transform-table :is(thead, tbody th), .placement-entry-table :is(thead, tbody th) {
+  color: var(--color-text-muted);
+}
+.placement-transform-table tbody tr:last-child > *, .placement-entry-table tbody tr:last-child > * {
+  border-block-end: 0;
+}
+.placement-entry-table caption {
+  padding: .2rem .35rem .35rem;
+  text-align: start;
+}
+.placement-entry-table caption span {
+  margin-inline-start: .4rem;
+  color: var(--color-text-muted);
+}
+.placement-entry-table caption .context-help-trigger { margin-inline-start: .3rem; }
+.placement-field-list > .placement-field {
+  grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
+  column-gap: .55rem;
+  align-items: start;
+  padding: .3rem .55rem;
+}
+.placement-field-list > .placement-field + .placement-field { border-block-start: 1px solid var(--color-border); }
+.placement-field {
+  display: grid;
+  min-width: 0;
+  gap: .15rem .2rem;
+  font-size: .8125rem;
+}
+.placement-field :is(.placement-field-label, .editable-field-label-row) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .18rem .35rem;
+  min-width: 0;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+:is(.placement-transform-table, .placement-entry-table) .placement-field:has(.placement-field-label) {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+:is(.placement-transform-table, .placement-entry-table) .placement-field-label {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+}
+:is(.placement-transform-table, .placement-entry-table) .placement-field-label + :is(input, .placement-selectable-value) {
+  grid-column: 1;
+  grid-row: 1;
+}
+.placement-field > input {
+  width: 100%;
+  min-height: 1.95rem;
+  padding: .25rem .4rem;
+  color: var(--color-text);
+  background: var(--color-control);
+  border: 1px solid var(--color-control-border);
+  border-radius: .28rem;
+  font: inherit;
+}
+.placement-field > input:disabled { opacity: .65; }
+.placement-field > input[type='number'] { appearance: textfield; }
+.placement-field > input[type='number']::-webkit-inner-spin-button { appearance: none; margin: 0; }
+.placement-field > small { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.placement-field-list .placement-field > small { grid-column: 2; }
+.placement-details dd, .placement-selectable-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.placement-selectable-value { font-variant-numeric: tabular-nums; }
+.placement-selectable-value small { display: block; color: var(--color-text-muted); }
+.placement-summary-value { display: block; padding: .35rem .65rem; }
