@@ -196,9 +196,10 @@
 .workspace-content[data-editor-workspace] .shop-inventory-editor-heading { background: var(--color-surface-strong); }
 .workspace-content[data-editor-workspace] .shop-inventory-editor-row-selected { background: var(--property-selected); }
 .workspace-content[data-editor-workspace] .shop-inventory-editor-row .path-field { gap: .18rem; min-width: 0; }
-.workspace-content[data-editor-workspace] .text-token-toolbar { display: flex; flex-wrap: wrap; gap: .3rem; margin: .2rem 0; }
-.workspace-content[data-editor-workspace] .text-token-button { min-height: 1.95rem; padding: .2rem .55rem; font-size: .78rem; }
 .workspace-content[data-editor-workspace] .text-edit-form textarea { min-height: 6rem; }
+.workspace-content[data-editor-workspace] .text-inspector .text-source-file-detail {
+  grid-template-columns: minmax(min(100%, 7rem), auto) minmax(0, 1fr);
+}
 .workspace-content[data-editor-workspace] .text-edit-form .form-actions { margin: 0; }
 
 /* Tools combine a compact status strip, the active control surface, and technical details. */

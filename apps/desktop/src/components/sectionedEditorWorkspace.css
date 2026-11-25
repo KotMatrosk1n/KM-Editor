@@ -105,24 +105,6 @@
 .sectioned-editor-workspace[data-compact-fields] .items-toolbar .metric { min-height: 0; padding: 4px 8px; }
 .sectioned-editor-workspace[data-compact-fields] .items-toolbar .metric-value { font-size: .875rem; }
 .sectioned-editor-workspace[data-compact-fields] :is(.items-toolbar, .pla-pagination) .items-search { min-width: 0; }
-.text-layout .editor-workspace-chrome .text-toolbar {
-  grid-template-columns: minmax(125px, .8fr) minmax(150px, 1.5fr) repeat(3, minmax(76px, .45fr));
-  gap: 6px;
-}
-.text-layout .editor-workspace-chrome .text-toolbar .text-language-field { gap: 4px; }
-.text-layout .editor-workspace-chrome .text-category-browser { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0; padding: 5px; }
-.text-layout .editor-workspace-chrome .text-category-tabs {
-  display: flex; flex-wrap: nowrap; gap: 5px; min-width: 0; overflow-x: auto; padding: 2px; scrollbar-width: thin;
-}
-.text-layout .editor-workspace-chrome .text-category-tabs button {
-  flex: 0 0 auto; display: flex; gap: 6px; min-height: 32px; width: auto; padding: 4px 8px; white-space: nowrap;
-}
-.text-layout .editor-workspace-chrome .text-category-context-help { flex: 0 0 auto; margin: 0; padding: 0; }
-.text-layout .editor-workspace-chrome .text-category-context-help > strong { display: none; }
-@container editorWorkspace (max-width: 660px) {
-  .text-layout .editor-workspace-chrome .text-toolbar { grid-template-columns: minmax(120px, .8fr) minmax(0, 1fr); }
-  .text-layout .editor-workspace-chrome .text-toolbar .metric { display: none; }
-}
 .sectioned-editor-workspace[data-compact-fields] .item-provenance-list {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: 8px 12px;
 }
