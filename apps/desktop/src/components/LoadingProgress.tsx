@@ -37,6 +37,30 @@ const statusIcons = {
   idle: Circle
 };
 
+export function LoadingProgressBar({ label, measurement }: {
+  label: string;
+  measurement?: { value: number; max: number; valueText?: string };
+}) {
+  const style = measurement
+    ? { '--km-loading-progress-value': `${(measurement.value / measurement.max) * 100}%` } as CSSProperties
+    : undefined;
+
+  return (
+    <>
+      <div aria-hidden="true" className={`km-loading-progress-visual${measurement ? ' is-determinate' : ''}`}>
+        <span className="km-loading-progress-indicator" style={style} />
+      </div>
+      <progress
+        aria-label={label}
+        aria-valuetext={measurement?.valueText}
+        className="km-loading-progress-native"
+        max={measurement?.max}
+        value={measurement?.value}
+      />
+    </>
+  );
+}
+
 export function LoadingProgressSteps({ label, steps, status = 'running' }: {
   label: string;
   steps: readonly ProgressStep[];
@@ -125,9 +149,6 @@ export function LoadingProgress({
     : boundedCompleted >= total
       ? 100
       : Math.min(99, Math.floor(percentage));
-  const indicatorStyle = percentage === null
-    ? undefined
-    : { '--km-loading-progress-value': `${percentage}%` } as CSSProperties;
   const classes = ['km-loading-progress', `is-${status}`, className].filter(Boolean).join(' ');
   const Icon = statusIcons[status];
   const summary = cancellationRequested && running ? t('progressFeedback.canceling')
@@ -171,22 +192,14 @@ export function LoadingProgress({
           </span>
         ) : null}
       </div> : null}
-      {running || isDeterminate ? <><div
-        aria-hidden="true"
-        className={`km-loading-progress-visual${isDeterminate ? ' is-determinate' : ''}`}
-      >
-        <span className="km-loading-progress-indicator" style={indicatorStyle} />
-      </div>
-      <progress
-        aria-label={detail ?? label}
-        aria-valuetext={isDeterminate && boundedCompleted !== null && total !== undefined
-          ? `${count} (${displayedPercentage}%)`
-          : undefined}
-        className="km-loading-progress-native"
-        {...(isDeterminate && boundedCompleted !== null && total !== undefined
-          ? { max: total, value: boundedCompleted }
-          : {})}
-      /></> : null}
+      {running || isDeterminate ? (
+        <LoadingProgressBar
+          label={detail ?? label}
+          measurement={boundedCompleted !== null && total !== undefined
+            ? { value: boundedCompleted, max: total, valueText: `${count} (${displayedPercentage}%)` }
+            : undefined}
+        />
+      ) : null}
       {children ? <div className="km-loading-progress-footer">{children}</div> : null}
     </section>
   );

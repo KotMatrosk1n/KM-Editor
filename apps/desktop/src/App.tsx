@@ -449,7 +449,7 @@ import { useEditorCategories } from './features/categories/categoryPreferences';
 import { isCustomCategoryId } from './features/categories/categoryLayout';
 import { AppSidebar } from './components/AppSidebar';
 import { WorkspaceHeader } from './components/WorkspaceHeader';
-import { LoadingProgress, LoadingProgressSteps } from './components/LoadingProgress';
+import { LoadingProgress, LoadingProgressBar, LoadingProgressSteps } from './components/LoadingProgress';
 import { EditorOperationProgress, useEditorOperationProgress, type EditorProgressDetails } from './components/EditorOperationProgress';
 import {
   TrainerPartySlotContextMenu,
@@ -22866,6 +22866,7 @@ function SvCacheProgressPanel({
             : effectiveStatus!.message;
 
   const measured = !isMinimal && effectiveStatus !== null && totalUnitCount > 0;
+  const showProgress = measured || isChecking || (isError && isRetrying);
   const sizeLabel = effectiveStatus ? formatCacheSizeLabel(
     effectiveStatus.cacheSizeBytes, formatLocale, t('settings.cache.size.none'), translateLiteral('Unavailable')
   ) : null;
@@ -22873,84 +22874,91 @@ function SvCacheProgressPanel({
     ? isWarmupPaused ? 'Retrying cache build' : 'Retrying cache check'
     : phaseLabel);
   return (
-    <details className="project-setup-disclosure">
-      <summary>
-        <Layers aria-hidden="true" size={16} />
-        <strong>{cacheTitle}</strong>
-        <span className="project-setup-cache-state">{statusLabel}</span>
-        {measured ? <span>{percent}%</span> : null}
-        {sizeLabel ? <span>{sizeLabel}</span> : null}
-        <ChevronDown aria-hidden="true" size={16} />
-      </summary>
-      <div className="project-setup-cache-detail">
-      <p>{translateLiteral(message)}</p>
-      {measured ? <progress aria-label={translateLiteral('Progress')} max={totalUnitCount}
-        value={completedUnitCount} /> : null}
-      <dl className="work-progress-detail">
-        <div>
-          <dt>Mode</dt>
-          <dd>
-            {isAwaitingValidation
-              ? translateLiteral('Not checked')
-              : isValidatingPaths
-                ? validationLabel
-              : isError && !effectiveStatus
-              ? 'Unavailable'
-              : isError
-                ? `${formatSvCacheModeLabel(effectiveStatus!.settings.mode)} (last known)`
-                : isSetupRequired
-                  ? 'Setup required'
-                  : effectiveStatus
-                    ? formatSvCacheModeLabel(effectiveStatus.settings.mode)
-                    : 'Checking'}
-          </dd>
+    <div className="project-setup-cache">
+      <details className="project-setup-disclosure">
+        <summary>
+          <Layers aria-hidden="true" size={16} />
+          <strong>{cacheTitle}</strong>
+          <span className="project-setup-cache-state">{statusLabel}</span>
+          {measured ? <span>{percent}%</span> : null}
+          {sizeLabel ? <span>{sizeLabel}</span> : null}
+          <ChevronDown aria-hidden="true" size={16} />
+        </summary>
+        <div className="project-setup-cache-detail">
+          <p>{translateLiteral(message)}</p>
+          <dl className="work-progress-detail">
+            <div>
+              <dt>Mode</dt>
+              <dd>
+                {isAwaitingValidation
+                  ? translateLiteral('Not checked')
+                  : isValidatingPaths
+                    ? validationLabel
+                  : isError && !effectiveStatus
+                  ? 'Unavailable'
+                  : isError
+                    ? `${formatSvCacheModeLabel(effectiveStatus!.settings.mode)} (last known)`
+                    : isSetupRequired
+                      ? 'Setup required'
+                      : effectiveStatus
+                        ? formatSvCacheModeLabel(effectiveStatus.settings.mode)
+                        : 'Checking'}
+              </dd>
+            </div>
+            {!isMinimal ? (
+              <div>
+                <dt>Progress</dt>
+                <dd>
+                  {isAwaitingValidation || isValidatingPaths
+                    ? validationLabel
+                    : isError && !effectiveStatus
+                    ? 'Retry required'
+                    : isError
+                      ? `${percent}% (${completedUnitCount} of ${totalUnitCount}, last known)`
+                      : isSetupRequired
+                        ? 'Waiting for Project Setup'
+                        : isChecking
+                          ? 'Checking'
+                          : `${percent}% (${completedUnitCount} of ${totalUnitCount})`}
+                </dd>
+              </div>
+            ) : null}
+            <div>
+              <dt>{t('settings.cache.size.label')}</dt>
+              <dd>
+                {sizeLabel ?? translateLiteral('Unavailable')}
+              </dd>
+            </div>
+          </dl>
+          {isError || isWarmupPaused ? (
+            <div className="action-row">
+              <button
+                aria-busy={isRetrying || undefined}
+                className="secondary-button"
+                disabled={isRetrying}
+                onClick={onRetry}
+                type="button"
+              >
+                <BusyActionContent
+                  busyLabel={isWarmupPaused ? 'Retrying cache build' : 'Retrying cache check'}
+                  icon={<RefreshCw aria-hidden="true" size={18} />}
+                  isBusy={isRetrying}
+                  label={isWarmupPaused ? 'Retry cache build' : 'Retry cache check'}
+                  size={18}
+                />
+              </button>
+            </div>
+          ) : null}
         </div>
-        {!isMinimal ? (
-          <div>
-            <dt>Progress</dt>
-            <dd>
-              {isAwaitingValidation || isValidatingPaths
-                ? validationLabel
-                : isError && !effectiveStatus
-                ? 'Retry required'
-                : isError
-                  ? `${percent}% (${completedUnitCount} of ${totalUnitCount}, last known)`
-                  : isSetupRequired
-                    ? 'Waiting for Project Setup'
-                    : isChecking
-                      ? 'Checking'
-                      : `${percent}% (${completedUnitCount} of ${totalUnitCount})`}
-            </dd>
-          </div>
-        ) : null}
-        <div>
-          <dt>{t('settings.cache.size.label')}</dt>
-          <dd>
-            {sizeLabel ?? translateLiteral('Unavailable')}
-          </dd>
-        </div>
-      </dl>
-      {isError || isWarmupPaused ? (
-        <div className="action-row">
-          <button
-            aria-busy={isRetrying || undefined}
-            className="secondary-button"
-            disabled={isRetrying}
-            onClick={onRetry}
-            type="button"
-          >
-            <BusyActionContent
-              busyLabel={isWarmupPaused ? 'Retrying cache build' : 'Retrying cache check'}
-              icon={<RefreshCw aria-hidden="true" size={18} />}
-              isBusy={isRetrying}
-              label={isWarmupPaused ? 'Retry cache build' : 'Retry cache check'}
-              size={18}
-            />
-          </button>
+      </details>
+      {showProgress ? (
+        <div className="project-setup-cache-progress">
+          <LoadingProgressBar label={cacheTitle} measurement={measured
+            ? { value: completedUnitCount, max: totalUnitCount }
+            : undefined} />
         </div>
       ) : null}
-      </div>
-    </details>
+    </div>
   );
 }
 

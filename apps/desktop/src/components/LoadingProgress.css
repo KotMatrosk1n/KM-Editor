@@ -168,7 +168,11 @@
     forced-color-adjust: none;
   }
 
-  :root .km-loading-progress .km-loading-progress-indicator {
+  :root .km-loading-progress-visual .km-loading-progress-indicator {
     background: Highlight;
+  }
+
+  :root .km-loading-progress-visual:not(.is-determinate) .km-loading-progress-indicator {
+    background: repeating-linear-gradient(135deg, Highlight 0 0.5rem, Canvas 0.5rem 1rem);
   }
 }
