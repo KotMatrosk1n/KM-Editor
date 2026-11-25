@@ -20852,7 +20852,6 @@ export function App({
                 ordinaryDraftProject={ordinaryDraftProjectContext}
                 editSession={getEditSessionForSection('text')}
                 isEditStarting={isEditStarting}
-                isPagedResultWindow={supportsTextQuery}
                 isTextLoading={isTextLoading}
                 isTextQueryPending={isTextQueryPending}
                 isTextUpdating={isTextUpdating}
@@ -30072,7 +30071,6 @@ const textCategoryLocalizationKeys: Readonly<
 function TextSection({
   editSession,
   isEditStarting,
-  isPagedResultWindow,
   isTextLoading,
   isTextQueryPending,
   isTextUpdating,
@@ -30092,7 +30090,6 @@ function TextSection({
 }: {
   editSession: EditSession | null;
   isEditStarting: boolean;
-  isPagedResultWindow: boolean;
   isTextLoading: boolean;
   isTextQueryPending: boolean;
   isTextUpdating: boolean;
@@ -30115,6 +30112,7 @@ function TextSection({
   workflow: TextWorkflow | null;
 }) {
   const { t, translateLiteral } = useLocalization();
+  const textTableRef = useRef<HTMLDivElement>(null);
   const entries = useMemo(
     () => overlayPendingTextValues(workflow?.entries ?? [], editSession),
     [editSession, workflow?.entries]
@@ -30160,6 +30158,22 @@ function TextSection({
   const categories = workflow?.categories ?? [];
   const page = workflow?.page ?? null;
   const activeCategoryId = workflow?.selectedCategoryId ?? selectedCategoryId ?? 'all';
+  const previousCategoryRef = useRef(activeCategoryId);
+  useEffect(() => {
+    const changedCategory = previousCategoryRef.current !== activeCategoryId;
+    previousCategoryRef.current = activeCategoryId;
+    const table = textTableRef.current;
+    if (!changedCategory || !table || table.closest('[data-reduced-motion="true"]')) {
+      return;
+    }
+
+    const animation = table.querySelector('.virtual-table-body')?.animate(
+      [{ opacity: 0.65 }, { opacity: 1 }],
+      { duration: 150, easing: 'ease-out' }
+    );
+    return () => animation?.cancel();
+  }, [activeCategoryId]);
+
   const activeCategory = categories.find(
     (category) => category.categoryId === activeCategoryId
   );
@@ -30218,32 +30232,22 @@ function TextSection({
           value={searchText}
         />
       </label>
-      <Metric
-        label={
-          page
-            ? t('text.metrics.pageEntries')
-            : isPagedResultWindow
-              ? 'Loaded results'
-              : 'Loaded entries'
-        }
-        value={
-          workflow
-            ? (page?.returnedEntryCount ?? workflow.stats.totalTextEntryCount).toString()
-            : '0'
-        }
-      />
-      <Metric
-        label={categories.length > 0 ? t('text.metrics.availableFiles') : 'Source files'}
-        value={workflow ? workflow.stats.sourceFileCount.toString() : '0'}
-      />
-      <Metric
-        label="Pending changes"
-        value={(editSession?.pendingEdits.length ?? 0).toString()}
-      />
+      {workflow ? (
+        <dl className="text-browser-counts">
+          <div>
+            <dt>{categories.length > 0 ? t('text.metrics.availableFiles') : 'Source files'}</dt>
+            <dd>{workflow.stats.sourceFileCount}</dd>
+          </div>
+          <div>
+            <dt>Pending changes</dt>
+            <dd>{editSession?.pendingEdits.length ?? 0}</dd>
+          </div>
+        </dl>
+      ) : null}
     </div>
     {workflow && categories.length > 0 ? (
       <nav aria-label={t('text.categories.ariaLabel')} className="text-category-browser">
-        <div className="text-category-tabs">
+        <div className="text-category-grid">
           {categories.map((category) => {
             const localizationKeys = textCategoryLocalizationKeys[category.categoryId];
 
@@ -30271,12 +30275,9 @@ function TextSection({
           })}
         </div>
         {activeCategory ? (
-          <div className="editable-field-label-row text-category-context-help">
-            <strong>{activeCategoryLabel}</strong>
-            <ContextHelp label={activeCategoryLabel}>
-              {`${t('text.categories.help')} ${activeCategoryDescription}`}
-            </ContextHelp>
-          </div>
+          <ContextHelp className="text-category-context-help" label={activeCategoryLabel}>
+            {`${t('text.categories.help')} ${activeCategoryDescription}`}
+          </ContextHelp>
         ) : null}
       </nav>
     ) : null}
@@ -30347,6 +30348,7 @@ function TextSection({
               aria-label={t('text.table.ariaLabel')}
               aria-rowcount={filteredEntries.length + 1}
               className="text-table"
+              ref={textTableRef}
               role="table"
             >
               <div className="text-row text-row-heading" role="row">
@@ -30372,8 +30374,8 @@ function TextSection({
                     <span data-localization-ignore="true" role="cell">
                       {entry.messageKey ?? entry.label}
                     </span>
-                    <span data-localization-ignore="true" role="cell">
-                      {entry.sourceFile}
+                    <span data-localization-ignore="true" role="cell" title={entry.sourceFile}>
+                      {entry.sourceFile.split(/[\\/]/u).at(-1) || entry.sourceFile}
                     </span>
                     <span role="cell">{entry.lineIndex}</span>
                     <span
@@ -30713,7 +30715,7 @@ function SelectedTextPanel({
               <dd data-localization-ignore="true">{entry.label}</dd>
             </div>
             {entry.messageKey ? (
-              <div className="text-source-file-detail">
+              <div className="text-message-key-detail">
                 <dt>{t('text.messageKey')}</dt>
                 <dd data-localization-ignore="true">{entry.messageKey}</dd>
               </div>
