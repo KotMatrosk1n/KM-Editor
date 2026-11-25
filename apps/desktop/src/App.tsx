@@ -52108,25 +52108,16 @@ function SelectedPlacementPanel({
   );
   const layout = useMemo(() => getPlacementEditorLayout(visibleFields), [visibleFields]);
   const placementDraftDefaults = useMemo(
-    () =>
-      placedObject
-        ? Object.fromEntries(visibleFields.map((field) => [field.field, field.value]))
-        : {},
-    [
-      placedObject?.objectId,
-      visibleFields
-        .map((field) => `${field.field}:${field.value}:${field.isReadOnly ? '1' : '0'}`)
-        .join('|')
-    ]
+    () => Object.fromEntries(visibleFields.map((field) => [field.field, field.value])),
+    [visibleFields]
   );
-  const drafts = placedObject
-    ? draftsByObjectId[placedObject.objectId] ?? placementDraftDefaults
-    : {};
+  // Catalog rows and loaded details can represent the same coordinate at different precision.
+  const drafts = placedObject ? draftsByObjectId[placedObject.objectId] : undefined;
   const placementDraftSummary = useMemo(
     () =>
       getPlacementDraftSummary(
         visibleFields,
-        drafts,
+        drafts ?? {},
         placedObject ? (field) => getPlacementFieldValue(placedObject, field) : null
       ),
     [drafts, placedObject, visibleFields]
@@ -52158,13 +52149,20 @@ function SelectedPlacementPanel({
       return;
     }
 
-    setDraftsByObjectId((currentDrafts) =>
-      pruneFieldDraftRecord(currentDrafts, placedObject.objectId, placementDraftDefaults)
-    );
+    if (canEditPlacement) {
+      setDraftsByObjectId((currentDrafts) =>
+        setSparseFieldDraftRecord(
+          currentDrafts,
+          placedObject.objectId,
+          currentDrafts[placedObject.objectId] ?? {},
+          placementDraftDefaults
+        )
+      );
+    }
     setConfirmedUnavailableDraftKeys((currentKeys) =>
       removeStringSetValue(currentKeys, placedObject.objectId)
     );
-  }, [placedObject, placementDraftDefaults]);
+  }, [canEditPlacement, placedObject, placementDraftDefaults]);
 
   useEffect(() => {
     setConfirmedUnavailableDraftKeys((currentKeys) => {
@@ -52202,13 +52200,13 @@ function SelectedPlacementPanel({
       );
       const previousSpeciesId =
         parseEditableIntegerDraft(
-          drafts[speciesFormPair.speciesField] ?? sourceSpeciesId?.toString() ?? '',
+          drafts?.[speciesFormPair.speciesField] ?? sourceSpeciesId?.toString() ?? '',
           field.options
         );
       const targetSpeciesId = parseEditableIntegerDraft(value, field.options);
       const previousForm =
         parseOptionalInteger(
-          drafts[speciesFormPair.formField] ?? sourceForm?.toString() ?? ''
+          drafts?.[speciesFormPair.formField] ?? sourceForm?.toString() ?? ''
         ) ?? sourceForm;
 
       if (
@@ -52236,7 +52234,7 @@ function SelectedPlacementPanel({
     }
 
     setDraftsByObjectId((currentDrafts) =>
-      setFieldDraftRecord(
+      setSparseFieldDraftRecord(
         currentDrafts,
         placedObject.objectId,
         nextDrafts,
@@ -52306,7 +52304,7 @@ function SelectedPlacementPanel({
     { label = field.label, showLabel = true, showRaw = false, showReadOnlyStatus = true } = {}
   ) => {
     const currentValue = placedObject ? getPlacementFieldValue(placedObject, field.field) : null;
-    const draftValue = drafts[field.field] ?? '';
+    const draftValue = drafts?.[field.field] ?? field.value;
     const state = getPlacementDraftState(draftValue, currentValue, field);
     const isInvalid = draftValue.trim() !== '' && !state.isValid;
     const isChanged = state.canSubmit;
@@ -52569,11 +52567,10 @@ function SelectedPlacementPanel({
             className="primary-button"
             disabled={!canSavePlacementDrafts}
             onClick={async () => {
-              if (!placedObject) {
+              if (!placedObject || !drafts) {
                 return;
               }
 
-              const submittedDraft = { ...drafts };
               const didSave = await onUpdatePlacementObjectFields(
                 placedObject.objectId,
                 placementDraftSummary.changedFields.map((change) => ({
@@ -52583,12 +52580,7 @@ function SelectedPlacementPanel({
               );
               if (didSave) {
                 setDraftsByObjectId((currentDrafts) =>
-                  clearSubmittedKeyedEditorDraft(
-                    currentDrafts,
-                    placedObject.objectId,
-                    submittedDraft,
-                    areFieldDraftsEqual
-                  )
+                  updateSparseFieldDraftRecordAfterStage(currentDrafts, placedObject.objectId, drafts)
                 );
               }
             }}
@@ -66543,7 +66535,7 @@ function getPlacementDraftSummary(
   }
 
   for (const field of fields) {
-    if (field.isReadOnly) {
+    if (field.isReadOnly || !Object.hasOwn(drafts, field.field)) {
       continue;
     }
 
