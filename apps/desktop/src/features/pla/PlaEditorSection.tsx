@@ -214,18 +214,18 @@ function PlaRecordEditor({ section, paths, session, bridge, drafts, setDrafts, i
     const preservedLabel = record?.values[field.key] === value ? field.key === 'species' ? record.metadata?.speciesName
       : field.key === 'form' ? record.metadata?.formName || (value === '0' ? translateLiteral('Default') : undefined)
       : field.key === 'item' && kind === 'shops' ? record.label : undefined : undefined;
-    return     field.kind === 'boolean' ? <input id={id} type="checkbox" aria-label={label(field)} checked={value === '1'} disabled={disabled} onChange={event => change(event.target.checked ? '1' : '0')} />
+    return field.kind === 'boolean' ? <input id={id} type="checkbox" aria-label={label(field)} checked={value === '1'} disabled={disabled} onChange={event => change(event.target.checked ? '1' : '0')} />
       : field.choices ? <SearchableOptionInput id={id} ariaLabel={label(field)} value={value} disabled={disabled} onChange={change}
           options={(field.choices.some(choice => choice.value === value) ? field.choices : [{ value, label: preservedLabel ? `${preservedLabel} (${value})` : value }, ...field.choices])
             .map(choice => ['method', 'category', 'growthRate', 'gender'].includes(field.key) && field.choices?.some(item => item.value === choice.value)
               ? { ...choice, label: t(`pla.choice.${field.key}.${choice.value}`) }
-              : /^move[1-4]$/u.test(field.key) && choice.value === '0' ? { ...choice, label: t('pla.unspecifiedMove') } : choice)} isFiniteCatalog localizeOptions={false} />
+              : /^move[1-4]$/u.test(field.key) && choice.value === '0' ? { ...choice, label: t('pla.unspecifiedMove') } : choice)} isFiniteCatalog localizeOptions={false} wrapSelectedValue={kind === 'moves'} />
         : field.kind === 'text' ? <textarea id={id} value={value} disabled={disabled} rows={8} onChange={event => change(event.target.value)} />
         : <input id={id} type="text" aria-invalid={!isPlaFieldValueValid(field, value) || undefined} inputMode={field.kind === 'decimal' || field.kind === 'factor' ? 'decimal' : 'numeric'} value={value} disabled={disabled} onChange={event => change(event.target.value)} />;
   };
   const actions = session ? <EditorSessionBarActions>
         <button type="button" className="primary-button" aria-busy={staging || undefined} disabled={!enabled || !stageDrafts.length || invalidFields.length > 0 || loading || staging || isBusy} onClick={() => void stage()}>
-          {staging ? <RefreshCw className="button-busy-icon" size={16} aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}{translateLiteral(staging ? 'Staging' : 'Stage')}
+          {staging ? <RefreshCw className="button-busy-icon" size={16} aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}{!staging && kind === 'moves' ? t('moves.saveToSession') : translateLiteral(staging ? 'Staging' : 'Stage')}
         </button>
         {nextDraftKey ? <button type="button" className="secondary-button" disabled={loading || staging || isBusy} onClick={() => {
           const id = nextDraftKey.slice(draftPrefix.length); selectRecord(id);
@@ -331,7 +331,7 @@ function PlaRecordEditor({ section, paths, session, bridge, drafts, setDrafts, i
     actions={actions} fieldLabel={label} renderPokemon={renderPokemon}
     valuesFor={record => ({ ...record.values, ...drafts[recordDraftKey(record)]?.values })} hasDraft={record => Boolean(drafts[recordDraftKey(record)])}
     pendingIds={new Set(session?.pendingEdits.filter(edit => edit.owner === 'pla.loose.v1' && edit.recordId?.startsWith(kind + '/')).map(edit => edit.recordId!.slice(kind.length + 1)) ?? [])}
-    renderInput={field => input(field.kind === 'boolean'
+    renderInput={field => input(kind !== 'moves' && field.kind === 'boolean'
       ? { ...field, kind: 'number', choices: [{ value: '0', label: translateLiteral('No') }, { value: '1', label: translateLiteral('Yes') }] } : field,
       values[field.key] ?? '', value => setValue(field.key, value), !enabled || field.readOnly || Boolean(selected?.readOnlyFields.includes(field.key)), `pla-field-${field.key}`)}
     rowEditor={null}

@@ -2559,6 +2559,8 @@
     "moves.runtimeVariant.plus": "Movimiento Plus",
     "moves.runtimeVariant.boss": "Movimiento de jefe",
     "moves.runtimeVariant.unknown": "Variante {variant}",
+    "moves.saveToSession": "Guardar en la sesión",
+    "moves.noFlags": "Este movimiento no tiene indicadores disponibles.",
     "moves.runtimeVariant.heading": "Variante de ejecución",
     "moves.runtimeVariant.label": "Variante",
     "moves.runtimeVariant.draftRetention": "Los borradores se conservan al cambiar variantes o filas de temporización. Preparar envía juntos todos los borradores válidos de este movimiento.",

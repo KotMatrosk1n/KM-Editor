@@ -1337,7 +1337,8 @@ public static class SvBridgeMapper
         return new MoveProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
-            ProjectBridgeMapper.ToDto(provenance.FileState));
+            ProjectBridgeMapper.ToDto(provenance.FileState),
+            provenance.SourcePath);
     }
 
     private static TextEntryRecordDto ToDto(SvTextEntryRecord entry)

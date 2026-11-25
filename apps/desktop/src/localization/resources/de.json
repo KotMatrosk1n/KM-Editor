@@ -2559,6 +2559,8 @@
     "moves.runtimeVariant.plus": "Plus-Attacke",
     "moves.runtimeVariant.boss": "Boss-Attacke",
     "moves.runtimeVariant.unknown": "Variante {variant}",
+    "moves.saveToSession": "In Sitzung speichern",
+    "moves.noFlags": "Für diesen Eintrag sind keine Flags verfügbar.",
     "moves.runtimeVariant.heading": "Laufzeitvariante",
     "moves.runtimeVariant.label": "Variante",
     "moves.runtimeVariant.draftRetention": "Entwürfe bleiben erhalten, wenn Varianten oder Timing-Zeilen gewechselt werden. Beim Vormerken werden alle gültigen Entwürfe dieser Attacke gemeinsam übermittelt.",

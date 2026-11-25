@@ -2559,6 +2559,8 @@
     "moves.runtimeVariant.plus": "Усиленный приём",
     "moves.runtimeVariant.boss": "Боссовый приём",
     "moves.runtimeVariant.unknown": "Вариант {variant}",
+    "moves.saveToSession": "Сохранить в сеансе",
+    "moves.noFlags": "Для этого приёма нет доступных флагов.",
     "moves.runtimeVariant.heading": "Вариант исполнения",
     "moves.runtimeVariant.label": "Вариант",
     "moves.runtimeVariant.draftRetention": "Черновики сохраняются при смене вариантов и строк тайминга. При подготовке все допустимые черновики этого приёма отправляются вместе.",

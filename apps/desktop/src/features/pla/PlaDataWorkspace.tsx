@@ -1,4 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { MoveDetails, MoveEditorWorkspace, MoveFlagCount, type MoveFieldGroup } from '../moves/MoveEditorWorkspace';
+import { formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
+import { isPlaFieldValueValid } from './plaDraftValidation';
 import { plaFieldHelp } from './plaFieldHelp';
 import { useState, type ReactNode } from 'react';
 import { Search } from 'lucide-react';
@@ -27,6 +30,7 @@ const statKeys = ['hp', 'attack', 'defense', 'specialAttack', 'specialDefense', 
 export function PlaDataWorkspace({ sessionKey, kind, page, selected, query, offset, loading, controls, sessionBar, actions, refresh, rowEditor,
   onQuery, onOffset, onSelect, valuesFor, hasDraft, pendingIds, fieldLabel, renderInput, renderPokemon }: Props) {
   const { t, translateLiteral } = useLocalization();
+  const [flagRequest, setFlagRequest] = useState<{ sectionId: string }>();
   const [compatibilitySearch, setCompatibilitySearch] = useState('');
   const isPokemon = ['personal', 'learnsets', 'evolutions', 'compatibility'].includes(kind);
   const section = kind === 'moves' || kind === 'text' ? kind : 'pokemon';
@@ -43,12 +47,12 @@ export function PlaDataWorkspace({ sessionKey, kind, page, selected, query, offs
     : page?.fields.every(field => field.readOnly || record.readOnlyFields.includes(field.key)) ? translateLiteral('Read-only')
     : record.readOnlyFields.length ? t('pla.partiallyEditable') : translateLiteral('Editable');
   const columns = kind === 'text' ? ['Message key', 'File', 'Line', 'Value', 'Status']
-    : kind === 'moves' ? ['ID', 'Name', 'Type', 'Category', 'Power', 'Accuracy', 'PP', 'Status']
+    : kind === 'moves' ? ['ID', 'Name', 'Type', 'Category', 'Power', 'Accuracy', 'PP', 'Flags']
     : kind === 'tutors' ? ['Slot', 'Move', 'Price', 'Status'] : ['ID', 'Name', kind === 'personal' ? 'Types' : 'Form'];
   const cells = (record: PlaRecord) => {
     const value = valuesFor(record);
     if (kind === 'text') return [record.label, page?.textFile ?? '', record.id.slice(record.id.lastIndexOf(':') + 1), value.text, status(record)];
-    if (kind === 'moves') return [record.id, recordName(record), choiceLabel('type', value.type), choiceLabel('category', value.category), value.power, value.accuracy, value.pp, status(record)];
+    if (kind === 'moves') return [record.id, recordName(record), choiceLabel('type', value.type), choiceLabel('category', value.category), value.power, value.accuracy, value.pp];
     if (kind === 'tutors') return [record.id, choiceLabel('move', value.move), value.price, status(record)];
     const types = [...new Set([choiceLabel('type1', value.type1), choiceLabel('type2', value.type2)])].join(' / ');
     return [record.id, recordName(record), kind === 'personal' ? types : record.id.split(':')[1]];
@@ -57,54 +61,90 @@ export function PlaDataWorkspace({ sessionKey, kind, page, selected, query, offs
   const groups = kind === 'personal' ? [
     { title: translateLiteral('Base Stats'), fields: fields.filter(field => statKeys.includes(field.key)) },
     { title: translateLiteral('Traits'), fields: fields.filter(field => !statKeys.includes(field.key)) }
-  ] : kind === 'moves' ? [
-    { title: translateLiteral('Battle'), fields: fields.filter(field => ['type', 'category', 'power', 'accuracy', 'pp', 'priority'].includes(field.key)) },
-    { title: t('pla.group.styles'), fields: fields.filter(field => ['canStyle', 'agilePower', 'strongPower', 'strongAccuracy'].includes(field.key)) },
-    { title: t('pla.group.actionDelays'), fields: fields.filter(field => field.key.startsWith('actionSpeed')) }
   ] : [{ title: t(`pla.kind.${kind}`), fields }];
   const renderField = (field: PlaField) => {
     const changed = selected && valuesFor(selected)[field.key] !== selected.values[field.key];
     const readOnly = field.readOnly || selected?.readOnlyFields.includes(field.key);
+    const invalid = kind === 'moves' && selected && changed && !isPlaFieldValueValid(field, valuesFor(selected)[field.key] ?? '');
     return <div className={`path-field editable-field-control ${changed ? 'editable-field-changed' : ''} ${readOnly ? 'editable-field-disabled' : ''}`} key={field.key}>
       <FieldLabel htmlFor={`pla-field-${field.key}`} label={fieldLabel(field)} help={plaFieldHelp(t, kind, field, fieldLabel(field))} />{renderInput(field)}
-      {readOnly || changed ? <small className="editable-field-status">{translateLiteral(readOnly ? 'Read-only' : 'Changed')}</small> : null}
+      {invalid ? <small className="editable-field-error">{t('pla.invalid')}</small> : readOnly || changed ? <small className="editable-field-status">{translateLiteral(readOnly ? 'Read-only' : 'Changed')}</small> : null}
     </div>;
   };
   const identity = selected?.id.split(':') ?? [];
   const stats = selected ? statKeys.map(key => valuesFor(selected)[key]) : [];
   const statTotal = stats.length === statKeys.length && stats.every(value => /^\d+$/u.test(value))
     ? String(stats.reduce((sum, value) => sum + Number(value), 0)) : '-';
+  const browserControls = (<div className={kind === 'text' ? 'pla-text-browser-controls' : undefined}>
+      {controls}
+      <div className={`items-toolbar ${isPokemon ? 'pokemon-toolbar' : kind === 'text' ? 'text-toolbar' : 'moves-toolbar'}`}>
+        {isPokemon ? <PokemonSearchBox disabled={false} value={query} onChange={onQuery} /> : <label className="search-box items-search"><Search size={18} aria-hidden="true" />
+          <input type="search" aria-label={translateLiteral(kind === 'moves' ? 'Search moves' : 'Search')} placeholder={translateLiteral(kind === 'moves' ? 'Search moves' : 'Search')}
+        value={query} onChange={event => onQuery(event.target.value)} /></label>}
+        <Metric label={translateLiteral('Loaded records')} value={String(page?.total ?? 0)} />
+        <Metric label={translateLiteral('Pending changes')} value={String(pendingIds.size)} />
+      </div>
+    </div>);
+  const browser = (
+    <div className={tableClass} role="table" aria-label={t(`pla.kind.${kind}`)} aria-colcount={columns.length} aria-rowcount={(page?.records.length ?? 0) + 1}>
+      <div className={`${rowClass} ${rowClass}-heading pla-data-row`} role="row">{columns.map(column => <span role="columnheader" key={column}>{column === 'Message key' ? t('text.messageKey') : translateLiteral(column)}</span>)}</div>
+      <VirtualTableBody items={page?.records ?? []} getKey={record => record.id} resetKey={`${kind}:${offset}:${query}`}
+        renderRow={record => <InteractiveTableRow aria-selected={selected?.id === record.id}
+          className={`${rowClass} pla-data-row ${selected?.id === record.id ? `${rowClass}-selected` : ''} ${hasDraft(record) || pendingIds.has(record.id) ? `${rowClass}-pending` : ''}`}
+          onClick={() => onSelect(record.id)}>{cells(record).map((value, i) => <span key={i} role="cell" title={value} data-localization-ignore="true"
+            className={kind === 'text' && i === 3 ? 'text-value-summary' : undefined}>{value}</span>)}
+          {kind === 'moves' ? <span role="cell"><MoveFlagCount
+            count={page?.fields.filter(field => field.kind === 'boolean' && record.values[field.key] === '1').length ?? 0}
+            name={recordName(record)} onOpen={() => { onSelect(record.id); setFlagRequest({ sectionId: 'flags' }); }} />
+          </span> : null}</InteractiveTableRow>} />
+    </div>
+  );
+  const browserFooter = (
+    <nav className="text-page-bar pla-pagination" aria-label={t('text.pagination.ariaLabel')}>
+        <span>{page ? `${Math.min(offset + 1, page.total)} - ${Math.min(offset + 100, page.total)} / ${page.total}` : ''}</span>
+        <div><button type="button" className="secondary-button compact-button" disabled={offset === 0 || loading} onClick={() => onOffset(Math.max(0, offset - 100))}>{translateLiteral('Previous')}</button>
+          <button type="button" className="secondary-button compact-button" disabled={!page || offset + 100 >= page.total || loading} onClick={() => onOffset(offset + 100)}>{translateLiteral('Next')}</button></div>
+    </nav>
+  );
+  if (kind === 'moves') {
+    const groups: Record<'core' | 'style' | 'effects' | 'flags', MoveFieldGroup> = {
+      core: { label: translateLiteral('Battle'), fields: [] },
+      style: { label: t('pla.group.styles'), fields: [] },
+      effects: { label: t('pla.group.actionDelays'), fields: [] },
+      flags: { label: translateLiteral('Move properties'), fields: [], layout: 'flags' }
+    };
+    const values = selected ? valuesFor(selected) : {};
+    for (const field of fields) {
+      const group = field.kind === 'boolean' ? groups.flags : field.key.startsWith('actionSpeed')
+        ? groups.effects : ['agilePower', 'strongPower', 'strongAccuracy'].includes(field.key) ? groups.style : groups.core;
+      const changed = Boolean(selected && values[field.key] !== selected.values[field.key]);
+      group.fields.push({ id: field.key, changed, invalid: changed && !isPlaFieldValueValid(field, values[field.key] ?? ''),
+        input: renderField(field) });
+    }
+    return <section className="panel wide-panel pla-editor pla-data-editor pla-data-moves" aria-labelledby="pla-editor-title">
+      <div className="panel-heading"><Icon size={18} aria-hidden="true" /><h2 id="pla-editor-title">{title}</h2>{refresh}</div>
+      <MoveEditorWorkspace sessionKey={sessionKey + ':' + kind}
+        record={selected ? { name: recordName(selected), id: selected.id } : null}
+        browser={browser} browserControls={browserControls} browserFooter={browserFooter}
+        sessionBar={<>{sessionBar}{actions}</>} flagRequest={flagRequest}
+        header={loading ? <p className="field-note" role="status">{translateLiteral('Loading')}</p> : null}
+        catalogStatus={selected ? status(selected) : undefined}
+        recordContext={selected?.readOnlyFields.length ? <p className="field-note" role="status">{t('pla.notice.moves')}</p> : null}
+        details={selected ? <MoveDetails id={selected.id} description={selected.metadata.description}
+          sourceFile={selected.metadata.sourceFile}
+          sourceLayer={selected.metadata.sourceLayer ? formatSourceLayer(selected.metadata.sourceLayer) : undefined}
+          fileState={selected.metadata.fileState ? formatFileState(selected.metadata.fileState) : undefined} /> : null}
+        core={[groups.core, groups.style].filter(group => group.fields.length)}
+        effects={[groups.effects].filter(group => group.fields.length)}
+        flags={[groups.flags].filter(group => group.fields.length)}
+      />
+    </section>;
+  }
   return <section className={`panel wide-panel pla-editor pla-data-editor pla-data-${kind}`} aria-labelledby="pla-editor-title">
     <div className="panel-heading"><Icon size={18} aria-hidden="true" /><h2 id="pla-editor-title">{title}</h2>{refresh}</div>
     <SectionedEditorWorkspace sessionKey={sessionKey + ':' + kind} initialSection="data" compactFields
       browserVisibleRows={4} sessionBar={<>{sessionBar}{actions}</>}
-      browserControls={<div className={kind === 'text' ? 'pla-text-browser-controls' : undefined}>
-        {controls}
-    <div className={`items-toolbar ${isPokemon ? 'pokemon-toolbar' : kind === 'text' ? 'text-toolbar' : 'moves-toolbar'}`}>
-      {isPokemon ? <PokemonSearchBox disabled={false} value={query} onChange={onQuery} /> : <label className="search-box items-search"><Search size={18} aria-hidden="true" />
-        <input type="search" aria-label={translateLiteral(kind === 'moves' ? 'Search moves' : 'Search')} placeholder={translateLiteral(kind === 'moves' ? 'Search moves' : 'Search')}
-          value={query} onChange={event => onQuery(event.target.value)} /></label>}
-      <Metric label={translateLiteral('Loaded records')} value={String(page?.total ?? 0)} />
-      <Metric label={translateLiteral('Pending changes')} value={String(pendingIds.size)} />
-    </div>
-      </div>}
-      browser={
-        <div className={tableClass} role="table" aria-label={t(`pla.kind.${kind}`)} aria-colcount={columns.length} aria-rowcount={(page?.records.length ?? 0) + 1}>
-        <div className={`${rowClass} ${rowClass}-heading pla-data-row`} role="row">{columns.map(column => <span role="columnheader" key={column}>{column === 'Message key' ? t('text.messageKey') : translateLiteral(column)}</span>)}</div>
-        <VirtualTableBody items={page?.records ?? []} getKey={record => record.id} resetKey={`${kind}:${offset}:${query}`}
-          renderRow={record => <InteractiveTableRow aria-selected={selected?.id === record.id}
-            className={`${rowClass} pla-data-row ${selected?.id === record.id ? `${rowClass}-selected` : ''} ${hasDraft(record) || pendingIds.has(record.id) ? `${rowClass}-pending` : ''}`}
-            onClick={() => onSelect(record.id)}>{cells(record).map((value, i) => <span key={i} role="cell" title={value} data-localization-ignore="true"
-              className={kind === 'text' && i === 3 ? 'text-value-summary' : undefined}>{value}</span>)}</InteractiveTableRow>} />
-      </div>
-      }
-      browserFooter={
-        <nav className="text-page-bar pla-pagination" aria-label={t('text.pagination.ariaLabel')}>
-      <span>{page ? `${Math.min(offset + 1, page.total)} - ${Math.min(offset + 100, page.total)} / ${page.total}` : ''}</span>
-      <div><button type="button" className="secondary-button compact-button" disabled={offset === 0 || loading} onClick={() => onOffset(Math.max(0, offset - 100))}>{translateLiteral('Previous')}</button>
-        <button type="button" className="secondary-button compact-button" disabled={!page || offset + 100 >= page.total || loading} onClick={() => onOffset(offset + 100)}>{translateLiteral('Next')}</button></div>
-    </nav>
-      }>
+      browser={browser} browserControls={browserControls} browserFooter={browserFooter}>
       <EditorWorkspaceHeader>
         {loading ? <p className="field-note" role="status">{translateLiteral('Loading')}</p> : null}
       </EditorWorkspaceHeader>
@@ -123,13 +163,9 @@ export function PlaDataWorkspace({ sessionKey, kind, page, selected, query, offs
             <div><dt>{kind === 'text' ? t('text.messageKey') : translateLiteral('Name')}</dt><dd data-localization-ignore="true">{kind === 'tutors' ? choiceLabel('move', valuesFor(selected).move) : selected.label}</dd></div>
             {kind === 'text' ? <div><dt>{translateLiteral('File')}</dt><dd>{page?.textFile}</dd></div> : <div><dt>{translateLiteral('Status')}</dt><dd>{status(selected)}</dd></div>}
           </dl>
-          {kind === 'moves' ? <dl className="item-provenance-list">
-            <div><dt>{translateLiteral('Move ID')}</dt><dd>{selected.id}</dd></div>
-            <div><dt>{translateLiteral('Type / category')}</dt><dd>{choiceLabel('type', valuesFor(selected).type)} / {choiceLabel('category', valuesFor(selected).category)}</dd></div>
-          </dl> : null}
         </EditorWorkspaceSection>
-        <EditorWorkspaceSection id="data" label={translateLiteral(kind === 'moves' ? 'Move Data' : kind === 'text' ? 'Text' : inspectorTitle)} modified={hasDraft(selected)}>
-          <div className={kind === 'text' ? 'text-edit-form' : kind === 'moves' ? 'item-edit-form move-edit-form' : 'item-edit-form'}>
+        <EditorWorkspaceSection id="data" label={translateLiteral(kind === 'text' ? 'Text' : inspectorTitle)} modified={hasDraft(selected)}>
+          <div className={kind === 'text' ? 'text-edit-form' : 'item-edit-form'}>
             {kind === 'learnsets' || kind === 'evolutions' ? rowEditor : kind === 'compatibility' ? <div className="compatibility-editor">
               <h4>{t('pla.kind.compatibility')}</h4>
               <label className="search-box compatibility-search"><Search size={16} aria-hidden="true" /><input type="search" value={compatibilitySearch}
