@@ -15,7 +15,8 @@ public sealed record SvTrainerProvenance(
     ProjectFileLayer? ClassSourceLayer,
     ProjectFileGraphEntryState FileState,
     ProjectFileGraphEntryState TeamFileState,
-    ProjectFileGraphEntryState? ClassFileState);
+    ProjectFileGraphEntryState? ClassFileState,
+    string? StoragePath = null);
 
 public sealed record SvTrainerPokemonRecord(
     int Slot,

@@ -6226,63 +6226,6 @@ h2 {
   gap: 12px;
 }
 
-.trainer-projected-stats-panel {
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-  padding: 12px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-}
-
-.trainer-projected-stats-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--color-text);
-}
-
-.trainer-projected-stats-header strong {
-  font-size: 0.875rem;
-}
-
-.trainer-projected-stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
-  gap: 8px;
-  min-width: 0;
-  margin: 0;
-}
-
-.trainer-projected-stat {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-  padding: 8px;
-  background: var(--color-control);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-}
-
-.trainer-projected-stat dt {
-  color: var(--color-text-muted);
-  font-size: 0.6875rem;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.trainer-projected-stat dd {
-  min-width: 0;
-  margin: 0;
-  overflow-wrap: anywhere;
-  color: var(--color-text);
-  font-size: 1.125rem;
-  font-weight: 800;
-  line-height: 1.1;
-}
-
 .trainer-ai-flag-disabled {
   opacity: 0.52;
 }
@@ -7735,24 +7678,6 @@ h2 {
   border-radius: 8px;
 }
 
-.trainer-ai-flags-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--color-text);
-}
-
-.trainer-ai-flags-header strong {
-  font-size: 0.875rem;
-}
-
-.trainer-ai-flags-header span {
-  color: var(--color-text-muted);
-  font-size: 0.75rem;
-  font-weight: 800;
-}
-
 .trainer-ai-flags-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -7785,12 +7710,6 @@ h2 {
   color: var(--color-text);
   font-size: 0.8125rem;
   font-weight: 800;
-}
-
-.trainer-ai-flag small {
-  color: var(--color-text-muted);
-  font-size: 0.75rem;
-  line-height: 1.35;
 }
 
 .trainer-party-header {
@@ -7829,10 +7748,6 @@ h2 {
 .trainer-party-clipboard-status small {
   color: var(--color-gold);
   font-weight: 800;
-}
-
-.trainer-party-header .trainer-max-iv-button {
-  margin-left: auto;
 }
 
 .trainer-party-card-grid {

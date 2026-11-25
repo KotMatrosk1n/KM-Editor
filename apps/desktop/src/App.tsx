@@ -25,7 +25,8 @@ import './features/project-setup/projectSetup.css';
 import './features/pokemon/pokemonDetailSections.css';
 import './features/type-chart/typeChartTheme.css';
 import { handleRowClipboardShortcut } from './authoring/rowClipboardShortcuts';
-import { buildZaTrainerChangeUpdates, trainerAiFlagEnabled, toggleTrainerAiFlag } from './features/trainers/trainerAiFlags';
+import { buildZaTrainerChangeUpdates, getTrainerAiFlagGroup, trainerAiFlagEnabled, toggleTrainerAiFlag } from './features/trainers/trainerAiFlags';
+import './features/trainers/trainerEditor.css';
 import { ItemIcon } from './features/items/ItemIcon';
 
 import {
@@ -194,6 +195,7 @@ import {
   type PlacementEditableField,
   type PlacementWorkflow,
   type ProjectHealth,
+  type ProjectPaths,
   type ProjectGame,
   type ProjectPathRole,
   type ProjectPathValidation,
@@ -13240,19 +13242,13 @@ export function App({
       case 'trainers':
         if (
           (!trainersWorkflow && !isTrainersLoading) ||
-          ((selectedGame === 'sword' || selectedGame === 'shield') &&
-            !pokemonWorkflow &&
-            !isPokemonLoading)
+          (!pokemonWorkflow && !isPokemonLoading)
         ) {
           markLazyLoadStarted();
           if (!trainersWorkflow && !isTrainersLoading) {
             void handleOpenTrainersWorkflow();
           }
-          if (
-            (selectedGame === 'sword' || selectedGame === 'shield') &&
-            !pokemonWorkflow &&
-            !isPokemonLoading
-          ) {
+          if (!pokemonWorkflow && !isPokemonLoading) {
             void handleOpenPokemonWorkflow();
           }
         }
@@ -20880,6 +20876,7 @@ export function App({
               <WorkflowLoadingPanel label="Trainers" />
             ) : isPokemonLegendsZAProject ? (
               <ZaTrainersSection
+                projectPaths={createProjectPaths(draftPaths)}
                 hasProtectedTrainerDrafts={hasProtectedTrainerDrafts}
                 ordinaryDraftProject={ordinaryDraftProjectContext}
                 editSession={getEditSessionForSection('trainers')}
@@ -20904,6 +20901,7 @@ export function App({
               />
             ) : isScarletVioletProject ? (
               <SvTrainersSection
+                projectPaths={createProjectPaths(draftPaths)}
                 hasProtectedTrainerDrafts={hasProtectedTrainerDrafts}
                 ordinaryDraftProject={ordinaryDraftProjectContext}
                 editSession={getEditSessionForSection('trainers')}
@@ -20927,6 +20925,7 @@ export function App({
               />
             ) : (
               <SwShTrainersSection
+                projectPaths={createProjectPaths(draftPaths)}
                 hasProtectedTrainerDrafts={hasProtectedTrainerDrafts}
                 ordinaryDraftProject={ordinaryDraftProjectContext}
                 editSession={getEditSessionForSection('trainers')}
@@ -31227,6 +31226,7 @@ type TrainersSectionProps = {
     target: ZaTrainerTextTargetViewModel
   ) => Promise<boolean>;
   ordinaryDraftProject: OrdinaryDraftProjectContext | null;
+  projectPaths: ProjectPaths;
   onCopyTrainerPartyClipboard: (
     input: TrainerPartyClipboardCopyInput
   ) => Promise<RowClipboardActionResult>;
@@ -31282,6 +31282,7 @@ function TrainersSection({
   onCopyTrainerPartyClipboard,
   onPasteTrainerPartyClipboard,
   ordinaryDraftProject,
+  projectPaths,
   onTrainerCategoryChange,
   onSelectTrainer,
   onSelectTrainerPartySlot,
@@ -31295,7 +31296,7 @@ function TrainersSection({
   selectedTrainerPartySlot,
   workflow
 }: TrainersSectionProps) {
-  const { t } = useLocalization();
+  const { formatLocale, t, translateLiteral } = useLocalization();
   // Category tabs are session-owned view state. Keeping them above this
   // conditionally mounted editor prevents quick-link navigation from resetting
   // the user's current Trainer view.
@@ -31515,18 +31516,11 @@ function TrainersSection({
               value={searchText}
             />
           </label>
-          <Metric
-            label="Loaded trainers"
-            value={workflow ? workflow.stats.totalTrainerCount.toString() : '0'}
-          />
-          <Metric
-            label="Party Pokemon"
-            value={workflow ? workflow.stats.totalPokemonCount.toString() : '0'}
-          />
-          <Metric
-            label="Pending changes"
-            value={(editSession?.pendingEdits.length ?? 0).toString()}
-          />
+          <div className="trainer-browser-counts">
+            <span><strong>{(workflow?.stats.totalTrainerCount ?? 0).toLocaleString(formatLocale)}</strong> {translateLiteral('Loaded trainers')}</span>
+            <span><strong>{(workflow?.stats.totalPokemonCount ?? 0).toLocaleString(formatLocale)}</strong> {translateLiteral('Party Pokemon')}</span>
+            <span><strong>{(editSession?.pendingEdits.length ?? 0).toLocaleString(formatLocale)}</strong> {translateLiteral('Pending changes')}</span>
+          </div>
         </div>
 
             {supportsTrainerCategories ? (
@@ -31629,6 +31623,7 @@ function TrainersSection({
                 onCopyTrainerPartyClipboard={onCopyTrainerPartyClipboard}
                 onPasteTrainerPartyClipboard={onPasteTrainerPartyClipboard}
                 ordinaryDraftProject={ordinaryDraftProject}
+                projectPaths={projectPaths}
                 onSelectSlot={onSelectTrainerPartySlot}
                 onUpdateTrainerField={onUpdateTrainerField}
                 onUpdateTrainerFields={onUpdateTrainerFields}
@@ -31772,6 +31767,7 @@ function SelectedTrainerPanel({
   onCopyTrainerPartyClipboard,
   onPasteTrainerPartyClipboard,
   ordinaryDraftProject,
+  projectPaths,
   onSelectSlot,
   onUpdateTrainerField,
   onUpdateTrainerFields,
@@ -31802,6 +31798,7 @@ function SelectedTrainerPanel({
     input: TrainerPartyClipboardPasteInput
   ) => Promise<RowClipboardPasteActionResult>;
   ordinaryDraftProject: OrdinaryDraftProjectContext | null;
+  projectPaths: ProjectPaths;
   onSelectSlot: (slot: number | null) => void;
   onUpdateTrainerField: (
     trainerId: number,
@@ -32025,7 +32022,7 @@ function SelectedTrainerPanel({
       return {
         ...context,
         abilityOptions: referencePokemon
-          ? createTrainerPokemonAbilityOptions(referencePokemon)
+          ? createTrainerPokemonAbilityOptions(referencePokemon, editorFamily)
           : usesCurrentIdentity
             ? selectedPokemon.abilityOptions
             : [],
@@ -32130,12 +32127,27 @@ function SelectedTrainerPanel({
   const aiFlagsMaskLabel = trainer
     ? `0x${projectedAiFlags.toString(16).padStart(4, '0').toLocaleUpperCase()}`
     : '0x0000';
+  const aiFlagGroups = new Map<string, TrainerRecord['aiFlagStates']>();
+  for (const flag of trainer?.aiFlagStates ?? []) {
+    const group = getTrainerAiFlagGroup(editorFamily, flag.bit);
+    const flags = aiFlagGroups.get(group);
+    if (flags) {
+      flags.push(flag);
+    } else {
+      aiFlagGroups.set(group, [flag]);
+    }
+  }
   const showTerastallizationDetails =
     isScarletVioletProject &&
     contextualTrainerFields.some((field) => field.field === trainerCanTerastallizeFieldName);
   const trainerFieldGroups = useMemo(
-    () => groupTrainerEditableFields(contextualTrainerFields, getTrainerDataFieldGroup),
-    [contextualTrainerFields]
+    () => groupTrainerEditableFields(
+      contextualTrainerFields.filter((field) =>
+        editorFamily !== 'swsh' || (field.field !== giftFieldName && field.field !== healFieldName)
+      ),
+      getTrainerDataFieldGroup
+    ),
+    [contextualTrainerFields, editorFamily]
   );
   const pokemonFieldGroups = useMemo(
     () =>
@@ -32839,6 +32851,184 @@ function SelectedTrainerPanel({
       setTrainerIdentityDiscardEpoch((currentEpoch) => currentEpoch + 1);
     });
 
+  const renderPartyField = (
+    selectedPokemon: TrainerPokemonRecord,
+    field: TrainerEditableField,
+    compactStat = false
+  ) => {
+    const currentValue = getEditablePokemonFieldValue(
+      selectedPokemon,
+      field.field
+    );
+    const draftValue = pokemonDrafts[field.field] ?? '';
+    const draftState = getTrainerFieldDraftState(
+      draftValue,
+      currentValue,
+      field
+    );
+    const isDynamaxDependentField = dynamaxDependentFieldNames.includes(
+      field.field as (typeof dynamaxDependentFieldNames)[number]
+    );
+    const selectedPokemonSlotIsEmpty =
+      projectedSelectedPokemonSpeciesId === 0;
+    const disabledReason =
+      selectedPokemonBlockedByPreviousSlot
+        ? 'Fill the previous party slot first.'
+        : selectedPokemonSlotIsEmpty && field.field !== speciesIdFieldName
+        ? 'Set species before editing this slot.'
+        : isSelectedZaTrainerMeowsticDynamic &&
+            field.field === formFieldName
+          ? t(
+              'za.trainers.meowstic.formRuntimeSelected'
+            )
+          : isDynamaxDependentField && !selectedPokemonCanDynamax
+            ? 'Set Can Dynamax to Yes to edit this field.'
+            : undefined;
+
+    return (
+      <TrainerDraftField
+        compactStat={compactStat}
+        currentValue={currentValue}
+        disabled={
+          disabledReason !== undefined ||
+          !canEditTrainers ||
+          editSession === null ||
+          isSelectedPartySlotPasteTarget
+        }
+        disabledReason={disabledReason}
+        draftState={draftState}
+        draftValue={draftValue}
+        field={field}
+        formOptionContext={selectedPokemonFormOptionContext}
+        helpDomain="trainers"
+        helpGame={editorFamily}
+        key={field.field}
+        onChange={(value) => {
+          if (!selectedPokemonDraftKey) {
+            return;
+          }
+
+          const nextDrafts = {
+            ...pokemonDrafts,
+            [field.field]: value
+          };
+          if (field.field === speciesIdFieldName) {
+            const speciesField = defaultContextualPokemonFields.find(
+              (candidate) => candidate.field === speciesIdFieldName
+            );
+            const formField = defaultContextualPokemonFields.find(
+              (candidate) => candidate.field === formFieldName
+            );
+            const previousSpeciesId =
+              parseEditableIntegerDraft(
+                pokemonDrafts[speciesIdFieldName] ??
+                  selectedPokemon.speciesId.toString(),
+                speciesField?.options
+              );
+            const targetSpeciesId = parseEditableIntegerDraft(
+              value,
+              speciesField?.options
+            );
+            const previousForm =
+              parseOptionalInteger(
+                pokemonDrafts[formFieldName] ??
+                  selectedPokemon.form.toString()
+              ) ?? selectedPokemon.form;
+
+            if (targetSpeciesId === 0) {
+              for (const dependentField of defaultContextualPokemonFields) {
+                if (dependentField.field !== speciesIdFieldName) {
+                  nextDrafts[dependentField.field] =
+                    pokemonDraftDefaults[dependentField.field] ?? '';
+                }
+              }
+            } else if (
+              formField &&
+              targetSpeciesId !== null &&
+              targetSpeciesId !== previousSpeciesId
+            ) {
+              const resolvedForm = resolveSpeciesChangeForm({
+                gameFamily: editorFamily,
+                pokemonRecords: pokemonWorkflow?.pokemon,
+                previousForm,
+                sourceForm: selectedPokemon.form,
+                sourceSpeciesId: selectedPokemon.speciesId,
+                speciesField,
+                targetSpeciesId
+              });
+              if (resolvedForm !== null) {
+                nextDrafts[formFieldName] = resolvedForm.toString();
+              }
+            }
+          }
+          if (
+            editorFamily === 'za' &&
+            (field.field === speciesIdFieldName ||
+              field.field === genderFieldName)
+          ) {
+            const nextSpeciesId =
+              parseOptionalInteger(
+                nextDrafts[speciesIdFieldName] ??
+                  selectedPokemon.speciesId.toString()
+              ) ?? selectedPokemon.speciesId;
+            const nextGender =
+              parseOptionalInteger(
+                nextDrafts[genderFieldName] ??
+                  selectedPokemon.gender.toString()
+              ) ?? selectedPokemon.gender;
+            const nextForm =
+              parseOptionalInteger(
+                nextDrafts[formFieldName] ??
+                  selectedPokemon.form.toString()
+              ) ?? selectedPokemon.form;
+
+            if (nextSpeciesId === zaMeowsticSpeciesId) {
+              if (nextGender === 0) {
+                nextDrafts[formFieldName] = '0';
+              } else if (nextGender === 1 || nextGender === 2) {
+                nextDrafts[formFieldName] =
+                  resolveZaTrainerMeowsticFormForGender(
+                    nextGender,
+                    nextForm
+                  ).toString();
+              }
+            }
+          }
+          if (field.field === canDynamaxFieldName && value === '0') {
+            for (const dependentField of dynamaxDependentFieldNames) {
+              nextDrafts[dependentField] =
+                pokemonDraftDefaults[dependentField] ?? '';
+            }
+          }
+          setPokemonDraftsByTrainerSlot((currentDrafts) =>
+            setFieldDraftRecord(
+              currentDrafts,
+              selectedPokemonDraftKey,
+              canonicalizeTrainerPartySlotDrafts(
+                nextDrafts,
+                pokemonDraftDefaults,
+                selectedPokemon.speciesId
+              ),
+              pokemonDraftDefaults
+            )
+          );
+        }}
+      />
+    );
+  };
+
+  const renderPartyGroup = (group: (typeof pokemonFieldGroups)[number], pokemon: TrainerPokemonRecord) => (
+    <fieldset className="editable-field-group" key={group.group}>
+      <legend>{translateLiteral(group.group)}</legend>
+      <div className="editable-field-grid">
+        {group.fields.map((field) => renderPartyField(pokemon, field))}
+      </div>
+      {editorFamily === 'za' && group.group === 'Moves' ? (
+        <p className="field-note">{t('za.trainers.moves.unspecifiedHelp')}</p>
+      ) : null}
+    </fieldset>
+  );
+
   return (
     <>
       <PublishedLocalEditorValidationDiagnostics
@@ -32912,36 +33102,7 @@ function SelectedTrainerPanel({
         <EditorRecordHeading name={trainer.name} id={trainer.trainerId} />
       </EditorWorkspaceHeader> : null}
       {trainer ? <EditorWorkspaceSection id="details" label={t('editorSections.details')}>
-      <div className="trainer-selection-details">
-      {trainer ? (
-        <>
-          <div className="editor-detail-columns">
-            <EditorDetailGroup label={translateLiteral('Trainer')}>
-              <dl className="editor-detail-list">
-                <EditorDetailValue label={translateLiteral('Name')}>{trainer.name}</EditorDetailValue>
-                <EditorDetailValue label={translateLiteral('Class ball scope')}>{trainer.classBallScope}</EditorDetailValue>
-                {showTerastallizationDetails ? <>
-                  <EditorDetailValue label={translateLiteral('Can Terastallize')}>{translateLiteral(trainer.canTerastallize === true ? 'Yes' : 'No')}</EditorDetailValue>
-                  <EditorDetailValue label={translateLiteral('Tera behavior')}>{trainer.teraTarget ?? translateLiteral('Disabled')}</EditorDetailValue>
-                </> : null}
-              </dl>
-            </EditorDetailGroup>
-            <EditorDetailGroup label={translateLiteral('Trainer data')}>
-              <dl className="editor-detail-list">
-                <EditorDetailValue label={translateLiteral('Data file')} dataValue path>{trainer.provenance.sourceFile}</EditorDetailValue>
-                <EditorDetailValue label={translateLiteral('Data layer')}>{formatSourceLayer(trainer.provenance.sourceLayer)}</EditorDetailValue>
-                <EditorDetailValue label={translateLiteral('Class file')} dataValue path>{trainer.provenance.classSourceFile ?? translateLiteral('Not loaded')}</EditorDetailValue>
-                <EditorDetailValue label={translateLiteral('Class layer')}>{trainer.provenance.classSourceLayer ? formatSourceLayer(trainer.provenance.classSourceLayer) : translateLiteral('Not loaded')}</EditorDetailValue>
-              </dl>
-            </EditorDetailGroup>
-            <EditorDetailGroup label={translateLiteral('Party')}>
-              <dl className="editor-detail-list">
-                <EditorDetailValue label={translateLiteral('Party file')} dataValue path>{trainer.provenance.teamSourceFile}</EditorDetailValue>
-                <EditorDetailValue label={translateLiteral('Party layer')}>{formatSourceLayer(trainer.provenance.teamSourceLayer)}</EditorDetailValue>
-              </dl>
-            </EditorDetailGroup>
-          </div>
-
+          <TrainerSourceRows paths={projectPaths} provenance={trainer.provenance} />
           {editorFamily === 'za' && trainer.zaSharedRivalRoster === true ? (
             <section
               aria-labelledby="za-shared-rival-roster-heading"
@@ -32980,242 +33141,242 @@ function SelectedTrainerPanel({
               </div>
             </section>
           ) : null}
-
-          {editorFamily === 'za' && onNavigateZaTrainerTextTarget ? (
-            <ZaTrainerIdentityActions
-              canEditChanges={
-                canEditTrainers && editSession !== null
-              }
-              canStageChanges={
-                canEditTrainers && editSession !== null
-              }
-              classPairOptions={zaClassPairOptions}
-              discardEpoch={trainerIdentityDiscardEpoch}
-              isUpdating={isTrainerUpdating}
-              onDraftKeysChange={setTrainerIdentityDraftKeys}
-              onNavigateTextTarget={onNavigateZaTrainerTextTarget}
-              onStageClassPair={(pairId) =>
-                runSelectedTrainerSourceMutation(() =>
-                  onUpdateTrainerField(trainer.trainerId, null, 'classPair', pairId)
-                )
-              }
-              trainer={{
-                canReassignClass: trainer.zaCanReassignClass === true,
-                classPairId: trainer.zaClassPairId,
-                classReassignmentBlockedReason:
-                  trainer.zaClassReassignmentBlockedReason,
-                classTextTarget: trainer.zaClassTextTarget,
-                name: trainer.name,
-                nameTextTarget: trainer.zaNameTextTarget,
-                trainerId: trainer.trainerId,
-                trainerClass: trainer.trainerClass
-              }}
-            />
-          ) : null}
-
-        </>
-      ) : null}
-      </div>
       </EditorWorkspaceSection> : null}
-      {bulkActions ? <EditorWorkspaceSection id="bulk" label={t('za.trainers.bulk.heading')}>{bulkActions}</EditorWorkspaceSection> : null}
       {trainer ? (
         <>
-          <EditorWorkspaceSection id="aiFlags" label={translateLiteral('AI Flags')}
-            modified={trainerDraftSummary.changedFields.length > 0}
-            invalid={trainerDraftSummary.invalidFields.length > 0}>
-          <div className="trainer-edit-form">
+          <EditorWorkspaceSection
+            id="battleSetup"
+            label={t('trainers.layout.battleSetup')}
+            modified={trainerDraftSummary.changedFields.some((field) => field.field !== aiFlagsFieldName)}
+            invalid={trainerDraftSummary.invalidFields.some((field) => field.field !== aiFlagsFieldName)}
+          >
+            <div className="trainer-edit-form">
+              {isTitanPartnerTrainer && trainerDrafts[trainerCanTerastallizeFieldName] === '1' ? (
+                <section className="technical-tool-notice technical-tool-notice-info">
+                  <p>{t('sv.trainers.titanPartner.teraRepair')}</p>
+                  <button
+                    className="secondary-button"
+                    disabled={!canEditTrainers || editSession === null}
+                    onClick={() => setTrainerDraftsByTrainerId((currentDrafts) =>
+                      setFieldDraftRecord(
+                        currentDrafts,
+                        trainer.trainerId,
+                        { ...trainerDrafts, [trainerCanTerastallizeFieldName]: '0' },
+                        trainerDraftDefaults
+                      )
+                    )}
+                    type="button"
+                  >
+                    {t('sv.trainers.titanPartner.teraDisable')}
+                  </button>
+                </section>
+              ) : null}
+              <div className="editable-field-groups">
+                {trainerFieldGroups.map((group) => (
+                  <fieldset className="editable-field-group" key={group.group}>
+                    <legend>{group.group}</legend>
+                    <div className="editable-field-grid">
+                      {group.fields.map((field) => {
+                        const currentValue = getEditableTrainerFieldValue(trainer, field.field);
+                        const draftValue = trainerDrafts[field.field] ?? '';
+                        const draftState = getTrainerFieldDraftState(draftValue, currentValue, field);
+                        const isFieldBlocked =
+                          field.field === classBallIdFieldName && !trainer.canEditClassBall;
+                        const disabledReason =
+                          isTitanPartnerTrainer && field.field === trainerCanTerastallizeFieldName
+                            ? t('sv.trainers.titanPartner.teraLocked')
+                            : isFieldBlocked
+                            ? 'Class ball is locked for this trainer class.'
+                            : undefined;
+
+                        return (
+                          <TrainerDraftField
+                            currentValue={currentValue}
+                            disabled={
+                              disabledReason !== undefined ||
+                              !canEditTrainers ||
+                              editSession === null
+                            }
+                            disabledReason={disabledReason}
+                            draftState={draftState}
+                            draftValue={draftValue}
+                            field={field}
+                            helpDomain="trainers"
+                            helpGame={editorFamily}
+                            note={field.field === classBallIdFieldName ? trainer.classBallScope : undefined}
+                            key={field.field}
+                            onChange={(value) => {
+                              const nextDrafts = {
+                                ...trainerDrafts,
+                                [field.field]: value
+                              };
+                              setTrainerDraftsByTrainerId((currentDrafts) =>
+                                setFieldDraftRecord(
+                                  currentDrafts,
+                                  trainer.trainerId,
+                                  nextDrafts,
+                                  trainerDraftDefaults
+                                )
+                              );
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+                ))}
+              </div>
+              {showTerastallizationDetails ? (
+                <dl className="trainer-header-values">
+                  <EditorDetailValue label={translateLiteral('Can Terastallize')}>{translateLiteral(trainer.canTerastallize === true ? 'Yes' : 'No')}</EditorDetailValue>
+                  <EditorDetailValue label={translateLiteral('Tera behavior')}>{trainer.teraTarget ?? translateLiteral('Disabled')}</EditorDetailValue>
+                </dl>
+              ) : null}
+              {editorFamily === 'za' && onNavigateZaTrainerTextTarget ? (
+                <ZaTrainerIdentityActions
+                  canEditChanges={
+                    canEditTrainers && editSession !== null
+                  }
+                  canStageChanges={
+                    canEditTrainers && editSession !== null
+                  }
+                  classPairOptions={zaClassPairOptions}
+                  discardEpoch={trainerIdentityDiscardEpoch}
+                  isUpdating={isTrainerUpdating}
+                  onDraftKeysChange={setTrainerIdentityDraftKeys}
+                  onNavigateTextTarget={onNavigateZaTrainerTextTarget}
+                  onStageClassPair={(pairId) =>
+                    runSelectedTrainerSourceMutation(() =>
+                      onUpdateTrainerField(trainer.trainerId, null, 'classPair', pairId)
+                    )
+                  }
+                  trainer={{
+                    canReassignClass: trainer.zaCanReassignClass === true,
+                    classPairId: trainer.zaClassPairId,
+                    classReassignmentBlockedReason:
+                      trainer.zaClassReassignmentBlockedReason,
+                    classTextTarget: trainer.zaClassTextTarget,
+                    name: trainer.name,
+                    nameTextTarget: trainer.zaNameTextTarget,
+                    trainerId: trainer.trainerId,
+                    trainerClass: trainer.trainerClass
+                  }}
+                />
+              ) : null}
+              {editorFamily === 'swsh' ? (
+                <details className="trainer-disclosure">
+                  <summary>{t('trainers.layout.rawHeader')}</summary>
+                  <dl className="trainer-header-values">
+                    <EditorDetailValue label={translateLiteral('Unknown header flag')}>{translateLiteral(trainer.heal ? 'Yes' : 'No')}</EditorDetailValue>
+                    <EditorDetailValue label={translateLiteral('Unknown header value')}>{trainer.gift}</EditorDetailValue>
+                  </dl>
+                </details>
+              ) : null}
+            </div>
+          </EditorWorkspaceSection>
+          <EditorWorkspaceSection
+            id="aiFlags"
+            label={translateLiteral('AI Flags')}
+            summary={<code className="trainer-ai-mask">{aiFlagsMaskLabel}</code>}
+            modified={aiFlagsDraftState?.isChanged}
+            invalid={aiFlagsDraftState?.isValid === false}
+          >
             {trainer.aiFlagStates.length > 0 ? (
               <div className="trainer-ai-flags-panel">
-                <div className="trainer-ai-flags-header">
-                  <div className="editable-field-label-row">
-                    <strong>{translateLiteral('AI Flags')}</strong>
-                    <ContextHelp label={translateLiteral('AI Flags')}>
-                      {t('fieldHelp.catalog.trainer.ai')}
-                    </ContextHelp>
-                  </div>
-                  <span>{aiFlagsMaskLabel}</span>
+                <div className="editable-field-label-row">
+                  <ContextHelp label={translateLiteral('AI Flags')}>
+                    {t('fieldHelp.catalog.trainer.ai')}
+                  </ContextHelp>
                 </div>
-                <div className="trainer-ai-flags-grid" role="group" aria-label={translateLiteral('AI Flags')}>
-                  {trainer.aiFlagStates.map((flag) => {
-                    const isReserved = flag.label.toLocaleLowerCase().startsWith('unused');
-                    const flagInputId = `trainer-${trainer.trainerId}-ai-flag-${flag.bit}`;
-                    const localizedFlagLabel = translateLiteral(flag.label);
-                    const localizedFlagHelp = isReserved
-                      ? `${translateLiteral('Reserved for later research.')} ${translateLiteral(
-                          'Reserved and locked.'
-                        )}`
-                      : translateLiteral(flag.description);
+                <div className="trainer-ai-groups">
+                  {Array.from(aiFlagGroups, ([group, flags]) => (
+                    <fieldset className="editable-field-group" key={group}>
+                      <legend>{t(group)}</legend>
+                      <div className="trainer-ai-flags-grid">
+                        {flags.map((flag) => {
+                          const isReserved = flag.label.toLocaleLowerCase().startsWith('unused');
+                          const flagInputId = `trainer-${trainer.trainerId}-ai-flag-${flag.bit}`;
+                          const localizedFlagLabel = translateLiteral(flag.label);
+                          const localizedFlagHelp = isReserved
+                            ? `${translateLiteral('Reserved for later research.')} ${translateLiteral(
+                                'Reserved and locked.'
+                              )}`
+                            : translateLiteral(flag.description);
 
-                    return (
-                      <div
-                        className={`trainer-ai-flag ${
-                          isReserved ? 'trainer-ai-flag-disabled' : ''
-                        }`}
-                        key={flag.bit}
-                      >
-                        <input
-                          checked={trainerAiFlagEnabled(editorFamily, projectedAiFlags, flag.mask)}
-                          className="km-choice-control"
-                          disabled={!canToggleAiFlags || isReserved}
-                          id={flagInputId}
-                          onChange={(event) => {
-                            const nextValue = toggleTrainerAiFlag(
-                              editorFamily, projectedAiFlags, flag.mask, event.target.checked
-                            );
-                            setTrainerDraftsByTrainerId((currentDrafts) =>
-                              setFieldDraftRecord(
-                                currentDrafts,
-                                trainer.trainerId,
-                                {
-                                  ...trainerDrafts,
-                                  [aiFlagsFieldName]: nextValue.toString()
-                                },
-                                trainerDraftDefaults
-                              )
-                            );
-                          }}
-                          type="checkbox"
-                        />
-                        <div className="trainer-ai-flag-copy">
-                          <FieldLabel
-                            help={localizedFlagHelp}
-                            htmlFor={flagInputId}
-                            label={localizedFlagLabel}
-                          />
-                          {isReserved ? (
-                            <small>{translateLiteral('Reserved and locked.')}</small>
-                          ) : null}
-                        </div>
+                          return (
+                            <div
+                              className={`trainer-ai-flag ${
+                                isReserved ? 'trainer-ai-flag-disabled' : ''
+                              }`}
+                              key={flag.bit}
+                            >
+                              <input
+                                checked={trainerAiFlagEnabled(editorFamily, projectedAiFlags, flag.mask)}
+                                className="km-choice-control"
+                                disabled={!canToggleAiFlags || isReserved}
+                                id={flagInputId}
+                                onChange={(event) => {
+                                  const nextValue = toggleTrainerAiFlag(
+                                    editorFamily, projectedAiFlags, flag.mask, event.target.checked
+                                  );
+                                  setTrainerDraftsByTrainerId((currentDrafts) =>
+                                    setFieldDraftRecord(
+                                      currentDrafts,
+                                      trainer.trainerId,
+                                      {
+                                        ...trainerDrafts,
+                                        [aiFlagsFieldName]: nextValue.toString()
+                                      },
+                                      trainerDraftDefaults
+                                    )
+                                  );
+                                }}
+                                type="checkbox"
+                              />
+                              <div className="trainer-ai-flag-copy">
+                                <FieldLabel
+                                  help={localizedFlagHelp}
+                                  htmlFor={flagInputId}
+                                  label={localizedFlagLabel}
+                                />
+                                {isReserved ? (
+                                  <small>{translateLiteral('Reserved and locked.')}</small>
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
+                    </fieldset>
+                  ))}
                 </div>
               </div>
             ) : null}
-
-            {isTitanPartnerTrainer && trainerDrafts[trainerCanTerastallizeFieldName] === '1' ? (
-              <section className="technical-tool-notice technical-tool-notice-info">
-                <p>{t('sv.trainers.titanPartner.teraRepair')}</p>
-                <button
-                  className="secondary-button"
-                  disabled={!canEditTrainers || editSession === null}
-                  onClick={() => setTrainerDraftsByTrainerId((currentDrafts) =>
-                    setFieldDraftRecord(
-                      currentDrafts,
-                      trainer.trainerId,
-                      { ...trainerDrafts, [trainerCanTerastallizeFieldName]: '0' },
-                      trainerDraftDefaults
-                    )
-                  )}
-                  type="button"
-                >
-                  {t('sv.trainers.titanPartner.teraDisable')}
-                </button>
-              </section>
+            {bulkActions ? (
+              <details className="trainer-disclosure">
+                <summary>{t('za.trainers.bulk.heading')}</summary>
+                {bulkActions}
+              </details>
             ) : null}
-            <div className="editable-field-groups">
-              {trainerFieldGroups.map((group) => (
-                <fieldset className="editable-field-group" key={group.group}>
-                  <legend>{group.group}</legend>
-                  <div className="editable-field-grid">
-                    {group.fields.map((field) => {
-                      const currentValue = getEditableTrainerFieldValue(trainer, field.field);
-                      const draftValue = trainerDrafts[field.field] ?? '';
-                      const draftState = getTrainerFieldDraftState(draftValue, currentValue, field);
-                      const isFieldBlocked =
-                        field.field === classBallIdFieldName && !trainer.canEditClassBall;
-                      const disabledReason =
-                        isTitanPartnerTrainer && field.field === trainerCanTerastallizeFieldName
-                          ? t('sv.trainers.titanPartner.teraLocked')
-                          : editorFamily === 'swsh' && field.field === giftFieldName
-                          ? 'This unknown trainer header value is preserved as raw read-only data.'
-                          : editorFamily === 'swsh' && field.field === healFieldName
-                            ? 'This unknown trainer header flag is preserved as raw read-only data.'
-                          : isFieldBlocked
-                          ? 'Class ball is locked for this trainer class.'
-                          : undefined;
-
-                      return (
-                        <TrainerDraftField
-                          currentValue={currentValue}
-                          disabled={
-                            disabledReason !== undefined ||
-                            !canEditTrainers ||
-                            editSession === null
-                          }
-                          disabledReason={disabledReason}
-                          draftState={draftState}
-                          draftValue={draftValue}
-                          field={field}
-                          helpDomain="trainers"
-                          helpGame={editorFamily}
-                          key={field.field}
-                          onChange={(value) => {
-                            const nextDrafts = {
-                              ...trainerDrafts,
-                              [field.field]: value
-                            };
-                            setTrainerDraftsByTrainerId((currentDrafts) =>
-                              setFieldDraftRecord(
-                                currentDrafts,
-                                trainer.trainerId,
-                                nextDrafts,
-                                trainerDraftDefaults
-                              )
-                            );
-                          }}
-                        />
-                      );
-                    })}
-                  </div>
-                </fieldset>
-              ))}
-            </div>
-          </div>
           </EditorWorkspaceSection>
           <EditorWorkspaceSection id="party" label={translateLiteral('Party')}
             modified={trainerStagePlan.updates.some(update => update.trainerId === trainer.trainerId && update.slot !== null)}
             invalid={trainerStagePlan.invalidFields.some(issue => issue.field.startsWith(`trainer:${trainer.trainerId}:`) && issue.field.split(':').length > 3)}>
           <div className="trainer-edit-form">
             <div className="trainer-party-header">
-              <strong>Party</strong>
-              <div
-                aria-live="polite"
-                className="trainer-party-clipboard-status"
-                role="status"
-              >
-                <span
-                  className={
-                    partySlotClipboardCopiedLabel
-                      ? 'trainer-party-clipboard-source is-copied'
-                      : 'trainer-party-clipboard-source'
-                  }
-                >
-                  {partySlotClipboardCopiedLabel ??
-                    t('trainers.partyClipboard.discoveryHint')}
-                </span>
-                {partySlotClipboardFeedback ? (
-                  <small>{partySlotClipboardFeedback}</small>
+              <ContextHelp label={translateLiteral('Party')}>
+                {t('trainers.partyClipboard.discoveryHint')}
+              </ContextHelp>
+              <div aria-live="polite" className="trainer-party-clipboard-status" role="status">
+                {partySlotClipboardCopiedLabel ? (
+                  <span className="trainer-party-clipboard-source is-copied">{partySlotClipboardCopiedLabel}</span>
                 ) : null}
+                {partySlotClipboardFeedback ? <small>{partySlotClipboardFeedback}</small> : null}
               </div>
-              <button
-                aria-busy={isTrainerUpdating || undefined}
-                className="primary-button compact-button trainer-max-iv-button"
-                disabled={!canMaxTrainerIvs}
-                onClick={stageTrainerMaxIvs}
-                type="button"
-              >
-                <BusyActionContent
-                  busyLabel="Staging"
-                  icon={<Sparkles aria-hidden="true" size={14} />}
-                  isBusy={isTrainerUpdating}
-                  label="MAX IV"
-                />
-              </button>
             </div>
 
             {trainer.team.length > 0 ? (
-              <div className="trainer-party-card-grid" aria-label="Trainer party Pokemon">
+              <div className="trainer-party-card-grid trainer-party-roster" aria-label="Trainer party Pokemon">
                 {trainer.team.map((pokemon) => {
                   const cardDrafts =
                     canonicalPokemonDraftsByTrainerSlot[
@@ -33274,7 +33435,7 @@ function SelectedTrainerPanel({
                       trainer: trainer.name
                     }),
                     isEmptySlot
-                      ? `${slotLabel}: None`
+                      ? translateLiteral('Empty slot')
                       : `${pokemonLabel}, Lv. ${projectedPokemon.level}`,
                     isEmptySlot ? null : projectedHeldItemLabel,
                     hasCardDrafts ? translateLiteral('Draft') : null
@@ -33293,6 +33454,7 @@ function SelectedTrainerPanel({
                       aria-expanded={isContextMenuTarget}
                       aria-haspopup="menu"
                       aria-label={partyCardAccessibleLabel}
+                      data-empty={isEmptySlot || undefined}
                       data-km-source-site="trainer-party-slot-menu-trigger"
                       aria-keyshortcuts="Control+C Control+V Meta+C Meta+V Shift+F10"
                       aria-pressed={selectedSlot === pokemon.slot}
@@ -33351,7 +33513,7 @@ function SelectedTrainerPanel({
                         {isEmptySlot ? slotLabel : pokemonLabel}
                       </strong>
                       <span>
-                        {isEmptySlot ? 'None' : `Lv. ${projectedPokemon.level}`}
+                        {isEmptySlot ? translateLiteral('Empty slot') : `Lv. ${projectedPokemon.level}`}
                         {hasCardDrafts ? ` (${translateLiteral('Draft')})` : ''}
                       </span>
                       {projectedHeldItemId > 0 ? (
@@ -33406,206 +33568,82 @@ function SelectedTrainerPanel({
                     </div>
                   </section>
                 ) : null}
-                <div className="editable-field-groups">
-                  {pokemonFieldGroups.map((group) => (
-                    <fieldset className="editable-field-group" key={group.group}>
-                      <legend>
-                        <span className="editable-field-group-legend-content">
-                          <span>{group.group}</span>
-                          {editorFamily === 'za' && group.group === 'Stats - EVs' ? (
-                            <PokemonStatTotal
-                              drafts={pokemonDrafts}
-                              fields={group.fields}
-                              getValue={(fieldName) =>
-                                getEditablePokemonFieldValue(selectedPokemon, fieldName)
-                              }
-                              kind="ev"
-                            />
-                          ) : editorFamily === 'za' && group.group === 'Stats - IVs' ? (
-                            <PokemonStatTotal
-                              drafts={pokemonDrafts}
-                              fields={group.fields}
-                              getValue={(fieldName) =>
-                                getEditablePokemonFieldValue(selectedPokemon, fieldName)
-                              }
-                              kind="iv"
-                            />
-                          ) : null}
-                        </span>
-                      </legend>
-                      <div className="editable-field-grid">
-                        {group.fields.map((field) => {
-                          const currentValue = getEditablePokemonFieldValue(
-                            selectedPokemon,
-                            field.field
-                          );
-                          const draftValue = pokemonDrafts[field.field] ?? '';
-                          const draftState = getTrainerFieldDraftState(
-                            draftValue,
-                            currentValue,
-                            field
-                          );
-                          const isDynamaxDependentField = dynamaxDependentFieldNames.includes(
-                            field.field as (typeof dynamaxDependentFieldNames)[number]
-                          );
-                          const selectedPokemonSlotIsEmpty =
-                            projectedSelectedPokemonSpeciesId === 0;
-                          const disabledReason =
-                            selectedPokemonBlockedByPreviousSlot
-                              ? 'Fill the previous party slot first.'
-                              : selectedPokemonSlotIsEmpty && field.field !== speciesIdFieldName
-                              ? 'Set species before editing this slot.'
-                              : isSelectedZaTrainerMeowsticDynamic &&
-                                  field.field === formFieldName
-                                ? t(
-                                    'za.trainers.meowstic.formRuntimeSelected'
-                                  )
-                                : isDynamaxDependentField && !selectedPokemonCanDynamax
-                                  ? 'Set Can Dynamax to Yes to edit this field.'
-                                  : undefined;
-
+                <div className="trainer-member-layout">
+                  <div className="trainer-member-section">
+                    {pokemonFieldGroups.filter(({ group }) => group === 'Pokemon' || group === 'Moves')
+                      .map((group) => renderPartyGroup(group, selectedPokemon))}
+                  </div>
+                  {pokemonFieldGroups.filter(({ group }) => group === 'Traits')
+                    .map((group) => renderPartyGroup(group, selectedPokemon))}
+                  <fieldset className="editable-field-group trainer-member-stats">
+                    <legend>{translateLiteral('Stats')}</legend>
+                    <div className="trainer-member-stat-actions">
+                      <span>{t('trainers.layout.maxIvsScope')}</span>
+                      <button
+                        aria-busy={isTrainerUpdating || undefined}
+                        className="primary-button compact-button trainer-max-iv-button"
+                        disabled={!canMaxTrainerIvs}
+                        onClick={stageTrainerMaxIvs}
+                        type="button"
+                      >
+                        <BusyActionContent
+                          busyLabel="Staging"
+                          icon={<Sparkles aria-hidden="true" size={14} />}
+                          isBusy={isTrainerUpdating}
+                          label="MAX IV"
+                        />
+                      </button>
+                    </div>
+                    {selectedPokemonBlockedByPreviousSlot || projectedSelectedPokemonSpeciesId === 0 ? (
+                      <p className="field-note">{translateLiteral(selectedPokemonBlockedByPreviousSlot
+                        ? 'Fill the previous party slot first.'
+                        : 'Set species before editing this slot.')}</p>
+                    ) : null}
+                    <table aria-label={translateLiteral('Stats')} className="trainer-stat-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">{translateLiteral('Stat')}</th>
+                          <th scope="col">IV</th>
+                          <th scope="col">EV</th>
+                          <th scope="col">{t('trainers.layout.projected')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {trainerProjectedStatRows.map(({ key, label }, index) => {
+                          const ivName = ivFieldNames[index]!;
+                          const evName = evFieldNames[index]!;
+                          const ivField = contextualPokemonFields.find((field) => field.field === ivName);
+                          const evField = contextualPokemonFields.find((field) => field.field === evName);
                           return (
-                            <TrainerDraftField
-                              currentValue={currentValue}
-                              disabled={
-                                disabledReason !== undefined ||
-                                !canEditTrainers ||
-                                editSession === null ||
-                                isSelectedPartySlotPasteTarget
-                              }
-                              disabledReason={disabledReason}
-                              draftState={draftState}
-                              draftValue={draftValue}
-                              field={field}
-                                formOptionContext={selectedPokemonFormOptionContext}
-                                helpDomain="trainers"
-                                helpGame={editorFamily}
-                                key={field.field}
-                              labelAdornment={getNatureStatAdornment(
-                                field.field,
-                                pokemonNatureEffects
-                              )}
-                              onChange={(value) => {
-                                if (!selectedPokemonDraftKey) {
-                                  return;
-                                }
-
-                                const nextDrafts = {
-                                  ...pokemonDrafts,
-                                  [field.field]: value
-                                };
-                                if (field.field === speciesIdFieldName) {
-                                  const speciesField = defaultContextualPokemonFields.find(
-                                    (candidate) => candidate.field === speciesIdFieldName
-                                  );
-                                  const formField = defaultContextualPokemonFields.find(
-                                    (candidate) => candidate.field === formFieldName
-                                  );
-                                  const previousSpeciesId =
-                                    parseEditableIntegerDraft(
-                                      pokemonDrafts[speciesIdFieldName] ??
-                                        selectedPokemon.speciesId.toString(),
-                                      speciesField?.options
-                                    );
-                                  const targetSpeciesId = parseEditableIntegerDraft(
-                                    value,
-                                    speciesField?.options
-                                  );
-                                  const previousForm =
-                                    parseOptionalInteger(
-                                      pokemonDrafts[formFieldName] ??
-                                        selectedPokemon.form.toString()
-                                    ) ?? selectedPokemon.form;
-
-                                  if (targetSpeciesId === 0) {
-                                    for (const dependentField of defaultContextualPokemonFields) {
-                                      if (dependentField.field !== speciesIdFieldName) {
-                                        nextDrafts[dependentField.field] =
-                                          pokemonDraftDefaults[dependentField.field] ?? '';
-                                      }
-                                    }
-                                  } else if (
-                                    formField &&
-                                    targetSpeciesId !== null &&
-                                    targetSpeciesId !== previousSpeciesId
-                                  ) {
-                                    const resolvedForm = resolveSpeciesChangeForm({
-                                      gameFamily: editorFamily,
-                                      pokemonRecords: pokemonWorkflow?.pokemon,
-                                      previousForm,
-                                      sourceForm: selectedPokemon.form,
-                                      sourceSpeciesId: selectedPokemon.speciesId,
-                                      speciesField,
-                                      targetSpeciesId
-                                    });
-                                    if (resolvedForm !== null) {
-                                      nextDrafts[formFieldName] = resolvedForm.toString();
-                                    }
-                                  }
-                                }
-                                if (
-                                  editorFamily === 'za' &&
-                                  (field.field === speciesIdFieldName ||
-                                    field.field === genderFieldName)
-                                ) {
-                                  const nextSpeciesId =
-                                    parseOptionalInteger(
-                                      nextDrafts[speciesIdFieldName] ??
-                                        selectedPokemon.speciesId.toString()
-                                    ) ?? selectedPokemon.speciesId;
-                                  const nextGender =
-                                    parseOptionalInteger(
-                                      nextDrafts[genderFieldName] ??
-                                        selectedPokemon.gender.toString()
-                                    ) ?? selectedPokemon.gender;
-                                  const nextForm =
-                                    parseOptionalInteger(
-                                      nextDrafts[formFieldName] ??
-                                        selectedPokemon.form.toString()
-                                    ) ?? selectedPokemon.form;
-
-                                  if (nextSpeciesId === zaMeowsticSpeciesId) {
-                                    if (nextGender === 0) {
-                                      nextDrafts[formFieldName] = '0';
-                                    } else if (nextGender === 1 || nextGender === 2) {
-                                      nextDrafts[formFieldName] =
-                                        resolveZaTrainerMeowsticFormForGender(
-                                          nextGender,
-                                          nextForm
-                                        ).toString();
-                                    }
-                                  }
-                                }
-                                if (field.field === canDynamaxFieldName && value === '0') {
-                                  for (const dependentField of dynamaxDependentFieldNames) {
-                                    nextDrafts[dependentField] =
-                                      pokemonDraftDefaults[dependentField] ?? '';
-                                  }
-                                }
-                                setPokemonDraftsByTrainerSlot((currentDrafts) =>
-                                  setFieldDraftRecord(
-                                    currentDrafts,
-                                    selectedPokemonDraftKey,
-                                    canonicalizeTrainerPartySlotDrafts(
-                                      nextDrafts,
-                                      pokemonDraftDefaults,
-                                      selectedPokemon.speciesId
-                                    ),
-                                    pokemonDraftDefaults
-                                  )
-                                );
-                              }}
-                            />
+                            <tr key={key}>
+                              <th scope="row">
+                                {translateLiteral(label)} {getNatureStatAdornment(ivName, pokemonNatureEffects)}
+                              </th>
+                              <td>{ivField ? renderPartyField(selectedPokemon, ivField, true) : '–'}</td>
+                              <td>{evField ? renderPartyField(selectedPokemon, evField, true) : '–'}</td>
+                              <td className="trainer-projected-value">
+                                {projectedPokemonStats?.stats[key] ?? '–'}
+                              </td>
+                            </tr>
                           );
                         })}
-                      </div>
-                      {editorFamily === 'za' && group.group === 'Moves' ? (
-                        <p className="field-note">{t('za.trainers.moves.unspecifiedHelp')}</p>
-                      ) : null}
-                    </fieldset>
-                  ))}
+                      </tbody>
+                    </table>
+                    <div className="trainer-stat-totals">
+                      {pokemonFieldGroups.filter(({ group }) =>
+                        editorFamily === 'za' && (group === 'Stats - EVs' || group === 'Stats - IVs')
+                      ).map(({ group, fields }) => (
+                        <PokemonStatTotal
+                          drafts={pokemonDrafts}
+                          fields={fields}
+                          getValue={(fieldName) => getEditablePokemonFieldValue(selectedPokemon, fieldName)}
+                          key={group}
+                          kind={group === 'Stats - EVs' ? 'ev' : 'iv'}
+                        />
+                      ))}
+                    </div>
+                  </fieldset>
                 </div>
-                <TrainerPokemonProjectedStatsPanel projectedStats={projectedPokemonStats} />
               </div>
             ) : (
               <p className="empty-copy">No party Pokemon selected.</p>
@@ -33633,6 +33671,57 @@ function SelectedTrainerPanel({
         />
       ) : null}
     </>
+  );
+}
+
+function TrainerSourceRows({
+  paths,
+  provenance
+}: {
+  paths: ProjectPaths;
+  provenance: TrainerRecord['provenance'];
+}) {
+  const { t, translateLiteral } = useLocalization();
+  const sources = [
+    {
+      label: 'Trainer data',
+      path: provenance.sourceFile,
+      layer: provenance.sourceLayer,
+      storagePath: provenance.sourceStoragePath
+    },
+    {
+      label: 'Trainer class',
+      path: provenance.classSourceFile,
+      layer: provenance.classSourceLayer,
+      emptyLabel: t('trainers.layout.noClassSource')
+    },
+    {
+      label: 'Party',
+      path: provenance.teamSourceFile,
+      layer: provenance.teamSourceLayer,
+      storagePath: provenance.teamStoragePath
+    }
+  ];
+
+  return (
+    <dl className="trainer-source-rows">
+      {sources.map(({ label, layer, path, storagePath, emptyLabel }) => {
+        const baseRomFs = layer === 'base' && path?.startsWith('romfs/');
+        const root = baseRomFs ? paths.baseRomFsPath : layer === 'layered' ? paths.outputRootPath : null;
+        const fullPath = storagePath ?? (root && path
+          ? root.replace(/[\\/]+$/, '') + '/' + (baseRomFs ? path.slice('romfs/'.length) : path)
+          : path);
+        return (
+          <div className="trainer-source-row" key={label}>
+            <dt>{translateLiteral(label)}</dt>
+            <dd className="trainer-source-layer">
+              {layer ? translateLiteral(formatSourceLayer(layer)) : emptyLabel ?? translateLiteral('Not loaded')}
+            </dd>
+            {fullPath ? <dd><code data-localization-ignore="true">{fullPath}</code></dd> : null}
+          </div>
+        );
+      })}
+    </dl>
   );
 }
 
@@ -33778,35 +33867,6 @@ type ProjectedTrainerPokemonStats = {
   stats: TrainerPokemonRecord['evs'];
 };
 
-function TrainerPokemonProjectedStatsPanel({
-  projectedStats
-}: {
-  projectedStats: ProjectedTrainerPokemonStats | null;
-}) {
-  const { translateLiteral } = useLocalization();
-
-  if (!projectedStats) {
-    return null;
-  }
-
-  return (
-    <section aria-label="Projected stats" className="trainer-projected-stats-panel">
-      <div className="trainer-projected-stats-header">
-        <strong>{translateLiteral('Projected Stats')}</strong>
-      </div>
-      <dl className="trainer-projected-stats-grid">
-        {trainerProjectedStatRows.map((row) => (
-          <div className="trainer-projected-stat" key={row.key}>
-            <dt>{translateLiteral(row.label)}</dt>
-            <dd aria-label={`${row.label} projected stat`}>
-              {projectedStats.stats[row.key]}
-            </dd>
-          </div>
-        ))}
-      </dl>
-    </section>
-  );
-}
 type DynamaxAdventureEditableFieldName = DynamaxAdventureEditableField['field'];
 type DynamaxAdventureEntryChangeGroup = {
   entryIndex: number;
@@ -33833,6 +33893,7 @@ type NumericEditableField = {
 };
 
 function TrainerDraftField({
+  compactStat = false,
   currentValue,
   disabled,
   disabledReason,
@@ -33845,8 +33906,10 @@ function TrainerDraftField({
   helpGame,
   idPrefix = 'trainer-field',
   labelAdornment,
+  note,
   onChange
 }: {
+  compactStat?: boolean;
   currentValue: number | null;
   disabled: boolean;
   disabledReason?: string;
@@ -33859,6 +33922,7 @@ function TrainerDraftField({
   helpGame?: FieldHelpGame;
   idPrefix?: string;
   labelAdornment?: ReactNode;
+  note?: string;
   onChange: (value: string) => void;
 }) {
   const inputId = `${idPrefix}-${field.field}`;
@@ -33872,7 +33936,9 @@ function TrainerDraftField({
   );
   const effectiveDisabledReason = disabledReason ?? formDisabledReason ?? undefined;
   const effectiveDisabled = disabled || Boolean(effectiveDisabledReason);
-  const statusText = draftState.error ?? (draftState.isChanged ? 'Changed' : null);
+  const statusText = compactStat
+    ? draftState.error
+    : effectiveDisabledReason ?? draftState.error ?? (draftState.isChanged ? 'Changed' : null);
   const { t, translateLiteral } = useLocalization();
   const localizedFieldLabel = translateLiteral(field.label);
   const localizedFieldHelpText = translateLiteral(
@@ -33901,12 +33967,12 @@ function TrainerDraftField({
         effectiveDisabledReason ? 'editable-field-disabled' : ''
       }`}
     >
-      <FieldLabel
+      {!compactStat ? <FieldLabel
         adornment={labelAdornment}
         help={localizedFieldHelpText}
         htmlFor={inputId}
         label={localizedFieldLabel}
-      />
+      /> : null}
       {field.valueKind === 'boolean' ? (
         <SearchableOptionInput
           ariaLabel={localizedFieldLabel}
@@ -33922,7 +33988,7 @@ function TrainerDraftField({
         />
       ) : options.length > 0 ? (
         <SearchableOptionInput
-          ariaLabel={field.label}
+          ariaLabel={localizedFieldLabel}
           data-km-source-site="trainer-draft-field-option"
           wrapSelectedValue
           disabled={effectiveDisabled}
@@ -33935,6 +34001,8 @@ function TrainerDraftField({
       ) : (
         <HoverTooltip content={localizedFieldHoverText}>
           <input
+            aria-describedby={statusText ? inputId + '-status' : undefined}
+            aria-invalid={!draftState.isValid || undefined}
             aria-label={localizedFieldLabel}
             disabled={effectiveDisabled}
             id={inputId}
@@ -33946,10 +34014,12 @@ function TrainerDraftField({
           />
         </HoverTooltip>
       )}
-      {effectiveDisabledReason ? (
-        <small className="editable-field-status">{translateLiteral(effectiveDisabledReason)}</small>
-      ) : statusText ? (
-        <small className={draftState.error ? 'editable-field-error' : 'editable-field-status'}>
+      {note ? <small className="editable-field-status">{translateLiteral(note)}</small> : null}
+      {statusText ? (
+        <small
+          className={statusText === draftState.error ? 'editable-field-error' : 'editable-field-status'}
+          id={inputId + '-status'}
+        >
           {translateLiteral(statusText)}
         </small>
       ) : null}
@@ -34076,7 +34146,7 @@ function createContextualTrainerPokemonFields(
   const formOptionContext = {
     ...context,
     abilityOptions: referencePokemon
-      ? createTrainerPokemonAbilityOptions(referencePokemon)
+      ? createTrainerPokemonAbilityOptions(referencePokemon, editorFamily)
       : usesCurrentIdentity
         ? pokemon.abilityOptions
         : [],
@@ -60077,7 +60147,26 @@ function createDraftSpeciesFormOptionContext(
   };
 }
 
-function createTrainerPokemonAbilityOptions(pokemon: PokemonRecord): EditableFieldOption[] {
+function createTrainerPokemonAbilityOptions(
+  pokemon: PokemonRecord,
+  editorFamily: EditorUiFamily = 'swsh'
+): EditableFieldOption[] {
+  if (editorFamily === 'sv' || editorFamily === 'za') {
+    const { ability1Label, ability2Label, hiddenAbilityLabel } = pokemon.abilities;
+    const formatSlot = (label: string, slot: string) => label && label !== slot ? `${label} (${slot})` : slot;
+    const options = [
+      { value: 0, label: 'Random 1/2' },
+      { value: 1, label: 'Random 1/2/Hidden' },
+      { value: 2, label: formatSlot(ability1Label, 'Ability 1') },
+      { value: 3, label: formatSlot(ability2Label, 'Ability 2') },
+      { value: 4, label: formatSlot(hiddenAbilityLabel, 'Hidden Ability') }
+    ];
+    if (editorFamily === 'za') {
+      options.push({ value: 255, label: 'Game default / random' });
+    }
+    return options;
+  }
+
   const options: EditableFieldOption[] = [];
   if (pokemon.abilities.ability1 > 0) {
     options.push(

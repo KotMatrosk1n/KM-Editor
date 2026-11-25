@@ -2763,6 +2763,8 @@ export const trainerProvenanceSchema = z.strictObject({
   teamFileState: projectFileGraphEntryStateSchema,
   teamSourceFile: z.string(),
   teamSourceLayer: projectFileLayerSchema,
+  sourceStoragePath: z.string().optional(),
+  teamStoragePath: z.string().optional(),
 });
 
 export const trainerPokemonStatsSchema = z.strictObject({

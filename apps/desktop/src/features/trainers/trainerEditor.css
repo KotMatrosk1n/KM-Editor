@@ -1,0 +1,286 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+.sectioned-editor-workspace .trainers-toolbar:has(.trainer-browser-counts) {
+  grid-template-columns: minmax(12rem, 1fr) auto;
+  align-items: center;
+}
+
+.trainer-browser-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  min-width: 0;
+  color: var(--color-text-soft);
+  font-size: .8125rem;
+}
+
+.trainer-browser-counts strong {
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.trainer-source-rows,
+.trainer-header-values {
+  margin: 0;
+}
+
+.trainer-source-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) minmax(6rem, .75fr) minmax(0, 6fr);
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.trainer-source-row dt {
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.trainer-source-row dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.trainer-source-layer {
+  color: var(--color-text-soft);
+}
+
+.trainer-source-row code {
+  user-select: text;
+}
+
+.trainer-disclosure {
+  padding: 7px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.trainer-disclosure summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.trainer-disclosure .trainer-header-values {
+  padding-block-start: 8px;
+}
+
+.trainer-header-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+
+.trainer-ai-mask,
+.trainer-projected-value {
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.sectioned-editor-workspace .trainer-ai-flags-panel {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.trainer-ai-flags-panel > .editable-field-label-row {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.trainer-ai-groups {
+  grid-column: 1;
+  grid-row: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.sectioned-editor-workspace .trainer-ai-flags-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+.sectioned-editor-workspace .trainer-ai-flag {
+  align-items: center;
+  padding: 5px 0;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.sectioned-editor-workspace .trainer-ai-flag:focus-within {
+  background: var(--color-control-hover);
+}
+
+.sectioned-editor-workspace .trainer-ai-flag:last-child {
+  border-bottom: 0;
+}
+
+.sectioned-editor-workspace[data-compact-fields] .trainer-party-roster {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.sectioned-editor-workspace[data-compact-fields] .trainer-party-roster .trainer-party-card {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: center;
+  align-items: center;
+  justify-items: start;
+  gap: 1px 6px;
+  grid-template-rows: auto auto;
+  min-height: 54px;
+  padding: 5px 8px;
+  text-align: start;
+}
+
+.sectioned-editor-workspace[data-compact-fields] .trainer-party-roster .trainer-party-card[data-empty] {
+  grid-template-columns: minmax(0, 1fr);
+  border-style: dashed;
+}
+
+.sectioned-editor-workspace[data-compact-fields] .trainer-party-roster .trainer-party-card[data-empty] > :is(strong, span:not([class])) {
+  grid-column: 1;
+}
+
+.sectioned-editor-workspace[data-compact-fields] .trainer-party-roster .trainer-party-card .trainer-party-sprite {
+  grid-row: 1 / span 2;
+  width: 34px;
+  height: 34px;
+}
+
+.sectioned-editor-workspace[data-compact-fields] .trainer-party-roster .trainer-party-card .trainer-party-sprite-empty {
+  display: none;
+}
+
+.sectioned-editor-workspace[data-compact-fields] .trainer-party-roster .trainer-party-card .trainer-party-held-item-bag {
+  inset: auto 4px 3px auto;
+}
+
+.trainer-member-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.15fr);
+  align-items: start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.trainer-member-section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.trainer-member-stat-actions,
+.trainer-stat-totals {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+  color: var(--color-text-soft);
+  font-size: .8125rem;
+}
+
+.trainer-stat-totals:not(:empty) {
+  padding-block-start: 6px;
+}
+
+.trainer-stat-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: .8125rem;
+}
+
+.trainer-stat-table th,
+.trainer-stat-table td {
+  min-width: 0;
+  padding: 4px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+.trainer-stat-table th:first-child {
+  width: 27%;
+}
+
+.trainer-stat-table :is(th, td):last-child {
+  width: 26%;
+  text-align: end;
+}
+
+.trainer-stat-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.trainer-stat-table .nature-stat-arrow {
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.trainer-stat-table .editable-field-control input {
+  min-height: 30px;
+  padding-inline: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.trainer-stat-table .editable-field-error {
+  overflow-wrap: anywhere;
+}
+
+@container editorWorkspace (max-width: 64rem) {
+  .trainer-member-layout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .trainer-member-stats {
+    grid-column: 1 / -1;
+  }
+
+  .sectioned-editor-workspace[data-compact-fields] .trainer-party-roster .trainer-party-card .trainer-party-sprite {
+    width: 24px;
+    height: 24px;
+  }
+}
+
+@container editorWorkspace (max-width: 44rem) {
+  .sectioned-editor-workspace .trainers-toolbar:has(.trainer-browser-counts) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .trainer-browser-counts {
+    grid-column: 1 / -1;
+  }
+
+  .sectioned-editor-workspace[data-compact-fields] .trainer-party-roster {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .trainer-source-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .trainer-source-row dd:last-child:not(.trainer-source-layer) {
+    grid-column: 1 / -1;
+  }
+
+  .trainer-member-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container editorWorkspace (max-width: 24rem) {
+  .sectioned-editor-workspace[data-compact-fields] .trainer-party-roster {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

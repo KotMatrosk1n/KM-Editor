@@ -2653,7 +2653,9 @@ public static class ZaBridgeMapper
             provenance.ClassSourceLayer is null ? null : ProjectBridgeMapper.ToDto(provenance.ClassSourceLayer.Value),
             ProjectBridgeMapper.ToDto(provenance.FileState),
             ProjectBridgeMapper.ToDto(provenance.TeamFileState),
-            provenance.ClassFileState is null ? null : ProjectBridgeMapper.ToDto(provenance.ClassFileState.Value));
+            provenance.ClassFileState is null ? null : ProjectBridgeMapper.ToDto(provenance.ClassFileState.Value),
+            provenance.StoragePath,
+            provenance.StoragePath);
     }
 
     private static ZaCacheModeDto ToDto(ZaCacheMode mode)

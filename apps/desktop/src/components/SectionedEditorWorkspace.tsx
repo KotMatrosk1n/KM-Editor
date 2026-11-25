@@ -10,6 +10,7 @@ import './sectionedEditorWorkspace.css';
 type SectionProps = {
   id: string;
   label: string;
+  summary?: ReactNode;
   modified?: boolean;
   invalid?: boolean;
   children: ReactNode;
@@ -295,6 +296,7 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
           }}>
           <span className="editor-section-label" title={section.label}>{section.label}</span>
           <span className="editor-section-status">
+            {section.summary}
             {section.modified ? <span className="editor-section-modified" title={t('editorSections.modified')} aria-label={t('editorSections.modified')}>●</span> : null}
             {section.invalid ? <span className="editor-section-invalid" title={t('editorSections.invalid')} aria-label={t('editorSections.invalid')}>!</span> : null}
           </span>

@@ -305,7 +305,8 @@ internal sealed class SvTrainersWorkflowService
                 ClassSourceLayer: null,
                 source.FileState,
                 source.FileState,
-                ClassFileState: null));
+                ClassFileState: null,
+                source.StoragePath));
     }
 
     private static IEnumerable<SvTrainerPokemonRecord> ReadTeam(

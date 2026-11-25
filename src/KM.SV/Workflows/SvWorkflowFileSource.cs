@@ -314,7 +314,8 @@ internal sealed class SvWorkflowFileSource
                         ProjectFileLayer.Layered,
                         state),
                     ProjectFileLayer.Layered,
-                    state);
+                    state,
+                    looseOutput.Value.Path);
             }
 
             if (TryReadOutputArchive(
@@ -328,7 +329,8 @@ internal sealed class SvWorkflowFileSource
                     relativePath,
                     layeredArchiveBytes,
                     ProjectFileLayer.Layered,
-                    ProjectFileGraphEntryState.LayeredOverride);
+                    ProjectFileGraphEntryState.LayeredOverride,
+                    FormatArchiveEntryPath(project.Paths.OutputRootPath, normalizedVirtualPath));
             }
         }
 
@@ -350,7 +352,8 @@ internal sealed class SvWorkflowFileSource
                         ProjectFileLayer.Base,
                         entry?.State),
                     ProjectFileLayer.Base,
-                    entry?.State ?? ProjectFileGraphEntryState.BaseOnly);
+                    entry?.State ?? ProjectFileGraphEntryState.BaseOnly,
+                    looseBasePath);
             }
 
             try
@@ -363,7 +366,8 @@ internal sealed class SvWorkflowFileSource
                     relativePath,
                     archiveBytes,
                     ProjectFileLayer.Base,
-                    entry?.State ?? ProjectFileGraphEntryState.BaseOnly);
+                    entry?.State ?? ProjectFileGraphEntryState.BaseOnly,
+                    FormatArchiveEntryPath(project.Paths.BaseRomFsPath, normalizedVirtualPath));
             }
             catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
             {
@@ -2293,6 +2297,12 @@ internal sealed class SvWorkflowFileSource
         }
     }
 
+    private static string? FormatArchiveEntryPath(string rootPath, string virtualPath)
+    {
+        var archiveRoot = ResolveFreshArchiveRootPath(rootPath);
+        return archiveRoot is null ? null : $"{Path.Combine(archiveRoot, "arc", "data.trpfs")} :: /{virtualPath}";
+    }
+
     private static string? ResolveFreshArchiveRootPath(string rootPath)
     {
         var fullRootPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootPath));
@@ -2932,7 +2942,8 @@ internal sealed record SvWorkflowFile(
     string RelativePath,
     byte[] Bytes,
     ProjectFileLayer SourceLayer,
-    ProjectFileGraphEntryState FileState);
+    ProjectFileGraphEntryState FileState,
+    string? StoragePath = null);
 
 internal sealed record SvWorkflowArchiveInventory(
     IReadOnlyList<string> PackNames,

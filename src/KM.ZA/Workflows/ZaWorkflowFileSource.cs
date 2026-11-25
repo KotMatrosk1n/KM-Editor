@@ -369,7 +369,8 @@ internal sealed class ZaWorkflowFileSource
                     state,
                     looseOutput.Value.IsStandalone
                         ? ZaWorkflowFileOrigin.StandaloneLooseOutput
-                        : ZaWorkflowFileOrigin.TrinityModManagerLooseOutput);
+                        : ZaWorkflowFileOrigin.TrinityModManagerLooseOutput,
+                    looseOutput.Value.Path);
             }
 
             if (TryReadOutputArchive(
@@ -384,7 +385,8 @@ internal sealed class ZaWorkflowFileSource
                     layeredArchiveBytes,
                     ProjectFileLayer.Layered,
                     ProjectFileGraphEntryState.LayeredOverride,
-                    ZaWorkflowFileOrigin.OutputArchive);
+                    ZaWorkflowFileOrigin.OutputArchive,
+                    FormatArchiveEntryPath(project.Paths.OutputRootPath, normalizedVirtualPath));
             }
         }
 
@@ -407,7 +409,8 @@ internal sealed class ZaWorkflowFileSource
                         entry?.State),
                     ProjectFileLayer.Base,
                     entry?.State ?? ProjectFileGraphEntryState.BaseOnly,
-                    ZaWorkflowFileOrigin.LooseBase);
+                    ZaWorkflowFileOrigin.LooseBase,
+                    looseBasePath);
             }
 
             try
@@ -421,7 +424,8 @@ internal sealed class ZaWorkflowFileSource
                     archiveBytes,
                     ProjectFileLayer.Base,
                     entry?.State ?? ProjectFileGraphEntryState.BaseOnly,
-                    ZaWorkflowFileOrigin.BaseArchive);
+                    ZaWorkflowFileOrigin.BaseArchive,
+                    FormatArchiveEntryPath(project.Paths.BaseRomFsPath, normalizedVirtualPath));
             }
             catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
             {
@@ -2895,6 +2899,12 @@ internal sealed class ZaWorkflowFileSource
         }
     }
 
+    private static string? FormatArchiveEntryPath(string rootPath, string virtualPath)
+    {
+        var archiveRoot = ResolveFreshArchiveRootPath(rootPath);
+        return archiveRoot is null ? null : $"{Path.Combine(archiveRoot, "arc", "data.trpfs")} :: /{virtualPath}";
+    }
+
     private static string? ResolveFreshArchiveRootPath(string rootPath)
     {
         var fullRootPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootPath));
@@ -3601,7 +3611,8 @@ internal sealed record ZaWorkflowFile(
     byte[] Bytes,
     ProjectFileLayer SourceLayer,
     ProjectFileGraphEntryState FileState,
-    ZaWorkflowFileOrigin Origin);
+    ZaWorkflowFileOrigin Origin,
+    string? StoragePath = null);
 
 internal enum ZaWorkflowFileOrigin
 {

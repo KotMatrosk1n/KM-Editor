@@ -22,7 +22,9 @@ public sealed record TrainerProvenanceDto(
     ProjectFileLayerDto? ClassSourceLayer,
     ProjectFileGraphEntryStateDto FileState,
     ProjectFileGraphEntryStateDto TeamFileState,
-    ProjectFileGraphEntryStateDto? ClassFileState);
+    ProjectFileGraphEntryStateDto? ClassFileState,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SourceStoragePath = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TeamStoragePath = null);
 
 public sealed record TrainerPokemonRecordDto(
     int Slot,
