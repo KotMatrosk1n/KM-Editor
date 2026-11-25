@@ -6,8 +6,11 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.Editing;
+using KM.SwSh.Moves;
 using KM.SwSh.Workflows;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace KM.SwSh.Items;
 
@@ -80,6 +83,12 @@ public sealed class SwShItemsEditSessionService
     public const string MachineMoveIdField = SwShItemsWorkflowService.MachineMoveIdField;
 
     private const string ItemsEditDomain = "workflow.items";
+
+    // Sword/Shield item sprite IDs in native move type order (Normal through Fairy).
+    private static readonly short[] TmDiscSprites =
+        [332, 335, 421, 333, 353, 350, 403, 357, 401, 338, 345, 349, 351, 330, 334, 329, 328, 693];
+    private static readonly short[] TrDiscSprites =
+        [1130, 1137, 1196, 1152, 1140, 1193, 1148, 1163, 1161, 1132, 1133, 1180, 1138, 1141, 1135, 1154, 1162, 1220];
 
     private readonly SwShItemsWorkflowService itemsWorkflowService;
     private readonly ProjectWorkspaceService projectWorkspaceService;
@@ -237,7 +246,7 @@ public sealed class SwShItemsEditSessionService
                 .ToArray(),
         };
         if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error)
-            && !TryMaterializeWorkflow(project, loadedWorkflow, rowCandidateSession, diagnostics, out effectiveWorkflow))
+            && !TryMaterializeWorkflow(project, loadedWorkflow, rowCandidateSession, diagnostics, out effectiveWorkflow, out _))
         {
             // The formatter diagnostic below explains why the candidate row/linkage edits are unsafe.
         }
@@ -273,11 +282,11 @@ public sealed class SwShItemsEditSessionService
 
         if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
-            ValidateLoadedSession(project, loadedWorkflow, candidateSession, diagnostics, addSuccessDiagnostic: false);
+            ValidateLoadedSession(project, loadedWorkflow, candidateSession, diagnostics, addSuccessDiagnostic: false,
+                out effectiveWorkflow, out _);
         }
 
-        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-            || !TryMaterializeWorkflow(project, loadedWorkflow, candidateSession, diagnostics, out effectiveWorkflow))
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return new SwShItemsEditResult(originalWorkflow, originalSession, diagnostics);
         }
@@ -290,6 +299,14 @@ public sealed class SwShItemsEditSessionService
 
     public SwShEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
+        return Validate(paths, session, out _);
+    }
+
+    private SwShEditSessionValidation Validate(
+        ProjectPaths paths,
+        EditSession session,
+        out IReadOnlyList<MachineDiscUpdate> discUpdates)
+    {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
@@ -298,7 +315,7 @@ public sealed class SwShItemsEditSessionService
         var diagnostics = new List<ValidationDiagnostic>();
 
         CanEditItems(project, workflow, diagnostics);
-        ValidateLoadedSession(project, workflow, session, diagnostics, addSuccessDiagnostic: true);
+        ValidateLoadedSession(project, workflow, session, diagnostics, addSuccessDiagnostic: true, out _, out discUpdates);
 
         return new SwShEditSessionValidation(
             session,
@@ -308,10 +325,18 @@ public sealed class SwShItemsEditSessionService
 
     public ChangePlan CreateChangePlan(ProjectPaths paths, EditSession session)
     {
+        return CreateChangePlan(paths, session, out _);
+    }
+
+    private ChangePlan CreateChangePlan(
+        ProjectPaths paths,
+        EditSession session,
+        out IReadOnlyList<MachineDiscUpdate> discUpdates)
+    {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
-        var validation = Validate(paths, session);
+        var validation = Validate(paths, session, out discUpdates);
         var diagnostics = validation.Diagnostics.ToList();
         var itemEdits = GetItemEdits(session.PendingEdits);
 
@@ -330,7 +355,7 @@ public sealed class SwShItemsEditSessionService
 
         var writes = itemEdits.Count == 0
             ? Array.Empty<PlannedFileWrite>()
-            : [CreatePlannedWrite(paths, itemEdits)];
+            : [CreatePlannedWrite(paths, itemEdits, discUpdates)];
 
         diagnostics.Add(CreateDiagnostic(
             DiagnosticSeverity.Info,
@@ -349,7 +374,7 @@ public sealed class SwShItemsEditSessionService
 
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
-        var currentPlan = CreateChangePlan(paths, session);
+        var currentPlan = CreateChangePlan(paths, session, out var reviewedDiscUpdates);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
@@ -410,7 +435,13 @@ public sealed class SwShItemsEditSessionService
                 return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
-            var output = itemTable.WriteEdits(itemTableEdits);
+            var moveTypes = ReadReviewedMoveTypes(project, reviewedDiscUpdates);
+            var output = WriteItemTableEdits(itemTable, itemTableEdits, session, moveTypes, out var discUpdates);
+            if (!discUpdates.SequenceEqual(reviewedDiscUpdates))
+            {
+                throw new InvalidDataException("The verified taught move data produced different disc sprites from the reviewed plan.");
+            }
+
             WriteOutputAtomically(targetPath, output);
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, SwShItemsWorkflowService.ItemDataPath));
             diagnostics.Add(CreateDiagnostic(
@@ -778,8 +809,12 @@ public sealed class SwShItemsEditSessionService
         SwShItemsWorkflow loadedWorkflow,
         EditSession session,
         ICollection<ValidationDiagnostic> diagnostics,
-        bool addSuccessDiagnostic)
+        bool addSuccessDiagnostic,
+        out SwShItemsWorkflow workflow,
+        out IReadOnlyList<MachineDiscUpdate> discUpdates)
     {
+        workflow = loadedWorkflow;
+        discUpdates = [];
         var itemEdits = GetItemEdits(session.PendingEdits);
         foreach (var edit in itemEdits)
         {
@@ -795,7 +830,7 @@ public sealed class SwShItemsEditSessionService
         {
             PendingEdits = itemEdits.Where(edit => !IsMachineMoveField(edit.Field)).ToArray(),
         };
-        if (!TryMaterializeWorkflow(project, loadedWorkflow, rowSession, diagnostics, out var rowWorkflow))
+        if (!TryMaterializeWorkflow(project, loadedWorkflow, rowSession, diagnostics, out var rowWorkflow, out _))
         {
             return;
         }
@@ -910,7 +945,7 @@ public sealed class SwShItemsEditSessionService
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-            || !TryMaterializeWorkflow(project, loadedWorkflow, session, diagnostics, out _))
+            || !TryMaterializeWorkflow(project, loadedWorkflow, session, diagnostics, out workflow, out discUpdates))
         {
             return;
         }
@@ -945,7 +980,7 @@ public sealed class SwShItemsEditSessionService
         EditSession session)
     {
         var ignoredDiagnostics = new List<ValidationDiagnostic>();
-        return TryMaterializeWorkflow(project, loadedWorkflow, session, ignoredDiagnostics, out var workflow)
+        return TryMaterializeWorkflow(project, loadedWorkflow, session, ignoredDiagnostics, out var workflow, out _)
             ? workflow
             : OverlayPendingEdits(loadedWorkflow, session.PendingEdits);
     }
@@ -955,9 +990,11 @@ public sealed class SwShItemsEditSessionService
         SwShItemsWorkflow loadedWorkflow,
         EditSession session,
         ICollection<ValidationDiagnostic> diagnostics,
-        out SwShItemsWorkflow workflow)
+        out SwShItemsWorkflow workflow,
+        out IReadOnlyList<MachineDiscUpdate> discUpdates)
     {
         workflow = loadedWorkflow;
+        discUpdates = [];
         var itemEdits = GetItemEdits(session.PendingEdits);
         if (itemEdits.Count == 0)
         {
@@ -987,7 +1024,8 @@ public sealed class SwShItemsEditSessionService
                 return false;
             }
 
-            var materialized = SwShItemTable.Parse(table.WriteEdits(edits));
+            var output = WriteItemTableEdits(table, edits, session, loadedWorkflow.MoveTypes, out discUpdates);
+            var materialized = SwShItemTable.Parse(output);
             workflow = MergeMaterializedRecords(loadedWorkflow, materialized.Records);
             return true;
         }
@@ -1018,6 +1056,92 @@ public sealed class SwShItemsEditSessionService
 
         return false;
     }
+
+    private static bool ChangesMachineDisc(SwShItemTableEdit edit)
+    {
+        return edit.Field == SwShItemTableField.MachineMove && edit.Value != 0;
+    }
+
+    private static byte[] WriteItemTableEdits(
+        SwShItemTable table,
+        IReadOnlyList<SwShItemTableEdit> edits,
+        EditSession session,
+        IReadOnlyDictionary<int, SwShAvailableMoveType>? moveTypes,
+        out IReadOnlyList<MachineDiscUpdate> discUpdates)
+    {
+        discUpdates = [];
+        var output = table.WriteEdits(edits);
+        var machineEdits = edits.Where(ChangesMachineDisc).ToArray();
+        if (machineEdits.Length == 0)
+        {
+            return output;
+        }
+
+        // Resolve the owning row and machine family after any pending linkage edits have been applied.
+        var updatedTable = SwShItemTable.Parse(output);
+        var records = updatedTable.Records.ToDictionary(record => record.ItemId);
+        var updates = new List<MachineDiscUpdate>(machineEdits.Length);
+        foreach (var edit in machineEdits)
+        {
+            var moveId = edit.Value;
+            if (moveTypes is null || !moveTypes.TryGetValue(moveId, out var moveType))
+            {
+                throw new InvalidDataException($"No move type data is available for taught move {moveId}.");
+            }
+
+            var type = moveType.Type;
+            var moveRecordId = moveId.ToString(CultureInfo.InvariantCulture);
+            var pendingType = session.PendingEdits.LastOrDefault(pending =>
+                pending.Domain == SwShMovesEditSessionService.MovesEditDomain
+                && pending.Field == SwShMovesWorkflowService.TypeField
+                && pending.RecordId == moveRecordId);
+            if (pendingType is not null
+                && !byte.TryParse(pendingType.NewValue, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out type))
+            {
+                throw new InvalidDataException($"Taught move {moveId} has an invalid pending type.");
+            }
+
+            var slot = records[edit.ItemId].MachineSlot
+                ?? throw new InvalidDataException($"Item {edit.ItemId} has no writable TM/TR slot.");
+            var sprites = slot >= SwShItemsWorkflowService.TechnicalRecordTrSlotStart
+                ? TrDiscSprites
+                : TmDiscSprites;
+            if (type >= sprites.Length)
+            {
+                throw new InvalidDataException($"Taught move {moveId} uses unsupported move type {type}.");
+            }
+
+            updates.Add(new MachineDiscUpdate(edit.ItemId, moveId, sprites[type], moveType.Source));
+        }
+
+        discUpdates = updates;
+        return updatedTable.WriteEdits(updates
+            .Select(update => new SwShItemTableEdit(update.ItemId, SwShItemTableField.ItemSprite, update.SpriteId))
+            .ToArray());
+    }
+
+    private static IReadOnlyDictionary<int, SwShAvailableMoveType> ReadReviewedMoveTypes(
+        OpenedProject project,
+        IReadOnlyList<MachineDiscUpdate> discUpdates)
+    {
+        var moveTypes = new Dictionary<int, SwShAvailableMoveType>();
+        foreach (var update in discUpdates.DistinctBy(update => update.MoveId))
+        {
+            var source = SwShMovesWorkflowService.ResolveMoveDataSource(project, update.MoveSource.RelativePath)
+                ?? throw new InvalidDataException($"The reviewed source for taught move {update.MoveId} is unavailable.");
+            var move = SwShMoveDataFile.Parse(File.ReadAllBytes(source.AbsolutePath)).Record;
+            if (move.MoveId != update.MoveId || !move.CanUseMove)
+            {
+                throw new InvalidDataException($"The reviewed source does not contain usable move {update.MoveId}.");
+            }
+
+            moveTypes.Add(update.MoveId, new SwShAvailableMoveType(move.Core.Type, update.MoveSource));
+        }
+
+        return moveTypes;
+    }
+
+    private sealed record MachineDiscUpdate(int ItemId, int MoveId, short SpriteId, ProjectFileReference MoveSource);
 
     private static SwShItemsWorkflow MergeMaterializedRecords(
         SwShItemsWorkflow workflow,
@@ -1947,17 +2071,38 @@ public sealed class SwShItemsEditSessionService
         return updatedWorkflow;
     }
 
-    private static PlannedFileWrite CreatePlannedWrite(ProjectPaths paths, IReadOnlyList<PendingEdit> edits)
+    private static PlannedFileWrite CreatePlannedWrite(
+        ProjectPaths paths,
+        IReadOnlyList<PendingEdit> edits,
+        IReadOnlyList<MachineDiscUpdate> discUpdates)
     {
         var targetRelativePath = SwShItemsWorkflowService.ItemDataPath;
         var targetPath = SwShItemsWorkflowService.ResolveOutputPath(paths, targetRelativePath);
         var sources = edits
             .SelectMany(edit => edit.Sources)
+            .Concat(discUpdates.Select(update => update.MoveSource))
             .Distinct()
             .ToArray();
         var reason = edits.Count == 1
             ? $"Apply pending Items edit: {edits[0].Summary}"
-            : $"Apply {edits.Count} pending Items edits: {string.Join(" ", edits.Select(edit => edit.Summary))}";
+            : $"Apply {edits.Count} pending Items edits:";
+        if (discUpdates.Count == 0 && edits.Count > 1)
+        {
+            reason += $" {string.Join(" ", edits.Select(edit => edit.Summary))}";
+        }
+        else if (discUpdates.Count > 0)
+        {
+            reason = edits.Count == 1 ? reason : $"Apply {edits.Count} pending Items edits.";
+            reason += discUpdates.Count == 1
+                ? $" Set item {discUpdates[0].ItemId} disc sprite to {discUpdates[0].SpriteId}."
+                : $" Set {discUpdates.Count} disc sprites to match their taught move types.";
+            var intent = JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                Edits = OrderPendingEdits(edits).Select(edit => new { edit.RecordId, edit.Field, edit.NewValue }),
+                DiscSprites = discUpdates.Select(update => new { update.ItemId, update.SpriteId }),
+            });
+            reason += $" Edit fingerprint {Convert.ToHexString(SHA256.HashData(intent))}.";
+        }
 
         return new PlannedFileWrite(
             targetRelativePath,
