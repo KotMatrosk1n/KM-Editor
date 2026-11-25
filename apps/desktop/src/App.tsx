@@ -19158,9 +19158,10 @@ export function App({
       throw error;
     });
 
-    const reloadTasks: Array<() => Promise<void>> = [];
+    const reloadTasks = new Map<StoredRetainedWorkflowSection, () => Promise<void>>();
     if (itemsWorkflow && refreshSections.has('items')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'items',
         async () => {
           const response = await bridge.loadItemsWorkflow({ paths, recordIndices: ['sword', 'shield', 'scarlet', 'violet', 'za'].includes(paths.selectedGame ?? "")
             ? appliedNumericRecordIds(appliedEdits, 'workflow.items') : undefined });
@@ -19171,7 +19172,8 @@ export function App({
       );
     }
     if (pokemonWorkflow && refreshSections.has('pokemon')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'pokemon',
         async () => {
           const response = await bridge.loadPokemonWorkflow({ paths, recordIndices: ['sword', 'shield', 'scarlet', 'violet', 'za'].includes(paths.selectedGame ?? "")
             ? appliedNumericRecordIds(appliedEdits, 'workflow.pokemon') : undefined });
@@ -19182,7 +19184,8 @@ export function App({
       );
     }
     if (movesWorkflow && refreshSections.has('moves')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'moves',
         async () => {
           const response = await bridge.loadMovesWorkflow({ paths, recordIndices: ['sword', 'shield', 'scarlet', 'violet', 'za'].includes(paths.selectedGame ?? "")
             ? appliedNumericRecordIds(appliedEdits, 'workflow.moves') : undefined });
@@ -19193,7 +19196,8 @@ export function App({
       );
     }
     if (textWorkflow && refreshSections.has('text')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'text',
         async () => {
           const queryRevision = textQueryRevisionRef.current;
           const response = await bridge.loadTextWorkflow({
@@ -19213,7 +19217,8 @@ export function App({
       );
     }
     if (trainersWorkflow && refreshSections.has('trainers')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'trainers',
         async () => {
           const trainerIds = isSwordShieldProject && writtenFiles
             ? getTrainerPartyRefreshIds(trainersWorkflow, writtenFiles)
@@ -19237,7 +19242,8 @@ export function App({
       );
     }
     if (trainerPoolsWorkflow && refreshSections.has('trainerPools')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'trainerPools',
         async () => {
           const response = await bridge.loadTrainerPoolsWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19247,7 +19253,8 @@ export function App({
       );
     }
     if (fashionCatalogWorkflow && refreshSections.has('fashionCatalog')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'fashionCatalog',
         async () => {
           const response = await bridge.loadFashionCatalogWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19257,115 +19264,127 @@ export function App({
       );
     }
     if (marnieBoostsWorkflow && refreshSections.has('marnieBoosts')) {
-      reloadTasks.push(async () => {
+      reloadTasks.set('marnieBoosts', async () => {
         const response = await bridge.loadMarnieBoosts({ paths });
         if (canCommitRefresh()) setMarnieBoostsWorkflow(response.workflow);
       });
     }
     if (restoreMissingPokemonWorkflow && refreshSections.has('restoreMissingPokemon')) {
-      reloadTasks.push(async () => {
+      reloadTasks.set('restoreMissingPokemon', async () => {
         const response = await bridge.loadRestoration({ paths, session: useWorkbenchStore.getState().editSession });
         if (canCommitRefresh()) setRestorationWorkflow(response.workflow);
       });
     }
     if (shakingTreesWorkflow && refreshSections.has('shakingTrees')) {
-      reloadTasks.push(async () => {
+      reloadTasks.set('shakingTrees', async () => {
         const response = await bridge.loadShakingTrees({ paths });
         if (canCommitRefresh()) setShakingTreesWorkflow(response.workflow);
       });
     }
     if (heldItemChanceWorkflow && refreshSections.has('heldItemChance')) {
-      reloadTasks.push(async () => {
+      reloadTasks.set('heldItemChance', async () => {
         const response = await bridge.loadHeldItemChance({ paths });
         if (canCommitRefresh()) setHeldItemChanceWorkflow(response.workflow);
       });
     }
     if (gameOptionsWorkflow && refreshSections.has('gameOptions')) {
-      reloadTasks.push(async () => {
+      reloadTasks.set('gameOptions', async () => {
         const response = await bridge.loadGameOptions({ paths });
         if (canCommitRefresh()) setGameOptionsWorkflow(response.workflow);
       });
     }
     if (obedienceWorkflow && refreshSections.has('obedience')) {
-      reloadTasks.push(async () => {
+      reloadTasks.set('obedience', async () => {
         const response = await bridge.loadObedience({ paths });
         if (canCommitRefresh()) setObedienceWorkflow(response.workflow);
       });
     }
     if (raidDensWorkflow && refreshSections.has('raidDens')) {
-      reloadTasks.push(async () => {
+      reloadTasks.set('raidDens', async () => {
         const response = await bridge.loadRaidDens({ paths });
         if (canCommitRefresh()) setRaidDensWorkflow(response.workflow);
       });
     }
     if (pokeJobsWorkflow && refreshSections.has('pokeJobs')) {
-      reloadTasks.push(async () => {
+      reloadTasks.set('pokeJobs', async () => {
         const response = await bridge.loadPokeJobs({ paths });
         if (canCommitRefresh()) setPokeJobsWorkflow(response.workflow);
       });
     }
     if (yCommWorkflow && refreshSections.has('yComm')) {
-      reloadTasks.push(async () => {
+      reloadTasks.set('yComm', async () => {
         const response = await bridge.loadYComm({ paths });
         if (canCommitRefresh()) setYCommWorkflow(response.workflow);
       });
     }
-    if ((mysteryGiftWorkflow || royalGiftWorkflow) && (refreshSections.has('mysteryGift') || refreshSections.has('royalGift'))) {
-      reloadTasks.push(async () => {
-        const response = await bridge.loadCustomGifts({ paths });
-        if (canCommitRefresh()) { setMysteryGiftWorkflow(response.workflow); setRoyalGiftWorkflow(response.workflow); }
+    // Both editors read the same catalog and commit it under their own refresh tokens.
+    let customGiftsReload: ReturnType<typeof bridge.loadCustomGifts> | undefined;
+    const loadCustomGiftsForRefresh = () =>
+      (customGiftsReload ??= bridge.loadCustomGifts({ paths }));
+    if (mysteryGiftWorkflow && refreshSections.has('mysteryGift')) {
+      reloadTasks.set('mysteryGift', async () => {
+        const response = await loadCustomGiftsForRefresh();
+        if (canCommitRefresh()) setMysteryGiftWorkflow(response.workflow);
+      });
+    }
+
+    if (royalGiftWorkflow && refreshSections.has('royalGift')) {
+      reloadTasks.set('royalGift', async () => {
+        const response = await loadCustomGiftsForRefresh();
+        if (canCommitRefresh()) setRoyalGiftWorkflow(response.workflow);
       });
     }
     if (fixAiFlagsWorkflow && refreshSections.has('fixAiFlags')) {
-      reloadTasks.push(async () => {
+      reloadTasks.set('fixAiFlags', async () => {
         const response = await bridge.loadFixAiFlags({ paths });
         if (canCommitRefresh()) setFixAiFlagsWorkflow(response.workflow);
       });
     }
     if (trainerWhiteoutWorkflow && refreshSections.has('trainerWhiteout')) {
-      reloadTasks.push(async () => {
+      reloadTasks.set('trainerWhiteout', async () => {
         const response = await bridge.loadTrainerWhiteout({ paths });
         if (canCommitRefresh()) setTrainerWhiteoutWorkflow(response.workflow);
       });
     }
     if (bbqRewardsWorkflow && refreshSections.has('bbqRewards')) {
-      reloadTasks.push(async () => {
+      reloadTasks.set('bbqRewards', async () => {
         const response = await bridge.loadBlueberry({ editor: 'bbqRewards', paths, session: getEditSessionForSection('bbqRewards') });
         if (canCommitRefresh()) setBbqRewardsWorkflow(response.workflow);
       });
     }
     if (supportBoardWorkflow && refreshSections.has('supportBoard')) {
-      reloadTasks.push(async () => {
+      reloadTasks.set('supportBoard', async () => {
         const response = await bridge.loadBlueberry({ editor: 'supportBoard', paths, session: getEditSessionForSection('supportBoard') });
         if (canCommitRefresh()) setSupportBoardWorkflow(response.workflow);
       });
     }
     if (snacksworthWorkflow && refreshSections.has('snacksworth')) {
-      reloadTasks.push(async () => {
+      reloadTasks.set('snacksworth', async () => {
         const response = await bridge.loadBlueberry({ editor: 'snacksworth', paths, session: getEditSessionForSection('snacksworth') });
         if (canCommitRefresh()) setSnacksworthWorkflow(response.workflow);
       });
     }
     if (starmobilesWorkflow && refreshSections.has('starmobiles')) {
-      reloadTasks.push(async () => {
+      reloadTasks.set('starmobiles', async () => {
         const response = await bridge.loadStarmobiles({ paths, session: getEditSessionForSection('starmobiles') });
         if (canCommitRefresh()) setStarmobilesWorkflow(response.workflow);
       });
     }
     if (titanSwapperWorkflow && refreshSections.has('titanSwapper')) {
-      reloadTasks.push(async () => {
+      reloadTasks.set('titanSwapper', async () => {
         const response = await bridge.loadTitanSwapper({ paths, session: getEditSessionForSection('titanSwapper') });
         if (canCommitRefresh()) setTitanSwapperWorkflow(response.workflow);
       });
     }
     if (summaryStatsWorkflow && refreshSections.has('summaryStats')) {
-      reloadTasks.push(async () => {
+      reloadTasks.set('summaryStats', async () => {
         const response = await bridge.loadSummaryStats({ paths, session: getEditSessionForSection('summaryStats') });
         if (canCommitRefresh()) setSummaryStatsWorkflow(response.workflow);
       });
     }
     if (habitatCoordinatesWorkflow && refreshSections.has('habitatCoordinates')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'habitatCoordinates',
         async () => {
           const page = habitatCoordinatesWorkflow.page;
           const response = await bridge.loadHabitatCoordinates({
@@ -19385,7 +19404,8 @@ export function App({
       );
     }
     if (giftPokemonWorkflow && refreshSections.has('giftPokemon')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'giftPokemon',
         async () => {
           const response = await bridge.loadGiftPokemonWorkflow({ paths,
             recordIndices: ['sword', 'shield', 'scarlet', 'violet', 'za'].includes(paths.selectedGame ?? "")
@@ -19397,7 +19417,8 @@ export function App({
       );
     }
     if (tradePokemonWorkflow && refreshSections.has('tradePokemon')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'tradePokemon',
         async () => {
           const response = await bridge.loadTradePokemonWorkflow({ paths,
             recordIndices: ['sword', 'shield', 'scarlet', 'violet', 'za'].includes(paths.selectedGame ?? "")
@@ -19409,7 +19430,8 @@ export function App({
       );
     }
     if (staticEncountersWorkflow && refreshSections.has('staticEncounters')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'staticEncounters',
         async () => {
           const response = await bridge.loadStaticEncountersWorkflow({ paths,
             recordIndices: (paths.selectedGame === 'sword' || paths.selectedGame === 'shield')
@@ -19421,7 +19443,8 @@ export function App({
       );
     }
     if (rentalPokemonWorkflow && refreshSections.has('rentalPokemon')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'rentalPokemon',
         async () => {
           const response = await bridge.loadRentalPokemonWorkflow({ paths,
             recordIndices: (paths.selectedGame === 'sword' || paths.selectedGame === 'shield')
@@ -19433,7 +19456,8 @@ export function App({
       );
     }
     if (dynamaxAdventuresWorkflow && refreshSections.has('dynamaxAdventures')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'dynamaxAdventures',
         async () => {
           const response = await bridge.loadDynamaxAdventuresWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19443,7 +19467,8 @@ export function App({
       );
     }
     if (shopsWorkflow && refreshSections.has('shops')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'shops',
         async () => {
           const response = await bridge.loadShopsWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19457,7 +19482,8 @@ export function App({
       );
     }
     if (tmMachineControlsWorkflow && refreshSections.has('tmMachineControls')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'tmMachineControls',
         async () => {
           const response = await bridge.loadTmMachineControls({ paths });
           if (canCommitRefresh()) {
@@ -19467,7 +19493,8 @@ export function App({
       );
     }
     if (encountersWorkflow && refreshSections.has('encounters')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'encounters',
         async () => {
           const response = await bridge.loadEncountersWorkflow({ paths, tableIds: paths.selectedGame === 'za' ? appliedZaEncounterTableIds(appliedEdits, encountersWorkflow) : appliedEncounterTableIds(appliedEdits) });
           if (canCommitRefresh()) {
@@ -19477,7 +19504,8 @@ export function App({
       );
     }
     if (teraRaidsWorkflow && refreshSections.has('teraRaids')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'teraRaids',
         async () => {
           const response = await bridge.loadTeraRaidsWorkflow({ paths, recordIds: appliedTeraRaidRecordIds(appliedEdits) });
           if (canCommitRefresh()) {
@@ -19487,7 +19515,8 @@ export function App({
       );
     }
     if (raidBattlesWorkflow && refreshSections.has('raidBattles')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'raidBattles',
         async () => {
           const response = await bridge.loadRaidBattlesWorkflow({ paths, tableIds: appliedRaidTableIds(appliedEdits) });
           if (canCommitRefresh()) {
@@ -19497,7 +19526,8 @@ export function App({
       );
     }
     if (raidRewardsWorkflow && refreshSections.has('raidRewards')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'raidRewards',
         async () => {
           const response = await bridge.loadRaidRewardsWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19507,7 +19537,8 @@ export function App({
       );
     }
     if (raidBonusRewardsWorkflow && refreshSections.has('raidBonusRewards')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'raidBonusRewards',
         async () => {
           const response = await bridge.loadRaidBonusRewardsWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19517,7 +19548,8 @@ export function App({
       );
     }
     if (placementWorkflow && refreshSections.has('placement')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'placement',
         async () => {
           const response = isSwordShieldProject
             ? await bridge.openSwShPlacementCatalog({ paths })
@@ -19533,7 +19565,8 @@ export function App({
       );
     }
     if (behaviorWorkflow && refreshSections.has('behavior')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'behavior',
         async () => {
           const response = await bridge.loadBehaviorWorkflow({ paths, entryIndices: !isSwordShieldProject ? undefined : appliedRecordIndices(appliedEdits, 'workflow.behavior', 'behavior') });
           if (canCommitRefresh()) {
@@ -19543,7 +19576,8 @@ export function App({
       );
     }
     if (flagworkSaveWorkflow && refreshSections.has('flagworkSave')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'flagworkSave',
         async () => {
           const response = await bridge.loadFlagworkSaveWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19553,7 +19587,8 @@ export function App({
       );
     }
     if (bagHookWorkflow && refreshSections.has('bagHook')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'bagHook',
         async () => {
           const response = await bridge.loadBagHookWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19563,7 +19598,8 @@ export function App({
       );
     }
     if (catchCapWorkflow && refreshSections.has('catchCap')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'catchCap',
         async () => {
           const response = await bridge.loadCatchCapWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19573,7 +19609,8 @@ export function App({
       );
     }
     if (hyperTrainingWorkflow && refreshSections.has('hyperTraining')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'hyperTraining',
         async () => {
           const response = await bridge.loadHyperTrainingWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19583,7 +19620,8 @@ export function App({
       );
     }
     if (shinyRateWorkflow && refreshSections.has('shinyRate')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'shinyRate',
         async () => {
           const response = await bridge.loadShinyRateWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19593,7 +19631,8 @@ export function App({
       );
     }
     if (typeChartWorkflow && refreshSections.has('typeChart')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'typeChart',
         async () => {
           const response = await bridge.loadTypeChartWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19603,7 +19642,8 @@ export function App({
       );
     }
     if (angeFightWorkflow && refreshSections.has('angeFight')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'angeFight',
         async () => {
           const response = await bridge.loadAngeFightWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19613,7 +19653,8 @@ export function App({
       );
     }
     if (fairyGymBoostsWorkflow && refreshSections.has('fairyGymBoosts')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'fairyGymBoosts',
         async () => {
           const response = await bridge.loadFairyGymBoostsWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19623,7 +19664,8 @@ export function App({
       );
     }
     if (fashionUnlockWorkflow && refreshSections.has('fashionUnlock')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'fashionUnlock',
         async () => {
           const response = await bridge.loadFashionUnlockWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19633,7 +19675,8 @@ export function App({
       );
     }
     if (gymUniformRemovalWorkflow && refreshSections.has('gymUniformRemoval')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'gymUniformRemoval',
         async () => {
           const response = await bridge.loadGymUniformRemovalWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19643,7 +19686,8 @@ export function App({
       );
     }
     if (hyperspaceBypassWorkflow && refreshSections.has('hyperspaceBypass')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'hyperspaceBypass',
         async () => {
           const response = await bridge.loadHyperspaceBypassWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19653,7 +19697,8 @@ export function App({
       );
     }
     if (ivScreenWorkflow && refreshSections.has('ivScreen')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'ivScreen',
         async () => {
           const response = await bridge.loadIvScreenWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19663,7 +19708,8 @@ export function App({
       );
     }
     if (exeFsPatchWorkflow && refreshSections.has('exefsPatches')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'exefsPatches',
         async () => {
           const response = await bridge.loadExeFsPatchWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19673,7 +19719,8 @@ export function App({
       );
     }
     if (royalCandyWorkflow && refreshSections.has('royalCandy')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'royalCandy',
         async () => {
           const response = await bridge.loadRoyalCandyWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19683,7 +19730,8 @@ export function App({
       );
     }
     if (startingItemsWorkflow && refreshSections.has('startingItems')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'startingItems',
         async () => {
           const response = await bridge.loadStartingItemsWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19693,7 +19741,8 @@ export function App({
       );
     }
     if (npcItemGiftWorkflow && refreshSections.has('npcItemGift')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'npcItemGift',
         async () => {
           const response = await bridge.loadNpcItemGiftWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19703,7 +19752,8 @@ export function App({
       );
     }
     if (battleCafeRewardsWorkflow && refreshSections.has('battleCafeRewards')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'battleCafeRewards',
         async () => {
           const response = await bridge.loadBattleCafeRewardsWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19713,7 +19763,8 @@ export function App({
       );
     }
     if (spreadsheetImportWorkflow && refreshSections.has('spreadsheetImport')) {
-      reloadTasks.push(
+      reloadTasks.set(
+        'spreadsheetImport',
         async () => {
           const response = await bridge.loadSpreadsheetImportWorkflow({ paths });
           if (canCommitRefresh()) {
@@ -19723,17 +19774,19 @@ export function App({
       );
     }
 
-    if (reloadTasks.length !== reloadSectionOrder.length) {
+    if (
+      reloadTasks.size !== reloadSectionOrder.length ||
+      reloadSectionOrder.some((section) => !reloadTasks.has(section))
+    ) {
       evictFailedWorkflowRefreshes();
       finishWorkflowRefreshes();
       throw new Error('Loaded workflow refresh ordering is out of sync.');
     }
 
     try {
-      for (let index = 0; index < reloadTasks.length; index += 1) {
-        const reloadTask = reloadTasks[index];
-        const section = reloadSectionOrder[index];
-        if (!reloadTask || !section) {
+      for (const section of reloadSectionOrder) {
+        const reloadTask = reloadTasks.get(section);
+        if (!reloadTask) {
           continue;
         }
 
