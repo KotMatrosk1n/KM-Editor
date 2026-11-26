@@ -87,6 +87,9 @@ public sealed record EncounterSlotRecordDto(
     public int? HeldItemId { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? HeldItemChancePercent { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? Ability { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

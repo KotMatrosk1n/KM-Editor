@@ -4585,6 +4585,7 @@ export const encounterSlotRecordSchema = z.strictObject({
   gender: z.number().int().nullable().optional(),
   hasExplicitMoves: z.boolean().nullable().optional(),
   hasAlphaChance: z.boolean().nullable().optional(),
+  heldItemChancePercent: z.number().int().nullable().optional(),
   heldItemId: z.number().int().nullable().optional(),
   isAlpha: z.boolean().optional(),
   itemDropSummaries: z.array(z.string()).nullable().optional(),

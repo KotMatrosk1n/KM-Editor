@@ -509,13 +509,17 @@ public sealed class RowClipboardWorkflowMutationProvider
         string tableId,
         int start)
     {
-        var initial = sv.UpdateEncounterSlotFieldsFreshBounded(paths, session, []);
+        var initial = sv.UpdateEncounterSlotFieldsFreshBounded(paths, session, [], tableId);
         var table = initial.Workflow.Tables.FirstOrDefault(value => value.TableId == tableId);
+        // Clipboard rows from earlier versions omit both held item fields.
+        var includesHeldItem = envelope.Rows.Any(row =>
+            row.Values.Any(value => value.FieldKey is "heldItemId" or "heldItemChancePercent"));
         var before = BuildEncounterPreviewRows(
             envelope,
             tableId,
             start,
-            slot => table?.Slots.FirstOrDefault(value => value.Slot == slot) is { } row ? EncounterValues(row) : []);
+            slot => table?.Slots.FirstOrDefault(value => value.Slot == slot) is { } row
+                ? EncounterValues(row, includesHeldItem) : []);
         if (table is null || HasErrors(initial.Diagnostics) || before.Diagnostics.Count > 0)
         {
             return new RowClipboardMutationResult(
@@ -538,7 +542,7 @@ public sealed class RowClipboardWorkflowMutationProvider
         return new RowClipboardMutationResult(
             result.Session,
             result.Diagnostics,
-            MergeAfter(before.Rows, slot => EncounterValues(updated.Slots.First(value => value.Slot == slot))));
+            MergeAfter(before.Rows, slot => EncounterValues(updated.Slots.First(value => value.Slot == slot), includesHeldItem)));
     }
 
     private RowClipboardMutationResult MutateZaEncounters(
@@ -769,8 +773,19 @@ public sealed class RowClipboardWorkflowMutationProvider
         }.OrderBy(value => value.FieldKey, StringComparer.Ordinal).ToArray();
     }
 
-    private static IReadOnlyList<RowClipboardOwnedValue> EncounterValues(SvEncounterSlotRecord value) =>
-        BasicEncounterValues(value.SpeciesId, value.Form, value.LevelMin, value.LevelMax, value.Weight);
+    private static IReadOnlyList<RowClipboardOwnedValue> EncounterValues(SvEncounterSlotRecord value, bool includesHeldItem)
+    {
+        var fields = BasicEncounterValues(value.SpeciesId, value.Form, value.LevelMin, value.LevelMax, value.Weight);
+        if (!includesHeldItem)
+        {
+            return fields;
+        }
+
+        return fields
+            .Concat([Signed("heldItemId", value.HeldItemId), Signed("heldItemChancePercent", value.HeldItemChancePercent)])
+            .OrderBy(field => field.FieldKey, StringComparer.Ordinal)
+            .ToArray();
+    }
 
     private static IReadOnlyList<RowClipboardOwnedValue> EncounterValues(SwShEncounterSlotRecord value) =>
         BasicEncounterValues(value.SpeciesId, value.Form, value.LevelMin, value.LevelMax, value.Weight);

@@ -258,6 +258,7 @@ const encounterFieldKeys: Record<string, FieldHelpKey> = {
   alphalevelbonus: 'fieldHelp.catalog.pokemon.specialMechanic',
   appearancemaxcount: 'fieldHelp.catalog.encounter.population',
   appearancemincount: 'fieldHelp.catalog.encounter.population',
+  helditemchancepercent: 'fieldHelp.catalog.encounter.heldItemChance',
   levelmax: 'fieldHelp.catalog.encounter.level',
   levelmin: 'fieldHelp.catalog.encounter.level',
   playerpartnerlevel: 'fieldHelp.catalog.encounter.level',

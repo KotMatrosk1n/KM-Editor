@@ -713,7 +713,8 @@ public sealed partial class SvWorkflowService
     public SvEncountersEditResult UpdateEncounterSlotFieldsFreshBounded(
         ProjectPaths paths,
         EditSession? session,
-        IReadOnlyList<SvEncounterSlotFieldUpdate> updates)
+        IReadOnlyList<SvEncounterSlotFieldUpdate> updates,
+        string? tableIdToLoad = null)
     {
         using var freshReads = SvWorkflowFileSource.BeginFreshReadScope(paths);
         ArgumentNullException.ThrowIfNull(paths);
@@ -725,7 +726,7 @@ public sealed partial class SvWorkflowService
             MaximumSemanticSourceBytesPerFile);
         var workflow = new SvEncountersWorkflowService(source);
         return new SvEncountersEditSessionService(workspace, source, workflow)
-            .UpdateSlotFields(paths, session, updates);
+            .UpdateSlotFields(paths, session, updates, tableIdToLoad);
     }
 
     public ChangePlan CreateGuidedChangePlanFreshBounded(

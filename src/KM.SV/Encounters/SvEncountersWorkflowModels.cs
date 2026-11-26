@@ -20,7 +20,9 @@ public sealed record SvEncounterSlotRecord(
     int LevelMax,
     int Weight,
     string? TimeOfDay,
-    string Weather);
+    string Weather,
+    int HeldItemId,
+    int HeldItemChancePercent);
 
 public sealed record SvEncounterTableRecord(
     string TableId,

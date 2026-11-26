@@ -19,6 +19,8 @@ internal sealed class SvEncountersWorkflowService
     public const string ProbabilityField = "probability";
     public const string LevelMinField = "levelMin";
     public const string LevelMaxField = "levelMax";
+    public const string HeldItemIdField = "heldItemId";
+    public const string HeldItemChancePercentField = "heldItemChancePercent";
 
     private static readonly IReadOnlyList<SvEncounterEditableField> BaseEditableFields =
     [
@@ -27,6 +29,8 @@ internal sealed class SvEncountersWorkflowService
         new(SvEncountersWorkflowService.ProbabilityField, "Lot weight", "integer", short.MinValue, short.MaxValue),
         new(SvEncountersWorkflowService.LevelMinField, "Min Level", "integer", 0, 100),
         new(SvEncountersWorkflowService.LevelMaxField, "Max Level", "integer", 0, 100),
+        new(HeldItemIdField, "Held item", "integer", 0, int.MaxValue),
+        new(HeldItemChancePercentField, "Chance (%)", "integer", 0, 100),
     ];
 
     private readonly SvWorkflowFileSource fileSource;
@@ -188,6 +192,7 @@ internal sealed class SvEncountersWorkflowService
         SvTextLabelLookup labels)
     {
         var speciesId = (int)row.Devid;
+        var bringItem = row.BringItem;
         return new SvEncounterSlotRecord(
             slot,
             speciesId,
@@ -197,20 +202,30 @@ internal sealed class SvEncountersWorkflowService
             row.Maxlevel,
             row.Lotvalue,
             SvEncounterGrouping.FormatTimes(row.Timetable),
-            SvEncounterGrouping.FormatSlotContext(row, labels));
+            SvEncounterGrouping.FormatSlotContext(row, labels),
+            (int)(bringItem?.ItemID ?? global::ItemID.ITEMID_NONE),
+            bringItem?.BringRate ?? 0);
     }
 
     private static IReadOnlyList<SvEncounterEditableField> CreateEditableFields(SvTextLabelLookup labels)
     {
         var speciesOptions = CreateIndexedOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true);
+        var itemOptions = CreateIndexedOptions(labels.ItemNameCount, labels.Item, includeNone: true);
         return BaseEditableFields
-            .Select(field => field.Field == SvEncountersWorkflowService.SpeciesIdField
-                ? field with
+            .Select(field => field.Field switch
+            {
+                SpeciesIdField => field with
                 {
                     MaximumValue = speciesOptions.Count > 0 ? speciesOptions.Max(option => option.Value) : field.MaximumValue,
                     Options = speciesOptions,
-                }
-                : field)
+                },
+                HeldItemIdField => field with
+                {
+                    MaximumValue = labels.ItemNameCount > 0 ? labels.ItemNameCount - 1 : field.MaximumValue,
+                    Options = itemOptions,
+                },
+                _ => field,
+            })
             .ToArray();
     }
 
