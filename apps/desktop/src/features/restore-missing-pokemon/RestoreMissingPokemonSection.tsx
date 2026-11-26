@@ -4,6 +4,7 @@ import { Bird, CheckCircle2, RefreshCw, Save, Trash2, TriangleAlert, X } from 'l
 import type { EditSession, ProjectPaths } from '../../bridge/contracts';
 import type { RestorationProjectBridgeApi } from '../../bridge/restorationProjectBridge';
 import type { RestorationPreparation, RestorationSelection, RestorationWorkflow } from '../../bridge/restorationContracts';
+import { ContextHelp } from '../../components/ContextHelp';
 import { EditorSessionBar, EditorSessionBarActions } from '../../components/EditorSessionBar';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { WorkflowPanelOutputSections, type WorkflowPanelOutput } from '../../components/workflowPanels';
@@ -171,7 +172,14 @@ export function RestoreMissingPokemonSection({ workflow, paths, bridge, session,
   };
   return <section className="workflow-panel wide-panel restoration-panel" aria-labelledby="restoration-title">
     <header className="workflow-panel-header"><div><h2 id="restoration-title"><Bird size={22} aria-hidden="true" /> {t('restoration.title')}</h2>
-      <p>{t('restoration.subtitle')}</p></div><button className="secondary-button" type="button" onClick={onRefresh} disabled={isLoading}>
+      <p>{t('restoration.subtitle')}</p></div>
+      <ContextHelp label={t('restoration.title')}>
+        <p>{t('restoration.familyHelp')}</p>
+        <p>{t('restoration.removeHelp')}</p>
+        <p>{t('restoration.updateHelp')}</p>
+        <p>{t('restoration.soundMemoryHelp')}</p>
+        {workflow?.canRepairPokedex ? <p>{t('restoration.pokedexRepairHelp')}</p> : null}
+      </ContextHelp><button className="secondary-button" type="button" onClick={onRefresh} disabled={isLoading}>
       <RefreshCw size={16} aria-hidden="true" /> {t('restoration.refresh')}</button></header>
     <EditorSessionBar canEdit={workflow?.canEdit === true} isEditing={isEditing} isStarting={isEditStarting}
       label={t('restoration.title')} onStart={onStartEditSession} readOnlyReason={t('restoration.readOnly')} />
@@ -195,20 +203,15 @@ export function RestoreMissingPokemonSection({ workflow, paths, bridge, session,
         </dd>
       </div>)}</dl>
     </div> : null}
-    <div className="restoration-guidance">
-      <p>{t('restoration.familyHelp')}</p>
-      <p>{t('restoration.removeHelp')}</p>
-      <p>{t('restoration.updateHelp')}</p>
-      <p>{t('restoration.soundMemoryHelp')}</p>
-      {workflow?.canRepairPokedex ? <p>{t('restoration.pokedexRepairHelp')}</p> : null}
-    </div>
     <RestorationSourceFolders sources={sources} desktop={desktopServices} paths={paths} bridge={bridge} onChange={next => {
       setSources(next); if (!rememberRestorationSources(projectKey, next)) setError(t('restoration.sourcesSaveFailed'));
     }} />
     {preparationVisible ? <RestorationPreparationProgress preparation={preparation}
       name={preparationEntry ? entryName(preparationEntry) : t('restoration.title')}
       onCancel={() => void cancelPreparation()} /> : null}
-    <label className="restoration-search">{t('restoration.search')}<input type="search" value={search} onChange={e => setSearch(e.target.value)} /></label>
+    <div className="restoration-browser-toolbar"><label className="restoration-search">{t('restoration.search')}<input type="search" value={search} onChange={e => setSearch(e.target.value)} /></label>
+      <strong>{t('restoration.pokemon')} <span>{entries.length}</span></strong>
+    </div>
     <div className="restoration-list" tabIndex={0} role="region" aria-label={t('restoration.pokemon')}><table><thead><tr><th scope="col">{t('restoration.enabled')}</th><th scope="col">{t('restoration.pokemon')}</th>
       <th scope="col">{t('restoration.availability')}</th><th scope="col">{t('restoration.actions')}</th></tr></thead><tbody>
       {entries.filter(e => `${e.speciesId} ${entryName(e)}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())).map(entry => {

@@ -423,31 +423,33 @@ export function RandomizerSection({
           <h2 id="randomizer-heading">Randomizer</h2>
         </div>
 
-        <div className="randomizer-seed-row">
-          <div className="path-field">
-            <FieldLabel
-              help={t('randomizer.seed.baseHelp')}
-              htmlFor="randomizer-base-seed"
-              label="Base Seed"
-            />
-            <HoverTooltip content={t('randomizer.seed.baseHelp')}>
-              <input
-                aria-label="Base Seed"
-                disabled={isConfigurationLocked}
-                id="randomizer-base-seed"
-                maxLength={20}
-                onChange={(event) => handleUserSeedChange(event.currentTarget.value)}
-                placeholder="Optional, 20 characters max"
-                value={userSeed}
+        <div className="randomizer-configuration">
+          <div className="randomizer-seed-row">
+            <div className="path-field">
+              <FieldLabel
+                help={t('randomizer.seed.baseHelp')}
+                htmlFor="randomizer-base-seed"
+                label="Base Seed"
               />
-            </HoverTooltip>
+              <HoverTooltip content={t('randomizer.seed.baseHelp')}>
+                <input
+                  aria-label="Base Seed"
+                  disabled={isConfigurationLocked}
+                  id="randomizer-base-seed"
+                  maxLength={20}
+                  onChange={(event) => handleUserSeedChange(event.currentTarget.value)}
+                  placeholder="Optional, 20 characters max"
+                  value={userSeed}
+                />
+              </HoverTooltip>
+            </div>
           </div>
-        </div>
 
-        <div aria-atomic="true" aria-live="polite" className="randomizer-metrics">
-          <Metric label="Selected categories" value={selectedOptionCount.toString()} />
-          <Metric label="Replay seed" value={replaySeedStatus} />
-          <Metric label="Status" value={operationStatus} />
+          <div aria-atomic="true" aria-live="polite" className="randomizer-metrics">
+            <Metric label="Selected categories" value={selectedOptionCount.toString()} />
+            <Metric label="Replay seed" value={replaySeedStatus} />
+            <Metric label="Status" value={operationStatus} />
+          </div>
         </div>
 
       </section>

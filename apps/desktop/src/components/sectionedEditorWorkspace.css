@@ -30,8 +30,7 @@
 .editor-workspace-resizer::after { content: ''; width: 48px; height: 3px; background: var(--color-border); border-radius: 3px; }
 .editor-workspace-resizer:hover::after, .editor-workspace-resizer:focus-visible::after { background: var(--color-accent); }
 .sectioned-editor-workspace .editor-section-selectors {
-  display: flex; flex: 0 0 auto; gap: 8px; overflow-x: auto; padding: 3px;
-  scrollbar-width: thin; scroll-padding: 3px;
+  display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 6px 8px; padding: 3px;
 }
 .sectioned-editor-workspace .editor-section-selector {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -41,7 +40,7 @@
   cursor: pointer; transition: background-color var(--editor-hover-duration), border-color var(--editor-hover-duration), color var(--editor-hover-duration), box-shadow var(--editor-hover-duration);
 }
 .sectioned-editor-workspace .editor-section-shortcut {
-  flex: 0 0 auto; margin-inline-start: auto; min-height: 36px; white-space: nowrap;
+  flex: 0 1 auto; margin-inline-start: auto; min-height: 36px; max-width: 100%; white-space: normal;
 }
 .editor-section-label { overflow-wrap: anywhere; text-align: start; }
 .editor-section-status { display: flex; gap: 4px; align-items: center; justify-content: flex-end; }
@@ -82,12 +81,42 @@
 .sectioned-editor-workspace .editable-field-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); align-items: start; }
 .sectioned-editor-workspace .editable-field-grid > * { min-width: 0; }
 .editor-record-heading { display: flex; gap: 9px; align-items: center; min-width: 0; padding: 1px 3px; }
-.editor-record-heading h3, .editor-record-id { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor-record-heading h3, .editor-record-id { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .editor-record-heading h3 { color: var(--color-text); font-size: 1rem; }
 .editor-record-id {
   flex-shrink: 0; max-width: 50%; padding: 2px 6px; border: 1px solid var(--color-border);
   border-radius: 4px; color: var(--color-accent); background: var(--color-control); font-size: .75rem;
 }
+.static-encounter-toolbar,
+.static-encounter-toolbar .editor-quiet-counts,
+.pokemon-instance-record,
+.pokemon-instance-record-context {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; min-width: 0;
+}
+.static-encounter-toolbar .items-search { flex: 1 1 14rem; min-width: 0; }
+.static-encounter-toolbar .editor-quiet-counts,
+.pokemon-instance-record-context {
+  color: var(--color-text-muted); font-size: .8125rem; overflow-wrap: anywhere;
+}
+.static-encounter-toolbar .primary-button { margin-inline-start: auto; }
+.pokemon-instance-record .pokemon-instance-record-sprite {
+  width: 32px; height: 32px; flex: 0 0 32px; object-fit: contain;
+}
+.pokemon-instance-source {
+  min-width: 0; padding: 5px 0; align-self: start; border-block: 1px solid var(--color-border);
+}
+.pokemon-instance-source summary {
+  width: fit-content; color: var(--color-text-muted); cursor: pointer; font-size: .8125rem;
+}
+.pokemon-instance-source dd { min-width: 0; overflow-wrap: anywhere; user-select: text; }
+.static-encounter-stat-table { width: 100%; }
+.trainer-stat-table.static-encounter-stat-table :is(th, td):last-child { width: auto; text-align: start; }
+.static-encounter-stat-table .path-field { margin: 0; }
+.static-encounter-stat-table .path-field input { width: 100%; }
+.static-encounter-stat-hint {
+  margin: 6px 0; color: var(--color-text-muted); font-size: .8125rem;
+}
+.static-encounter-readout { padding: 4px 0; }
 .sectioned-editor-workspace[data-compact-fields] :is(.item-edit-form, .encounter-edit-form, .text-edit-form) {
   margin: 0; padding: 0; border: 0; min-width: 0;
 }

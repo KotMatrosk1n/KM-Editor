@@ -89,7 +89,7 @@ export function PlaEconomyWorkspace({ sessionKey, kind, page, selected, query, o
     { title: t('pla.event.bonuses'), fields: fields.filter(field => ['extraBonusChance', 'starChance', 'berryChance', 'shinyRolls'].includes(field.key)) }
   ] : kind === 'crafting' ? [
     { title: t('pla.group.result'), fields: fields.filter(field => field.key.startsWith('result')) },
-    ...[1, 2, 3, 4].map(slot => ({ title: t('pla.ingredientSlot', { slot }), fields: fields.filter(field => field.key === `ingredient${slot}` || field.key === `quantity${slot}`) }))
+    { title: t('pla.kind.crafting'), fields: fields.filter(field => /^(ingredient|quantity)\d+$/u.test(field.key)) }
   ] : kind === 'research' ? [
     { title: t('pla.group.thresholds'), fields: fields.filter(field => field.key.startsWith('threshold')) },
     { title: t('pla.group.points'), fields: fields.filter(field => !field.key.startsWith('threshold')) }
@@ -99,14 +99,14 @@ export function PlaEconomyWorkspace({ sessionKey, kind, page, selected, query, o
   ] : [{ title: t(`pla.kind.${kind}`), fields }];
   const selectedGroup = selected && isShop ? groups.get(selected.metadata.inventory) ?? [] : [];
   const selectedValues = selected ? valuesFor(selected) : {};
-  const invalidItemField = (field: PlaField) => Boolean(selected &&
+  const invalidField = (field: PlaField) => Boolean(selected &&
     selectedValues[field.key] !== selected.values[field.key] &&
     !isPlaFieldValueValid(resolvePlaField(field, selectedValues), selectedValues[field.key]));
   const itemSource = selected?.metadata;
   return <section className={`panel wide-panel pla-editor pla-economy-editor pla-economy-${kind}`} aria-labelledby="pla-editor-title">
     <div className="panel-heading"><Icon size={18} aria-hidden="true" /><h2 id="pla-editor-title">{t(workbenchSectionLocalization[section].label)}</h2>{refresh}</div>
     <SectionedEditorWorkspace sessionKey={sessionKey + ':' + kind} initialSection="data" compactFields
-      sectionTransitionDuration={isItems ? 250 : undefined}
+      sectionTransitionDuration={250}
       activeSectionRequest={isItems ? itemSectionRequest : undefined}
       browserVisibleRows={4} sessionBar={<>{sessionBar}{actions}</>}
       browserControls={<>
@@ -161,15 +161,20 @@ export function PlaEconomyWorkspace({ sessionKey, kind, page, selected, query, o
               </dl>
             </EditorDetailGroup> : null}
           </div> : <>
-          <p className="field-note">{t(`pla.notice.${kind}`)}</p>
-          <dl className="item-provenance-list"><div><dt>{translateLiteral('Name')}</dt><dd data-localization-ignore="true">{name(selected)}</dd></div>
-            <div><dt>{translateLiteral('Status')}</dt><dd>{groupStatus(selected)}</dd></div>
-            {Object.entries(selected.metadata).filter(([key]) => !['protected', 'areaName'].includes(key)).map(([key, value]) => <div key={key}><dt>{t(`pla.meta.${key}`)}</dt><dd data-localization-ignore="true">{key === 'task' ? summary(selected)
-              : key === 'area' ? plaAreaLabel(t, value) : key === 'category' ? t('pla.event.category.' + value) : key === 'empty' ? translateLiteral(value === '1' ? 'Yes' : 'No') : value}</dd></div>)}
-          </dl>
+          <EditorDetailGroup label={translateLiteral('Details')} headingValue={<ContextHelp label={name(selected)}>{t(`pla.notice.${kind}`)}</ContextHelp>}>
+            <dl className="editor-detail-list">
+              <EditorDetailValue label={translateLiteral('Status')}>{groupStatus(selected)}</EditorDetailValue>
+              {Object.entries(selected.metadata).filter(([key]) => !['protected', 'areaName'].includes(key)).map(([key, value]) =>
+                <EditorDetailValue key={key} label={t(`pla.meta.${key}`)} dataValue path={key === 'sourceFile'}>
+                  {key === 'task' ? summary(selected) : key === 'area' ? plaAreaLabel(t, value)
+                    : key === 'category' ? t('pla.event.category.' + value)
+                    : key === 'empty' ? translateLiteral(value === '1' ? 'Yes' : 'No') : value}
+                </EditorDetailValue>)}
+            </dl>
+          </EditorDetailGroup>
           </>}
         </EditorWorkspaceSection>
-        <EditorWorkspaceSection id="data" label={isShop ? translateLiteral('Inventory') : kind === 'items' ? translateLiteral('Item Data') : t(`pla.kind.${kind}`)} modified={hasDraft(selected)} invalid={isItems && fields.some(invalidItemField)}>
+        <EditorWorkspaceSection id="data" label={isShop ? translateLiteral('Inventory') : kind === 'items' ? translateLiteral('Item Data') : t(`pla.kind.${kind}`)} modified={hasDraft(selected)} invalid={fields.some(invalidField)}>
           {isShop ? <div className="shop-inventory-editor-grid" role="table" aria-label={translateLiteral('Inventory')}>
             <div className="shop-inventory-editor-row shop-inventory-editor-heading pla-shop-slot-row" role="row"><span role="columnheader">{translateLiteral('Slot')}</span><span role="columnheader">{translateLiteral('Item')}</span><span role="columnheader">{translateLiteral('Status')}</span></div>
             {selectedGroup.map((record, index) => <div key={record.id} role="row" onClick={() => onSelect(record.id)}
@@ -179,9 +184,9 @@ export function PlaEconomyWorkspace({ sessionKey, kind, page, selected, query, o
               </div>)}</div><span role="cell">{status(record)}</span>
             </div>)}
           </div> : null}
-          {isItems ? <ItemDataLayout fields={fields} keyFor={field => field.key} hasIssue={invalidItemField} renderField={field => {
+          {isItems ? <ItemDataLayout fields={fields} keyFor={field => field.key} hasIssue={invalidField} renderField={field => {
             const readOnly = field.readOnly || selected.readOnlyFields.includes(field.key);
-            const invalid = invalidItemField(field);
+            const invalid = invalidField(field);
             const changed = selectedValues[field.key] !== selected.values[field.key];
             return <div className={`path-field editable-field-control ${readOnly ? 'editable-field-disabled' : ''} ${invalid ? 'editable-field-invalid' : changed ? 'editable-field-changed' : ''}`}>
               <FieldLabel htmlFor={`pla-field-${field.key}`} label={fieldLabel(field)} help={plaFieldHelp(t, kind, field, fieldLabel(field))} />
@@ -190,22 +195,32 @@ export function PlaEconomyWorkspace({ sessionKey, kind, page, selected, query, o
                 : invalid ? <small className="editable-field-error">{t('pla.invalid')}</small>
                 : changed ? <small className="editable-field-status">{translateLiteral('Changed')}</small> : null}
             </div>;
-          }} /> : !isShop ? <div className="item-edit-form"><div className="editable-field-groups">
-            {groupFields.map(group => <fieldset className="editable-field-group" key={group.title}><legend>{group.title}</legend><div className="editable-field-grid">
-              {group.fields.map(field => <div className={`path-field editable-field-control ${selected.readOnlyFields.includes(field.key) ? 'editable-field-disabled' : ''} ${valuesFor(selected)[field.key] !== selected.values[field.key] ? 'editable-field-changed' : ''}`} key={field.key}>
-                <FieldLabel htmlFor={`pla-field-${field.key}`} label={fieldLabel(field)} help={plaFieldHelp(t, kind, field, fieldLabel(field))} />{renderInput(field)}
-                {selected.readOnlyFields.includes(field.key) ? <small className="editable-field-status">{translateLiteral('Read-only')}</small> : null}
-                {!selected.readOnlyFields.includes(field.key) && valuesFor(selected)[field.key] !== selected.values[field.key] ? <small className="editable-field-status">{translateLiteral('Changed')}</small> : null}
-              </div>)}
-            </div></fieldset>)}
-          </div></div> : null}
+          }} /> : !isShop ? <div className="pla-data-groups">
+            {groupFields.filter(group => group.fields.length > 0).map(group =>
+              <fieldset className="pla-data-group" key={group.title}><legend>{group.title}</legend>
+                <div className={kind === 'crafting' ? 'pla-data-pairs' : undefined}>
+                  {group.fields.map(field => {
+                    const readOnly = field.readOnly || selected.readOnlyFields.includes(field.key);
+                    const invalid = invalidField(field);
+                    const changed = selectedValues[field.key] !== selected.values[field.key];
+                    return <div className={`path-field editable-field-control ${readOnly ? 'editable-field-disabled' : ''} ${invalid ? 'editable-field-invalid' : changed ? 'editable-field-changed' : ''}`} key={field.key}>
+                      <FieldLabel htmlFor={`pla-field-${field.key}`} label={fieldLabel(field)} help={plaFieldHelp(t, kind, field, fieldLabel(field))} />
+                      {renderInput(field)}
+                      {readOnly ? <small className="editable-field-status">{translateLiteral('Read-only')}</small>
+                        : invalid ? <small className="editable-field-error">{t('pla.invalid')}</small>
+                        : changed ? <small className="editable-field-status">{translateLiteral('Changed')}</small> : null}
+                    </div>;
+                  })}
+                </div>
+              </fieldset>)}
+          </div> : null}
           {selected.relatedRecords.length ? <div className="pla-related-records"><h4>{t('pla.sharedUses', { count: selected.relatedRecords.length })}</h4>
             <ul>{selected.relatedRecords.map((related, index) => <li key={`${related.kind}:${related.id}:${index}`}><span>{t(`pla.related.${related.kind}`)}</span>: <span data-localization-ignore="true">{related.label}</span></li>)}</ul>
           </div> : null}
         </EditorWorkspaceSection>
         {isItems ? <EditorWorkspaceSection id="behavior" label={translateLiteral('In-Game Behavior')}>
           <ItemBehavior groups={[{ label: 'Inventory', rows: fields.flatMap(field => {
-            const value = invalidItemField(field) ? selected.values[field.key] : selectedValues[field.key];
+            const value = invalidField(field) ? selected.values[field.key] : selectedValues[field.key];
             return value === undefined ? [] : [{ key: field.key, label: fieldLabel(field), value }];
           }) }]} onEdit={() => setItemSectionRequest({ sectionId: 'data', focus: true })} />
         </EditorWorkspaceSection> : null}

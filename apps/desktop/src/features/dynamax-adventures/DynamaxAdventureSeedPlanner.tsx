@@ -319,10 +319,6 @@ export function DynamaxAdventureSeedPlanner({
 
   return (
     <section aria-labelledby="dynamax-adventure-route-planner-heading" className="dynamax-adventure-route-planner">
-      <div className="panel-heading">
-        <Route aria-hidden="true" size={18} />
-        <h3 id="dynamax-adventure-route-planner-heading">{t('routePlanner.title')}</h3>
-      </div>
       <p className="dynamax-adventure-route-copy">
         {t('routePlanner.description')}
       </p>

@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import { ContextHelp } from '../../components/ContextHelp';
 import { History, RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { OutputHistoryReceipt } from '../../bridge/outputSafetyContracts';
@@ -37,7 +38,7 @@ function HistoryChangeGroup({ changes, label, formatChange }: { changes: History
         const summary = formatChange ? formatChange(change) : translateLiteral(change.summary);
         return <li key={activePage * changesPerPage + index}>
         <strong data-localization-ignore="true">{summary}</strong>
-        <details><summary>{t('advancedEditor.technicalDetails')}</summary>
+        <details className="editor-technical-disclosure"><summary>{t('advancedEditor.technicalDetails')}</summary>
           <dl>{summary !== change.summary ? <div><dt>{translateLiteral('Summary')}</dt><dd data-localization-ignore="true">{change.summary}</dd></div> : null}
             <div><dt>{t('history.record')}</dt><dd data-localization-ignore="true">{change.recordId ?? change.domain}</dd></div>
             {change.field ? <div><dt>{t('history.field')}</dt><dd data-localization-ignore="true">{change.field}</dd></div> : null}
@@ -126,8 +127,8 @@ export function OutputHistoryPage({ controller, formatChange, loadFormatter }: {
       <div>
         <div className="panel-heading"><History aria-hidden="true" size={20} />
           <h2 id="output-history-page-heading">{t('history.title')}</h2>
+          <ContextHelp label={t('history.title')}>{t('history.description')}</ContextHelp>
         </div>
-        <p className="output-history-description">{t('history.description')}</p>
       </div>
       <button className="secondary-button" disabled={!isAvailable || busyAction !== null}
         onClick={() => void loadHistory()} type="button"><RefreshCw aria-hidden="true" size={16} />{t('outputSafety.refresh')}</button>

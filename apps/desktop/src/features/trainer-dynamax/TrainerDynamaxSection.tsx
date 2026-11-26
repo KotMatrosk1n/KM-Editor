@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { ContextHelp } from '../../components/ContextHelp';
 import { useEffect, useRef, useState } from 'react';
 import { ClipboardCheck, Expand, RefreshCw, RotateCcw, Save, UserRound, UsersRound } from 'lucide-react';
 import type { ApiDiagnostic, ProjectPaths } from '../../bridge/contracts';
@@ -86,11 +87,13 @@ export function TrainerDynamaxSection({ bridge, paths, canApply, onApply, onDirt
     <section className="panel wide-panel trainer-dynamax-panel" aria-labelledby="trainer-dynamax-title">
       <div className="trainer-dynamax-heading"><div className="trainer-dynamax-title"><Expand size={24} aria-hidden="true" /><div>
         <h2 id="trainer-dynamax-title">{t('trainerDynamax.title')} <span className="status-pill status-pill-info">{translateLiteral('Beta')}</span></h2>
-        <p>{t('trainerDynamax.subtitle')}</p></div></div>
+        </div><ContextHelp label={t('trainerDynamax.title')}>{t('trainerDynamax.subtitle')}</ContextHelp></div>
         <button type="button" className="secondary-button" disabled={busy !== null || dirty} onClick={() => void load()}>
           <RefreshCw size={16} aria-hidden="true" />{translateLiteral('Refresh')}</button></div>
       {busy ? <LoadingProgress label={t(`trainerDynamax.progress.${busy}`)} /> : null}
-      <h3>{t('trainerDynamax.global')}</h3>
+      <div className="context-help-heading"><h3>{t('trainerDynamax.global')}</h3>
+        <ContextHelp label={t('trainerDynamax.global')}>{t('trainerDynamax.scope')}</ContextHelp>
+      </div>
       <div className="trainer-dynamax-controls">
         {(['disablePlayer', 'disableOpponents'] as const).map((field, index) => {
           const Icon = index === 0 ? UserRound : UsersRound;
@@ -99,8 +102,9 @@ export function TrainerDynamaxSection({ bridge, paths, canApply, onApply, onDirt
           const permission = allPermission(settings, side);
           const setAll = (value: string) => { if (value === 'true' || value === 'false') change(dynamaxAll(settings, status?.trainers ?? [], side, value === 'true')); };
           return <section className="trainer-dynamax-card" key={field} aria-labelledby={`dynamax-${key}`}>
-            <div className="trainer-dynamax-card-heading"><Icon size={22} aria-hidden="true" /><h3 id={`dynamax-${key}`}>{t(`trainerDynamax.${key}`)}</h3></div>
-            <p>{t(`trainerDynamax.${key}Help`)}</p>
+            <div className="trainer-dynamax-card-heading"><Icon size={22} aria-hidden="true" /><h3 id={`dynamax-${key}`}>{t(`trainerDynamax.${key}`)}</h3>
+              <ContextHelp label={t(`trainerDynamax.${key}`)}>{t(`trainerDynamax.${key}Help`)}</ContextHelp>
+            </div>
             <div className="trainer-dynamax-field"><span>{t('trainerDynamax.permission')}</span>
               <SearchableOptionInput ariaLabel={t(`trainerDynamax.${key}`)} value={permission === null ? t('trainerDynamax.mixed') : String(permission)} disabled={busy === 'load' || busy === 'apply' || !status?.canEdit}
                 isFiniteCatalog localizeOptions={false} options={[{ value: 'true', label: label(true) }, { value: 'false', label: label(false) }]}
@@ -110,7 +114,6 @@ export function TrainerDynamaxSection({ bridge, paths, canApply, onApply, onDirt
           </section>;
         })}
       </div>
-      <p className="trainer-dynamax-scope">{t('trainerDynamax.scope')}</p>
       {status && (status.trainers?.length ?? 0) > 0 ? <TrainerDynamaxRoster status={status} settings={settings}
         disabled={!status.canEdit || busy === 'load' || busy === 'apply'} onChange={change} /> : null}
       {status?.partial ? <p role="status">{t('trainerDynamax.partial')}</p> : null}

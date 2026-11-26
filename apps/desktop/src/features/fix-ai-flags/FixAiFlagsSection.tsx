@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { ContextHelp } from '../../components/ContextHelp';
 import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, RefreshCw, Save, Search, Wrench, X } from 'lucide-react';
 import type { EditSession } from '../../bridge/contracts';
@@ -78,11 +79,11 @@ export function FixAiFlagsSection({ workflow, session, isEditing, isEditStarting
     row.candidate ? t('fixAiFlags.candidate') : (row.currentFlags & 0x1000) !== 0 ? t('fixAiFlags.switchingSet') : t('fixAiFlags.noMismatch');
   return <FocusedEditorWorkspace className="fix-ai-flags-editor">
     <section className="panel wide-panel fix-ai-flags-panel" aria-labelledby="fix-ai-flags-title">
-      <div className="fix-ai-flags-heading"><div><h2 id="fix-ai-flags-title"><Wrench size={22} aria-hidden="true" />{t('fixAiFlags.title')}</h2>
-        <p>{t('fixAiFlags.subtitle')}</p></div>
+      <div className="fix-ai-flags-heading"><div className="context-help-heading"><h2 id="fix-ai-flags-title"><Wrench size={22} aria-hidden="true" />{t('fixAiFlags.title')}</h2>
+        <ContextHelp label={t('fixAiFlags.why')}><p>{t('fixAiFlags.subtitle')}</p><p>{t('fixAiFlags.explanation')}</p>
+          <p>{t('fixAiFlags.scope')}</p><p>{t('fixAiFlags.stampHelp')}</p></ContextHelp></div>
         <button type="button" className="secondary-button" onClick={onRefresh} disabled={isLoading || isStaging}>
           <RefreshCw size={16} aria-hidden="true" />{translateLiteral('Refresh')}</button></div>
-      <details className="fix-ai-flags-info"><summary>{t('fixAiFlags.why')}</summary><p>{t('fixAiFlags.explanation')}</p><p>{t('fixAiFlags.scope')}</p><p>{t('fixAiFlags.stampHelp')}</p></details>
       {trainers.some(row => row.previouslyFixed) ? <p className="fix-ai-flags-notice" role="status"><CheckCircle2 size={18} aria-hidden="true" />{t('fixAiFlags.previousWarning')}</p> : null}
       {workflow?.customAiScripts ? <div className="fix-ai-flags-notice"><p>{t('fixAiFlags.customWarning')}</p>
         <label className="fix-ai-flags-check"><input type="checkbox" checked={customAcknowledged} disabled={!canEdit}
@@ -125,8 +126,10 @@ export function FixAiFlagsSection({ workflow, session, isEditing, isEditStarting
           {visible.length === 0 ? <p className="empty-state">{t('fixAiFlags.noMatches')}</p> : null}
         </div>
         <section className="fix-ai-flags-detail" aria-labelledby="fix-ai-flags-detail-title">
-          <h3 id="fix-ai-flags-detail-title">{t('fixAiFlags.details')}</h3>
-          {selected ? <><strong data-localization-ignore="true">{selected.trainerId}. {selected.name}</strong>
+          <h3 id="fix-ai-flags-detail-title">{selected
+            ? <span data-localization-ignore="true">{selected.trainerId}. {selected.name}</span>
+            : t('fixAiFlags.details')}</h3>
+          {selected ? <>
             <p>{status(selected)}</p><code className="fix-ai-flags-path" data-localization-ignore="true">{selected.sourceFile}</code>
             <dl className="fix-ai-flags-values"><div><dt>{t('fixAiFlags.current')}</dt><dd><code>{hex(selected.currentFlags)}</code></dd></div>
               <div><dt>{t('fixAiFlags.proposed')}</dt><dd><code>{selected.proposedFlags === null ? translateLiteral('None') : hex(selected.proposedFlags)}</code></dd></div>

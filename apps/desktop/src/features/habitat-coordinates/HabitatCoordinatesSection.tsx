@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import { ContextHelp } from '../../components/ContextHelp';
 import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import {
   ChevronLeft,
@@ -559,8 +560,9 @@ export function HabitatCoordinatesSection({
         <div className="panel-heading">
           <MapPinned aria-hidden="true" size={18} />
           <div>
-            <h2 id="habitat-coordinates-heading">{t('habitatCoordinates.title')}</h2>
-            <p>{t('habitatCoordinates.description')}</p>
+            <div className="context-help-heading"><h2 id="habitat-coordinates-heading">{t('habitatCoordinates.title')}</h2>
+              <ContextHelp label={t('habitatCoordinates.title')}>{t('habitatCoordinates.description')}</ContextHelp>
+            </div>
           </div>
         </div>
 

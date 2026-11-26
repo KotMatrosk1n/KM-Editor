@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import { ContextHelp } from '../../components/ContextHelp';
 import { ArrowLeftRight, Layers3, ShieldCheck } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { EditSession } from '../../bridge/contracts';
@@ -169,10 +170,8 @@ export function TrainerPoolsSection({
           <ArrowLeftRight aria-hidden="true" size={18} />
           <h2 id="trainer-pools-heading">{t('trainerPools.title')}</h2>
           <span className="status-badge ready">{t('trainerPools.fixedCountBadge')}</span>
+          <ContextHelp label={t('trainerPools.title')}>{t('trainerPools.description')}</ContextHelp>
         </div>
-        <p className="section-copy focused-editor-readable-copy">
-          {t('trainerPools.description')}
-        </p>
         <FocusedEditorMetrics>
           <Metric label={t('trainerPools.metrics.logicalPools')} value={String(workflow.stats.logicalPoolCount)} />
           <Metric label={t('trainerPools.metrics.physicalMirrors')} value={String(workflow.stats.physicalMirrorCount)} />
@@ -185,6 +184,7 @@ export function TrainerPoolsSection({
         <div className="panel-heading">
           <Layers3 aria-hidden="true" size={18} />
           <h2 id="trainer-pools-swap-heading">{t('trainerPools.swap.title')}</h2>
+          <ContextHelp label={t('trainerPools.swap.title')}>{t('trainerPools.swap.preservation')}</ContextHelp>
         </div>
         <div className="trainer-pools-selection-grid">
           <PoolSelection
@@ -224,9 +224,6 @@ export function TrainerPoolsSection({
               : t('trainerPools.swap.instructions')}
           </span>
         </div>
-        <p className="field-hint focused-editor-readable-copy">
-          {t('trainerPools.swap.preservation')}
-        </p>
         {hasPendingSwap ? (
           <p className="field-warning" role="status">
             {t('trainerPools.swap.pendingBlocked')}

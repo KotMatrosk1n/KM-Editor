@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { ContextHelp } from '../../components/ContextHelp';
 import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, RotateCcw, Save, TreeDeciduous, X } from 'lucide-react';
@@ -124,7 +125,7 @@ export function ShakingTreesSection({ workflow, session, isEditing, isEditStarti
   return <FocusedEditorWorkspace className="shaking-trees-editor">
     <section className="panel wide-panel" aria-labelledby="shaking-trees-heading">
       <div className="panel-heading tree-heading"><TreeDeciduous size={22} aria-hidden="true" />
-        <div><h2 id="shaking-trees-heading">{t('shakingTrees.title')}</h2><p>{t('shakingTrees.subtitle')}</p></div>
+        <div className="context-help-heading"><h2 id="shaking-trees-heading">{t('shakingTrees.title')}</h2><ContextHelp label={t('shakingTrees.title')}>{t('shakingTrees.subtitle')}</ContextHelp></div>
         <button className="secondary-button compact-button" type="button" onClick={onRefresh} disabled={isLoading || isStaging} aria-busy={isLoading || undefined}>
           <RefreshCw size={16} aria-hidden="true" /><span>{translateLiteral('Refresh')}</span>
         </button>
@@ -203,14 +204,14 @@ export function ShakingTreesSection({ workflow, session, isEditing, isEditStarti
         </div>
       </RecordEditorWorkspace> : <div className="tree-rules">
         <div className="tree-rules-controls">
-          <h3>{t('shakingTrees.globalRules')}</h3><p>{t('shakingTrees.riskHelp')}</p>
+          <div className="context-help-heading"><h3>{t('shakingTrees.globalRules')}</h3><ContextHelp label={t('shakingTrees.globalRules')}>{t('shakingTrees.riskHelp')}</ContextHelp></div>
           <div className="tree-rules-grid">
             {numberInput('settings', 'initialRiskMin', t('shakingTrees.initialRiskMin'), 99)}
             {numberInput('settings', 'initialRiskMax', t('shakingTrees.initialRiskMax'), 99)}
             {numberInput('settings', 'riskStepMin', t('shakingTrees.riskStepMin'), 99, 1)}
             {numberInput('settings', 'riskStepMax', t('shakingTrees.riskStepMax'), 99, 1)}
           </div>
-          <h3>{t('shakingTrees.quantity')}</h3><p>{t('shakingTrees.quantityHelp')}</p>
+          <div className="context-help-heading"><h3>{t('shakingTrees.quantity')}</h3><ContextHelp label={t('shakingTrees.quantity')}>{t('shakingTrees.quantityHelp')}</ContextHelp></div>
           <div className="tree-rules-grid">{numberInput('settings', 'dropMin', t('shakingTrees.dropMin'), 3, 1)}
             {numberInput('settings', 'dropMax', t('shakingTrees.dropMax'), 3, 1)}</div>
           <h3>{t('shakingTrees.loss')}</h3>
@@ -218,13 +219,18 @@ export function ShakingTreesSection({ workflow, session, isEditing, isEditStarti
           <p>{t('shakingTrees.lossHelp', { value: settings ? formatPercent(settings.loseAllRolls / 101) : '…' })}</p>
           <button className="secondary-button" type="button" disabled={!canEdit} onClick={restoreRules}><RotateCcw size={16} aria-hidden="true" /><span>{t('shakingTrees.restoreRules')}</span></button>
         </div>
-        <div className="tree-probability"><h3>{t('shakingTrees.odds')}</h3><p>{t('shakingTrees.oddsHelp')}</p>
+        <div className="tree-probability"><div className="context-help-heading"><h3>{t('shakingTrees.odds')}</h3><ContextHelp label={t('shakingTrees.odds')}>{t('shakingTrees.oddsHelp')}</ContextHelp></div>
           <div className="tree-odds-scroll"><table><thead><tr><th scope="col">{t('shakingTrees.shake')}</th>
             <th scope="col">{t('shakingTrees.encounterChance')}</th><th scope="col">{t('shakingTrees.survival')}</th></tr></thead>
             <tbody>{odds.map(row => <tr key={row.shake}><th scope="row">{row.shake}</th><td>{formatPercent(row.encounter)}</td><td>{formatPercent(row.survival)}</td></tr>)}</tbody></table></div>
-          <h3>{t('shakingTrees.rustling')}</h3><p>{t('shakingTrees.rustlingHelp')}</p>
-          <h3>{t('shakingTrees.refresh')}</h3><p>{t('shakingTrees.refreshHelp')}</p>
-          <h3>{t('shakingTrees.giant')}</h3><p>{t('shakingTrees.giantHelp')}</p>
+          <details className="editor-technical-disclosure">
+            <summary>{translateLiteral('Details')}</summary>
+            <dl className="editor-detail-list">
+              {(['rustling', 'refresh', 'giant'] as const).map(key => <div key={key}>
+                <dt>{t(`shakingTrees.${key}`)}</dt><dd>{t(`shakingTrees.${key}Help`)}</dd>
+              </div>)}
+            </dl>
+          </details>
         </div>
       </div>}
       </div>

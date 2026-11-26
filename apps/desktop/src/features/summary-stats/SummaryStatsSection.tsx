@@ -6,6 +6,7 @@ import { usePublishCommonEditorError } from '../../components/CommonEditorDiagno
 import { FocusedEditorWorkspace } from '../../components/FocusedEditorWorkspace';
 import { EditorSessionBar, EditorSessionBarActions } from '../../components/EditorSessionBar';
 import { WorkflowPanelOutputSections, type WorkflowPanelOutput } from '../../components/workflowPanels';
+import { ContextHelp } from '../../components/ContextHelp';
 import { useLocalization } from '../../localization';
 import './SummaryStatsSection.css';
 
@@ -54,8 +55,12 @@ export function SummaryStatsSection({ workflow, isStaging, isEditing, isEditStar
   };
   return <FocusedEditorWorkspace className="summary-stats-editor">
     <section className="panel wide-panel" aria-labelledby="summary-stats-heading">
-      <div className="panel-heading"><ChartNoAxesCombined size={20} aria-hidden="true" /><h2 id="summary-stats-heading">{t('summaryStats.title')}</h2></div>
-      <p className="muted">{t('summaryStats.intro')}</p>
+      <div className="panel-heading"><ChartNoAxesCombined size={20} aria-hidden="true" /><h2 id="summary-stats-heading">{t('summaryStats.title')}</h2>
+        <ContextHelp label={t('summaryStats.title')}>
+          <p>{t('summaryStats.intro')}</p><p>{t('summaryStats.controls')}</p>
+          <p>{t('summaryStats.preservation')}</p><p>{t('summaryStats.package')}</p>
+        </ContextHelp>
+      </div>
       <EditorSessionBar canEdit={!!available} isEditing={isEditing} isStarting={isEditStarting}
         label={t('summaryStats.title')} onStart={onStartEditSession} />
       {isEditing ? <EditorSessionBarActions>
@@ -68,21 +73,18 @@ export function SummaryStatsSection({ workflow, isStaging, isEditing, isEditStar
           <X size={16} aria-hidden="true" />{translateLiteral('Cancel')}
         </button>
       </EditorSessionBarActions> : null}
-      <div className="summary-stats-setting">
+      <div className="summary-stats-setting editor-setting-row">
         <label><input type="checkbox" checked={enabled} disabled={!canEdit}
           onChange={event => choose(event.target.checked)} /><span>{t('summaryStats.enable')}</span></label>
         <button type="button" className="secondary-button" disabled={!canEdit} onClick={() => choose(false)}>
           <RotateCcw size={16} aria-hidden="true" />{t('summaryStats.restore')}
         </button>
       </div>
-      <p className="muted">{t('summaryStats.controls')}</p>
       <ol className="summary-stats-modes" aria-label={t('summaryStats.cycle')}>
         {(['stats', 'ivs', 'evs', 'graph'] as const).map(mode => <li key={mode}>
           <strong>{t(`summaryStats.mode.${mode}`)}</strong><p>{t(`summaryStats.mode.${mode}.help`)}</p>
         </li>)}
       </ol>
-      <p>{t('summaryStats.preservation')}</p>
-      <p className="muted">{t('summaryStats.package')}</p>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />
   </FocusedEditorWorkspace>;

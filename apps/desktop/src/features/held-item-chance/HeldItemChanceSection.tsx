@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { ContextHelp } from '../../components/ContextHelp';
 import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { useEffect, useRef, useState } from 'react';
 import { PokemonSearchBox, PokemonTable, filterPokemonRecords, type PokemonSelectionRecord } from '../../components/PokemonSelection';
@@ -115,12 +116,12 @@ export function HeldItemChanceSection({ formatPokemonName, workflow, session, is
     <section className="panel wide-panel swsh-pokemon-section held-item-chance" aria-labelledby="held-item-chance-heading">
       <div className="panel-heading"><Sparkles size={18} aria-hidden="true" />
         <h2 id="held-item-chance-heading">{t('heldItemChance.title')}</h2>
+        <ContextHelp label={t('heldItemChance.title')}>{t('heldItemChance.pokemonSubtitle')}</ContextHelp>
         <button className="secondary-button compact-button" type="button" onClick={onRefresh}
           disabled={isLoading || busy} aria-busy={isLoading || undefined}>
           <RefreshCw size={16} aria-hidden="true" /><span>{translateLiteral('Refresh')}</span>
         </button>
       </div>
-      <p>{t('heldItemChance.pokemonSubtitle')}</p>
       <EditorSessionBar canEdit={workflow?.canEdit === true} isEditing={isEditing} isStarting={isEditStarting}
         label={t('heldItemChance.title')} onStart={onStartEditSession} readOnlyReason={t('heldItemChance.readOnly')} />
       {isEditing ? <EditorSessionBarActions>
@@ -159,7 +160,14 @@ export function HeldItemChanceSection({ formatPokemonName, workflow, session, is
       }>
         <div className="held-item-pokemon-details">
       {selected && desired ? <>
-        <h3 data-localization-ignore="true">{formatPokemonName(selected)}</h3>
+        <div className="context-help-heading held-item-record-heading">
+          <h3 data-localization-ignore="true">{formatPokemonName(selected)}</h3>
+          <ContextHelp label={t('heldItemChance.title')}>
+            <p>{t('heldItemChance.pokemonScope')}</p>
+            <p>{t(desired.customRates ? 'heldItemChance.customHelp' : 'heldItemChance.equalHelp')}</p>
+            <p>{t('heldItemChance.packageHelp', { editor: t('gameplaySettings.title') })}</p>
+          </ContextHelp>
+        </div>
         <div className="held-item-slot-grid held-item-choices">
           {[0, 1, 2].map(slot => <div key={slot} className="held-item-rate-field">
             <label htmlFor={`held-item-choice-${slot}`}>{t('heldItemChance.slot', { number: slot + 1 })}</label>
@@ -173,12 +181,7 @@ export function HeldItemChanceSection({ formatPokemonName, workflow, session, is
             rates: event.target.checked ? desired.rates : globalRates.map(String) })} />{t('heldItemChance.customRates')}</label>
         <HeldItemRateGroups rates={desired.rates} disabled={!canEdit}
           onChange={rates => change({ ...desired, rates, customRates: true })} />
-        <div className="held-item-notes">
-          <p id="held-item-rate-limits">{t('heldItemChance.limits')}</p>
-          <p>{t('heldItemChance.pokemonScope')}</p>
-          <p>{t(desired.customRates ? 'heldItemChance.customHelp' : 'heldItemChance.equalHelp')}</p>
-          <p>{t('heldItemChance.packageHelp', { editor: t('gameplaySettings.title') })}</p>
-        </div>
+        <p className="field-hint" id="held-item-rate-limits">{t('heldItemChance.limits')}</p>
       </> : <p>{workflow && records.length ? translateLiteral('No Pokemon selected.') : t('heldItemChance.wildMissing')}</p>}
         </div>
       </RecordEditorWorkspace>

@@ -202,18 +202,20 @@ function MergeWorkspaceEditor({ paths, active, onExportingChange, armWriteGuard 
 
   return <section className="panel wide-panel merge-workspace" hidden={!active} aria-label={label('title')}>
     {!draftSaved && <p className="field-note">{label('draftUnavailable')}</p>}
-    <header className="merge-workspace-heading"><div><h2>{label('title')}</h2><p>{label('intro')}</p></div>
+    <header className="merge-workspace-heading"><div><h2>{label('title')}</h2></div>
       <div className="merge-workspace-modes" role="group" aria-label={label('mode')}>
         {(['basic', 'advanced'] as const).map(value => <button key={value} type="button" aria-pressed={mode === value}
           onClick={() => setMode(value)}>{label(value)}</button>)}
       </div>
     </header>
-    <div className="merge-workspace-help">
-    <p className="field-note">{label(`${mode}Help`)}</p>
-    <p className="field-note">{label('formatHelp')}</p>
-    <p className="field-note merge-workspace-limits">{label('limits')}</p>
-    {outputMode === 'bypass' && <p className="field-note">{label('bypassHelp')}</p>}
-    </div>
+    <details className="merge-workspace-help advanced-editor-details">
+      <summary>{label('support')}</summary>
+      <div className="advanced-editor-details-content">
+        <p>{label('intro')}</p><p>{label(`${mode}Help`)}</p><p>{label('formatHelp')}</p>
+        <p>{label('limits')}</p>
+        {outputMode === 'bypass' && <p>{label('bypassHelp')}</p>}
+      </div>
+    </details>
     <div className="merge-workspace-settings merge-workspace-output-settings">
       <div className="path-field"><label htmlFor="merge-game">{label('game')}</label><SearchableOptionInput id="merge-game" ariaLabel={label('game')}
         value={game} options={gameOptions} onChange={changeGame} disabled={false} isFiniteCatalog /></div>

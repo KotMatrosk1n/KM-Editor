@@ -10,6 +10,7 @@ import {
   type BattleCafeRewardsWorkflow
 } from '../../bridge/battleCafeRewardsContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { ContextHelp } from '../../components/ContextHelp';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { EditorSessionBar, EditorSessionBarActions } from '../../components/EditorSessionBar';
 import {
@@ -236,9 +237,8 @@ export function BattleCafeRewardsSection({
         <div className="panel-heading">
           <Coffee aria-hidden="true" size={18} />
           <h2 id="battle-cafe-rewards-heading">{t('battleCafeRewards.title')}</h2>
+          <ContextHelp label={t('battleCafeRewards.title')}>{t('battleCafeRewards.description')}</ContextHelp>
         </div>
-
-        <p className="panel-lede">{t('battleCafeRewards.description')}</p>
 
         {workflow ? (
           <EditorSessionBar
@@ -317,9 +317,15 @@ export function BattleCafeRewardsSection({
               </div>
             ) : null}
 
-            <div className="battle-cafe-reward-grid">
+            <div className="battle-cafe-reward-grid" role="table" aria-label={t('battleCafeRewards.title')}>
+              <div className="battle-cafe-reward-row battle-cafe-reward-heading" role="row">
+                <span role="columnheader">{translateLiteral('Slot')}</span>
+                <span role="columnheader">{translateLiteral('Item')}</span>
+                {ownerKeys.map((owner) => <span key={owner} role="columnheader">{t(`battleCafeRewards.owner.${owner}`)} (%)</span>)}
+                <span role="columnheader">{translateLiteral('Actions')}</span>
+              </div>
               {draftRows.map((row) => (
-                <BattleCafeRewardCard
+                <BattleCafeRewardEditorRow
                   disabled={!canEdit}
                   isDirty={dirtyRowIndexes.has(row.rowIndex)}
                   itemOptions={workflow.itemOptions}
@@ -362,7 +368,7 @@ export function BattleCafeRewardsSection({
   );
 }
 
-function BattleCafeRewardCard({
+function BattleCafeRewardEditorRow({
   disabled,
   isDirty,
   itemOptions,
@@ -378,15 +384,42 @@ function BattleCafeRewardCard({
   row: DraftRow;
 }) {
   const { t } = useLocalization();
-  const option = itemOptions.find((candidate) => candidate.itemId === row.itemId) ?? null;
 
   return (
-    <article className={`battle-cafe-reward-card ${isDirty ? 'is-dirty' : ''}`}>
-      <header>
-        <div>
-          <span>{t('battleCafeRewards.row.label', { row: row.rowIndex })}</span>
-          <strong data-localization-ignore="true">{option?.name ?? `#${row.itemId}`}</strong>
-        </div>
+    <div className={`battle-cafe-reward-row ${isDirty ? 'is-dirty' : ''}`} role="row">
+      <span role="cell">{t('battleCafeRewards.row.label', { row: row.rowIndex })}</span>
+      <div className="battle-cafe-reward-item" role="cell">
+        <BattleCafeItemPicker
+          disabled={disabled}
+          itemOptions={itemOptions}
+          onChange={(itemId) => onChange({ itemId })}
+          rowIndex={row.rowIndex}
+          value={row.itemId}
+        />
+      </div>
+      {ownerKeys.map((owner) => (
+        <label key={owner} role="cell">
+          <span className="battle-cafe-mobile-label" aria-hidden="true">{t(`battleCafeRewards.owner.${owner}`)}</span>
+          <span className="battle-cafe-percent-input">
+            <input
+              aria-label={t('battleCafeRewards.row.ownerPercent', {
+                owner: t(`battleCafeRewards.owner.${owner}`),
+                row: row.rowIndex
+              })}
+              disabled={disabled}
+              inputMode="numeric"
+              aria-invalid={parsePercentDraft(row[owner]) === null ? 'true' : undefined}
+              onChange={(event) => onChange({ [owner]: event.currentTarget.value })}
+              onFocus={(event) => event.currentTarget.select()}
+              pattern="[0-9]*"
+              type="text"
+              value={row[owner]}
+            />
+            <span aria-hidden="true">%</span>
+          </span>
+        </label>
+      ))}
+      <div className="battle-cafe-reward-actions" role="cell">
         <button
           aria-label={t('battleCafeRewards.row.restore', { row: row.rowIndex })}
           className="icon-button"
@@ -397,41 +430,8 @@ function BattleCafeRewardCard({
         >
           <RotateCcw aria-hidden="true" size={16} />
         </button>
-      </header>
-
-      <BattleCafeItemPicker
-        disabled={disabled}
-        itemOptions={itemOptions}
-        onChange={(itemId) => onChange({ itemId })}
-        rowIndex={row.rowIndex}
-        value={row.itemId}
-      />
-
-      <div className="battle-cafe-percent-grid">
-        {ownerKeys.map((owner) => (
-          <label key={owner}>
-            <span>{t(`battleCafeRewards.owner.${owner}`)}</span>
-            <span className="battle-cafe-percent-input">
-              <input
-                aria-label={t('battleCafeRewards.row.ownerPercent', {
-                  owner: t(`battleCafeRewards.owner.${owner}`),
-                  row: row.rowIndex
-                })}
-                disabled={disabled}
-                inputMode="numeric"
-                aria-invalid={parsePercentDraft(row[owner]) === null ? 'true' : undefined}
-                onChange={(event) => onChange({ [owner]: event.currentTarget.value })}
-                onFocus={(event) => event.currentTarget.select()}
-                pattern="[0-9]*"
-                type="text"
-                value={row[owner]}
-              />
-              <span aria-hidden="true">%</span>
-            </span>
-          </label>
-        ))}
       </div>
-    </article>
+    </div>
   );
 }
 

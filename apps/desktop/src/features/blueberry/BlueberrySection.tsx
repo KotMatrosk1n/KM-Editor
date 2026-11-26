@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { ContextHelp } from '../../components/ContextHelp';
 import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Gift, RotateCcw, Save, X } from 'lucide-react';
@@ -99,8 +100,9 @@ export function BlueberrySection({ editor, workflow, isStaging, isEditing, isEdi
   const title = t(`workbench.section.${editor}.label`);
   return <FocusedEditorWorkspace className="blueberry-editor">
     <section className="panel wide-panel blueberry-panel" aria-labelledby={`${editor}-heading`}>
-      <div className="panel-heading"><Gift size={20} aria-hidden="true" /><h2 id={`${editor}-heading`}>{title}</h2></div>
-      <p className="muted">{t(`blueberry.${editor}.help`)}</p>
+      <div className="panel-heading"><Gift size={20} aria-hidden="true" /><h2 id={`${editor}-heading`}>{title}</h2>
+        <ContextHelp label={title}>{t(`blueberry.${editor}.help`)}</ContextHelp>
+      </div>
       <EditorSessionBar canEdit={available && rows.length > 0} isEditing={isEditing} isStarting={isEditStarting}
         label={title} onStart={onStartEditSession} />
       {isEditing ? <EditorSessionBarActions>
@@ -149,7 +151,11 @@ export function BlueberrySection({ editor, workflow, isStaging, isEditing, isEdi
       }>
         {selected ? <section ref={detailRef} className="blueberry-detail" aria-labelledby={`${editor}-selected`}>
           <div className="blueberry-detail-heading">{isTreats ? renderPokemon?.(selected.species, label(selected)) : null}
-            <h3 id={`${editor}-selected`} data-localization-ignore="true">{label(selected)}</h3></div>
+            <h3 id={`${editor}-selected`} data-localization-ignore="true">{label(selected)}</h3>
+            <ContextHelp label={title}>
+              <p>{t(isTreats ? 'blueberry.snacksworth.progress' : editor === 'supportBoard' ? 'blueberry.supportBoard.priceHelp' : 'blueberry.bpHelp')}</p>
+              <p>{t('blueberry.restoreHelp')}</p>
+            </ContextHelp></div>
           <button type="button" className="secondary-button" disabled={!canEdit || isStaging} onClick={() => restore([selected])}>
             <RotateCcw size={16} aria-hidden="true" />{t('blueberry.restore')}</button>
           {isTreats ? <div className="blueberry-eligibility">
@@ -169,8 +175,6 @@ export function BlueberrySection({ editor, workflow, isStaging, isEditing, isEdi
           </label>}
           {!isTreats ? <dl className="blueberry-facts"><div><dt>{t('blueberry.identity')}</dt><dd data-localization-ignore="true">{selected.id}</dd></div>
             {editor === 'bbqRewards' ? <div><dt>{t('blueberry.goal')}</dt><dd>{selected.goal}</dd></div> : null}</dl> : null}
-          <p className="muted blueberry-help">{t(isTreats ? 'blueberry.snacksworth.progress' : editor === 'supportBoard' ? 'blueberry.supportBoard.priceHelp' : 'blueberry.bpHelp')}</p>
-          <p className="muted blueberry-help">{t('blueberry.restoreHelp')}</p>
         </section> : null}
       </RecordEditorWorkspace>
     </section>

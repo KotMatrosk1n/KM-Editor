@@ -14,6 +14,7 @@ import type {
   TmMachineControlsWorkflow
 } from '../../bridge/tmMachineControlsContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { ContextHelp } from '../../components/ContextHelp';
 import {
   Metric,
   WorkflowPanelOutputSections,
@@ -108,7 +109,7 @@ export function TmMachineControlsSection({
   stagingTarget: TmMachineControlStagingTarget | null;
   workflow: TmMachineControlsWorkflow | null;
 }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const pendingControlCount = getTmMachineControlPendingCount(editSession);
   const isBusy =
     stagingTarget !== null || isChangePlanCreating || isChangePlanApplying;
@@ -123,11 +124,11 @@ export function TmMachineControlsSection({
       <section aria-labelledby="tm-machine-controls-heading" className="panel wide-panel">
         <div className="panel-heading">
           <ListChecks aria-hidden="true" size={18} />
-          <div>
+          <div className="context-help-heading">
             <h2 id="tm-machine-controls-heading">{t('tmMachineControls.title')}</h2>
-            <p className="tm-machine-controls-heading-copy">
+            <ContextHelp label={t('tmMachineControls.title')}>
               {t('tmMachineControls.description')}
-            </p>
+            </ContextHelp>
           </div>
         </div>
 
@@ -175,11 +176,11 @@ export function TmMachineControlsSection({
                     <span className="tm-machine-control-icon" aria-hidden="true">
                       <CardIcon size={20} />
                     </span>
-                    <div>
+                    <div className="context-help-heading">
                       <h3 id={`tm-machine-control-${card.control}-heading`}>
                         {t(card.titleKey)}
                       </h3>
-                      <p>{t(card.descriptionKey)}</p>
+                      <ContextHelp label={t(card.titleKey)}>{t(card.descriptionKey)}</ContextHelp>
                     </div>
                     <span
                       className={`tm-machine-control-status tm-machine-control-status-${state.status}`}
@@ -204,34 +205,6 @@ export function TmMachineControlsSection({
                       <p>{t(card.blockedKey)}</p>
                     </div>
                   ) : null}
-
-                  <dl className="tm-machine-control-source">
-                    <div>
-                      <dt>{t('tmMachineControls.source.file')}</dt>
-                      {source ? (
-                        <dd data-localization-ignore="true">{source.sourceFile}</dd>
-                      ) : (
-                        <dd>{t('tmMachineControls.source.unavailable')}</dd>
-                      )}
-                    </div>
-                    <div>
-                      <dt>{t('tmMachineControls.source.layer')}</dt>
-                      <dd>
-                        {source
-                          ? t(`tmMachineControls.layer.${source.sourceLayer}`)
-                          : t('tmMachineControls.source.unavailable')}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>{t('tmMachineControls.source.match')}</dt>
-                      <dd>
-                        {t('tmMachineControls.source.matchValue', {
-                          matching: state.matchingRecordCount,
-                          total: state.totalRecordCount
-                        })}
-                      </dd>
-                    </div>
-                  </dl>
 
                   <div
                     aria-label={t('tmMachineControls.actions', {
@@ -270,6 +243,36 @@ export function TmMachineControlsSection({
                       );
                     })}
                   </div>
+                  <details className="editor-technical-disclosure">
+                    <summary>{translateLiteral('Source')}</summary>
+                    <dl className="tm-machine-control-source">
+                      <div>
+                        <dt>{t('tmMachineControls.source.file')}</dt>
+                        {source ? (
+                          <dd data-localization-ignore="true">{source.sourceFile}</dd>
+                        ) : (
+                          <dd>{t('tmMachineControls.source.unavailable')}</dd>
+                        )}
+                      </div>
+                      <div>
+                        <dt>{t('tmMachineControls.source.layer')}</dt>
+                        <dd>
+                          {source
+                            ? t(`tmMachineControls.layer.${source.sourceLayer}`)
+                            : t('tmMachineControls.source.unavailable')}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{t('tmMachineControls.source.match')}</dt>
+                        <dd>
+                          {t('tmMachineControls.source.matchValue', {
+                            matching: state.matchingRecordCount,
+                            total: state.totalRecordCount
+                          })}
+                        </dd>
+                      </div>
+                    </dl>
+                  </details>
                 </article>
               );
             })}

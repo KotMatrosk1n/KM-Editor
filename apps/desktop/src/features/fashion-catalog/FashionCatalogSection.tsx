@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import { ContextHelp } from '../../components/ContextHelp';
 import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { ChevronLeft, ChevronRight, Palette, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
@@ -467,15 +468,14 @@ export function FashionCatalogSection({
         <div className="panel-heading">
           <Palette aria-hidden="true" size={18} />
           <h2 id="fashion-catalog-heading">{t('fashionCatalog.title')}</h2>
+          <ContextHelp label={t('fashionCatalog.title')}>
+            <p>{t('fashionCatalog.description')}</p>
+            <p>{t('fashionCatalog.shopScope')}</p>
+            <p>{t('fashionCatalog.editor.safety')}</p>
+          </ContextHelp>
         </div>
-        <details className="fashion-catalog-info">
+        <details className="editor-technical-disclosure">
           <summary>{t('fashionCatalog.editor.title')}</summary>
-          <p className="section-copy focused-editor-readable-copy">
-            {t('fashionCatalog.description')}
-          </p>
-          <p className="field-hint focused-editor-readable-copy">
-            {t('fashionCatalog.shopScope')}
-          </p>
           <FocusedEditorMetrics>
             <Metric label={t('fashionCatalog.metrics.items')} value={String(workflow.stats.dressUpItemCount)} />
             <Metric label={t('fashionCatalog.metrics.groups')} value={String(workflow.stats.dressUpGroupCount)} />
@@ -484,7 +484,6 @@ export function FashionCatalogSection({
             <Metric label={t('fashionCatalog.metrics.hairLineups')} value={String(workflow.stats.hairAndMakeupLineupEntryCount)} />
             <Metric label={t('fashionCatalog.metrics.staged')} value={String(pendingCount)} />
           </FocusedEditorMetrics>
-          <p className="field-hint focused-editor-readable-copy">{t('fashionCatalog.editor.safety')}</p>
         </details>
         <div aria-label={t('fashionCatalog.tabs.label')} className="fashion-catalog-tabs" role="tablist">
           {catalogFiles.map((file) => (

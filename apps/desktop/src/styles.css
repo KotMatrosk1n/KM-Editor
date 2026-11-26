@@ -1892,7 +1892,8 @@ button > span,
 }
 
 .sidebar-compact .nav-button > span:not(.nav-count),
-.sidebar-compact .nav-group-button > span {
+.sidebar-compact .nav-group-button > span,
+.sidebar-compact .category-empty {
   display: none;
 }
 
@@ -7514,33 +7515,13 @@ h2 {
   margin-top: 16px;
 }
 
-.dynamax-adventures-layout {
-  grid-template-columns: minmax(766px, 1.35fr) minmax(360px, 0.65fr);
-  grid-template-areas:
-    "table summary"
-    "editor editor";
-}
-
-.dynamax-adventures-table {
-  grid-area: table;
-  min-width: min(766px, 100%);
-}
-
 .dynamax-adventure-summary {
-  grid-area: summary;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
 }
 
-.dynamax-adventure-editor {
-  grid-area: editor;
-}
-
-.dynamax-adventure-selection-summary {
-  grid-column: 1 / -1;
-  min-width: 0;
-}
-
-.dynamax-adventure-summary > .dynamax-adventure-provenance {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+.dynamax-adventure-summary .dynamax-adventure-provenance {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
 }
 
 .dynamax-adventure-editor > .dynamax-adventure-edit-form {
@@ -9298,11 +9279,12 @@ h2 {
 
 .type-chart-grid {
   display: grid;
-  grid-template-columns: 104px repeat(18, 42px);
+  grid-template-columns: minmax(88px, 104px) repeat(18, minmax(30px, 42px));
   grid-auto-rows: 42px;
   align-items: stretch;
   justify-items: stretch;
-  width: max-content;
+  width: min(100%, 882px);
+  min-width: 650px;
   margin-inline: auto;
   padding: 10px;
   background: #0f1729;
@@ -9373,6 +9355,11 @@ h2 {
   margin: 0 2px 1px 0;
   padding: 0 6px;
   font-size: 0.8125rem;
+}
+
+@media (max-width: 1040px) {
+  .type-chart-type-badge { font-size: 0.6875rem; }
+  .type-chart-row-badge { padding-inline: 2px; }
 }
 
 .type-chart-cell {
@@ -11859,8 +11846,7 @@ h2 {
 
 .encounter-area-tabs,
 .encounter-condition-tabs,
-.encounter-slot-tabs,
-.raid-reward-slot-grid {
+.encounter-slot-tabs {
   display: flex;
   gap: 8px;
   min-width: 0;
@@ -11875,8 +11861,7 @@ h2 {
 .type-chart-scroll,
 .encounter-area-tabs,
 .encounter-condition-tabs,
-.encounter-slot-tabs,
-.raid-reward-slot-grid {
+.encounter-slot-tabs {
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
@@ -11948,6 +11933,25 @@ h2 {
 
 .slot-tab-button span {
   line-height: 1.25;
+}
+
+.raid-reward-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+  gap: 6px;
+}
+
+.raid-reward-slot-grid .slot-tab-button {
+  grid-template: auto auto / auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 6px;
+  min-height: 0;
+  padding: 5px 8px;
+}
+
+.raid-reward-slot-grid .slot-tab-button small {
+  grid-column: 2;
+  font-variant-numeric: tabular-nums;
 }
 
 .encounter-slot-tabs .slot-tab-button {
@@ -13063,18 +13067,17 @@ h2 {
 
 .settings-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   min-width: 0;
   margin-top: 16px;
   padding-bottom: 10px;
-  overflow-x: auto;
   border-bottom: 1px solid rgb(93 113 151 / 32%);
-  scrollbar-width: thin;
 }
 
 .settings-tab {
   display: inline-flex;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   gap: 8px;
   min-height: 42px;
   align-items: center;
@@ -13085,7 +13088,7 @@ h2 {
   border-radius: 8px;
   font-size: 0.8125rem;
   font-weight: 850;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .settings-tab svg {
@@ -14369,16 +14372,6 @@ input {
   .royal-candy-inspector > .item-provenance-list,
   .royal-candy-inspector > .royal-candy-edit-form {
     grid-column: 1 / -1;
-  }
-}
-
-@container workspace (max-width: 1500px) {
-  .dynamax-adventures-layout {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "table"
-      "summary"
-      "editor";
   }
 }
 
@@ -16630,61 +16623,63 @@ select.km-select-control:dir(rtl) {
 }
 
 .battle-cafe-reward-grid {
+  border: 1px solid var(--color-border);
+  border-radius: var(--property-radius);
+  background: var(--color-surface-muted);
+}
+
+.battle-cafe-reward-row {
   display: grid;
-  gap: 0.85rem;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.battle-cafe-reward-card {
-  background: var(--surface-raised, rgba(13, 24, 45, 0.72));
-  border: 1px solid var(--border-color, #2c3c5b);
-  border-radius: 0.8rem;
-  display: grid;
-  gap: 0.85rem;
-  min-width: 0;
-  padding: 0.9rem;
-}
-
-.battle-cafe-reward-card.is-dirty {
-  border-color: var(--accent, #7c68ff);
-  box-shadow: inset 3px 0 0 var(--accent, #7c68ff);
-}
-
-.battle-cafe-reward-card > header {
+  grid-template-columns: minmax(4rem, .5fr) minmax(10rem, 2fr) repeat(3, minmax(5.5rem, .75fr)) auto;
+  gap: .35rem .65rem;
   align-items: center;
-  display: flex;
-  gap: 0.75rem;
-  justify-content: space-between;
+  padding: .28rem .65rem;
 }
 
-.battle-cafe-reward-card > header > div {
-  display: grid;
-  gap: 0.2rem;
-  min-width: 0;
+.battle-cafe-reward-row + .battle-cafe-reward-row {
+  border-block-start: 1px solid var(--property-divider);
 }
 
-.battle-cafe-reward-card > header strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.battle-cafe-reward-row.is-dirty {
+  box-shadow: inset 3px 0 var(--color-accent);
 }
 
+.battle-cafe-reward-heading {
+  font-size: .84rem;
+  font-weight: 700;
+  color: var(--color-text-soft);
+  background: var(--color-surface-strong);
+  border-start-start-radius: inherit;
+  border-start-end-radius: inherit;
+}
+
+.battle-cafe-reward-row > *,
 .battle-cafe-item-picker {
-  display: grid;
-  gap: 0.35rem;
-  min-width: 0;
-  position: relative;
+  min-inline-size: 0;
 }
 
-.battle-cafe-percent-grid {
-  display: grid;
-  gap: 0.65rem;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.battle-cafe-mobile-label {
+  display: none;
 }
 
-.battle-cafe-percent-grid label {
-  display: grid;
-  gap: 0.35rem;
+@container workspace (max-width: 43rem) {
+  .battle-cafe-reward-heading {
+    display: none;
+  }
+
+  .battle-cafe-reward-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+    padding-block: .5rem;
+  }
+
+  .battle-cafe-reward-item {
+    grid-column: span 3;
+  }
+
+  .battle-cafe-mobile-label {
+    display: block;
+    font-size: .82rem;
+  }
 }
 
 .battle-cafe-percent-input {
@@ -16733,8 +16728,7 @@ select.km-select-control:dir(rtl) {
 }
 
 @media (max-width: 1050px) {
-  .battle-cafe-rewards-summary,
-  .battle-cafe-reward-grid {
+  .battle-cafe-rewards-summary {
     grid-template-columns: 1fr;
   }
 
@@ -16744,9 +16738,6 @@ select.km-select-control:dir(rtl) {
 }
 
 @media (max-width: 620px) {
-  .battle-cafe-percent-grid {
-    grid-template-columns: 1fr;
-  }
 
 }
 

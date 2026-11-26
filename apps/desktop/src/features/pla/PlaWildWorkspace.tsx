@@ -8,6 +8,7 @@ import { EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, Sec
 import { FieldLabel } from '../../components/FieldLabel';
 import { InteractiveTableRow, VirtualTableBody } from '../../components/VirtualTable';
 import { Metric } from '../../components/workflowPanels';
+import { ContextHelp } from '../../components/ContextHelp';
 import { useLocalization } from '../../localization';
 import type { PlaPokemonPreview } from './PlaBattleWorkspace';
 import type { PlaRowClipboardBinding } from './usePlaRowClipboard';
@@ -94,7 +95,7 @@ export function PlaWildWorkspace({ sessionKey, kind, page, selected, query, offs
           <EditorRecordHeading name={plaAreaLabel(t, selected.metadata.area)} id={selected.id} />
         </EditorWorkspaceHeader>
         <EditorWorkspaceSection id="details" label={t('editorSections.details')}>
-          <p className="field-note">{t('pla.wild.notice')}</p>
+          <div className="pla-wild-help"><ContextHelp label={translateLiteral('Encounter slots')}>{t('pla.wild.notice')}</ContextHelp></div>
           <dl className="item-provenance-list">
             <div><dt>{translateLiteral('Location')}</dt><dd data-localization-ignore="true">{plaAreaLabel(t, selected.metadata.area)}</dd></div>
             <div><dt>{translateLiteral('ID')}</dt><dd>{selected.metadata.table}</dd></div>
@@ -105,10 +106,11 @@ export function PlaWildWorkspace({ sessionKey, kind, page, selected, query, offs
         <EditorWorkspaceSection id="data" label={isSpawn ? t('pla.kind.spawns') : translateLiteral('Encounter slots')} modified={hasDraft(selected)}>
           {!isSpawn ? <div className="encounter-edit-form">
             {clipboard?.content}
-            <div className="trainer-party-card-grid" aria-label={translateLiteral('Encounter slots')}>
-              {records.map(record => <button type="button" key={record.id} className="trainer-party-card" aria-pressed={selected.id === record.id} {...clipboard?.bind(record.id)}
+            <div className="pla-wild-slot-list" aria-label={translateLiteral('Encounter slots')}>
+              {records.map(record => <button type="button" key={record.id} className="pla-wild-slot" aria-pressed={selected.id === record.id} {...clipboard?.bind(record.id)}
                 aria-label={translateLiteral('Slot') + ' ' + record.metadata.slot + ': ' + name(record)} onClick={() => onSelect(record.id)}>
                 {renderPokemon?.(valuesFor(record), name(record), page?.pokemonSpriteNames[valuesFor(record).species], 'trainer-party-sprite')}
+                <span className="pla-wild-slot-index">{record.metadata.slot}</span>
                 <strong data-localization-ignore="true">{name(record)}</strong>
                 <span>{profile(record)}</span><span>{status(record)}</span>
               </button>)}

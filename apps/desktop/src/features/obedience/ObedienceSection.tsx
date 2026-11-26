@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { ContextHelp } from '../../components/ContextHelp';
 import { useEffect, useRef, useState } from 'react';
 import { Award, RefreshCw, RotateCcw, Save, X } from 'lucide-react';
 import { type EditSession } from '../../bridge/contracts';
@@ -49,13 +50,15 @@ export function ObedienceSection({ workflow, session, isEditing, isEditStarting,
     <section className="panel wide-panel obedience-editor" aria-labelledby="obedience-heading">
       <div className="panel-heading"><Award size={18} aria-hidden="true" />
         <h2 id="obedience-heading">{t('obedience.title')}</h2>
+        <ContextHelp label={t('obedience.title')}>
+          <p>{t('obedience.subtitle')}</p>
+          <p>{t('obedience.saveHelp')}</p>
+        </ContextHelp>
         <button className="secondary-button compact-button" type="button" onClick={onRefresh}
           disabled={isLoading || isStaging} aria-busy={isLoading || undefined}>
           <RefreshCw size={16} aria-hidden="true" /><span>{translateLiteral('Refresh')}</span>
         </button>
       </div>
-      <p>{t('obedience.subtitle')}</p>
-      <p id="obedience-help">{t('obedience.help')}</p>
       <EditorSessionBar canEdit={workflow?.canEdit === true} isEditing={isEditing} isStarting={isEditStarting}
         label={t('obedience.title')} onStart={onStartEditSession} readOnlyReason={t('obedience.readOnly')} />
       {isEditing ? <EditorSessionBarActions>
@@ -74,7 +77,11 @@ export function ObedienceSection({ workflow, session, isEditing, isEditStarting,
         <span className="draft-action-summary">{t(dirty ? 'obedience.draft' : pending ? 'obedience.staged' : 'obedience.clean')}</span>
       </EditorSessionBarActions> : null}
       <div className="obedience-grid editor-property-ledger">
-        <div className="obedience-ledger-header">{t('obedience.level')}</div>
+        <div className="obedience-ledger-header context-help-heading">
+          {t('obedience.level')}
+          <ContextHelp label={t('obedience.level')}>{t('obedience.help')}</ContextHelp>
+        </div>
+        <span id="obedience-help" hidden>{t('obedience.help')}</span>
         {desired.map((value, index) => <label className="obedience-card" key={index}>
           <span>{t('obedience.badges', { count: index })}</span>
           <input type="text" inputMode="numeric" value={value} disabled={!canEdit}
@@ -84,7 +91,6 @@ export function ObedienceSection({ workflow, session, isEditing, isEditStarting,
           <small>{t('obedience.vanilla', { level: defaultObedienceSelections[index] })}</small>
         </label>)}
       </div>
-      <p>{t('obedience.saveHelp')}</p>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />
   </FocusedEditorWorkspace>;

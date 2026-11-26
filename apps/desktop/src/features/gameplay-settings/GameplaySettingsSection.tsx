@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { CameraHookRequirement, type CameraHookStatus } from '../camera-control/CameraHookRequirement';
 import type { OutputSafetyScope } from '../../bridge/outputSafetyContracts';
 import type { ProjectBridge } from '../../bridge/projectBridge';
+import { ContextHelp } from '../../components/ContextHelp';
 import { useLocalization } from '../../localization';
 import './GameplaySettingsSection.css';
 import { InGameSettingsPackagePanel, type GameplaySettingsDestinations } from './InGameSettingsPackagePanel';
@@ -92,29 +93,21 @@ export function GameplaySettingsSection({
 
           </div>
         </div>
+        {cameraHook ? <ContextHelp label={t('cameraHook.title')}>{t('cameraHook.instructions')}</ContextHelp> : null}
       </header>
 
-      {cameraHook ? <p>{t('cameraHook.instructions')}</p> : null}
-
-      {cameraControl ? <div className="camera-control__overview">
-        <p>{t('cameraControl.instructions')}</p>
-        <div className="camera-control__choices">
-          <div><h3>{t('cameraControl.yes')}</h3><p>{t('cameraControl.yesDescription')}</p></div>
-          <div><h3>{t('cameraControl.no')}</h3><p>{t('cameraControl.noDescription')}</p></div>
+      {cameraControl || battleItems ? <details className="advanced-editor-details camera-control__overview">
+        <summary>{t(cameraControl ? 'cameraControl.title' : 'battleItems.title')}</summary>
+        <div className="advanced-editor-details-content">
+          <p>{t(cameraControl ? 'cameraControl.instructions' : 'battleItems.instructions')}</p>
+          <div className="camera-control__choices">
+            <div><h3>{t('cameraControl.yes')}</h3><p>{t(cameraControl ? 'cameraControl.yesDescription' : 'battleItems.yesDescription')}</p></div>
+            <div><h3>{t('cameraControl.no')}</h3><p>{t(cameraControl ? 'cameraControl.noDescription' : 'battleItems.noDescription')}</p></div>
+          </div>
+          <p>{t(cameraControl ? 'cameraControl.scenes' : 'battleItems.scope')}</p>
+          <p className="field-note">{t(cameraControl ? 'cameraControl.sharedPackage' : 'battleItems.optionsHelp')}</p>
         </div>
-        <p>{t('cameraControl.scenes')}</p>
-        <p className="field-note">{t('cameraControl.sharedPackage')}</p>
-      </div> : null}
-
-      {battleItems ? <div className="camera-control__overview">
-        <p>{t('battleItems.instructions')}</p>
-        <div className="camera-control__choices">
-          <div><h3>{t('cameraControl.yes')}</h3><p>{t('battleItems.yesDescription')}</p></div>
-          <div><h3>{t('cameraControl.no')}</h3><p>{t('battleItems.noDescription')}</p></div>
-        </div>
-        <p>{t('battleItems.scope')}</p>
-        <p className="field-note">{t('battleItems.optionsHelp')}</p>
-      </div> : null}
+      </details> : null}
 
       {!cameraHook ? <div className="gameplay-settings__beta-notice" role="note">
         <ShieldAlert aria-hidden="true" size={20} />

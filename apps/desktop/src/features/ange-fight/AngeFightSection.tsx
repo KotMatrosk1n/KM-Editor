@@ -389,12 +389,14 @@ export function AngeFightSection({
               </button>
             </div>
 
-            <div className="ange-fight-source-grid">
-              {workflow.sources.map((source) => (
-                <dl className="ange-fight-source-card" key={source.id}>
-                  <div className="ange-fight-source-path">
-                    <dt>{translateLiteral(source.label)}</dt>
-                    <dd data-localization-ignore="true">{source.relativePath}</dd>
+            <details className="advanced-editor-details">
+              <summary>{translateLiteral('Source')}</summary>
+              <div className="advanced-editor-details-content ange-fight-source-grid">
+                {workflow.sources.map((source) => (
+                  <dl className="ange-fight-source-card" key={source.id}>
+                    <div className="ange-fight-source-path">
+                      <dt>{translateLiteral(source.label)}</dt>
+                      <dd data-localization-ignore="true">{source.relativePath}</dd>
                   </div>
                   <div>
                     <dt>Layer</dt>
@@ -406,7 +408,8 @@ export function AngeFightSection({
                   </div>
                 </dl>
               ))}
-            </div>
+              </div>
+            </details>
           </div>
         ) : workflow ? (
           <p className="empty-copy">
@@ -507,22 +510,25 @@ function AngeFightAttackCard({
         />
       </div>
 
-      <dl className="ange-fight-technical-map">
-        <div>
-          <dt>Bullet ID</dt>
-          <dd data-localization-ignore="true">{attack.bulletId}</dd>
-        </div>
-        <div>
-          <dt>Attack ID</dt>
-          <dd data-localization-ignore="true">{attack.attackId}</dd>
-        </div>
-        <div>
-          <dt>Hit interval</dt>
-          <dd data-localization-ignore="true">
-            {formatInterval(attack.hitIntervalSeconds)} s
-          </dd>
-        </div>
-      </dl>
+      <details className="advanced-editor-details ange-fight-technical">
+        <summary>{translateLiteral('Technical')}</summary>
+        <dl className="ange-fight-technical-map">
+          <div>
+            <dt>Bullet ID</dt>
+            <dd data-localization-ignore="true">{attack.bulletId}</dd>
+          </div>
+          <div>
+            <dt>Attack ID</dt>
+            <dd data-localization-ignore="true">{attack.attackId}</dd>
+          </div>
+          <div>
+            <dt>Hit interval</dt>
+            <dd data-localization-ignore="true">
+              {formatInterval(attack.hitIntervalSeconds)} s
+            </dd>
+          </div>
+        </dl>
+      </details>
     </article>
   );
 }

@@ -38172,6 +38172,7 @@ function CustomGiftPokemonFields({ pokemon, fields, drafts: localDrafts, disable
 function GiftPokemonDraftField({
   ariaDescribedBy,
   checkbox,
+  compact,
   currentValue,
   disabled,
   disabledReason,
@@ -38190,6 +38191,7 @@ function GiftPokemonDraftField({
 }: {
   ariaDescribedBy?: string;
   checkbox?: boolean;
+  compact?: boolean;
   currentValue: number | null;
   disabled: boolean;
   disabledReason?: string;
@@ -38254,7 +38256,7 @@ function GiftPokemonDraftField({
         effectiveDisabledReason ? 'editable-field-disabled' : ''
       }`}
     >
-      <FieldLabel help={localizedFieldHelpText} htmlFor={inputId} label={localizedFieldLabel} />
+      {!compact ? <FieldLabel help={localizedFieldHelpText} htmlFor={inputId} label={localizedFieldLabel} /> : null}
       {field.valueKind === 'boolean' && checkbox ? (
         <input
           id={inputId}
@@ -38301,6 +38303,7 @@ function GiftPokemonDraftField({
           <input
             aria-describedby={ariaDescribedBy}
             aria-label={localizedFieldLabel}
+            aria-invalid={!draftState.isValid || undefined}
             disabled={effectiveDisabled}
             id={inputId}
             max={field.maximumValue ?? undefined}
@@ -38318,7 +38321,7 @@ function GiftPokemonDraftField({
           />
         </HoverTooltip>
       )}
-      {effectiveDisabledReason ? (
+      {effectiveDisabledReason && (!compact || !ariaDescribedBy) ? (
         <small className="editable-field-status">{translateLiteral(effectiveDisabledReason)}</small>
       ) : statusText ? (
         <small className={draftState.error ? 'editable-field-error' : 'editable-field-status'}>
@@ -38609,6 +38612,43 @@ function GiftPokemonSection({
   );
 }
 
+function PokemonInstanceRecordHeading({
+  children,
+  editorFamily,
+  form,
+  recordId,
+  species,
+  speciesId
+}: {
+  children: ReactNode;
+  editorFamily: EditorUiFamily;
+  form: number;
+  recordId: string | number;
+  species: string | null;
+  speciesId: number;
+}) {
+  const { translateLiteral } = useLocalization();
+  const name = species ?? translateLiteral('Unknown species');
+
+  return (
+    <div className="pokemon-instance-record">
+      <PokemonSprite
+        className="pokemon-instance-record-sprite"
+        editorFamily={editorFamily}
+        form={form}
+        name={name}
+        preferStatic
+        speciesId={speciesId}
+      />
+      <EditorRecordHeading
+        id={recordId}
+        name={formatSpeciesFormLabel(name, form, speciesId, editorFamily)}
+      />
+      <div className="pokemon-instance-record-context">{children}</div>
+    </div>
+  );
+}
+
 function SelectedGiftPokemonPanel({
   canEditGifts,
   editSession,
@@ -38635,7 +38675,7 @@ function SelectedGiftPokemonPanel({
   ) => Promise<boolean>;
   pokemonWorkflow: PokemonWorkflow | null;
 }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const [giftDraftsByIndex, setGiftDraftsByIndex] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -38870,85 +38910,83 @@ function SelectedGiftPokemonPanel({
           summary="No gift selected."
         />
       ) : null}
-      <div className="panel-heading">
-        <ShieldCheck aria-hidden="true" size={18} />
-        <h3>Selected Gift</h3>
-      </div>
-
       {gift ? (
         <>
-          <PokemonSummaryCard
+          <PokemonInstanceRecordHeading
             editorFamily={editorFamily}
             form={gift.form}
-            name={formatSpeciesFormLabel(gift.species, gift.form, gift.speciesId, editorFamily)}
+            recordId={gift.giftIndex + 1}
+            species={gift.species}
             speciesId={gift.speciesId}
-            subtitle={`Gift #${gift.giftIndex + 1} | ${formatGiftPokemonLevelSummary(gift, editorFamily)}`}
-            title={formatSpeciesFormLabel(gift.species, gift.form, gift.speciesId, editorFamily)}
-          />
-
-          <dl className="item-provenance-list">
-            <div>
-              <dt>Gift</dt>
-              <dd>{gift.label}</dd>
-            </div>
-            {editorFamily !== 'swsh' && gift.eventLabel ? (
+          >
+            {formatGiftPokemonLevelSummary(gift, editorFamily)}
+          </PokemonInstanceRecordHeading>
+          <details className="pokemon-instance-source">
+            <summary>{translateLiteral('Details and source')}</summary>
+            <dl className="item-provenance-list">
               <div>
-                <dt>Event label</dt>
-                <dd>{gift.eventLabel}</dd>
+                <dt>Gift</dt>
+                <dd>{gift.label}</dd>
               </div>
-            ) : null}
-            <div>
-              <dt>Data file</dt>
-              <dd>{gift.provenance.sourceFile}</dd>
-            </div>
-            <div>
-              <dt>Layer</dt>
-              <dd>{formatSourceLayer(gift.provenance.sourceLayer)}</dd>
-            </div>
-            <div>
-              <dt>File state</dt>
-              <dd>{formatFileState(gift.provenance.fileState)}</dd>
-            </div>
-            {editorFamily !== 'za' ? (
-              <div>
-                <dt>Ball</dt>
-                <dd>{gift.ballItem}</dd>
-              </div>
-            ) : null}
-            <div>
-              <dt>Held item</dt>
-              <dd>{gift.heldItem ?? 'None'}</dd>
-            </div>
-            {editorFamily === 'sv' || editorFamily === 'za' ? (
-              <>
+              {editorFamily !== 'swsh' && gift.eventLabel ? (
                 <div>
-                  <dt>Moves</dt>
-                  <dd>{formatGiftPokemonMoves(gift, t)}</dd>
+                  <dt>Event label</dt>
+                  <dd>{gift.eventLabel}</dd>
                 </div>
-                {gift.teraTypeLabel !== null ? (
-                  <div>
-                    <dt>Tera type</dt>
-                    <dd>{gift.teraTypeLabel}</dd>
-                  </div>
-                ) : null}
-                {gift.scaleModeLabel !== null ? (
-                  <div>
-                    <dt>Scale</dt>
-                    <dd>{formatGiftPokemonScale(gift)}</dd>
-                  </div>
-                ) : null}
-              </>
-            ) : (
+              ) : null}
               <div>
-                <dt>Special Move</dt>
-                <dd>{gift.specialMove ?? 'None'}</dd>
+                <dt>Data file</dt>
+                <dd>{gift.provenance.sourceFile}</dd>
               </div>
-            )}
-            <div>
-              <dt>IV detail</dt>
-              <dd>{formatGiftPokemonIvs(gift)}</dd>
-            </div>
-          </dl>
+              <div>
+                <dt>Layer</dt>
+                <dd>{formatSourceLayer(gift.provenance.sourceLayer)}</dd>
+              </div>
+              <div>
+                <dt>File state</dt>
+                <dd>{formatFileState(gift.provenance.fileState)}</dd>
+              </div>
+              {editorFamily !== 'za' ? (
+                <div>
+                  <dt>Ball</dt>
+                  <dd>{gift.ballItem}</dd>
+                </div>
+              ) : null}
+              <div>
+                <dt>Held item</dt>
+                <dd>{gift.heldItem ?? 'None'}</dd>
+              </div>
+              {editorFamily === 'sv' || editorFamily === 'za' ? (
+                <>
+                  <div>
+                    <dt>Moves</dt>
+                    <dd>{formatGiftPokemonMoves(gift, t)}</dd>
+                  </div>
+                  {gift.teraTypeLabel !== null ? (
+                    <div>
+                      <dt>Tera type</dt>
+                      <dd>{gift.teraTypeLabel}</dd>
+                    </div>
+                  ) : null}
+                  {gift.scaleModeLabel !== null ? (
+                    <div>
+                      <dt>Scale</dt>
+                      <dd>{formatGiftPokemonScale(gift)}</dd>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <div>
+                  <dt>Special Move</dt>
+                  <dd>{gift.specialMove ?? 'None'}</dd>
+                </div>
+              )}
+              <div>
+                <dt>IV detail</dt>
+                <dd>{formatGiftPokemonIvs(gift)}</dd>
+              </div>
+            </dl>
+          </details>
 
           {editorFamily === 'za' && gift.eventLabel === 'sub_addpoke_rukario' ? (
             <section className="technical-tool-notice technical-tool-notice-info">
@@ -39530,7 +39568,7 @@ function SelectedTradePokemonPanel({
   pokemonWorkflow: PokemonWorkflow | null;
   trade: TradePokemonRecord | null;
 }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const [tradeDraftsByIndex, setTradeDraftsByIndex] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -39735,101 +39773,93 @@ function SelectedTradePokemonPanel({
           summary="No trade selected."
         />
       ) : null}
-      <div className="panel-heading">
-        <ShieldCheck aria-hidden="true" size={18} />
-        <h3>Selected Trade</h3>
-      </div>
-
       {trade ? (
         <>
-          <div className="pokemon-summary-grid">
-            {!isZaTradeWorkflow ? (
-              <PokemonSummaryCard
-                name={formatTradePokemonRequestLabel(trade, editorFamily)}
-                subtitle="Requested"
-                title={formatTradePokemonRequestLabel(trade, editorFamily)}
-              />
-            ) : null}
-            <PokemonSummaryCard
-              name={formatSpeciesFormLabel(trade.species, trade.form, trade.speciesId, editorFamily)}
-              subtitle={`Received | Lv. ${trade.level}`}
-              title={formatSpeciesFormLabel(trade.species, trade.form, trade.speciesId, editorFamily)}
-            />
-          </div>
-
-          <dl className="item-provenance-list">
-            <div>
-              <dt>Trade</dt>
-              <dd>{trade.label}</dd>
-            </div>
-            <div>
-              <dt>Data file</dt>
-              <dd>{trade.provenance.sourceFile}</dd>
-            </div>
-            <div>
-              <dt>Layer</dt>
-              <dd>{formatSourceLayer(trade.provenance.sourceLayer)}</dd>
-            </div>
-            <div>
-              <dt>File state</dt>
-              <dd>{formatFileState(trade.provenance.fileState)}</dd>
-            </div>
-            <div>
-              <dt>{isZaTradeWorkflow ? 'Request source' : 'Requested'}</dt>
-              <dd>{formatTradePokemonRequestLabel(trade, editorFamily)}</dd>
-            </div>
-            <div>
-              <dt>Received</dt>
-              <dd>{`${formatSpeciesFormLabel(trade.species, trade.form, trade.speciesId, editorFamily)} Lv. ${trade.level}`}</dd>
-            </div>
-            <div>
-              <dt>Ball</dt>
-              <dd>{trade.ballItem}</dd>
-            </div>
-            <div>
-              <dt>Held item</dt>
-              <dd>{trade.heldItem ?? 'None'}</dd>
-            </div>
-            <div>
-              <dt>{editorFamily === 'sv' || editorFamily === 'za' ? 'Moves' : 'Relearn moves'}</dt>
-              <dd>{formatTradePokemonRelearnMoves(trade)}</dd>
-            </div>
-            {editorFamily === 'sv' || editorFamily === 'za' ? (
-              <>
-                <div>
-                  <dt>Event label</dt>
-                  <dd>{trade.eventLabel ?? 'None'}</dd>
-                </div>
-                {trade.teraTypeLabel !== null ? (
+          <PokemonInstanceRecordHeading
+            editorFamily={editorFamily}
+            form={trade.form}
+            recordId={trade.tradeIndex + 1}
+            species={trade.species}
+            speciesId={trade.speciesId}
+          >
+            {isZaTradeWorkflow ? `Lv. ${trade.level}` : `${formatTradePokemonRequestLabel(trade, editorFamily)} requested · Lv. ${trade.level} received`}
+          </PokemonInstanceRecordHeading>
+          <details className="pokemon-instance-source">
+            <summary>{translateLiteral('Details and source')}</summary>
+            <dl className="item-provenance-list">
+              <div>
+                <dt>Trade</dt>
+                <dd>{trade.label}</dd>
+              </div>
+              <div>
+                <dt>Data file</dt>
+                <dd>{trade.provenance.sourceFile}</dd>
+              </div>
+              <div>
+                <dt>Layer</dt>
+                <dd>{formatSourceLayer(trade.provenance.sourceLayer)}</dd>
+              </div>
+              <div>
+                <dt>File state</dt>
+                <dd>{formatFileState(trade.provenance.fileState)}</dd>
+              </div>
+              <div>
+                <dt>{isZaTradeWorkflow ? 'Request source' : 'Requested'}</dt>
+                <dd>{formatTradePokemonRequestLabel(trade, editorFamily)}</dd>
+              </div>
+              <div>
+                <dt>Received</dt>
+                <dd>{`${formatSpeciesFormLabel(trade.species, trade.form, trade.speciesId, editorFamily)} Lv. ${trade.level}`}</dd>
+              </div>
+              <div>
+                <dt>Ball</dt>
+                <dd>{trade.ballItem}</dd>
+              </div>
+              <div>
+                <dt>Held item</dt>
+                <dd>{trade.heldItem ?? 'None'}</dd>
+              </div>
+              <div>
+                <dt>{editorFamily === 'sv' || editorFamily === 'za' ? 'Moves' : 'Relearn moves'}</dt>
+                <dd>{formatTradePokemonRelearnMoves(trade)}</dd>
+              </div>
+              {editorFamily === 'sv' || editorFamily === 'za' ? (
+                <>
                   <div>
-                    <dt>Tera type</dt>
-                    <dd>{trade.teraTypeLabel}</dd>
+                    <dt>Event label</dt>
+                    <dd>{trade.eventLabel ?? 'None'}</dd>
                   </div>
-                ) : null}
-                {trade.scaleModeLabel !== null ? (
+                  {trade.teraTypeLabel !== null ? (
+                    <div>
+                      <dt>Tera type</dt>
+                      <dd>{trade.teraTypeLabel}</dd>
+                    </div>
+                  ) : null}
+                  {trade.scaleModeLabel !== null ? (
+                    <div>
+                      <dt>Scale</dt>
+                      <dd>{formatTradePokemonScale(trade)}</dd>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <>
                   <div>
-                    <dt>Scale</dt>
-                    <dd>{formatTradePokemonScale(trade)}</dd>
+                    <dt>Memory</dt>
+                    <dd>{formatTradePokemonMemory(trade)}</dd>
                   </div>
-                ) : null}
-              </>
-            ) : (
-              <>
-                <div>
-                  <dt>Memory</dt>
-                  <dd>{formatTradePokemonMemory(trade)}</dd>
-                </div>
-                <div>
-                  <dt>Identifiers</dt>
-                  <dd>{`${trade.hash0} / ${trade.hash1} / ${trade.hash2}`}</dd>
-                </div>
-              </>
-            )}
-            <div>
-              <dt>IV detail</dt>
-              <dd>{formatTradePokemonIvs(trade)}</dd>
-            </div>
-          </dl>
+                  <div>
+                    <dt>Identifiers</dt>
+                    <dd>{`${trade.hash0} / ${trade.hash1} / ${trade.hash2}`}</dd>
+                  </div>
+                </>
+              )}
+              <div>
+                <dt>IV detail</dt>
+                <dd>{formatTradePokemonIvs(trade)}</dd>
+              </div>
+            </dl>
+          </details>
 
           <div className="trainer-edit-form">
             {editorFamily === 'swsh' ? (
@@ -40303,7 +40333,7 @@ function SelectedRentalPokemonPanel({
   pokemonWorkflow: PokemonWorkflow | null;
   rental: RentalPokemonRecord | null;
 }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const [rentalDraftsByIndex, setRentalDraftsByIndex] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -40449,77 +40479,78 @@ function SelectedRentalPokemonPanel({
           summary="No rental selected."
         />
       ) : null}
-      <div className="panel-heading">
-        <ShieldCheck aria-hidden="true" size={18} />
-        <h3>Selected Rental</h3>
-      </div>
-
       {rental ? (
         <>
-          <PokemonSummaryCard
-            name={formatSpeciesFormLabel(rental.species, rental.form, rental.speciesId)}
-            subtitle={`Rental #${rental.rentalIndex + 1} | Lv. ${rental.level}`}
-            title={formatSpeciesFormLabel(rental.species, rental.form, rental.speciesId)}
-          />
-
-          <dl className="item-provenance-list">
-            <div>
-              <dt>Rental</dt>
-              <dd>{rental.label}</dd>
-            </div>
-            <div>
-              <dt>Data file</dt>
-              <dd>{rental.provenance.sourceFile}</dd>
-            </div>
-            <div>
-              <dt>Layer</dt>
-              <dd>{formatSourceLayer(rental.provenance.sourceLayer)}</dd>
-            </div>
-            <div>
-              <dt>File state</dt>
-              <dd>{formatFileState(rental.provenance.fileState)}</dd>
-            </div>
-            <div>
-              <dt>Pokemon</dt>
-              <dd>{`${formatSpeciesFormLabel(rental.species, rental.form, rental.speciesId)} Lv. ${rental.level}`}</dd>
-            </div>
-            <div>
-              <dt>Ball</dt>
-              <dd>{rental.ballItem}</dd>
-            </div>
-            <div>
-              <dt>Held item</dt>
-              <dd>{rental.heldItem ?? 'None'}</dd>
-            </div>
-            <div>
-              <dt>Ability</dt>
-              <dd>{rental.abilityLabel}</dd>
-            </div>
-            <div>
-              <dt>Nature / Gender</dt>
-              <dd>{`${rental.natureLabel} / ${rental.genderLabel}`}</dd>
-            </div>
-            <div>
-              <dt>Trainer ID</dt>
-              <dd>{rental.trainerId}</dd>
-            </div>
-            <div>
-              <dt>Identifiers</dt>
-              <dd>{`${rental.hash1} / ${rental.hash2}`}</dd>
-            </div>
-            <div>
-              <dt>Moves</dt>
-              <dd>{formatRentalPokemonMoves(rental)}</dd>
-            </div>
-            <div>
-              <dt>EV detail</dt>
-              <dd>{formatRentalPokemonStats(rental.evs)}</dd>
-            </div>
-            <div>
-              <dt>IV detail</dt>
-              <dd>{formatRentalPokemonIvs(rental)}</dd>
-            </div>
-          </dl>
+          <PokemonInstanceRecordHeading
+            editorFamily={'swsh'}
+            form={rental.form}
+            recordId={rental.rentalIndex + 1}
+            species={rental.species}
+            speciesId={rental.speciesId}
+          >
+            {`Lv. ${rental.level}`}
+          </PokemonInstanceRecordHeading>
+          <details className="pokemon-instance-source">
+            <summary>{translateLiteral('Details and source')}</summary>
+            <dl className="item-provenance-list">
+              <div>
+                <dt>Rental</dt>
+                <dd>{rental.label}</dd>
+              </div>
+              <div>
+                <dt>Data file</dt>
+                <dd>{rental.provenance.sourceFile}</dd>
+              </div>
+              <div>
+                <dt>Layer</dt>
+                <dd>{formatSourceLayer(rental.provenance.sourceLayer)}</dd>
+              </div>
+              <div>
+                <dt>File state</dt>
+                <dd>{formatFileState(rental.provenance.fileState)}</dd>
+              </div>
+              <div>
+                <dt>Pokemon</dt>
+                <dd>{`${formatSpeciesFormLabel(rental.species, rental.form, rental.speciesId)} Lv. ${rental.level}`}</dd>
+              </div>
+              <div>
+                <dt>Ball</dt>
+                <dd>{rental.ballItem}</dd>
+              </div>
+              <div>
+                <dt>Held item</dt>
+                <dd>{rental.heldItem ?? 'None'}</dd>
+              </div>
+              <div>
+                <dt>Ability</dt>
+                <dd>{rental.abilityLabel}</dd>
+              </div>
+              <div>
+                <dt>Nature / Gender</dt>
+                <dd>{`${rental.natureLabel} / ${rental.genderLabel}`}</dd>
+              </div>
+              <div>
+                <dt>Trainer ID</dt>
+                <dd>{rental.trainerId}</dd>
+              </div>
+              <div>
+                <dt>Identifiers</dt>
+                <dd>{`${rental.hash1} / ${rental.hash2}`}</dd>
+              </div>
+              <div>
+                <dt>Moves</dt>
+                <dd>{formatRentalPokemonMoves(rental)}</dd>
+              </div>
+              <div>
+                <dt>EV detail</dt>
+                <dd>{formatRentalPokemonStats(rental.evs)}</dd>
+              </div>
+              <div>
+                <dt>IV detail</dt>
+                <dd>{formatRentalPokemonIvs(rental)}</dd>
+              </div>
+            </dl>
+          </details>
 
           <div className="trainer-edit-form">
             <div className="editable-field-groups">
@@ -40787,7 +40818,7 @@ function DynamaxAdventuresSection({
   selectedEntryIndex: number | null;
   workflow: DynamaxAdventuresWorkflow | null;
 }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const encounters = workflow?.encounters ?? [];
   const editableEncounters = useMemo(() => encounters.filter((encounter) => encounter.isEditable), [encounters]);
   const pendingEntryIndexes = useMemo(
@@ -41001,22 +41032,12 @@ function DynamaxAdventuresSection({
                 </p>
               </div>
             ) : null}
-            <DynamaxAdventureSeedPlanner
-              armCriticalWriteGuard={armCriticalWriteGuard}
-              encounters={encounters}
-              hasConfiguredSave={hasConfiguredSave}
-              onPlanSeed={onPlanSeed}
-              onSaveBusyChange={onSaveBusyChange}
-              onSearchSeeds={onSearchSeeds}
-              onWriteSaveSeed={onWriteSaveSeed}
-              selectedEntryIndex={selectedEncounter?.entryIndex ?? null}
-            />
-            <RecordEditorWorkspace id="dynamaxAdventures" className="trainers-layout dynamax-adventures-layout" browser={
+            <RecordEditorWorkspace id="dynamaxAdventures" className="trainers-layout" browser={
               <div
               aria-colcount={6}
               aria-label="Dynamax Adventure encounters"
               aria-rowcount={filteredEncounters.length + 1}
-              className="trainers-table dynamax-adventures-table"
+              className="trainers-table"
               role="table"
             >
               <div className="trainers-row dynamax-adventures-row trainers-row-heading" role="row">
@@ -41091,6 +41112,19 @@ function DynamaxAdventuresSection({
               safeNormalSpeciesOptions={workflow.safeNormalSpeciesOptions}
             />
             </RecordEditorWorkspace>
+            <details className="editor-technical-disclosure">
+              <summary id="dynamax-adventure-route-planner-heading">{t('routePlanner.title')}</summary>
+              <DynamaxAdventureSeedPlanner
+                armCriticalWriteGuard={armCriticalWriteGuard}
+                encounters={encounters}
+                hasConfiguredSave={hasConfiguredSave}
+                onPlanSeed={onPlanSeed}
+                onSaveBusyChange={onSaveBusyChange}
+                onSearchSeeds={onSearchSeeds}
+                onWriteSaveSeed={onWriteSaveSeed}
+                selectedEntryIndex={selectedEncounter?.entryIndex ?? null}
+              />
+            </details>
           </>
         ) : (
           <p className="empty-copy">
@@ -41522,18 +41556,13 @@ function SelectedDynamaxAdventurePanel({
         issues={adventureDraftSummary.invalidFields}
       />
       <aside
-        aria-label="Selected Dynamax Adventure provenance"
+        aria-label="Selected Dynamax Adventure"
         className="trainer-inspector dynamax-adventure-summary"
       >
-        <div className="panel-heading">
-          <ShieldCheck aria-hidden="true" size={18} />
-          <h3 id="selected-dynamax-adventure-heading">Selected Adventure</h3>
-        </div>
-
         {encounter ? (
           <>
+            <EditorRecordHeading name={encounter.label} id={encounter.entryIndex} />
             <div
-              className="dynamax-adventure-selection-summary"
               data-localization-ignore="true"
             >
               <PokemonSummaryCard
@@ -41554,80 +41583,83 @@ function SelectedDynamaxAdventurePanel({
               />
             </div>
 
-            <dl className="item-provenance-list dynamax-adventure-provenance">
-              <div>
-                <dt>Encounter</dt>
-                <dd data-localization-ignore="true">{encounter.label}</dd>
-              </div>
-              <div>
-                <dt>Index</dt>
-                <dd data-localization-ignore="true">{encounter.entryIndex}</dd>
-              </div>
-              <div>
-                <dt>Adventure</dt>
-                <dd data-localization-ignore="true">{encounter.adventureIndex}</dd>
-              </div>
-              <div>
-                <dt>Data file</dt>
-                <dd data-localization-ignore="true">{encounter.provenance.sourceFile}</dd>
-              </div>
-              <div>
-                <dt>Layer</dt>
-                <dd>{formatSourceLayer(encounter.provenance.sourceLayer)}</dd>
-              </div>
-              <div>
-                <dt>File state</dt>
-                <dd>{formatFileState(encounter.provenance.fileState)}</dd>
-              </div>
-              <div>
-                <dt>Pokemon</dt>
-                <dd data-localization-ignore="true">{`${formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)} Lv. ${encounter.level}`}</dd>
-              </div>
-              <div>
-                <dt>Ability</dt>
-                <dd data-localization-ignore="true">{encounter.abilityLabel}</dd>
-              </div>
-              <div>
-                <dt>Gigantamax</dt>
-                <dd>{encounter.gigantamaxLabel}</dd>
-              </div>
-              <div>
-                <dt>Moves</dt>
-                <dd data-localization-ignore="true">
-                  {formatDynamaxAdventureMoves(encounter)}
-                </dd>
-              </div>
-              <div>
-                <dt>IV detail</dt>
-                <dd data-localization-ignore="true">
-                  {formatDynamaxAdventureIvs(encounter)}
-                </dd>
-              </div>
-              <div>
-                <dt>Ball item</dt>
-                <dd data-localization-ignore="true">{encounter.ballItem}</dd>
-              </div>
-              <div>
-                <dt>Game version</dt>
-                <dd>{encounter.versionLabel}</dd>
-              </div>
-              <div>
-                <dt>Shiny roll</dt>
-                <dd>{encounter.shinyRollLabel}</dd>
-              </div>
-              <div>
-                <dt>OT gender</dt>
-                <dd>{encounter.otGenderLabel}</dd>
-              </div>
-              <div>
-                <dt>Single-capture Pokemon</dt>
-                <dd>{encounter.isSingleCapture ? 'Yes' : 'No'}</dd>
-              </div>
-              <div>
-                <dt>Requires story progress</dt>
-                <dd>{encounter.isStoryProgressGated ? 'Yes' : 'No'}</dd>
-              </div>
-            </dl>
+            <details className="pokemon-instance-source">
+              <summary>{translateLiteral('Details')}</summary>
+              <dl className="item-provenance-list dynamax-adventure-provenance">
+                <div>
+                  <dt>Encounter</dt>
+                  <dd data-localization-ignore="true">{encounter.label}</dd>
+                </div>
+                <div>
+                  <dt>Index</dt>
+                  <dd data-localization-ignore="true">{encounter.entryIndex}</dd>
+                </div>
+                <div>
+                  <dt>Adventure</dt>
+                  <dd data-localization-ignore="true">{encounter.adventureIndex}</dd>
+                </div>
+                <div>
+                  <dt>Data file</dt>
+                  <dd data-localization-ignore="true">{encounter.provenance.sourceFile}</dd>
+                </div>
+                <div>
+                  <dt>Layer</dt>
+                  <dd>{formatSourceLayer(encounter.provenance.sourceLayer)}</dd>
+                </div>
+                <div>
+                  <dt>File state</dt>
+                  <dd>{formatFileState(encounter.provenance.fileState)}</dd>
+                </div>
+                <div>
+                  <dt>Pokemon</dt>
+                  <dd data-localization-ignore="true">{`${formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)} Lv. ${encounter.level}`}</dd>
+                </div>
+                <div>
+                  <dt>Ability</dt>
+                  <dd data-localization-ignore="true">{encounter.abilityLabel}</dd>
+                </div>
+                <div>
+                  <dt>Gigantamax</dt>
+                  <dd>{encounter.gigantamaxLabel}</dd>
+                </div>
+                <div>
+                  <dt>Moves</dt>
+                  <dd data-localization-ignore="true">
+                    {formatDynamaxAdventureMoves(encounter)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>IV detail</dt>
+                  <dd data-localization-ignore="true">
+                    {formatDynamaxAdventureIvs(encounter)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Ball item</dt>
+                  <dd data-localization-ignore="true">{encounter.ballItem}</dd>
+                </div>
+                <div>
+                  <dt>Game version</dt>
+                  <dd>{encounter.versionLabel}</dd>
+                </div>
+                <div>
+                  <dt>Shiny roll</dt>
+                  <dd>{encounter.shinyRollLabel}</dd>
+                </div>
+                <div>
+                  <dt>OT gender</dt>
+                  <dd>{encounter.otGenderLabel}</dd>
+                </div>
+                <div>
+                  <dt>Single-capture Pokemon</dt>
+                  <dd>{encounter.isSingleCapture ? 'Yes' : 'No'}</dd>
+                </div>
+                <div>
+                  <dt>Requires story progress</dt>
+                  <dd>{encounter.isStoryProgressGated ? 'Yes' : 'No'}</dd>
+                </div>
+              </dl>
+            </details>
           </>
         ) : (
           <p className="empty-copy">No Adventure encounter selected.</p>
@@ -41636,7 +41668,7 @@ function SelectedDynamaxAdventurePanel({
 
       {encounter ? (
         <section
-          aria-labelledby="selected-dynamax-adventure-heading"
+          aria-label={translateLiteral('Encounter')}
           className="trainer-inspector dynamax-adventure-editor"
         >
           <div className="trainer-edit-form dynamax-adventure-edit-form">
@@ -42016,6 +42048,132 @@ function StaticEncountersSection({
       ? 'No static shiny locks are currently set.'
       : `Set every locked static encounter shiny setting to ${shinyReset.label}.`;
 
+  const browser = (
+    <div
+      aria-colcount={isZaStaticEncounters ? 4 : 6}
+      aria-label={translateLiteral('Static Encounters')}
+      aria-rowcount={filteredEncounters.length + 1}
+      className="trainers-table"
+      role="table"
+    >
+      <div className="trainers-row static-encounters-row trainers-row-heading" role="row">
+        <span role="columnheader">{translateLiteral('Index')}</span>
+        <span role="columnheader">{translateLiteral('Species')}</span>
+        <span role="columnheader">{translateLiteral('Level')}</span>
+        <span role="columnheader">
+          {translateLiteral(isSvStaticEncounters ? 'Category' : 'Scenario')}
+        </span>
+        {isZaStaticEncounters ? null : (
+          <>
+            <span role="columnheader">{translateLiteral('IVs')}</span>
+            <span role="columnheader">{translateLiteral('Source')}</span>
+          </>
+        )}
+      </div>
+      <VirtualTableBody
+        getKey={(encounter) => encounter.encounterIndex}
+        items={filteredEncounters}
+        renderRow={(encounter) => {
+          const speciesLabel = formatSpeciesFormLabel(
+            encounter.species,
+            encounter.form,
+            encounter.speciesId,
+            encounter.editorFamily
+          );
+          const scenarioLabel = isSvStaticEncounters
+            ? encounter.categoryLabel ?? encounter.encounterScenarioLabel
+            : encounter.encounterScenarioLabel;
+
+          return (
+            <InteractiveTableRow
+              className={`trainers-row static-encounters-row ${
+                selectedEncounter?.encounterIndex === encounter.encounterIndex
+                  ? 'trainers-row-selected'
+                  : ''
+              } ${
+                pendingEncounterIndexes.has(encounter.encounterIndex)
+                  ? 'trainers-row-pending'
+                  : ''
+              }`}
+              onClick={() => onSelectEncounter(encounter.encounterIndex)}
+              role="row"
+            >
+              <span role="cell">{getStaticEncounterDisplayIndex(encounter)}</span>
+              <span role="cell" title={speciesLabel}>
+                {speciesLabel}
+              </span>
+              <span role="cell">{encounter.level}</span>
+              <span role="cell" title={scenarioLabel}>
+                {scenarioLabel}
+              </span>
+              {isZaStaticEncounters ? null : (
+                <>
+                  <span role="cell" title={encounter.ivSummary}>
+                    {encounter.ivSummary}
+                  </span>
+                  <span role="cell">
+                    {formatSourceLayer(encounter.provenance.sourceLayer)}
+                  </span>
+                </>
+              )}
+            </InteractiveTableRow>
+          );
+        }}
+      />
+    </div>
+  );
+
+  const browserControls = (
+    <div className="static-encounter-toolbar">
+      <label className="search-box items-search">
+        <Search aria-hidden="true" size={18} />
+        <input
+          aria-label={translateLiteral('Search static encounters')}
+          disabled={!workflow}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder={translateLiteral('Search static encounters')}
+          type="search"
+          value={searchText}
+        />
+      </label>
+      <div className="editor-quiet-counts">
+        <span>{workflow?.stats.totalEncounterCount ?? 0} {translateLiteral('Loaded encounters')}</span>
+        {searchText.trim() ? <span>{filteredEncounters.length} {translateLiteral('Matches')}</span> : null}
+        <span>{pendingEncounterIndexes.size} {translateLiteral('Pending changes')}</span>
+        <ContextHelp label={translateLiteral('Encounter counts')}>{isSvStaticEncounters
+          ? [
+              [workflow?.stats.fixedSymbolCount ?? 0, 'Fixed Symbols'],
+              [workflow?.stats.coinSymbolCount ?? 0, 'Coin Symbols'],
+              [workflow?.stats.sourceFileCount ?? 0, 'Sources']
+            ].map(([count, label]) => count + ' ' + translateLiteral(String(label))).join(' · ')
+          : [
+              [workflow?.stats.gigantamaxEncounterCount ?? 0, 'Gigantamax'],
+              [workflow?.stats.fixedIvEncounterCount ?? 0, 'Custom IV rows']
+            ].map(([count, label]) => count + ' ' + translateLiteral(String(label))).join(' · ')}</ContextHelp>
+      </div>
+      <button
+        className="primary-button compact-button"
+        disabled={!canRemoveStaticShinyLocks}
+        onClick={() => setIsShinyLockConfirmationOpen(true)}
+        title={translateLiteral(removeStaticShinyLockTitle)}
+        type="button"
+      >
+        <ShieldCheck aria-hidden="true" size={14} />
+        <span>{translateLiteral('Remove Static Shiny Lock')}</span>
+      </button>
+    </div>
+  );
+
+  const sessionBar = (
+    <EditorSessionBar
+      canEdit={canEditStaticEncounters && selectedEncounter !== null}
+      isEditing={editSession !== null}
+      isStarting={isEditStarting}
+      label="Static Encounters"
+      onStart={onStartEditSession}
+    />
+  );
+
   return (
     <>
       <section
@@ -42027,158 +42185,20 @@ function StaticEncountersSection({
           <h2 id="static-encounters-heading">{translateLiteral('Static Encounters')}</h2>
         </div>
 
-        <div className="items-toolbar trainers-toolbar shiny-lock-toolbar">
-          <label className="search-box items-search">
-            <Search aria-hidden="true" size={18} />
-            <input
-              aria-label={translateLiteral('Search static encounters')}
-              disabled={!workflow}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder={translateLiteral('Search static encounters')}
-              type="search"
-              value={searchText}
-            />
-          </label>
-          <Metric
-            label={translateLiteral('Loaded encounters')}
-            value={workflow ? workflow.stats.totalEncounterCount.toString() : '0'}
-          />
-          {isSvStaticEncounters ? (
-            <>
-              <Metric
-                label={translateLiteral('Fixed Symbols')}
-                value={workflow ? workflow.stats.fixedSymbolCount.toString() : '0'}
-              />
-              <Metric
-                label={translateLiteral('Coin Symbols')}
-                value={workflow ? workflow.stats.coinSymbolCount.toString() : '0'}
-              />
-              <Metric
-                label={translateLiteral('Sources')}
-                value={workflow ? workflow.stats.sourceFileCount.toString() : '0'}
-              />
-            </>
-          ) : (
-            <>
-              <Metric
-                label={translateLiteral('Gigantamax')}
-                value={workflow ? (workflow.stats.gigantamaxEncounterCount ?? 0).toString() : '0'}
-              />
-              <Metric
-                label={translateLiteral('Custom IV rows')}
-                value={workflow ? workflow.stats.fixedIvEncounterCount.toString() : '0'}
-              />
-            </>
-          )}
-          <button
-            className="primary-button compact-button"
-            disabled={!canRemoveStaticShinyLocks}
-            onClick={() => setIsShinyLockConfirmationOpen(true)}
-            title={translateLiteral(removeStaticShinyLockTitle)}
-            type="button"
-          >
-            <ShieldCheck aria-hidden="true" size={14} />
-            <span>{translateLiteral('Remove Static Shiny Lock')}</span>
-          </button>
-        </div>
-
         {workflow ? (
-          <EditorSessionBar
-            canEdit={canEditStaticEncounters && selectedEncounter !== null}
-            isEditing={editSession !== null}
-            isStarting={isEditStarting}
-            label="Static Encounters"
-            onStart={onStartEditSession}
+          <SelectedStaticEncounterPanel
+            browser={browser}
+            browserControls={browserControls}
+            sessionBar={sessionBar}
+            canEditStaticEncounters={canEditStaticEncounters}
+            editSession={editSession}
+            editableFields={workflow.editableFields}
+            encounter={selectedEncounter}
+            encounters={encounters}
+            isStaticEncounterUpdating={isStaticEncounterUpdating}
+            onSelectEncounter={onSelectEncounter}
+            onUpdateStaticEncounterFields={onUpdateStaticEncounterFields}
           />
-        ) : null}
-
-        {workflow ? (
-          <RecordEditorWorkspace id="staticEncounters" className="trainers-layout" browser={
-            <div
-              aria-colcount={isZaStaticEncounters ? 4 : 6}
-              aria-label={translateLiteral('Static Encounters')}
-              aria-rowcount={filteredEncounters.length + 1}
-              className="trainers-table"
-              role="table"
-            >
-              <div className="trainers-row static-encounters-row trainers-row-heading" role="row">
-                <span role="columnheader">{translateLiteral('Index')}</span>
-                <span role="columnheader">{translateLiteral('Species')}</span>
-                <span role="columnheader">{translateLiteral('Level')}</span>
-                <span role="columnheader">
-                  {translateLiteral(isSvStaticEncounters ? 'Category' : 'Scenario')}
-                </span>
-                {isZaStaticEncounters ? null : (
-                  <>
-                    <span role="columnheader">{translateLiteral('IVs')}</span>
-                    <span role="columnheader">{translateLiteral('Source')}</span>
-                  </>
-                )}
-              </div>
-              <VirtualTableBody
-                getKey={(encounter) => encounter.encounterIndex}
-                items={filteredEncounters}
-                renderRow={(encounter) => {
-                  const speciesLabel = formatSpeciesFormLabel(
-                    encounter.species,
-                    encounter.form,
-                    encounter.speciesId,
-                    encounter.editorFamily
-                  );
-                  const scenarioLabel = isSvStaticEncounters
-                    ? encounter.categoryLabel ?? encounter.encounterScenarioLabel
-                    : encounter.encounterScenarioLabel;
-
-                  return (
-                    <InteractiveTableRow
-                      className={`trainers-row static-encounters-row ${
-                        selectedEncounter?.encounterIndex === encounter.encounterIndex
-                          ? 'trainers-row-selected'
-                          : ''
-                      } ${
-                        pendingEncounterIndexes.has(encounter.encounterIndex)
-                          ? 'trainers-row-pending'
-                          : ''
-                      }`}
-                      onClick={() => onSelectEncounter(encounter.encounterIndex)}
-                      role="row"
-                    >
-                      <span role="cell">{getStaticEncounterDisplayIndex(encounter)}</span>
-                      <span role="cell" title={speciesLabel}>
-                        {speciesLabel}
-                      </span>
-                      <span role="cell">{encounter.level}</span>
-                      <span role="cell" title={scenarioLabel}>
-                        {scenarioLabel}
-                      </span>
-                      {isZaStaticEncounters ? null : (
-                        <>
-                          <span role="cell" title={encounter.ivSummary}>
-                            {encounter.ivSummary}
-                          </span>
-                          <span role="cell">
-                            {formatSourceLayer(encounter.provenance.sourceLayer)}
-                          </span>
-                        </>
-                      )}
-                    </InteractiveTableRow>
-                  );
-                }}
-              />
-            </div>
-          }>
-
-            <SelectedStaticEncounterPanel
-              canEditStaticEncounters={canEditStaticEncounters}
-              editSession={editSession}
-              editableFields={workflow.editableFields}
-              encounter={selectedEncounter}
-              encounters={encounters}
-              isStaticEncounterUpdating={isStaticEncounterUpdating}
-              onSelectEncounter={onSelectEncounter}
-              onUpdateStaticEncounterFields={onUpdateStaticEncounterFields}
-            />
-          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">
             {translateLiteral('Open Static Encounters from Workflows to load backend encounter data.')}
@@ -42212,6 +42232,9 @@ function StaticEncountersSection({
 }
 
 function SelectedStaticEncounterPanel({
+  browser,
+  browserControls,
+  sessionBar,
   canEditStaticEncounters,
   editSession,
   editableFields,
@@ -42221,6 +42244,9 @@ function SelectedStaticEncounterPanel({
   onSelectEncounter,
   onUpdateStaticEncounterFields
 }: {
+  browser: ReactNode;
+  browserControls: ReactNode;
+  sessionBar: ReactNode;
   canEditStaticEncounters: boolean;
   editSession: EditSession | null;
   editableFields: StaticEncounterEditableField[];
@@ -42235,6 +42261,7 @@ function SelectedStaticEncounterPanel({
   ) => Promise<boolean>;
 }) {
   const { t, translateLiteral } = useLocalization();
+  const layoutScope = useContext(EditorLayoutScope);
   const pokemonWorkflow = useWorkbenchStore((state) => state.pokemonWorkflow);
   const [encounterDraftsByIndex, setEncounterDraftsByIndex] = useState<
     Record<string, Record<string, string>>
@@ -42427,11 +42454,61 @@ function SelectedStaticEncounterPanel({
     );
   };
 
+  const statFields = new Map(encounterFields.map(field => [field.field, field]));
+  const statSetupFields = encounterFieldGroups
+    .filter(({ group }) => group === 'Stats' || group.startsWith('Stats -'))
+    .flatMap(({ fields }) => fields)
+    .filter(field => !isPokemonIvStatField(field.field) && !isPokemonEvStatField(field.field));
+  const movesGroup = encounterFieldGroups.find(({ group }) => group === 'Moves');
+  const encounterGroups = encounterFieldGroups.filter(({ group }) =>
+    group !== 'Moves' && group !== 'Stats' && !group.startsWith('Stats -')
+  );
+  const ivLockReason = getPokemonInstanceIvStatDisabledReason(ivFieldNames[0], encounterFields, encounterDrafts);
+  const hasIvs = ivFieldNames.some(field => statFields.has(field));
+  const hasEvs = evFieldNames.some(field => statFields.has(field));
+  const isStatsOrMoveField = (field: string) =>
+    isPokemonIvStatField(field) || isPokemonEvStatField(field) ||
+    statSetupFields.some(candidate => candidate.field === field) ||
+    movesGroup?.fields.some(candidate => candidate.field === field);
+  const statsIssue = encounterDraftSummary.invalidFields.some(issue => isStatsOrMoveField(issue.field));
+  const encounterIssue = encounterDraftSummary.invalidFields.some(issue => !isStatsOrMoveField(issue.field));
+
+  const renderField = (field: StaticEncounterEditableField, statLabel?: string) => {
+    if (!encounter) return null;
+    const currentValue = getEditableStaticEncounterFieldValue(encounter, field.field);
+    const draftValue = encounterDrafts[field.field] ?? '';
+    const draftState = getStaticEncounterFieldDraftState(
+      encounter, draftValue, currentValue, field, encounterFields, encounterDrafts
+    );
+    const readOnlyReason = field.isReadOnly
+      ? field.description.trim() || 'This field is read only for the selected encounter.'
+      : null;
+    return (
+      <GiftPokemonDraftField
+        ariaDescribedBy={!readOnlyReason && isPokemonIvStatField(field.field) && ivLockReason ? 'static-encounter-iv-lock' : undefined}
+        checkbox
+        compact={statLabel !== undefined}
+        currentValue={currentValue}
+        disabled={field.isReadOnly || !canEditStaticEncounters || editSession === null}
+        disabledReason={readOnlyReason ?? getPokemonInstanceIvStatDisabledReason(
+          field.field, encounterFields, encounterDrafts
+        ) ?? undefined}
+        wrapSelectedValue
+        draftState={draftState}
+        draftValue={draftValue}
+        field={field}
+        formOptionContext={staticEncounterFormOptionContext}
+        helpDomain="staticEncounters"
+        helpGame={encounter.editorFamily}
+        key={field.field}
+        labelText={statLabel}
+        onChange={value => handleEncounterDraftChange(field, value)}
+      />
+    );
+  };
+
   return (
-    <aside
-      aria-label={translateLiteral('Selected static encounter provenance')}
-      className="trainer-inspector"
-    >
+    <>
       <PublishedLocalEditorValidationDiagnostics
         domain="workflow.staticEncounters"
         issues={encounterDraftSummary.invalidFields}
@@ -42443,231 +42520,190 @@ function SelectedStaticEncounterPanel({
           summary="No static encounter selected."
         />
       ) : null}
-      <div className="panel-heading">
-        <ShieldCheck aria-hidden="true" size={18} />
-        <h3>{translateLiteral('Selected Static Encounter')}</h3>
-      </div>
-
-      {encounter ? (
-        <>
-          <PokemonSummaryCard
-            name={formatSpeciesFormLabel(
-              encounter.species,
-              encounter.form,
-              encounter.speciesId,
-              encounter.editorFamily
-            )}
-            subtitle={`Static #${getStaticEncounterDisplayIndex(encounter)} | Lv. ${encounter.level}`}
-            title={formatSpeciesFormLabel(
-              encounter.species,
-              encounter.form,
-              encounter.speciesId,
-              encounter.editorFamily
-            )}
-          />
-
-          <dl className="item-provenance-list">
-            <div>
-              <dt>{translateLiteral('Encounter')}</dt>
-              <dd>{encounter.label}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Encounter ID')}</dt>
-              <dd>{encounter.encounterId}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Data file')}</dt>
-              <dd>{encounter.provenance.sourceFile}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Layer')}</dt>
-              <dd>{formatSourceLayer(encounter.provenance.sourceLayer)}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('File state')}</dt>
-              <dd>{formatFileState(encounter.provenance.fileState)}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral(encounter.editorFamily === 'sv' ? 'Category' : 'Scenario')}</dt>
-              <dd>
-                {encounter.editorFamily === 'sv'
-                  ? encounter.categoryLabel ?? encounter.encounterScenarioLabel
-                  : encounter.encounterScenarioLabel}
-              </dd>
-            </div>
-            {encounter.scenarioDetails ? (
-              <div>
-                <dt>{translateLiteral('Mission')}</dt>
-                <dd>{encounter.scenarioDetails}</dd>
+      {editSession && encounter ? (
+        <EditorSessionBarActions>
+          <button
+            aria-busy={isStaticEncounterUpdating || undefined}
+            className="primary-button"
+            disabled={!canSaveEncounterDrafts}
+            onClick={async () => {
+              const submittedDraft = { ...encounterDrafts };
+              const didSave = await onUpdateStaticEncounterFields(
+                encounter.encounterIndex,
+                encounter.encounterId,
+                encounterDraftSummary.changedFields.map((change) => ({
+                  field: change.field,
+                  value: change.value
+                }))
+              );
+              if (didSave) {
+                setEncounterDraftsByIndex((currentDrafts) =>
+                  clearSubmittedKeyedEditorDraft(
+                    currentDrafts,
+                    getStaticEncounterDraftKey(encounter),
+                    submittedDraft,
+                    areFieldDraftsEqual
+                  )
+                );
+              }
+            }}
+            type="button"
+          >
+            <BusyActionContent
+              busyLabel="Staging"
+              icon={<Save aria-hidden="true" size={16} />}
+              isBusy={isStaticEncounterUpdating}
+              label="Stage"
+            />
+          </button>
+          {encounter.editorFamily === 'swsh' && encounter.encounterId.toUpperCase() === '0XF619D64A8E0641CB' ? (
+            <button className="secondary-button" type="button"
+              disabled={!canEditStaticEncounters || isStaticEncounterUpdating || encounterDraftSummary.dirtyFieldCount > 0}
+              title={t('staticEncounters.wedgehurstSyncHelp')}
+              onClick={() => onUpdateStaticEncounterFields(encounter.encounterIndex, encounter.encounterId, [
+                { field: 'species', value: encounter.speciesId.toString() }, { field: 'form', value: encounter.form.toString() }
+              ])}>{t('staticEncounters.wedgehurstSync')}</button>
+          ) : null}
+          {nextEncounterDraftIndex !== null ? (
+            <button
+              className="secondary-button"
+              disabled={isStaticEncounterUpdating}
+              onClick={() => onSelectEncounter(nextEncounterDraftIndex)}
+              type="button"
+            >
+              {t('editorDrafts.reviewNext')}
+            </button>
+          ) : null}
+          <button
+            className="danger-button"
+            disabled={
+              isStaticEncounterUpdating
+            }
+            onClick={() => cancelActiveEditSession(() => setEncounterDraftsByIndex({}))}
+            type="button"
+          >
+            <X aria-hidden="true" size={16} />
+            <span>Cancel</span>
+          </button>
+          <span className="draft-action-summary">
+            {formatDraftSummary(encounterDraftSummary)};{' '}
+            {t('editorDrafts.summary.staticEncounters', {
+              count: outstandingEncounterDraftCount
+            })}
+          </span>
+        </EditorSessionBarActions>
+      ) : null}
+      <SectionedEditorWorkspace
+        browser={browser}
+        browserControls={browserControls}
+        browserVisibleRows={4}
+        compactFields
+        initialSection="encounter"
+        sessionBar={sessionBar}
+        sessionKey={layoutScope + ':staticEncounters'}
+      >
+        {encounter ? (
+          <>
+            <EditorWorkspaceHeader afterBrowser>
+              <PokemonInstanceRecordHeading
+                editorFamily={encounter.editorFamily}
+                form={encounter.form}
+                recordId={getStaticEncounterDisplayIndex(encounter)}
+                species={encounter.species}
+                speciesId={encounter.speciesId}
+              >
+                <span>{translateLiteral('Level')} {encounter.level}</span>
+                <span>{encounter.categoryLabel ?? encounter.encounterScenarioLabel}</span>
+              </PokemonInstanceRecordHeading>
+            </EditorWorkspaceHeader>
+            {encounterGroups.length ? (
+              <EditorWorkspaceSection id="encounter" label={translateLiteral('Encounter')} invalid={encounterIssue}
+                modified={encounterDraftSummary.changedFields.some(change => !isStatsOrMoveField(change.field))}>
+                <div className="editable-field-groups">
+                  {encounterGroups.map(({ group, fields }) => (
+                    <fieldset className="editable-field-group" key={group}>
+                      <legend>{translateLiteral(group)}</legend>
+                      <div className="editable-field-grid">{fields.map(field => renderField(field))}</div>
+                    </fieldset>
+                  ))}
+                </div>
+              </EditorWorkspaceSection>
+            ) : null}
+            {movesGroup || encounter.moves.length || hasIvs || hasEvs || statSetupFields.length ? (
+              <EditorWorkspaceSection id="movesStats" label={translateLiteral('Moves & Stats')} invalid={statsIssue}
+                modified={encounterDraftSummary.changedFields.some(change => isStatsOrMoveField(change.field))}>
+                <div className="editable-field-groups">
+                  {movesGroup || encounter.moves.length ? (
+                    <fieldset className="editable-field-group">
+                      <legend>{translateLiteral('Moves')}</legend>
+                      {movesGroup ? (
+                        <div className="editable-field-grid">{movesGroup.fields.map(field => renderField(field))}</div>
+                      ) : <div className="static-encounter-readout">{formatStaticEncounterMoves(encounter)}</div>}
+                    </fieldset>
+                  ) : null}
+                  {hasIvs || hasEvs || statSetupFields.length ? (
+                    <fieldset className="editable-field-group">
+                      <legend>{translateLiteral('Stats')}</legend>
+                      {statSetupFields.length ? (
+                        <div className="editable-field-grid">{statSetupFields.map(field => renderField(field))}</div>
+                      ) : null}
+                      {hasIvs && ivLockReason ? (
+                        <p className="static-encounter-stat-hint" id="static-encounter-iv-lock">
+                          {translateLiteral('Select Custom to edit individual IVs.')}
+                        </p>
+                      ) : null}
+                      {hasIvs || hasEvs ? (
+                        <table aria-label={translateLiteral('Stats')} className="trainer-stat-table static-encounter-stat-table">
+                          <thead><tr>
+                            <th scope="col">{translateLiteral('Stat')}</th>
+                            {hasIvs ? <th scope="col">IV</th> : null}
+                            {hasEvs ? <th scope="col">EV</th> : null}
+                          </tr></thead>
+                          <tbody>{trainerProjectedStatRows.map(({ key, label }, index) => {
+                            const iv = statFields.get(ivFieldNames[index]!);
+                            const ev = statFields.get(evFieldNames[index]!);
+                            return (
+                              <tr key={key}>
+                                <th scope="row">{translateLiteral(label)}</th>
+                                {hasIvs ? <td>{iv ? renderField(iv, translateLiteral(label) + ' IV') : formatGiftPokemonIvValue(encounter.ivs[key])}</td> : null}
+                                {hasEvs ? <td>{ev ? renderField(ev, translateLiteral(label) + ' EV') : encounter.evs[key]}</td> : null}
+                              </tr>
+                            );
+                          })}</tbody>
+                        </table>
+                      ) : null}
+                    </fieldset>
+                  ) : null}
+                </div>
+              </EditorWorkspaceSection>
+            ) : null}
+            <EditorWorkspaceSection id="source" label={translateLiteral('Source')}>
+              <div className="editor-detail-columns">
+                <EditorDetailGroup label={translateLiteral('Encounter')}>
+                  <dl className="editor-detail-list">
+                    <EditorDetailValue label={translateLiteral('Encounter')}>{encounter.label}</EditorDetailValue>
+                    <EditorDetailValue label={translateLiteral('Encounter ID')} dataValue>{encounter.encounterId}</EditorDetailValue>
+                    <EditorDetailValue label={translateLiteral(encounter.editorFamily === 'sv' ? 'Category' : 'Scenario')}>
+                      {encounter.categoryLabel ?? encounter.encounterScenarioLabel}
+                    </EditorDetailValue>
+                    {encounter.scenarioDetails ? (
+                      <EditorDetailValue label={translateLiteral('Mission')}>{encounter.scenarioDetails}</EditorDetailValue>
+                    ) : null}
+                  </dl>
+                </EditorDetailGroup>
+                <EditorDetailGroup label={translateLiteral('Source')}>
+                  <dl className="editor-detail-list">
+                    <EditorDetailValue label={translateLiteral('Data file')} path dataValue>{encounter.provenance.sourceFile}</EditorDetailValue>
+                    <EditorDetailValue label={translateLiteral('Layer')}>{formatSourceLayer(encounter.provenance.sourceLayer)}</EditorDetailValue>
+                    <EditorDetailValue label={translateLiteral('File state')}>{formatFileState(encounter.provenance.fileState)}</EditorDetailValue>
+                  </dl>
+                </EditorDetailGroup>
               </div>
-            ) : null}
-            {encounter.editorFamily === 'sv' ? (
-              <>
-                <div>
-                  <dt>{translateLiteral('Tera type')}</dt>
-                  <dd>{getStaticEncounterDisplayValue(encounter, giftTeraTypeFieldName)}</dd>
-                </div>
-                <div>
-                  <dt>{translateLiteral('Scale')}</dt>
-                  <dd>{formatStaticEncounterScale(encounter)}</dd>
-                </div>
-              </>
-            ) : null}
-            <div>
-              <dt>{translateLiteral('Held item')}</dt>
-              <dd>{encounter.heldItem ?? 'None'}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Moves')}</dt>
-              <dd>{formatStaticEncounterMoves(encounter)}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('EV detail')}</dt>
-              <dd>{formatStaticEncounterStats(encounter.evs)}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('IV detail')}</dt>
-              <dd>{formatStaticEncounterIvs(encounter)}</dd>
-            </div>
-          </dl>
-
-          <div className="trainer-edit-form">
-            <div className="editable-field-groups">
-              {encounterFieldGroups.map((group) => (
-                <fieldset className="editable-field-group" key={group.group}>
-                  <legend>{translateLiteral(group.group)}</legend>
-                  <div className="editable-field-grid">
-                    {group.fields.map((field) => {
-                      const currentValue = getEditableStaticEncounterFieldValue(
-                        encounter,
-                        field.field
-                      );
-                      const draftValue = encounterDrafts[field.field] ?? '';
-                      const draftState = getStaticEncounterFieldDraftState(
-                        encounter,
-                        draftValue,
-                        currentValue,
-                        field,
-                        encounterFields,
-                        encounterDrafts
-                      );
-                      const readOnlyReason = field.isReadOnly
-                        ? field.description.trim() ||
-                          'This field is read only for the selected encounter.'
-                        : null;
-
-                      return (
-                        <GiftPokemonDraftField
-                          currentValue={currentValue}
-                          disabled={
-                            field.isReadOnly ||
-                            !canEditStaticEncounters ||
-                            editSession === null
-                          }
-                          disabledReason={
-                            readOnlyReason ??
-                            getPokemonInstanceIvStatDisabledReason(
-                              field.field,
-                              encounterFields,
-                              encounterDrafts
-                            ) ??
-                            undefined
-                          }
-                          draftState={draftState}
-                          draftValue={draftValue}
-                          field={field}
-                          formOptionContext={staticEncounterFormOptionContext}
-                          helpDomain="staticEncounters"
-                          helpGame={encounter.editorFamily}
-                          key={field.field}
-                          onChange={(value) => handleEncounterDraftChange(field, value)}
-                        />
-                      );
-                    })}
-                  </div>
-                </fieldset>
-              ))}
-            </div>
-            {editSession ? (
-              <EditorSessionBarActions>
-                <button
-                  aria-busy={isStaticEncounterUpdating || undefined}
-                  className="primary-button"
-                  disabled={!canSaveEncounterDrafts}
-                  onClick={async () => {
-                    const submittedDraft = { ...encounterDrafts };
-                    const didSave = await onUpdateStaticEncounterFields(
-                      encounter.encounterIndex,
-                      encounter.encounterId,
-                      encounterDraftSummary.changedFields.map((change) => ({
-                        field: change.field,
-                        value: change.value
-                      }))
-                    );
-                    if (didSave) {
-                      setEncounterDraftsByIndex((currentDrafts) =>
-                        clearSubmittedKeyedEditorDraft(
-                          currentDrafts,
-                          getStaticEncounterDraftKey(encounter),
-                          submittedDraft,
-                          areFieldDraftsEqual
-                        )
-                      );
-                    }
-                  }}
-                  type="button"
-                >
-                  <BusyActionContent
-                    busyLabel="Staging"
-                    icon={<Save aria-hidden="true" size={16} />}
-                    isBusy={isStaticEncounterUpdating}
-                    label="Stage"
-                  />
-                </button>
-                {encounter.editorFamily === 'swsh' && encounter.encounterId.toUpperCase() === '0XF619D64A8E0641CB' ? (
-                  <button className="secondary-button" type="button"
-                    disabled={!canEditStaticEncounters || isStaticEncounterUpdating || encounterDraftSummary.dirtyFieldCount > 0}
-                    title={t('staticEncounters.wedgehurstSyncHelp')}
-                    onClick={() => onUpdateStaticEncounterFields(encounter.encounterIndex, encounter.encounterId, [
-                      { field: 'species', value: encounter.speciesId.toString() }, { field: 'form', value: encounter.form.toString() }
-                    ])}>{t('staticEncounters.wedgehurstSync')}</button>
-                ) : null}
-                {nextEncounterDraftIndex !== null ? (
-                  <button
-                    className="secondary-button"
-                    disabled={isStaticEncounterUpdating}
-                    onClick={() => onSelectEncounter(nextEncounterDraftIndex)}
-                    type="button"
-                  >
-                    {t('editorDrafts.reviewNext')}
-                  </button>
-                ) : null}
-                <button
-                  className="danger-button"
-                  disabled={
-                    isStaticEncounterUpdating
-                  }
-                  onClick={() => cancelActiveEditSession(() => setEncounterDraftsByIndex({}))}
-                  type="button"
-                >
-                  <X aria-hidden="true" size={16} />
-                  <span>Cancel</span>
-                </button>
-                <span className="draft-action-summary">
-                  {formatDraftSummary(encounterDraftSummary)};{' '}
-                  {t('editorDrafts.summary.staticEncounters', {
-                    count: outstandingEncounterDraftCount
-                  })}
-                </span>
-              </EditorSessionBarActions>
-            ) : null}
-
-          </div>
-        </>
-      ) : (
-        <p className="empty-copy">{translateLiteral('No static encounter selected.')}</p>
-      )}
-    </aside>
+            </EditorWorkspaceSection>
+          </>
+        ) : <p className="empty-copy">{translateLiteral('No static encounter selected.')}</p>}
+      </SectionedEditorWorkspace>
+    </>
   );
 }
 
@@ -43307,47 +43343,46 @@ function SelectedShopPanel({
           summary="No shop selected."
         />
       ) : null}
-      <div className="panel-heading">
-        <ShieldCheck aria-hidden="true" size={18} />
-        <h3>{translateLiteral('Selected Shop')}</h3>
-      </div>
-
       {shop ? (
         <>
-          <dl className="item-provenance-list">
-            <div>
-              <dt>{translateLiteral('Name')}</dt>
-              <dd>{translateLiteral(shop.name)}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Inventory')}</dt>
-              <dd>{translateLiteral(shop.inventoryLabel)}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Type')}</dt>
-              <dd>{translateLiteral(shop.kind)}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Hash')}</dt>
-              <dd>{shop.sourceHash}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Summary')}</dt>
-              <dd>{translateLiteral(shop.inventorySummary)}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Source file')}</dt>
-              <dd>{shop.provenance.sourceFile}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Layer')}</dt>
-              <dd>{translateLiteral(formatSourceLayer(shop.provenance.sourceLayer))}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('File state')}</dt>
-              <dd>{translateLiteral(formatFileState(shop.provenance.fileState))}</dd>
-            </div>
-          </dl>
+          <EditorRecordHeading name={translateLiteral(shop.name)} />
+          <details className="pokemon-instance-source">
+            <summary>{translateLiteral('Source')}</summary>
+            <dl className="item-provenance-list">
+              <div>
+                <dt>{translateLiteral('Name')}</dt>
+                <dd>{translateLiteral(shop.name)}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Inventory')}</dt>
+                <dd>{translateLiteral(shop.inventoryLabel)}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Type')}</dt>
+                <dd>{translateLiteral(shop.kind)}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Hash')}</dt>
+                <dd>{shop.sourceHash}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Summary')}</dt>
+                <dd>{translateLiteral(shop.inventorySummary)}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Source file')}</dt>
+                <dd>{shop.provenance.sourceFile}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Layer')}</dt>
+                <dd>{translateLiteral(formatSourceLayer(shop.provenance.sourceLayer))}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('File state')}</dt>
+                <dd>{translateLiteral(formatFileState(shop.provenance.fileState))}</dd>
+              </div>
+            </dl>
+          </details>
 
           <div className="shop-edit-form">
             <div className="shop-inventory-header">
@@ -49219,49 +49254,51 @@ function TeraRaidsSection({
               aria-label={translateLiteral('Selected Tera raid')}
               className="encounter-inspector"
             >
-              <div className="panel-heading">
-                <Gem aria-hidden="true" size={18} />
-                <h3>{translateLiteral('Selected Raid')}</h3>
-              </div>
-
               {selectedRaid ? (
                 <>
-                  <dl className="item-provenance-list">
-                    <div>
-                      <dt>{translateLiteral('Pokemon')}</dt>
-                      <dd data-localization-ignore="true">
-                        {formatSpeciesFormLabel(
-                          selectedRaid.species,
-                          selectedRaid.form,
-                          selectedRaid.speciesId
-                        )}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('Region')}</dt>
-                      <dd>{translateLiteral(selectedRaid.region)}</dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('Stars')}</dt>
-                      <dd>{translateLiteral(selectedRaid.starLabel)}</dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('Game')}</dt>
-                      <dd>{translateLiteral(selectedRaid.versionLabel)}</dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('Source file')}</dt>
-                      <dd data-localization-ignore="true">{selectedRaid.provenance.sourceFile}</dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('Layer')}</dt>
-                      <dd>{translateLiteral(formatSourceLayer(selectedRaid.provenance.sourceLayer))}</dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('File state')}</dt>
-                      <dd>{translateLiteral(formatFileState(selectedRaid.provenance.fileState))}</dd>
-                    </div>
-                  </dl>
+                  <EditorRecordHeading
+                    name={formatSpeciesFormLabel(selectedRaid.species, selectedRaid.form, selectedRaid.speciesId)}
+                    id={selectedRaid.starLabel}
+                  />
+                  <details className="pokemon-instance-source">
+                    <summary>{translateLiteral('Source')}</summary>
+                    <dl className="item-provenance-list">
+                      <div>
+                        <dt>{translateLiteral('Pokemon')}</dt>
+                        <dd data-localization-ignore="true">
+                          {formatSpeciesFormLabel(
+                            selectedRaid.species,
+                            selectedRaid.form,
+                            selectedRaid.speciesId
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Region')}</dt>
+                        <dd>{translateLiteral(selectedRaid.region)}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Stars')}</dt>
+                        <dd>{translateLiteral(selectedRaid.starLabel)}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Game')}</dt>
+                        <dd>{translateLiteral(selectedRaid.versionLabel)}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Source file')}</dt>
+                        <dd data-localization-ignore="true">{selectedRaid.provenance.sourceFile}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Layer')}</dt>
+                        <dd>{translateLiteral(formatSourceLayer(selectedRaid.provenance.sourceLayer))}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('File state')}</dt>
+                        <dd>{translateLiteral(formatFileState(selectedRaid.provenance.fileState))}</dd>
+                      </div>
+                    </dl>
+                  </details>
 
                   <div className="encounter-edit-form">
                     <div
@@ -50022,7 +50059,7 @@ function SelectedRaidBattlePanel({
   table: RaidBattleTableRecord | null;
   tables: RaidBattleTableRecord[];
 }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const [draftsBySlotKey, setDraftsBySlotKey] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -50210,39 +50247,38 @@ function SelectedRaidBattlePanel({
           {t('editorDrafts.discardUnavailable')}
         </button>
       ) : null}
-      <div className="panel-heading">
-        <ShieldCheck aria-hidden="true" size={18} />
-        <h3>Selected Battle</h3>
-      </div>
-
       {table ? (
         <>
-          <dl className="item-provenance-list">
-            <div>
-              <dt>Table</dt>
-              <dd>{table.displayName}</dd>
-            </div>
-            <div>
-              <dt>Hash</dt>
-              <dd>{table.sourceTableHash}</dd>
-            </div>
-            <div>
-              <dt>Game</dt>
-              <dd>{table.gameVersion}</dd>
-            </div>
-            <div>
-              <dt>Source file</dt>
-              <dd>{table.provenance.sourceFile}</dd>
-            </div>
-            <div>
-              <dt>Layer</dt>
-              <dd>{formatSourceLayer(table.provenance.sourceLayer)}</dd>
-            </div>
-            <div>
-              <dt>File state</dt>
-              <dd>{formatFileState(table.provenance.fileState)}</dd>
-            </div>
-          </dl>
+          <EditorRecordHeading name={table.displayName} id={table.gameVersion} />
+          <details className="pokemon-instance-source">
+            <summary>{translateLiteral('Source')}</summary>
+            <dl className="item-provenance-list">
+              <div>
+                <dt>Table</dt>
+                <dd>{table.displayName}</dd>
+              </div>
+              <div>
+                <dt>Hash</dt>
+                <dd>{table.sourceTableHash}</dd>
+              </div>
+              <div>
+                <dt>Game</dt>
+                <dd>{table.gameVersion}</dd>
+              </div>
+              <div>
+                <dt>Source file</dt>
+                <dd>{table.provenance.sourceFile}</dd>
+              </div>
+              <div>
+                <dt>Layer</dt>
+                <dd>{formatSourceLayer(table.provenance.sourceLayer)}</dd>
+              </div>
+              <div>
+                <dt>File state</dt>
+                <dd>{formatFileState(table.provenance.fileState)}</dd>
+              </div>
+            </dl>
+          </details>
 
           <div className="encounter-edit-form">
             <div className="encounter-slot-header">
@@ -50293,58 +50329,61 @@ function SelectedRaidBattlePanel({
                   })}
                 </div>
 
-                <dl className="encounter-slot-detail">
-                  <div>
-                    <dt>Pokemon</dt>
-                    <dd>
-                      {formatSpeciesFormLabel(
-                        battleSlot.species,
-                        battleSlot.form,
-                        battleSlot.speciesId
-                      )} ({battleSlot.speciesId})
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Ability</dt>
-                    <dd>{battleSlot.abilityLabel}</dd>
-                  </div>
-                  <div>
-                    <dt>Gender</dt>
-                    <dd>{battleSlot.genderLabel}</dd>
-                  </div>
-                  <div>
-                    <dt>G-Max</dt>
-                    <dd>{battleSlot.isGigantamax ? 'Yes' : 'No'}</dd>
-                  </div>
-                  <div>
-                    <dt>Perfect IVs</dt>
-                    <dd>{battleSlot.flawlessIvs}</dd>
-                  </div>
-                  <div>
-                    <dt>Star odds</dt>
-                    <dd>{battleSlot.probabilitySummary}</dd>
-                  </div>
-                  <div>
-                    <dt>Level table</dt>
-                    <dd>{battleSlot.levelTableHash}</dd>
-                  </div>
-                  <div>
-                    <dt>Drop table</dt>
-                    <dd>{battleSlot.dropTableHash}</dd>
-                  </div>
-                  <div>
-                    <dt>Drop rewards</dt>
-                    <dd>{formatRaidBattleRewardLink(battleSlot.dropRewardLink)}</dd>
-                  </div>
-                  <div>
-                    <dt>Bonus table</dt>
-                    <dd>{battleSlot.bonusTableHash}</dd>
-                  </div>
-                  <div>
-                    <dt>Bonus rewards</dt>
-                    <dd>{formatRaidBattleRewardLink(battleSlot.bonusRewardLink)}</dd>
-                  </div>
-                </dl>
+                <details className="pokemon-instance-source">
+                  <summary>{translateLiteral('Details')}</summary>
+                  <dl className="encounter-slot-detail">
+                    <div>
+                      <dt>Pokemon</dt>
+                      <dd>
+                        {formatSpeciesFormLabel(
+                          battleSlot.species,
+                          battleSlot.form,
+                          battleSlot.speciesId
+                        )} ({battleSlot.speciesId})
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Ability</dt>
+                      <dd>{battleSlot.abilityLabel}</dd>
+                    </div>
+                    <div>
+                      <dt>Gender</dt>
+                      <dd>{battleSlot.genderLabel}</dd>
+                    </div>
+                    <div>
+                      <dt>G-Max</dt>
+                      <dd>{battleSlot.isGigantamax ? 'Yes' : 'No'}</dd>
+                    </div>
+                    <div>
+                      <dt>Perfect IVs</dt>
+                      <dd>{battleSlot.flawlessIvs}</dd>
+                    </div>
+                    <div>
+                      <dt>Star odds</dt>
+                      <dd>{battleSlot.probabilitySummary}</dd>
+                    </div>
+                    <div>
+                      <dt>Level table</dt>
+                      <dd>{battleSlot.levelTableHash}</dd>
+                    </div>
+                    <div>
+                      <dt>Drop table</dt>
+                      <dd>{battleSlot.dropTableHash}</dd>
+                    </div>
+                    <div>
+                      <dt>Drop rewards</dt>
+                      <dd>{formatRaidBattleRewardLink(battleSlot.dropRewardLink)}</dd>
+                    </div>
+                    <div>
+                      <dt>Bonus table</dt>
+                      <dd>{battleSlot.bonusTableHash}</dd>
+                    </div>
+                    <div>
+                      <dt>Bonus rewards</dt>
+                      <dd>{formatRaidBattleRewardLink(battleSlot.bonusRewardLink)}</dd>
+                    </div>
+                  </dl>
+                </details>
 
                 <div className="editable-field-groups">
                   {raidBattleFieldGroups.map((group) => (
@@ -50946,40 +50985,38 @@ function SelectedRaidRewardPanel({
           {t('editorDrafts.discardUnavailable')}
         </button>
       ) : null}
-      <div className="panel-heading">
-        <ShieldCheck aria-hidden="true" size={18} />
-        <h3>{translateLiteral('Selected Reward')}</h3>
-      </div>
-
       {table ? (
         <>
-          <dl className="item-provenance-list">
-            <div>
-              <dt>{translateLiteral('Table')}</dt>
-              <dd>{table.sourceTableHash}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Kind')}</dt>
-              <dd>{translateLiteral(table.rewardKindLabel)}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Archive member')}</dt>
-              <dd>{translateLiteral(table.archiveMember)}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Source file')}</dt>
-              <dd>{table.provenance.sourceFile}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Layer')}</dt>
-              <dd>{translateLiteral(formatSourceLayer(table.provenance.sourceLayer))}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('File state')}</dt>
-              <dd>{translateLiteral(formatFileState(table.provenance.fileState))}</dd>
-            </div>
-          </dl>
-
+          <EditorRecordHeading id={table.sourceTableHash} name={translateLiteral(table.rewardKindLabel)} />
+          <details className="pokemon-instance-source">
+            <summary>{translateLiteral('Source')}</summary>
+            <dl className="item-provenance-list">
+              <div>
+                <dt>{translateLiteral('Table')}</dt>
+                <dd>{table.sourceTableHash}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Kind')}</dt>
+                <dd>{translateLiteral(table.rewardKindLabel)}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Archive member')}</dt>
+                <dd>{translateLiteral(table.archiveMember)}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Source file')}</dt>
+                <dd>{table.provenance.sourceFile}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Layer')}</dt>
+                <dd>{translateLiteral(formatSourceLayer(table.provenance.sourceLayer))}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('File state')}</dt>
+                <dd>{translateLiteral(formatFileState(table.provenance.fileState))}</dd>
+              </div>
+            </dl>
+          </details>
           <div className="encounter-edit-form">
             <div className="encounter-slot-header">
               <strong>{translateLiteral('Rewards')}</strong>
@@ -52993,7 +53030,7 @@ function FlagworkSaveSection({
 
   return (
     <>
-      <section aria-labelledby="flagwork-save-heading" className="panel wide-panel">
+      <section aria-labelledby="flagwork-save-heading" className="panel wide-panel advanced-editor-workspace">
         <div className="panel-heading">
           <Save aria-hidden="true" size={18} />
           <h2 id="flagwork-save-heading">Flagwork and Save Inspectors</h2>
@@ -53381,7 +53418,7 @@ function BagHookSection({
             <aside aria-label="Selected Bag Hook slot" className="encounter-inspector">
               <div className="panel-heading">
                 <Wrench aria-hidden="true" size={18} />
-                <h3>Selected Slot</h3>
+                <h3>{selectedRecord ? `${translateLiteral('Slot')} ${selectedRecord.slot}` : translateLiteral('Selected Slot')}</h3>
               </div>
 
               {selectedRecord ? (
@@ -54853,7 +54890,7 @@ function ExeFsPatchSection({
 
   return (
     <>
-      <section aria-labelledby="exefs-patches-heading" className="panel wide-panel">
+      <section aria-labelledby="exefs-patches-heading" className="panel wide-panel advanced-editor-workspace">
         <div className="panel-heading">
           <Wrench aria-hidden="true" size={18} />
           <h2 id="exefs-patches-heading">{translateLiteral('ExeFS Patch Manager')}</h2>
@@ -56641,18 +56678,13 @@ function FpsPatchSection({
       >
         <div className="panel-heading technical-tool-heading">
           <Zap aria-hidden="true" size={18} />
-          <div>
-            <h2 id="fps-patch-heading">{translateLiteral('60FPS Patch')}</h2>
+          <h2 id="fps-patch-heading">{translateLiteral('60FPS Patch')}</h2>
+          <ContextHelp label={translateLiteral('60FPS Patch')}>
             <p>{t('fpsPatch.subtitle')}</p>
-          </div>
+            <p>{t('fpsPatch.description')}</p>
+            <p>{t('fpsPatch.compatibility')}</p>
+          </ContextHelp>
         </div>
-
-        <p className="workflow-description technical-tool-description">
-          {t('fpsPatch.description')}
-        </p>
-        <p className="workflow-description technical-tool-description">
-          {t('fpsPatch.compatibility')}
-        </p>
 
         <div className="technical-tool-status-panel" aria-live="polite">
           <div className="technical-tool-status-group">
@@ -57326,54 +57358,60 @@ function ProfanityFilterSection({
           </article>
         </div>
 
-        <section className="technical-tool-component-section" aria-labelledby="profanity-filter-details-heading">
-          <div>
-            <h3 id="profanity-filter-details-heading">{t('profanityFilter.details.title')}</h3>
-            <p>{t('profanityFilter.details.description')}</p>
-          </div>
-          <dl className="technical-tool-contract-grid">
-            <div>
-              <dt>{translateLiteral('File')}</dt>
-              <dd><code data-localization-ignore="true">exefs/main</code></dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Patch site')}</dt>
-              <dd><code data-localization-ignore="true">{status?.patchOffsetHex ?? '--'}</code></dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Owned bytes')}</dt>
-              <dd>{t('profanityFilter.details.ownedBytes')}</dd>
-            </div>
-            <div>
-              <dt>{t('profanityFilter.details.observedState')}</dt>
-              <dd>{patchShapeValue}</dd>
-            </div>
-          </dl>
-        </section>
+        <details className="editor-technical-disclosure">
+          <summary>{t('profanityFilter.details.title')}</summary>
+          <div className="technical-tool-reference">
+            <section className="technical-tool-component-section" aria-labelledby="profanity-filter-details-heading">
+              <div>
+                <h3 id="profanity-filter-details-heading">{t('profanityFilter.details.title')}</h3>
+                <p>{t('profanityFilter.details.description')}</p>
+              </div>
+              <dl className="technical-tool-contract-grid">
+                <div>
+                  <dt>{translateLiteral('File')}</dt>
+                  <dd><code data-localization-ignore="true">exefs/main</code></dd>
+                </div>
+                <div>
+                  <dt>{translateLiteral('Patch site')}</dt>
+                  <dd><code data-localization-ignore="true">{status?.patchOffsetHex ?? '--'}</code></dd>
+                </div>
+                <div>
+                  <dt>{translateLiteral('Owned bytes')}</dt>
+                  <dd>{t('profanityFilter.details.ownedBytes')}</dd>
+                </div>
+                <div>
+                  <dt>{t('profanityFilter.details.observedState')}</dt>
+                  <dd>{patchShapeValue}</dd>
+                </div>
+              </dl>
+            </section>
 
-        <section className="technical-tool-component-section" aria-labelledby="profanity-filter-behavior-heading">
-          <div>
-            <h3 id="profanity-filter-behavior-heading">{t('profanityFilter.instructionTable.title')}</h3>
-            <p>{t('profanityFilter.instructionTable.description')}</p>
+            <section className="technical-tool-component-section" aria-labelledby="profanity-filter-behavior-heading">
+              <div>
+                <h3 id="profanity-filter-behavior-heading">{t('profanityFilter.instructionTable.title')}</h3>
+                <p>{t('profanityFilter.instructionTable.description')}</p>
+              </div>
+              <div className="technical-tool-instruction-table">
+                <div>
+                  <strong>{t('profanityFilter.instructionTable.vanilla')}</strong>
+                  <code data-localization-ignore="true">Sword 0x97E37E86 / Shield 0x97E37E7A</code>
+                  <span>{t('profanityFilter.instructionTable.vanillaBehavior')}</span>
+                </div>
+                <div>
+                  <strong>{t('profanityFilter.instructionTable.km')}</strong>
+                  <code data-localization-ignore="true">0x2A1F03E0 · mov w0, wzr</code>
+                  <span>{t('profanityFilter.instructionTable.kmBehavior')}</span>
+                </div>
+                <div>
+                  <strong>{t('profanityFilter.instructionTable.compatible')}</strong>
+                  <code data-localization-ignore="true">0x52800000 · mov w0, #0</code>
+                  <span>{t('profanityFilter.instructionTable.compatibleBehavior')}</span>
+                </div>
+              </div>
+            </section>
+
           </div>
-          <div className="technical-tool-instruction-table">
-            <div>
-              <strong>{t('profanityFilter.instructionTable.vanilla')}</strong>
-              <code data-localization-ignore="true">Sword 0x97E37E86 / Shield 0x97E37E7A</code>
-              <span>{t('profanityFilter.instructionTable.vanillaBehavior')}</span>
-            </div>
-            <div>
-              <strong>{t('profanityFilter.instructionTable.km')}</strong>
-              <code data-localization-ignore="true">0x2A1F03E0 · mov w0, wzr</code>
-              <span>{t('profanityFilter.instructionTable.kmBehavior')}</span>
-            </div>
-            <div>
-              <strong>{t('profanityFilter.instructionTable.compatible')}</strong>
-              <code data-localization-ignore="true">0x52800000 · mov w0, #0</code>
-              <span>{t('profanityFilter.instructionTable.compatibleBehavior')}</span>
-            </div>
-          </div>
-        </section>
+        </details>
 
         <section className="technical-tool-notice technical-tool-notice-info" aria-labelledby="profanity-filter-restore-heading">
           <div className="technical-tool-notice-heading">
@@ -67883,21 +67921,6 @@ function formatStaticEncounterMoves(encounter: StaticEncounterRecord) {
     .map((move) => move.move ?? `Move ${move.moveId}`);
 
   return moves.length > 0 ? moves.join(' / ') : 'None';
-}
-
-function getStaticEncounterDisplayValue(encounter: StaticEncounterRecord, field: string) {
-  return encounter.fieldDisplayValues[field] ?? encounter.fieldValues[field] ?? 'None';
-}
-
-function formatStaticEncounterScale(encounter: StaticEncounterRecord) {
-  const mode = getStaticEncounterDisplayValue(encounter, giftScaleModeFieldName);
-  const value = encounter.fieldValues[giftScaleValueFieldName];
-
-  if (!value || value === '0') {
-    return mode;
-  }
-
-  return `${mode}: ${value}`;
 }
 
 function formatRentalPokemonIvs(rental: RentalPokemonRecord) {
