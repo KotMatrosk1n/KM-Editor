@@ -16,6 +16,7 @@ import {
 import { ContextHelp } from '../../components/ContextHelp';
 import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
+import { RecordEditorWorkspace, EditorWorkspaceSection } from '../../components/SectionedEditorWorkspace';
 import { useLocalization } from '../../localization';
 import { formatBagHookStatus, formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 import {
@@ -63,6 +64,7 @@ export function TypeChartSection({
   workflow: TypeChartWorkflow | null;
 }) {
   const { t, translateLiteral } = useLocalization();
+  const [attackingType, setAttackingType] = useState<string>('');
   const workflowValues = useMemo(() => getTypeChartWorkflowValues(workflow), [workflow]);
   const vanillaValues = useMemo(() => getTypeChartVanillaValues(workflow), [workflow]);
   const stagedState = useMemo(
@@ -199,50 +201,8 @@ export function TypeChartSection({
 
         {workflow && canDisplayChart ? (
           <div className="type-chart-editor">
-            <div className="type-chart-scroll" aria-label="Type effectiveness chart">
-              <div className="type-chart-grid">
-                <div className="type-chart-axis-label">
-                  <span className="type-chart-axis-line">
-                    <span>{translateLiteral('Defending')}</span>
-                    <span aria-hidden="true">→</span>
-                  </span>
-                  <span className="type-chart-axis-line">
-                    <span>{translateLiteral('Attacking')}</span>
-                    <span aria-hidden="true">↓</span>
-                  </span>
-                </div>
-                {workflow.types.map((type) => (
-                  <TypeChartTypeBadge key={`defense-${type.typeIndex}`} type={type} />
-                ))}
-                {workflow.types.map((attackType) => (
-                  <Fragment key={`attack-row-${attackType.typeIndex}`}>
-                    <TypeChartTypeBadge isRowHeader type={attackType} />
-                    {workflow.types.map((defenseType) => {
-                      const index = attackType.typeIndex * 18 + defenseType.typeIndex;
-                      const value = draftValues[index] ?? 4;
-                      return (
-                        <TypeChartCellControl
-                          attackTypeLabel={attackType.label}
-                          defenseTypeLabel={defenseType.label}
-                          disabled={!canEdit}
-                          id={`type-chart-${attackType.typeIndex}-${defenseType.typeIndex}`}
-                          key={`${attackType.typeIndex}-${defenseType.typeIndex}`}
-                          onChange={(nextValue) =>
-                            updateCell(
-                              attackType.typeIndex,
-                              defenseType.typeIndex,
-                              nextValue
-                            )
-                          }
-                          value={value}
-                        />
-                      );
-                    })}
-                  </Fragment>
-                ))}
-              </div>
-            </div>
-
+            <RecordEditorWorkspace id="type-chart" className="type-chart-workspace" initialSection="matchups"
+              sessionBar={
             <div className="type-chart-actions">
               <button
                 className="danger-button"
@@ -307,6 +267,61 @@ export function TypeChartSection({
               ) : null}
             </div>
 
+              }>
+              <EditorWorkspaceSection id="matchups" label={translateLiteral('Matchups')}>
+                <div className="editor-record-context type-chart-filter">
+                  <label htmlFor="type-chart-attacking-filter">{translateLiteral('Attacking')}</label>
+                  <SearchableOptionInput id="type-chart-attacking-filter" ariaLabel={translateLiteral('Attacking')}
+                    value={attackingType} onChange={setAttackingType} disabled={false} isFiniteCatalog
+                    emptyOptionLabel={translateLiteral('All types')}
+                    options={workflow.types.map(type => ({ value: String(type.typeIndex), label: type.label }))} />
+                </div>
+            <div className="type-chart-scroll" aria-label="Type effectiveness chart">
+              <div className="type-chart-grid">
+                <div className="type-chart-axis-label">
+                  <span className="type-chart-axis-line">
+                    <span>{translateLiteral('Defending')}</span>
+                    <span aria-hidden="true">→</span>
+                  </span>
+                  <span className="type-chart-axis-line">
+                    <span>{translateLiteral('Attacking')}</span>
+                    <span aria-hidden="true">↓</span>
+                  </span>
+                </div>
+                {workflow.types.map((type) => (
+                  <TypeChartTypeBadge key={`defense-${type.typeIndex}`} type={type} />
+                ))}
+                {workflow.types.filter(type => attackingType === '' || String(type.typeIndex) === attackingType).map((attackType) => (
+                  <Fragment key={`attack-row-${attackType.typeIndex}`}>
+                    <TypeChartTypeBadge isRowHeader type={attackType} />
+                    {workflow.types.map((defenseType) => {
+                      const index = attackType.typeIndex * 18 + defenseType.typeIndex;
+                      const value = draftValues[index] ?? 4;
+                      return (
+                        <TypeChartCellControl
+                          attackTypeLabel={attackType.label}
+                          defenseTypeLabel={defenseType.label}
+                          disabled={!canEdit}
+                          id={`type-chart-${attackType.typeIndex}-${defenseType.typeIndex}`}
+                          key={`${attackType.typeIndex}-${defenseType.typeIndex}`}
+                          onChange={(nextValue) =>
+                            updateCell(
+                              attackType.typeIndex,
+                              defenseType.typeIndex,
+                              nextValue
+                            )
+                          }
+                          value={value}
+                        />
+                      );
+                    })}
+                  </Fragment>
+                ))}
+              </div>
+            </div>
+
+              </EditorWorkspaceSection>
+              <EditorWorkspaceSection id="source" label={translateLiteral('Source')}>
             <dl className="encounter-slot-detail">
               <div>
                 <dt>Detected game</dt>
@@ -340,7 +355,9 @@ export function TypeChartSection({
               </div>
             </dl>
 
-            <TypeChartSourceSummary source={workflow.source} />
+                <TypeChartSourceSummary source={workflow.source} />
+              </EditorWorkspaceSection>
+            </RecordEditorWorkspace>
           </div>
         ) : workflow ? (
           <p className="empty-copy">

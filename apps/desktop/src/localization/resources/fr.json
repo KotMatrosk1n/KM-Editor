@@ -987,6 +987,7 @@
     "modelViewer.category.objects": "Objets et accessoires",
     "modelViewer.category.environment": "Environnement",
     "modelViewer.category.other": "Autres ou non classés",
+    "modelViewer.variantCount": "Variantes",
     "modelViewer.variant": "Forme {form}, variante {gender}",
     "modelViewer.shiny": "Chromatique",
     "modelViewer.selectModel": "Sélectionner un modèle",

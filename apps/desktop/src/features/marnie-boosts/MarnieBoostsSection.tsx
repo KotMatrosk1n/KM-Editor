@@ -5,7 +5,8 @@ import { type EditSession } from '../../bridge/contracts';
 import { type FairyGymBoostSelection } from '../../bridge/fairyGymBoostsContracts';
 import { encodeMarnieBoostSelections, getMarnieBoostPendingSelections, marnieBoostIds,
   type MarnieBoostsWorkflow } from '../../bridge/marnieBoostsContracts';
-import { FairyGymBoostCard, parseOutcomeValue } from '../fairy-gym-boosts/FairyGymBoostsSection';
+import { FairyGymBoostRow, FairyGymBoostTable, parseOutcomeValue } from '../fairy-gym-boosts/FairyGymBoostsSection';
+import { ContextHelp } from '../../components/ContextHelp';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { EditorSessionBar, EditorSessionBarActions } from '../../components/EditorSessionBar';
 import { FocusedEditorWorkspace } from '../../components/FocusedEditorWorkspace';
@@ -102,21 +103,28 @@ export function MarnieBoostsSection({ workflow, session, isEditing, isEditStarti
             {t('marnieBoosts.battle', { number: index + 1 })}
           </button>)}
         </div>
-        <div className="fairy-gym-boost-stack" role="tabpanel" tabIndex={0} id="marnie-boost-panel"
+        <div className="fairy-gym-boost-panel" role="tabpanel" tabIndex={0} id="marnie-boost-panel"
           aria-labelledby={`marnie-tab-${selectedBattle}`}>
+          <h3 className="editable-field-label-row">
+            <span data-localization-ignore="true">{battle.question}</span>
+            <ContextHelp label={t('marnieBoosts.title')}>
+              <p>{t('marnieBoosts.bounds')}</p>
+              <p>{t('marnieBoosts.restoreHelp')}</p>
+            </ContextHelp>
+          </h3>
+          <FairyGymBoostTable showQuestion={false}>
           {battle.answers.map((answerText, index) => {
             const original = vanilla[selectedBattle * 2 + index];
             const current = workflow?.selections.find(value => value.boostId === original.boostId);
-            return <FairyGymBoostCard key={original.boostId} disabled={!canEdit} showAnswerRole={false}
+            return <FairyGymBoostRow key={original.boostId} disabled={!canEdit} showQuestion={false}
               onChange={change} translateLiteral={translateLiteral}
               selection={desired.find(value => value.boostId === original.boostId) ?? original}
               boost={{ ...original, ...current, defaultEffectId: original.effectId, defaultResultKind: original.resultKind,
                 questionText: battle.question, answerText, answerChoice: index + 1, isAvailable: current !== undefined,
                 affectedStats: [], stageAmount: 2, effectLabel: '', sequenceFile: `bk${135 + selectedBattle}.bseq` }} />;
           })}
+          </FairyGymBoostTable>
         </div>
-        <p>{t('marnieBoosts.bounds')}</p>
-        <p>{t('marnieBoosts.restoreHelp')}</p>
       </div>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />

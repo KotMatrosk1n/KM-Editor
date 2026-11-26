@@ -15,7 +15,7 @@
 .sound-studio label:has(input[type="checkbox"]) { display: flex; align-items: center; gap: .4rem; }
 .sound-studio__catalog { height: clamp(12rem, 47vh, 34rem); overflow: auto; overscroll-behavior: contain; border: 1px solid var(--color-border); border-radius: .5rem; }
 .sound-studio__catalog > p { padding-inline: .65rem; }
-.sound-studio__entry { padding: .2rem .6rem; display: flex; flex-direction: column; justify-content: center; cursor: pointer; border: 1px solid transparent; border-bottom-color: var(--color-border); }
+.sound-studio__entry { padding: .2rem .6rem; cursor: pointer; border: 1px solid transparent; border-bottom-color: var(--color-border); }
 .sound-studio__entry strong, .sound-studio__entry small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sound-studio__entry:hover { background: var(--color-control-hover); }.sound-studio__catalog:focus-visible { outline: 2px solid var(--color-accent, #dfbd70); outline-offset: 3px; }
 .sound-studio__player { min-width: 0; padding: .65rem; border: 1px solid var(--color-border); border-radius: .5rem; background: var(--color-surface-muted); display: flex; flex-direction: column; gap: .55rem; }
@@ -40,3 +40,32 @@
 }
 @media (prefers-reduced-motion: reduce) { .sound-analysis__spectrum { display: none; } }
 @media (forced-colors: active) { .sound-studio__entry[aria-selected="true"] { outline: 2px solid Highlight; }.sound-analysis__track { forced-color-adjust: none; } }
+
+.sound-studio__toolbar {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(min(100%, 19rem), auto);
+  gap: .55rem;
+  align-items: center;
+}
+.sound-studio__toolbar > input { min-width: 0; width: 100%; }
+.sound-studio__catalog-heading,
+.sound-studio__entry {
+  display: grid;
+  grid-template-columns: minmax(0, 2.15fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: .45rem;
+  align-items: center;
+}
+.sound-studio__catalog-heading {
+  padding: .25rem .65rem;
+  color: var(--color-text-muted);
+  font-size: .8125rem;
+  font-weight: 700;
+  overflow-wrap: break-word;
+}
+.sound-studio__catalog { scrollbar-gutter: stable; }
+.sound-studio__entry > * { min-width: 0; }
+.sound-studio__visualizer-toggle { display: flex; gap: .5rem; align-items: center; }
+@media (max-width: 800px) {
+  .sound-studio__toolbar { grid-template-columns: minmax(0, 1fr); }
+}

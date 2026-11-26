@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 import { ContextHelp } from '../../components/ContextHelp';
-import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
-import { useEffect, useRef, useState } from 'react';
+import { EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { PokemonSearchBox, PokemonTable, filterPokemonRecords, type PokemonSelectionRecord } from '../../components/PokemonSelection';
 import { RefreshCw, RotateCcw, Save, Sparkles, X } from 'lucide-react';
 import { type EditSession } from '../../bridge/contracts';
@@ -13,6 +13,7 @@ import { FocusedEditorWorkspace } from '../../components/FocusedEditorWorkspace'
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { WorkflowPanelOutputSections, type WorkflowPanelOutput } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization';
+import { EditorDetailGroup } from '../../components/EditorRecordDetails';
 import './HeldItemChanceSection.css';
 
 type Props = {
@@ -139,86 +140,94 @@ export function HeldItemChanceSection({ formatPokemonName, workflow, session, is
         </button>
         <span className="draft-action-summary">{t(dirty ? 'heldItemChance.draft' : 'heldItemChance.clean')}</span>
       </EditorSessionBarActions> : null}
-      <details className="held-item-global">
-        <summary>{t('heldItemChance.global')}</summary>
-        <p>{t('heldItemChance.globalHelp')}</p>
-        <HeldItemRateGroups rates={globalValues} disabled={!canEdit} global
-          onChange={rates => { setGlobalDraft(rates); setFailed(false); }} />
-        <p id="held-item-global-limits">{t('heldItemChance.limits')}</p>
-        <p>{t('heldItemChance.equalHelp')}</p>
-        <button className="primary-button" type="button" disabled={!canEdit || busy || parsedGlobal === null}
-          aria-busy={isGlobalStaging || undefined} onClick={() => void stageGlobal()}>
-          <Save size={16} aria-hidden="true" /><span>{t('heldItemChance.stageGlobal')}</span>
-        </button>
-      </details>
-      <div className="items-toolbar pokemon-toolbar">
-        <PokemonSearchBox disabled={!workflow} value={searchText} onChange={setSearchText} />
-      </div>
-      <RecordEditorWorkspace id="heldItemChance" className="items-layout swsh-pokemon-layout held-item-pokemon-layout" browser={
-        <PokemonTable records={filtered} selectedId={selected?.personalId} pendingIds={pendingIds}
-          onSelect={setSelectedId} formatName={formatPokemonName} resetKey={searchText} />
-      }>
-        <div className="held-item-pokemon-details">
-      {selected && desired ? <>
-        <div className="context-help-heading held-item-record-heading">
-          <h3 data-localization-ignore="true">{formatPokemonName(selected)}</h3>
-          <ContextHelp label={t('heldItemChance.title')}>
-            <p>{t('heldItemChance.pokemonScope')}</p>
-            <p>{t(desired.customRates ? 'heldItemChance.customHelp' : 'heldItemChance.equalHelp')}</p>
-            <p>{t('heldItemChance.packageHelp', { editor: t('gameplaySettings.title') })}</p>
-          </ContextHelp>
-        </div>
-        <div className="held-item-slot-grid held-item-choices">
-          {[0, 1, 2].map(slot => <div key={slot} className="held-item-rate-field">
-            <label htmlFor={`held-item-choice-${slot}`}>{t('heldItemChance.slot', { number: slot + 1 })}</label>
-            <SearchableOptionInput id={`held-item-choice-${slot}`} ariaLabel={t('heldItemChance.itemSlot', { number: slot + 1 })}
-              isFiniteCatalog options={options} disabled={!canEdit} value={desired.items[slot]}
-              onChange={value => { const items = [...desired.items]; items[slot] = value; change({ ...desired, items }); }} />
-          </div>)}
-        </div>
-        <label className="held-item-custom"><input type="checkbox" checked={desired.customRates} disabled={!canEdit}
-          onChange={event => change({ ...desired, customRates: event.target.checked,
-            rates: event.target.checked ? desired.rates : globalRates.map(String) })} />{t('heldItemChance.customRates')}</label>
-        <HeldItemRateGroups rates={desired.rates} disabled={!canEdit}
-          onChange={rates => change({ ...desired, rates, customRates: true })} />
-        <p className="field-hint" id="held-item-rate-limits">{t('heldItemChance.limits')}</p>
-      </> : <p>{workflow && records.length ? translateLiteral('No Pokemon selected.') : t('heldItemChance.wildMissing')}</p>}
-        </div>
+      <RecordEditorWorkspace id="heldItemChance" className="held-item-pokemon-layout" initialSection="pokemon"
+        browserControls={<div className="editor-record-context">
+          <PokemonSearchBox disabled={!workflow} value={searchText} onChange={setSearchText} />
+          <span className="muted">{filtered.length} / {records.length} {translateLiteral('Pokemon')}</span>
+        </div>}
+        browser={<PokemonTable records={filtered} selectedId={selected?.personalId} pendingIds={pendingIds}
+          onSelect={setSelectedId} formatName={formatPokemonName} resetKey={searchText} />}>
+        {selected ? <EditorWorkspaceHeader afterBrowser>
+          <EditorRecordHeading name={formatPokemonName(selected)} id={selected.personalId} />
+        </EditorWorkspaceHeader> : null}
+        <EditorWorkspaceSection id="pokemon" label={t('heldItemChance.title')} modified={individualDirty} invalid={invalid}>
+          {selected && desired ? <EditorDetailGroup label={translateLiteral('Items and encounter rates')}
+            headingValue={<ContextHelp label={t('heldItemChance.title')}>
+              <p>{t('heldItemChance.pokemonScope')}</p>
+              <p>{t(desired.customRates ? 'heldItemChance.customHelp' : 'heldItemChance.equalHelp')}</p>
+              <p>{t('heldItemChance.packageHelp', { editor: t('gameplaySettings.title') })}</p>
+            </ContextHelp>}>
+            <label className="held-item-custom"><input type="checkbox" checked={desired.customRates} disabled={!canEdit}
+              onChange={event => change({ ...desired, customRates: event.target.checked,
+                rates: event.target.checked ? desired.rates : globalRates.map(String) })} />{t('heldItemChance.customRates')}</label>
+            <HeldItemRateTable rates={desired.rates} disabled={!canEdit}
+              renderItem={slot => <SearchableOptionInput id={`held-item-choice-${slot}`}
+                ariaLabel={t('heldItemChance.itemSlot', { number: slot + 1 })}
+                isFiniteCatalog options={options} disabled={!canEdit} value={desired.items[slot]}
+                onChange={value => { const items = [...desired.items]; items[slot] = value; change({ ...desired, items }); }} />}
+              onChange={rates => change({ ...desired, rates, customRates: true })} />
+            <p className="field-hint" id="held-item-rate-limits">{t('heldItemChance.limits')}</p>
+          </EditorDetailGroup> : <p>{workflow && records.length ? translateLiteral('No Pokemon selected.') : t('heldItemChance.wildMissing')}</p>}
+        </EditorWorkspaceSection>
+        <EditorWorkspaceSection id="defaults" label={t('heldItemChance.global')} modified={globalDraft !== null} invalid={globalInvalid}>
+          <EditorDetailGroup label={t('heldItemChance.global')} headingValue={<ContextHelp label={t('heldItemChance.global')}>
+            <p>{t('heldItemChance.equalHelp')}</p>
+          </ContextHelp>}>
+            <p>{t('heldItemChance.globalHelp')}</p>
+            <HeldItemRateTable rates={globalValues} disabled={!canEdit} global
+              onChange={rates => { setGlobalDraft(rates); setFailed(false); }} />
+            <p id="held-item-global-limits">{t('heldItemChance.limits')}</p>
+            <button className="primary-button" type="button" disabled={!canEdit || busy || parsedGlobal === null}
+              aria-busy={isGlobalStaging || undefined} onClick={() => void stageGlobal()}>
+              <Save size={16} aria-hidden="true" /><span>{t('heldItemChance.stageGlobal')}</span>
+            </button>
+          </EditorDetailGroup>
+        </EditorWorkspaceSection>
       </RecordEditorWorkspace>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />
   </FocusedEditorWorkspace>;
 }
 
-function HeldItemRateGroups({ rates, disabled, global = false, onChange }: {
-  rates: string[]; disabled: boolean; global?: boolean; onChange: (rates: string[]) => void;
+function HeldItemRateTable({ rates, disabled, global = false, renderItem, onChange }: {
+  rates: string[];
+  disabled: boolean;
+  global?: boolean;
+  renderItem?: (slot: number) => ReactNode;
+  onChange: (rates: string[]) => void;
 }) {
-  const { t: translate } = useLocalization();
-  return <div className="held-item-rate-groups">
-    {[0, 1].map(group => {
-      const label = translate(group === 0 ? 'heldItemChance.normal' : 'heldItemChance.boosted');
-      const values = rates.slice(group * 3, group * 3 + 3);
-      const validFields = values.length === 3 && values.every(value => /^\d{1,3}$/.test(value) && Number(value) <= 100);
-      const total = validFields ? values.reduce((sum, value) => sum + Number(value), 0) : null;
-      return <fieldset key={group} className="held-item-rate-group">
-        <legend>{label}</legend>
-        <p>{translate(group === 0 ? 'heldItemChance.normalHelp' : 'heldItemChance.boostedHelp')}</p>
-        <div className="held-item-slot-grid">
-          {[0, 1, 2].map(slot => <label key={slot} className="held-item-rate-field">
-            <span>{translate('heldItemChance.slot', { number: slot + 1 })}</span>
-            <span className="held-item-rate-input"><input type="text" inputMode="numeric"
-              aria-label={`${global ? `${translate('heldItemChance.global')} ` : ''}${label} ${translate('heldItemChance.slot', { number: slot + 1 })}`}
-              aria-invalid={total === null || total > 100 || undefined}
-              aria-describedby={global ? 'held-item-global-limits' : 'held-item-rate-limits'}
-              disabled={disabled} value={rates[group * 3 + slot] ?? ''}
-              onChange={event => { const next = [...rates]; next[group * 3 + slot] = event.target.value; onChange(next); }} />
-              <span aria-hidden="true">%</span></span>
-          </label>)}
-        </div>
-        <p className="held-item-total" aria-live="polite">{total === null ? translate('heldItemChance.incomplete') :
-          translate('heldItemChance.total', { total, remaining: Math.max(0, 100 - total) })}</p>
-        {total !== null && total > 100 ? <p role="alert">{translate('heldItemChance.overTotal')}</p> : null}
-      </fieldset>;
-    })}
-  </div>;
+  const { t, translateLiteral } = useLocalization();
+  const groups = (['normal', 'boosted'] as const).map((key, index) => {
+    const values = rates.slice(index * 3, index * 3 + 3);
+    const total = values.length === 3 && values.every(value => /^\d{1,3}$/.test(value) && Number(value) <= 100)
+      ? values.reduce((sum, value) => sum + Number(value), 0) : null;
+    return { key, label: t(`heldItemChance.${key}`), help: t(`heldItemChance.${key}Help`), total };
+  });
+  return <table className="editor-data-matrix held-item-rate-matrix">
+    <thead><tr>
+      <th scope="col">{translateLiteral('Slot')}</th>
+      {renderItem ? <th scope="col">{translateLiteral('Item')}</th> : null}
+      {groups.map(group => <th key={group.key} scope="col">{group.label} <ContextHelp label={group.label}>{group.help}</ContextHelp></th>)}
+    </tr></thead>
+    <tbody>{[0, 1, 2].map(slot => <tr key={slot}>
+      <th scope="row">{t('heldItemChance.slot', { number: slot + 1 })}</th>
+      {renderItem ? <td>{renderItem(slot)}</td> : null}
+      {groups.map((group, index) => {
+        const rate = index * 3 + slot;
+        return <td key={group.key}><span className="held-item-rate-input"><input type="text" inputMode="numeric"
+          aria-label={`${global ? `${t('heldItemChance.global')} ` : ''}${group.label} ${t('heldItemChance.slot', { number: slot + 1 })}`}
+          aria-invalid={group.total === null || group.total > 100 || undefined}
+          aria-describedby={global ? 'held-item-global-limits' : 'held-item-rate-limits'}
+          disabled={disabled} value={rates[rate] ?? ''}
+          onChange={event => onChange(Array.from({ length: 6 }, (_, i) => i === rate ? event.target.value : rates[i] ?? ''))} />
+          <span aria-hidden="true">%</span></span></td>;
+      })}
+    </tr>)}</tbody>
+    <tfoot><tr><th scope="row" colSpan={renderItem ? 2 : 1}>{translateLiteral('Total')}</th>
+      {groups.map(group => <td key={group.key} aria-live="polite">
+        {group.total === null ? t('heldItemChance.incomplete') : t('heldItemChance.total', { total: group.total, remaining: Math.max(0, 100 - group.total) })}
+        {group.total !== null && group.total > 100 ? <p role="alert">{t('heldItemChance.overTotal')}</p> : null}
+      </td>)}
+    </tr></tfoot>
+  </table>;
 }

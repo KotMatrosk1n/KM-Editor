@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { ContextHelp } from '../../components/ContextHelp';
 import { useEffect, useRef, useState } from 'react';
 import { Mountain, RefreshCw, Save, X } from 'lucide-react';
@@ -99,15 +100,17 @@ export function RaidDensSection({ workflow, session, isEditing, isEditStarting, 
           </div>
         </div>
 
-        <details className="raid-dens-effects-region editor-technical-disclosure">
-          <summary>{t('raidDens.effects')}</summary>
-          <dl className="editor-detail-list">
-            <div><dt>{t('raidDens.raids')}</dt><dd>{t('raidDens.raidsHelp')}</dd></div>
-            <div><dt>{t('raidDens.watts')}</dt><dd>{t('raidDens.wattsHelp')}</dd></div>
-            <div><dt>{t('raidDens.pieces')}</dt><dd>{t('raidDens.piecesHelp')}</dd></div>
-            <div><dt>{t('raidDens.scope')}</dt><dd>{t('raidDens.scopeHelp')} {t('raidDens.restoreHelp')}</dd></div>
-          </dl>
-        </details>
+        <RecordEditorWorkspace id="raid-dens" className="raid-dens-effects-region">
+          <div className="editor-detail-group">
+            <h3>{t('raidDens.effects')}</h3>
+            <dl className="editor-detail-list">
+              <div><dt>{t('raidDens.raids')}</dt><dd>{t('raidDens.raidsHelp')}</dd></div>
+              <div><dt>{t('raidDens.watts')}</dt><dd>{t('raidDens.wattsHelp')}</dd></div>
+              <div><dt>{t('raidDens.pieces')}</dt><dd>{t('raidDens.piecesHelp')}</dd></div>
+              <div><dt>{t('raidDens.scope')}</dt><dd>{t('raidDens.scopeHelp')} {t('raidDens.restoreHelp')}</dd></div>
+            </dl>
+          </div>
+        </RecordEditorWorkspace>
       </div>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />

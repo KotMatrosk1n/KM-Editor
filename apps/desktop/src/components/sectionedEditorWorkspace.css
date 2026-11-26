@@ -14,8 +14,11 @@
 .sectioned-editor-workspace .pokemon-bulk-actions { gap: 8px; }
 .sectioned-editor-workspace .pokemon-bulk-actions .pokemon-toolbar-actions { justify-content: flex-start; }
 .sectioned-editor-workspace .editor-workspace-browser { flex: 0 0 auto; min-height: 40px; overflow: hidden; }
-.sectioned-editor-workspace .editor-workspace-browser > [role='table'] {
+.sectioned-editor-workspace .editor-workspace-browser > [role='table']:not(table) {
   display: block; height: 100%; min-height: 0; max-height: none; overflow: auto; overscroll-behavior: contain;
+}
+.sectioned-editor-workspace .editor-workspace-browser:has(> table) {
+  overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable;
 }
 .sectioned-editor-workspace .trainers-toolbar { grid-template-columns: minmax(200px, 1fr) repeat(3, minmax(90px, auto)); gap: 8px; }
 .sectioned-editor-workspace .trainers-toolbar .metric { min-height: 0; padding: 6px 8px; }

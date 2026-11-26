@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { ClipboardCheck, RotateCcw, Save, Sparkles } from 'lucide-react';
-import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { type EditSession } from '../../bridge/contracts';
 import {
   type FairyGymBoostRecord,
@@ -15,7 +15,9 @@ import {
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
-import { FieldLabel } from '../../components/FieldLabel';
+import { ContextHelp } from '../../components/ContextHelp';
+import { EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
+import './fairyGymBoostTable.css';
 import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
 import { useLocalization } from '../../localization';
 import { formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
@@ -263,62 +265,6 @@ export function FairyGymBoostsSection({
 
         {workflow ? (
           <div className="fairy-gym-editor">
-            <div
-              aria-labelledby="fairy-gym-boosts-heading"
-              className="fairy-gym-trainer-tabs"
-              role="tablist"
-            >
-              {sortedTrainers.map((trainer, trainerIndex) => {
-                const isSelected = selectedTrainer?.trainerId === trainer.trainerId;
-                return (
-                  <button
-                    aria-controls={isSelected ? 'fairy-gym-boost-panel' : undefined}
-                    aria-selected={isSelected}
-                    className={
-                      isSelected
-                        ? 'fairy-gym-trainer-tab is-selected'
-                        : 'fairy-gym-trainer-tab'
-                    }
-                    key={trainer.trainerId}
-                    id={`fairy-gym-tab-${trainer.trainerId}`}
-                    onClick={() => setSelectedTrainerId(trainer.trainerId)}
-                    onKeyDown={(event) =>
-                      handleTrainerTabKeyDown(event, trainerIndex)
-                    }
-                    role="tab"
-                    tabIndex={isSelected ? 0 : -1}
-                    type="button"
-                    data-localization-ignore="true"
-                  >
-                    {trainer.npcName}
-                  </button>
-                );
-              })}
-            </div>
-
-            {selectedTrainer ? (
-              <div
-                aria-labelledby={`fairy-gym-tab-${selectedTrainer.trainerId}`}
-                className="fairy-gym-boost-stack"
-                id="fairy-gym-boost-panel"
-                role="tabpanel"
-                tabIndex={0}
-              >
-                {selectedTrainer.boosts.map((boost) => (
-                  <FairyGymBoostCard
-                    boost={boost}
-                    disabled={!canEdit}
-                    key={boost.boostId}
-                    onChange={updateBoostOutcome}
-                    selection={drafts[boost.boostId] ?? boostToSelection(boost)}
-                    translateLiteral={translateLiteral}
-                  />
-                ))}
-              </div>
-            ) : (
-              <p className="empty-copy">No Fairy Gym boost mappings are loaded.</p>
-            )}
-
             <div className="type-chart-actions fairy-gym-actions">
               <button
                 className="danger-button"
@@ -361,10 +307,73 @@ export function FairyGymBoostsSection({
               </button>
             </div>
 
-            <FairyGymSourceSummary
-              sources={workflow.sources}
-              translateLiteral={translateLiteral}
-            />
+            <RecordEditorWorkspace id="fairyGymBoosts" className="fairy-gym-workspace" initialSection="outcomes">
+              <EditorWorkspaceSection id="outcomes" label={translateLiteral('Outcomes')}>
+                <div
+                  aria-labelledby="fairy-gym-boosts-heading"
+                  className="fairy-gym-trainer-tabs"
+                  role="tablist"
+                >
+                  {sortedTrainers.map((trainer, trainerIndex) => {
+                    const isSelected = selectedTrainer?.trainerId === trainer.trainerId;
+                    return (
+                      <button
+                        aria-controls={isSelected ? 'fairy-gym-boost-panel' : undefined}
+                        aria-selected={isSelected}
+                        className={
+                          isSelected
+                            ? 'fairy-gym-trainer-tab is-selected'
+                            : 'fairy-gym-trainer-tab'
+                        }
+                        key={trainer.trainerId}
+                        id={`fairy-gym-tab-${trainer.trainerId}`}
+                        onClick={() => setSelectedTrainerId(trainer.trainerId)}
+                        onKeyDown={(event) =>
+                          handleTrainerTabKeyDown(event, trainerIndex)
+                        }
+                        role="tab"
+                        tabIndex={isSelected ? 0 : -1}
+                        type="button"
+                        data-localization-ignore="true"
+                      >
+                        {trainer.npcName}
+                      </button>
+                    );
+                  })}
+                </div>
+                {selectedTrainer ? (
+                  <div
+                    aria-labelledby={`fairy-gym-tab-${selectedTrainer.trainerId}`}
+                    className="fairy-gym-boost-panel"
+                    id="fairy-gym-boost-panel"
+                    role="tabpanel"
+                    tabIndex={0}
+                  >
+                    <FairyGymBoostTable>
+                      {selectedTrainer.boosts.map((boost) => (
+                        <FairyGymBoostRow
+                          boost={boost}
+                          disabled={!canEdit}
+                          key={boost.boostId}
+                          onChange={updateBoostOutcome}
+                          selection={drafts[boost.boostId] ?? boostToSelection(boost)}
+                          translateLiteral={translateLiteral}
+                        />
+                      ))}
+                    </FairyGymBoostTable>
+                  </div>
+                ) : (
+                  <p className="empty-copy">No Fairy Gym boost mappings are loaded.</p>
+                )}
+
+              </EditorWorkspaceSection>
+              <EditorWorkspaceSection id="source" label={translateLiteral('Source')}>
+                <FairyGymSourceSummary
+                  sources={workflow.sources}
+                  translateLiteral={translateLiteral}
+                />
+              </EditorWorkspaceSection>
+            </RecordEditorWorkspace>
           </div>
         ) : (
           <p className="empty-copy">Open Fairy Gym Boosts from Advanced Editors.</p>
@@ -379,54 +388,67 @@ export function FairyGymBoostsSection({
   );
 }
 
-export function FairyGymBoostCard({
+export function FairyGymBoostTable({ children, showQuestion = true }: {
+  children: ReactNode;
+  showQuestion?: boolean;
+}) {
+  const { t, translateLiteral } = useLocalization();
+  return (
+    <table className="fairy-gym-boost-table" aria-label={translateLiteral('Boost outcomes')}>
+      <thead>
+        <tr>
+          {showQuestion ? <th scope="col">{translateLiteral('Question')}</th> : null}
+          <th scope="col">{translateLiteral('Answer')}</th>
+          <th scope="col">{translateLiteral('Current effect')}</th>
+          <th scope="col">
+            <span className="editable-field-label-row">
+              {translateLiteral('Outcome')}
+              <ContextHelp label={translateLiteral('Outcome')}>{t('workflowHelp.fairyGym.outcome')}</ContextHelp>
+            </span>
+          </th>
+        </tr>
+      </thead>
+      <tbody>{children}</tbody>
+    </table>
+  );
+}
+
+export function FairyGymBoostRow({
   boost,
   disabled,
   onChange,
   selection,
   translateLiteral,
-  showAnswerRole = true
+  showQuestion = true
 }: {
   boost: FairyGymBoostRecord;
   disabled: boolean;
   onChange: (boostId: string, value: string) => void;
   selection: FairyGymBoostSelection;
   translateLiteral: (literal: string) => string;
-  showAnswerRole?: boolean;
+  showQuestion?: boolean;
 }) {
-  const { t } = useLocalization();
-  const outcomeInputId = `fairy-gym-outcome-${boost.boostId}`;
   return (
-    <article className="fairy-gym-boost-card">
-      <div className="fairy-gym-boost-card-heading">
-        <div>
-          <div className="fairy-gym-answer-row">
-            {showAnswerRole ? <span className={`fairy-gym-answer-role is-${boost.defaultResultKind}`}>
-              {translateLiteral(formatAnswerRole(boost.defaultResultKind))}
-            </span> : null}
-            <span className="fairy-gym-answer-choice">Answer {boost.answerChoice}</span>
-          </div>
-          <h3 data-localization-ignore="true">{boost.questionText}</h3>
-          <p data-localization-ignore="true">{boost.answerText}</p>
-        </div>
-        <span className="fairy-gym-effect-pill">
-          {boost.isAvailable
-            ? translateLiteral(formatOutcomeLabel(boostToSelection(boost)))
-            : translateLiteral('Unavailable')}
-        </span>
-      </div>
-
-      <div className="fairy-gym-outcome-control">
-        <FieldLabel
-          help={t('workflowHelp.fairyGym.outcome')}
-          htmlFor={outcomeInputId}
-          label={translateLiteral('Outcome')}
-        />
+    <tr>
+      {showQuestion ? <td data-localization-ignore="true">{boost.questionText}</td> : null}
+      <th scope="row">
+        <strong data-localization-ignore="true">{boost.answerText}</strong>
+        <small>
+          {translateLiteral('Answer')} {boost.answerChoice}
+          {showQuestion ? ` · ${translateLiteral(formatAnswerRole(boost.defaultResultKind))}` : null}
+        </small>
+      </th>
+      <td>
+        {boost.isAvailable
+          ? translateLiteral(formatOutcomeLabel(boostToSelection(boost)))
+          : translateLiteral('Unavailable')}
+      </td>
+      <td>
         <SearchableOptionInput
           ariaLabel={`${boost.answerText} outcome`}
           data-km-source-site="fairy-gym-outcome"
           disabled={disabled}
-          id={outcomeInputId}
+          id={`fairy-gym-outcome-${boost.boostId}`}
           isFiniteCatalog
           localizeOptions={false}
           onChange={(value) => onChange(boost.boostId, value)}
@@ -436,8 +458,8 @@ export function FairyGymBoostCard({
           }))}
           value={selectionToValue(selection)}
         />
-      </div>
-    </article>
+      </td>
+    </tr>
   );
 }
 

@@ -7,6 +7,8 @@ import type { FixAiFlagsSelection, FixAiFlagsWorkflow } from '../../bridge/fixAi
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { EditorSessionBar, EditorSessionBarActions } from '../../components/EditorSessionBar';
 import { FocusedEditorWorkspace } from '../../components/FocusedEditorWorkspace';
+import { EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
+import { EditorRecordTable } from '../../components/EditorRecordTable';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { WorkflowPanelOutputSections, type WorkflowPanelOutput } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization';
@@ -97,7 +99,12 @@ export function FixAiFlagsSection({ workflow, session, isEditing, isEditStarting
           <X size={16} aria-hidden="true" />{translateLiteral('Cancel')}</button>
         <span>{t('fixAiFlags.selectedCount', { count: choices.length })}</span>
       </EditorSessionBarActions> : null}
-      <div className="fix-ai-flags-toolbar">
+      <p>{t('fixAiFlags.counts', { candidates: trainers.filter(row => row.candidate).length, total: trainers.length })}</p>
+      {dirty ? <label className="fix-ai-flags-check fix-ai-flags-confirm"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />{t('fixAiFlags.confirm')}</label> : null}
+      {stale ? <p className="fix-ai-flags-notice" role="status">{t('fixAiFlags.stale')}</p> : null}
+      {choices.length > 512 ? <p className="fix-ai-flags-notice">{t('fixAiFlags.limit')}</p> : null}
+      <RecordEditorWorkspace id="fix-ai-flags" className="fix-ai-flags-layout" initialSection="review"
+        browserControls={<div className="fix-ai-flags-toolbar">
         <label className="fix-ai-flags-search"><Search size={16} aria-hidden="true" /><span className="sr-only">{t('fixAiFlags.search')}</span>
           <input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder={t('fixAiFlags.search')} /></label>
         <SearchableOptionInput ariaLabel={t('fixAiFlags.filter')} disabled={false} isFiniteCatalog localizeOptions={false} value={filter} onChange={setFilter}
@@ -108,29 +115,26 @@ export function FixAiFlagsSection({ workflow, session, isEditing, isEditStarting
           setConfirmed(false); setFailed(false);
         }}>{t('fixAiFlags.selectVisible')}</button>
         <button type="button" className="secondary-button" disabled={!dirty} onClick={clear}>{t('fixAiFlags.clear')}</button>
-      </div>
-      <p>{t('fixAiFlags.counts', { candidates: trainers.filter(row => row.candidate).length, total: trainers.length })}</p>
-      {dirty ? <label className="fix-ai-flags-check fix-ai-flags-confirm"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />{t('fixAiFlags.confirm')}</label> : null}
-      {stale ? <p className="fix-ai-flags-notice" role="status">{t('fixAiFlags.stale')}</p> : null}
-      {choices.length > 512 ? <p className="fix-ai-flags-notice">{t('fixAiFlags.limit')}</p> : null}
-      <div className="fix-ai-flags-columns">
-        <div className="fix-ai-flags-list" role="region" aria-label={t('fixAiFlags.trainers')} tabIndex={0}>
-          {visible.map(row => <div key={row.trainerId} className={`fix-ai-flags-row${selected?.trainerId === row.trainerId ? ' selected-row' : ''}`}>
-            <label className="fix-ai-flags-check"><input type="checkbox" checked={Boolean(drafts[row.trainerId])} disabled={!canEdit || !eligible(row) && !drafts[row.trainerId]}
-              onChange={event => { choose(row, event.target.checked); setSelectedId(row.trainerId); }} />
-              <span className="sr-only">{t('fixAiFlags.selectTrainer', { id: row.trainerId, name: row.name })}</span></label>
-            <button type="button" className="fix-ai-flags-row-button" onClick={() => setSelectedId(row.trainerId)} aria-pressed={selected?.trainerId === row.trainerId}>
-              <span data-localization-ignore="true">{row.trainerId}. {row.name}</span><span className="fix-ai-flags-status">{status(row)}</span></button>
-            <div className="fix-ai-flags-masks"><code>{hex(row.currentFlags)}</code>{row.proposedFlags !== null ? <><span aria-label={t('fixAiFlags.proposed')}>→</span><code>{hex(row.proposedFlags)}</code></> : null}</div>
-          </div>)}
-          {visible.length === 0 ? <p className="empty-state">{t('fixAiFlags.noMatches')}</p> : null}
-        </div>
-        <section className="fix-ai-flags-detail" aria-labelledby="fix-ai-flags-detail-title">
-          <h3 id="fix-ai-flags-detail-title">{selected
-            ? <span data-localization-ignore="true">{selected.trainerId}. {selected.name}</span>
-            : t('fixAiFlags.details')}</h3>
-          {selected ? <>
-            <p>{status(selected)}</p><code className="fix-ai-flags-path" data-localization-ignore="true">{selected.sourceFile}</code>
+      </div>}
+        browser={<EditorRecordTable label={t('fixAiFlags.trainers')} identityLabel={translateLiteral('Trainer')}
+          rows={visible} rowId={row => String(row.trainerId)} selection={String(selected?.trainerId)}
+          identity={row => <span data-localization-ignore="true">{row.trainerId}. {row.name}</span>}
+          onSelect={row => setSelectedId(row.trainerId)} empty={t('fixAiFlags.noMatches')}
+          columns={[
+            { id: 'status', label: translateLiteral('Status'), value: status },
+            { id: 'current', label: t('fixAiFlags.current'), value: row => <code>{hex(row.currentFlags)}</code> },
+            { id: 'proposed', label: t('fixAiFlags.proposed'), value: row => row.proposedFlags === null
+              ? translateLiteral('None') : <code>{hex(row.proposedFlags)}</code> },
+            { id: 'select', label: translateLiteral('Select'), value: row => <label className="fix-ai-flags-check">
+              <input type="checkbox" checked={Boolean(drafts[row.trainerId])} disabled={!canEdit || !eligible(row) && !drafts[row.trainerId]}
+                onChange={event => { choose(row, event.target.checked); setSelectedId(row.trainerId); }} />
+              <span className="sr-only">{t('fixAiFlags.selectTrainer', { id: row.trainerId, name: row.name })}</span>
+            </label> }
+          ]} />}>
+        {selected ? <>
+          <EditorWorkspaceHeader afterBrowser><EditorRecordHeading id={selected.trainerId} name={selected.name} /></EditorWorkspaceHeader>
+          <EditorWorkspaceSection id="review" label={translateLiteral('Review')} summary={status(selected)}>
+            <div className="fix-ai-flags-detail">
             <dl className="fix-ai-flags-values"><div><dt>{t('fixAiFlags.current')}</dt><dd><code>{hex(selected.currentFlags)}</code></dd></div>
               <div><dt>{t('fixAiFlags.proposed')}</dt><dd><code>{selected.proposedFlags === null ? translateLiteral('None') : hex(selected.proposedFlags)}</code></dd></div>
               <div><dt>{t('fixAiFlags.base')}</dt><dd><code>{selected.baseFlags === null ? translateLiteral('Unknown') : hex(selected.baseFlags)}</code></dd></div></dl>
@@ -141,9 +145,15 @@ export function FixAiFlagsSection({ workflow, session, isEditing, isEditStarting
               {drafts[selected.trainerId] ? <label className="fix-ai-flags-check"><input type="checkbox" checked={drafts[selected.trainerId].acknowledgePreviousFix}
                 onChange={event => { const checked = event.target.checked; setDrafts(previous => ({ ...previous,
                   [selected.trainerId]: { ...previous[selected.trainerId], acknowledgePreviousFix: checked } })); setConfirmed(false); }} />{t('fixAiFlags.previousAck')}</label> : null}</> : null}
-          </> : <p>{t('fixAiFlags.noMatches')}</p>}
-        </section>
-      </div>
+            </div>
+          </EditorWorkspaceSection>
+          <EditorWorkspaceSection id="source" label={translateLiteral('Source')}>
+            <dl className="item-provenance-list"><div><dt>{translateLiteral('Source file')}</dt>
+              <dd><code className="fix-ai-flags-path" data-localization-ignore="true">{selected.sourceFile}</code></dd>
+            </div></dl>
+          </EditorWorkspaceSection>
+        </> : null}
+      </RecordEditorWorkspace>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />
   </FocusedEditorWorkspace>;

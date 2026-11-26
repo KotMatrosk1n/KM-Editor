@@ -103,6 +103,27 @@ export function PlaEconomyWorkspace({ sessionKey, kind, page, selected, query, o
     selectedValues[field.key] !== selected.values[field.key] &&
     !isPlaFieldValueValid(resolvePlaField(field, selectedValues), selectedValues[field.key]));
   const itemSource = selected?.metadata;
+  const ingredientSlots = fields.flatMap(field => {
+    const match = /^ingredient(\d+)$/u.exec(field.key);
+    if (!match) return [];
+    const quantity = fields.find(candidate => candidate.key === 'quantity' + match[1]);
+    return quantity ? [{ index: match[1], item: field, quantity }] : [];
+  });
+  const renderEconomyField = (field: PlaField, inTable = false) => {
+    if (!selected) return null;
+    const readOnly = field.readOnly || selected.readOnlyFields.includes(field.key);
+    const invalid = invalidField(field);
+    const changed = selectedValues[field.key] !== selected.values[field.key];
+    return <div className={`path-field editable-field-control ${readOnly ? 'editable-field-disabled' : ''} ${invalid ? 'editable-field-invalid' : changed ? 'editable-field-changed' : ''}`} key={field.key}>
+      <div className={inTable ? 'pla-matrix-field-label' : undefined}>
+        <FieldLabel htmlFor={`pla-field-${field.key}`} label={fieldLabel(field)} help={plaFieldHelp(t, kind, field, fieldLabel(field))} />
+      </div>
+      {renderInput(field)}
+      {readOnly ? <small className="editable-field-status">{translateLiteral('Read-only')}</small>
+        : invalid ? <small className="editable-field-error">{t('pla.invalid')}</small>
+        : changed ? <small className="editable-field-status">{translateLiteral('Changed')}</small> : null}
+    </div>;
+  };
   return <section className={`panel wide-panel pla-editor pla-economy-editor pla-economy-${kind}`} aria-labelledby="pla-editor-title">
     <div className="panel-heading"><Icon size={18} aria-hidden="true" /><h2 id="pla-editor-title">{t(workbenchSectionLocalization[section].label)}</h2>{refresh}</div>
     <SectionedEditorWorkspace sessionKey={sessionKey + ':' + kind} initialSection="data" compactFields
@@ -174,46 +195,54 @@ export function PlaEconomyWorkspace({ sessionKey, kind, page, selected, query, o
           </EditorDetailGroup>
           </>}
         </EditorWorkspaceSection>
-        <EditorWorkspaceSection id="data" label={isShop ? translateLiteral('Inventory') : kind === 'items' ? translateLiteral('Item Data') : t(`pla.kind.${kind}`)} modified={hasDraft(selected)} invalid={fields.some(invalidField)}>
-          {isShop ? <div className="shop-inventory-editor-grid" role="table" aria-label={translateLiteral('Inventory')}>
-            <div className="shop-inventory-editor-row shop-inventory-editor-heading pla-shop-slot-row" role="row"><span role="columnheader">{translateLiteral('Slot')}</span><span role="columnheader">{translateLiteral('Item')}</span><span role="columnheader">{translateLiteral('Status')}</span></div>
-            {selectedGroup.map((record, index) => <div key={record.id} role="row" onClick={() => onSelect(record.id)}
-              className={`shop-inventory-editor-row pla-shop-slot-row ${record.id === selected.id ? 'shop-inventory-editor-row-selected' : ''}`}>
-              <span role="cell">{index + 1}</span><div role="cell">{fields.map(field => <div className="path-field editable-field-control" key={field.key}>
-                <FieldLabel htmlFor={`pla-shop-${record.id}-${field.key}`} label={`${fieldLabel(field)} ${index + 1}`} help={plaFieldHelp(t, kind, field, fieldLabel(field))} />{renderRecordInput(record, field)}
-              </div>)}</div><span role="cell">{status(record)}</span>
-            </div>)}
+        <EditorWorkspaceSection id="data" label={isShop ? translateLiteral('Inventory') : kind === 'items' ? translateLiteral('Item Data') : t(`pla.kind.${kind}`)}
+          modified={isShop ? selectedGroup.some(hasDraft) : hasDraft(selected)} invalid={fields.some(invalidField)}>
+          {isShop ? <div className="pla-shop-inventory">
+            <table className="editor-data-matrix" aria-label={translateLiteral('Inventory')}>
+              <thead><tr><th scope="col">{translateLiteral('Slot')}</th>
+                {fields.map(field => {
+                  const label = fieldLabel(field);
+                  const help = plaFieldHelp(t, kind, field, label);
+                  return <th key={field.key} scope="col"><span className="editor-task-field-name">{label}
+                    {help ? <ContextHelp label={label}>{help}</ContextHelp> : null}
+                  </span></th>;
+                })}
+                <th scope="col">{translateLiteral('Status')}</th></tr></thead>
+              <tbody>{selectedGroup.map((record, index) => <tr key={record.id} data-selected={record.id === selected.id}>
+                <th scope="row"><button className="editor-record-table-select" type="button" aria-pressed={record.id === selected.id}
+                  aria-label={`${translateLiteral('Slot')} ${index + 1}`} onClick={() => onSelect(record.id)}>{index + 1}</button></th>
+                {fields.map(field => <td key={field.key}>
+                  <div className="path-field editable-field-control">
+                    <label className="pla-shop-field-label" htmlFor={`pla-shop-${record.id}-${field.key}`}>{fieldLabel(field)} {index + 1}</label>
+                    {renderRecordInput(record, field)}
+                  </div>
+                </td>)}
+                <td>{status(record)}</td>
+              </tr>)}</tbody>
+            </table>
           </div> : null}
-          {isItems ? <ItemDataLayout fields={fields} keyFor={field => field.key} hasIssue={invalidField} renderField={field => {
-            const readOnly = field.readOnly || selected.readOnlyFields.includes(field.key);
-            const invalid = invalidField(field);
-            const changed = selectedValues[field.key] !== selected.values[field.key];
-            return <div className={`path-field editable-field-control ${readOnly ? 'editable-field-disabled' : ''} ${invalid ? 'editable-field-invalid' : changed ? 'editable-field-changed' : ''}`}>
-              <FieldLabel htmlFor={`pla-field-${field.key}`} label={fieldLabel(field)} help={plaFieldHelp(t, kind, field, fieldLabel(field))} />
-              {renderInput(field)}
-              {readOnly ? <small className="editable-field-status">{translateLiteral('Read-only')}</small>
-                : invalid ? <small className="editable-field-error">{t('pla.invalid')}</small>
-                : changed ? <small className="editable-field-status">{translateLiteral('Changed')}</small> : null}
-            </div>;
-          }} /> : !isShop ? <div className="pla-data-groups">
-            {groupFields.filter(group => group.fields.length > 0).map(group =>
-              <fieldset className="pla-data-group" key={group.title}><legend>{group.title}</legend>
-                <div className={kind === 'crafting' ? 'pla-data-pairs' : undefined}>
-                  {group.fields.map(field => {
-                    const readOnly = field.readOnly || selected.readOnlyFields.includes(field.key);
-                    const invalid = invalidField(field);
-                    const changed = selectedValues[field.key] !== selected.values[field.key];
-                    return <div className={`path-field editable-field-control ${readOnly ? 'editable-field-disabled' : ''} ${invalid ? 'editable-field-invalid' : changed ? 'editable-field-changed' : ''}`} key={field.key}>
-                      <FieldLabel htmlFor={`pla-field-${field.key}`} label={fieldLabel(field)} help={plaFieldHelp(t, kind, field, fieldLabel(field))} />
-                      {renderInput(field)}
-                      {readOnly ? <small className="editable-field-status">{translateLiteral('Read-only')}</small>
-                        : invalid ? <small className="editable-field-error">{t('pla.invalid')}</small>
-                        : changed ? <small className="editable-field-status">{translateLiteral('Changed')}</small> : null}
-                    </div>;
-                  })}
-                </div>
-              </fieldset>)}
-          </div> : null}
+          {isItems ? <ItemDataLayout fields={fields} keyFor={field => field.key} hasIssue={invalidField}
+            renderField={field => renderEconomyField(field)} /> : !isShop ? (
+            <div className="editor-task-groups">
+              {groupFields.map(group => {
+                const isIngredients = kind === 'crafting' && group.title === t('pla.kind.crafting') && ingredientSlots.length > 0;
+                const groupFields = isIngredients ? group.fields.filter(field => !ingredientSlots.some(slot => slot.item === field || slot.quantity === field)) : group.fields;
+                if (!isIngredients && groupFields.length === 0) return null;
+                return <fieldset className="editable-field-group" key={group.title}>
+                  <legend>{group.title}</legend>
+                  {isIngredients ? <table className="editor-data-matrix pla-recipe-matrix" aria-label={group.title}>
+                    <thead><tr><th scope="col">{translateLiteral('Slot')}</th><th scope="col">{translateLiteral('Ingredient')}</th>
+                      <th scope="col">{translateLiteral('Quantity')}</th></tr></thead>
+                    <tbody>{ingredientSlots.map(slot => <tr key={slot.index}>
+                      <th scope="row">{slot.index}</th><td>{renderEconomyField(slot.item, true)}</td>
+                      <td>{renderEconomyField(slot.quantity, true)}</td>
+                    </tr>)}</tbody>
+                  </table> : null}
+                  <div className="pokemon-instance-field-list">{groupFields.map(field => renderEconomyField(field))}</div>
+                </fieldset>;
+              })}
+            </div>
+          ) : null}
           {selected.relatedRecords.length ? <div className="pla-related-records"><h4>{t('pla.sharedUses', { count: selected.relatedRecords.length })}</h4>
             <ul>{selected.relatedRecords.map((related, index) => <li key={`${related.kind}:${related.id}:${index}`}><span>{t(`pla.related.${related.kind}`)}</span>: <span data-localization-ignore="true">{related.label}</span></li>)}</ul>
           </div> : null}

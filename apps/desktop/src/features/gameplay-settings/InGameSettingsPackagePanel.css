@@ -9,7 +9,24 @@
   min-width: 0;
   padding: clamp(0.9rem, 1.6vw, 1.25rem);
   width: 100%;
+  container-type: inline-size;
 }
+
+.in-game-settings-package__workspace {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 25rem), 1fr));
+  align-items: start;
+  gap: .75rem;
+}
+
+.in-game-settings-package__target,
+.in-game-settings-package__operation {
+  display: grid;
+  gap: .75rem;
+  min-width: 0;
+}
+
+.in-game-settings-package__workspace:empty { display: none; }
 
 .in-game-settings-package__destination {
   display: flex;

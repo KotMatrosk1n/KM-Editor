@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 import { ContextHelp } from '../../components/ContextHelp';
-import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
+import { EditorRecordTable } from '../../components/EditorRecordTable';
+import { EditorWorkspaceHeader, EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowRightLeft, LockKeyhole, RotateCcw, Save, X } from 'lucide-react';
 import { type TitanSwapperUpdate, type TitanSwapperWorkflow } from '../../bridge/titanSwapperContracts';
@@ -117,37 +118,43 @@ export function TitanSwapperSection({ workflow, isStaging, isEditing, isEditStar
         </button>
         <span className="draft-action-summary">{t('titanSwapper.draftCount', { count: entries.length })}</span>
       </EditorSessionBarActions> : null}
-      <RecordEditorWorkspace id="titanSwapper" className="titan-swapper-layout" browserControls={
+      <RecordEditorWorkspace id="titanSwapper" className="titan-record-workspace" initialSection="combat" browserControls={
         <label className="editor-browser-filter"><span>{t('titanSwapper.search')}</span>
           <input type="search" value={search} onChange={event => setSearch(event.target.value)} />
         </label>
       } browser={
-        <nav className="titan-swapper-list editor-record-ledger" aria-label={t('titanSwapper.encounters')}>
-          <div className="titan-swapper-rows">{rows.map(row => <button type="button" key={row.id}
-            className="titan-swapper-row" aria-pressed={selected?.id === row.id} onClick={() => setSelectedId(row.id)}>
+        <EditorRecordTable label={t('titanSwapper.encounters')} identityLabel={translateLiteral('Pokémon')}
+          rows={rows} rowId={row => row.id} selection={selected?.id} onSelect={row => setSelectedId(row.id)}
+          identity={row => <span className="titan-swapper-identity">
             <span className="titan-swapper-row-sprite">{renderPokemon(row.storySpecies, speciesName(row.storySpecies))}</span>
-            <span><strong data-localization-ignore="true">{speciesName(row.storySpecies)}</strong><span>{phaseName(row.phase)}</span>
-              <small>{entries.some(draft => draft.rowId === row.id) ? t('titanSwapper.edited')
-                : value(row, 'enabled') === '1' ? t('titanSwapper.active') : t('titanSwapper.original')}</small></span>
-          </button>)}</div>
-          {rows.length === 0 ? <p className="muted">{t('titanSwapper.empty')}</p> : null}
-        </nav>
+            <strong data-localization-ignore="true">{speciesName(row.storySpecies)}</strong>
+          </span>}
+          columns={[
+            { id: 'phase', label: translateLiteral('Phase'), value: row => phaseName(row.phase) },
+            { id: 'combat', label: t('titanSwapper.combat'), value: row => value(row, 'enabled') === '1'
+              ? speciesName(Number(value(row, 'species'))) : speciesName(row.storySpecies) },
+            { id: 'state', label: translateLiteral('Status'), value: row => entries.some(draft => draft.rowId === row.id)
+              ? t('titanSwapper.edited') : value(row, 'enabled') === '1' ? t('titanSwapper.active') : t('titanSwapper.original') },
+          ]} empty={t('titanSwapper.empty')} />
       }>
-        {selected ? <section className="titan-swapper-detail" aria-labelledby="titan-swapper-selected">
-          <div className="titan-swapper-detail-heading"><div><h3 id="titan-swapper-selected" data-localization-ignore="true">{speciesName(selected.storySpecies)}</h3>
-            <p className="muted">{phaseName(selected.phase)}</p></div>
-            <button type="button" className="secondary-button" disabled={!canEdit || !enabled}
-              onClick={() => restore(selected)}><RotateCcw size={16} aria-hidden="true" />{t('titanSwapper.restore')}</button>
-          </div>
-          <div className="titan-swapper-comparison">
-            <section className="titan-swapper-card"><h4><LockKeyhole size={16} aria-hidden="true" />{t('titanSwapper.story')}</h4>
-              <div className="titan-swapper-preview">{renderPokemon(selected.storySpecies, speciesName(selected.storySpecies))}
-                <strong data-localization-ignore="true">{speciesName(selected.storySpecies)}</strong></div>
-              <p className="muted">{t('titanSwapper.storyHelp')}</p>
-            </section>
-            <section className="titan-swapper-card titan-swapper-combat"><h4>{t('titanSwapper.combat')}</h4>
-              <div className="titan-swapper-preview">{renderPokemon(combatSpecies, speciesName(combatSpecies))}
-                <strong data-localization-ignore="true">{speciesName(combatSpecies)}</strong></div>
+        {selected ? <>
+          <EditorWorkspaceHeader afterBrowser>
+            <div className="editor-record-context">
+              <h3 data-localization-ignore="true">{speciesName(selected.storySpecies)}</h3>
+              <span>{phaseName(selected.phase)}</span>
+              <button type="button" className="secondary-button compact-button" disabled={!canEdit || !enabled}
+                onClick={() => restore(selected)}><RotateCcw size={16} aria-hidden="true" />{t('titanSwapper.restore')}</button>
+            </div>
+          </EditorWorkspaceHeader>
+          <EditorWorkspaceSection id="combat" label={t('titanSwapper.combat')}
+            modified={entries.some(draft => draft.rowId === selected.id)}>
+            <div className="editor-task-groups">
+              <div className="titan-swapper-preview">
+                {renderPokemon(combatSpecies, speciesName(combatSpecies))}
+                <strong data-localization-ignore="true">{speciesName(combatSpecies)}</strong>
+                <ContextHelp label={t('titanSwapper.combat')}>{t('titanSwapper.combatHelp')}</ContextHelp>
+              </div>
+              <div className="titan-swapper-combat-fields">
               <label className="titan-swapper-enable"><input type="checkbox" checked={enabled} disabled={!canEdit}
                 onChange={event => setValue(selected, 'enabled', event.target.checked ? '1' : '0')} />{t('titanSwapper.enable')}</label>
               <div className="titan-swapper-fields"><div className="field"><span>{t('titanSwapper.field.species')}</span>
@@ -159,13 +166,24 @@ export function TitanSwapperSection({ workflow, isStaging, isEditing, isEditStar
                 <input type="text" inputMode="numeric" disabled={!canEdit || !enabled} value={value(selected, 'level')}
                   aria-invalid={drafts[`${selected.id}/level`] ? invalidDraft(drafts[`${selected.id}/level`]) || undefined : undefined}
                   onChange={event => setValue(selected, 'level', event.target.value)} /></label></div>
-              <p className="muted">{t('titanSwapper.combatHelp')}</p>
-            </section>
-          </div>
-          <p className="titan-swapper-phase-help">{t('titanSwapper.phaseHelp')}</p>
-          <details><summary>{t('titanSwapper.details')}</summary><p data-localization-ignore="true"><code>{selected.id}</code></p>
-            <p>{t('titanSwapper.outputHelp')}</p></details>
-        </section> : null}
+              </div>
+            </div>
+          </EditorWorkspaceSection>
+          <EditorWorkspaceSection id="story" label={t('titanSwapper.story')}>
+            <div className="editor-task-groups">
+              <div className="titan-swapper-preview"><LockKeyhole size={16} aria-hidden="true" />
+                {renderPokemon(selected.storySpecies, speciesName(selected.storySpecies))}
+                <strong data-localization-ignore="true">{speciesName(selected.storySpecies)}</strong>
+                <ContextHelp label={t('titanSwapper.story')}>{t('titanSwapper.storyHelp')}</ContextHelp>
+              </div>
+              <dl className="editor-detail-list">
+                <div><dt>{translateLiteral('Phase')}</dt><dd>{phaseName(selected.phase)}<p>{t('titanSwapper.phaseHelp')}</p></dd></div>
+                <div><dt>{translateLiteral('ID')}</dt><dd data-localization-ignore="true"><code>{selected.id}</code></dd></div>
+                <div><dt>{translateLiteral('Output')}</dt><dd>{t('titanSwapper.outputHelp')}</dd></div>
+              </dl>
+            </div>
+          </EditorWorkspaceSection>
+        </> : null}
       </RecordEditorWorkspace>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />

@@ -1,8 +1,4 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 .obedience-editor { min-width: 0; }
 .obedience-editor .panel-heading { flex-wrap: wrap; }
-.obedience-editor p, .obedience-card { overflow-wrap: anywhere; }
-.obedience-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 16px; }
-.obedience-card { display: grid; gap: 8px; min-width: 0; padding: 16px; border: 1px solid var(--border-color, #394453); border-radius: 10px; }
-.obedience-card > span:first-child { font-weight: 600; }
-.obedience-card input { width: 100%; min-width: 0; box-sizing: border-box; }
+.obedience-table input { inline-size: min(100%, 8ch); }

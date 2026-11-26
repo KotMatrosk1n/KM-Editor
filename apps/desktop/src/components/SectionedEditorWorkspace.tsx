@@ -30,16 +30,19 @@ export function EditorRecordHeading({ name, id }: { name: string; id?: string | 
 
 export const EditorLayoutScope = createContext('project');
 
-export function RecordEditorWorkspace({ id, className, browser, browserControls, browserFooter, browserVisibleRows = 4, children }: {
-  id: string; className: string; browser: ReactNode; browserControls?: ReactNode; browserFooter?: ReactNode;
-  browserVisibleRows?: number; children: ReactNode;
+export function RecordEditorWorkspace({ id, className, browser, browserControls, browserFooter, browserVisibleRows = 4,
+  initialSection, sessionBar, activeSectionRequest, children }: {
+  id: string; className: string; browser?: ReactNode; browserControls?: ReactNode; browserFooter?: ReactNode;
+  browserVisibleRows?: number; initialSection?: string; sessionBar?: ReactNode;
+  activeSectionRequest?: WorkspaceProps['activeSectionRequest']; children: ReactNode;
 }) {
   const scope = useContext(EditorLayoutScope);
   const { t } = useLocalization();
   return <div className={`${className} editor-record-layout`}>
-    <SectionedEditorWorkspace sessionKey={`${scope}:${id}`} initialSection="record"
-      compactFields alwaysOpen browser={browser} browserControls={browserControls} browserFooter={browserFooter} browserVisibleRows={browserVisibleRows}>
-      <EditorWorkspaceSection id="record" label={t('editorSections.details')}>{children}</EditorWorkspaceSection>
+    <SectionedEditorWorkspace sessionKey={`${scope}:${id}`} initialSection={initialSection ?? 'record'}
+      compactFields alwaysOpen={!initialSection} sessionBar={sessionBar} activeSectionRequest={activeSectionRequest}
+      browser={browser} browserControls={browserControls} browserFooter={browserFooter} browserVisibleRows={browserVisibleRows}>
+      {initialSection ? children : <EditorWorkspaceSection id="record" label={t('editorSections.details')}>{children}</EditorWorkspaceSection>}
     </SectionedEditorWorkspace>
   </div>;
 }
@@ -152,10 +155,13 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
         const style = getComputedStyle(browserTable);
         const rowHeight = parseFloat(style.getPropertyValue('--editor-row-height')) || 40;
         const headingHeight = browserTable.querySelector('[role="row"]')?.getBoundingClientRect().height ?? rowHeight;
+        const firstRowHeight = browserTable instanceof HTMLTableElement
+          ? browserTable.tBodies[0]?.rows[0]?.getBoundingClientRect().height ?? rowHeight
+          : rowHeight;
         const borders = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
         const scrollbar = browserTable.offsetHeight - browserTable.clientHeight - borders;
         setDefaultTableHeight(Math.ceil(headingHeight + browserVisibleRows * rowHeight + borders + scrollbar));
-        minimumTableHeight = Math.ceil(headingHeight + rowHeight + borders + scrollbar);
+        minimumTableHeight = Math.ceil(headingHeight + Math.max(rowHeight, firstRowHeight) + borders + scrollbar);
       }
       setTableMinimum(minimumTableHeight);
       // Leave room for the selected record below its browser.
@@ -164,6 +170,8 @@ function WorkspaceSession({ sessionKey, initialSection = 'details', browser, bro
     const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); };
     const observer = new ResizeObserver(schedule);
     if (chrome.current) observer.observe(chrome.current);
+    const nativeTable = table.current?.querySelector(':scope > table');
+    if (nativeTable) observer.observe(nativeTable);
     const sessionElement = root.current?.querySelector(':scope > .editor-session-bar');
     if (sessionElement) observer.observe(sessionElement);
     window.addEventListener('resize', schedule);

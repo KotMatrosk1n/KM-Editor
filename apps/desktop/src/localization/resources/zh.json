@@ -987,6 +987,7 @@
     "modelViewer.category.objects": "物体与道具",
     "modelViewer.category.environment": "环境",
     "modelViewer.category.other": "其他或未分类",
+    "modelViewer.variantCount": "变体",
     "modelViewer.variant": "形态 {form}，变体 {gender}",
     "modelViewer.shiny": "异色",
     "modelViewer.selectModel": "选择模型",

@@ -6,6 +6,7 @@ import { Search } from 'lucide-react';
 import type { PlaField, PlaPage, PlaRecord } from '../../bridge/plaProjectBridge';
 import { EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, SectionedEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { FieldLabel } from '../../components/FieldLabel';
+import { ContextHelp } from '../../components/ContextHelp';
 import { InteractiveTableRow, VirtualTableBody } from '../../components/VirtualTable';
 import { Metric } from '../../components/workflowPanels';
 import { getWorkbenchCapabilityRegistration } from '../../workbench/capabilityRegistry';
@@ -53,11 +54,37 @@ export function PlaBattleWorkspace({ sessionKey, kind, page, selected, query, of
   const status = (record: PlaRecord) => translateLiteral(hasDraft(record) ? 'Draft' : pendingIds.has(record.id) ? 'Pending changes' : isProtected(record) ? 'Read-only' : 'Editable');
   const source = selected ? kind === 'trainers' ? `bin/trainer/${selectedGroup}.bin`
     : `bin/pokemon/data/${kind === 'gifts' ? 'poke_add' : 'poke_event_encount'}.bin` : '';
-  const fieldGroups = [
-    { title: translateLiteral('Pokemon'), fields: page?.fields.filter(field => ['species', 'form', 'battleLevel', 'gender'].includes(field.key)) ?? [] },
-    { title: t('pla.group.effort'), fields: page?.fields.filter(field => field.key.startsWith('effort')) ?? [] },
-    { title: translateLiteral('Moves'), fields: page?.fields.filter(field => /^(move|mastered)[1-4]$/u.test(field.key)) ?? [] }
-  ];
+  const fields = page?.fields ?? [];
+  const moves = fields.filter(field => /^(move|mastered)[1-4]$/u.test(field.key));
+  const effort = fields.filter(field => field.key.startsWith('effort'));
+  const identity = fields.filter(field => !moves.includes(field) && !effort.includes(field));
+  const renderField = (field: PlaField) => {
+    if (!selected) return null;
+    const changed = valuesFor(selected)[field.key] !== selected.values[field.key];
+    const readOnly = field.readOnly || selected.readOnlyFields.includes(field.key);
+    return <div className={`path-field editable-field-control ${changed ? 'editable-field-changed' : ''} ${readOnly ? 'editable-field-disabled' : ''}`} key={field.key}>
+      <FieldLabel htmlFor={`pla-field-${field.key}`} label={fieldLabel(field)} help={readOnly
+        ? t(isProtected(selected) ? 'pla.protectedBattle' : 'pla.fixedBattleIdentity') : plaFieldHelp(t, kind, field, fieldLabel(field))} />
+      {renderInput(field)}
+      {readOnly || changed ? <small className="editable-field-status">{translateLiteral(readOnly ? 'Read-only' : 'Changed')}</small> : null}
+    </div>;
+  };
+  const pokemonFields = <fieldset className="editable-field-group">
+    <legend>{translateLiteral('Pokemon')}</legend>
+    <div className="pokemon-instance-field-list">{identity.map(renderField)}</div>
+  </fieldset>;
+  const battleFields = <>
+    {moves.length ? <fieldset className="editable-field-group pla-battle-moves">
+      <legend>{translateLiteral('Moves')}</legend>
+      <div className="pla-move-slots">{[1, 2, 3, 4].map(slot => <div className="pla-move-slot" key={slot}>
+        {moves.filter(field => field.key.endsWith(String(slot))).map(renderField)}
+      </div>)}</div>
+    </fieldset> : null}
+    {effort.length ? <fieldset className="editable-field-group">
+      <legend>{t('pla.group.effort')}</legend>
+      <div className="pokemon-instance-field-list">{effort.map(renderField)}</div>
+    </fieldset> : null}
+  </>;
   return <section className="panel wide-panel pla-battle-editor" aria-labelledby="pla-battle-heading">
     <div className="panel-heading"><Icon size={18} aria-hidden="true" /><h2 id="pla-battle-heading">{title}</h2>{refresh}</div>
     <SectionedEditorWorkspace sessionKey={sessionKey + ':' + kind} initialSection="data" compactFields
@@ -109,7 +136,7 @@ export function PlaBattleWorkspace({ sessionKey, kind, page, selected, query, of
           <EditorRecordHeading name={kind === 'trainers' ? trainerName(selected) : pokemonLabel(selected)} id={selected.id} />
         </EditorWorkspaceHeader>
         <EditorWorkspaceSection id="details" label={t('editorSections.details')}>
-          <p className="field-note">{t(`pla.notice.${kind}`)}</p>
+          <ContextHelp label={title}>{t(`pla.notice.${kind}`)}</ContextHelp>
           {kind !== 'trainers' ? <div className="pokemon-summary-card">
             {renderPokemon?.(valuesFor(selected), pokemonName(selected), page?.pokemonSpriteNames[valuesFor(selected).species], 'pokemon-summary-sprite')}
             <div className="pokemon-summary-main"><strong className="pokemon-summary-title">{pokemonLabel(selected)}</strong>
@@ -126,8 +153,11 @@ export function PlaBattleWorkspace({ sessionKey, kind, page, selected, query, of
         </EditorWorkspaceSection>
         <EditorWorkspaceSection id="data" label={translateLiteral(kind === 'trainers' ? 'Party' : 'Pokemon')} modified={hasDraft(selected)}>
           <div className="trainer-edit-form">
-            {clipboard?.content}
-            {kind === 'trainers' ? <div className="trainer-party-card-grid" aria-label={translateLiteral('Trainer party Pokemon')}>
+            {kind === 'trainers' ? <>
+              <div className="editor-record-context pla-party-toolbar">
+                <strong>{translateLiteral('Trainer party Pokemon')}</strong>{clipboard?.content}
+              </div>
+              <div className="trainer-party-card-grid" aria-label={translateLiteral('Trainer party Pokemon')}>
               {party.map(record => <button type="button" key={record.id} className="trainer-party-card" aria-pressed={selected.id === record.id} {...clipboard?.bind(record.id)}
                 aria-label={`${translateLiteral('Slot')} ${Number(record.id.slice(record.id.lastIndexOf(':') + 1)) + 1}: ${pokemonLabel(record)}`}
                 onClick={() => onSelect(record.id)}>
@@ -135,22 +165,18 @@ export function PlaBattleWorkspace({ sessionKey, kind, page, selected, query, of
                 <strong data-localization-ignore="true">{pokemonLabel(record)}</strong>
                 <span>{translateLiteral('Level')} {valuesFor(record).battleLevel}{hasDraft(record) ? ` (${translateLiteral('Draft')})` : ''}</span>
               </button>)}
-            </div> : null}
-            <div className="trainer-party-edit-stack"><div className="editable-field-groups">
-              {fieldGroups.map(group => <fieldset className="editable-field-group" key={group.title}><legend>{group.title}</legend><div className="editable-field-grid">
-                {group.fields.map(field => {
-                  const changed = valuesFor(selected)[field.key] !== selected.values[field.key];
-                  const readOnly = field.readOnly || selected.readOnlyFields.includes(field.key);
-                  return <div className={`path-field editable-field-control ${changed ? 'editable-field-changed' : ''} ${readOnly ? 'editable-field-disabled' : ''}`} key={field.key}>
-                    <FieldLabel htmlFor={`pla-field-${field.key}`} label={fieldLabel(field)} help={readOnly ? t(isProtected(selected) ? 'pla.protectedBattle' : 'pla.fixedBattleIdentity') : plaFieldHelp(t, kind, field, fieldLabel(field))} />
-                    {renderInput(field)}
-                    {readOnly || changed ? <small className="editable-field-status">{translateLiteral(readOnly ? 'Read-only' : 'Changed')}</small> : null}
-                  </div>;
-                })}
-              </div></fieldset>)}
-            </div></div>
+              </div>
+            </> : null}
+            <div className="editor-task-groups">
+              {pokemonFields}
+              {kind === 'trainers' ? battleFields : null}
+            </div>
           </div>
         </EditorWorkspaceSection>
+        {kind !== 'trainers' && (moves.length > 0 || effort.length > 0) ? <EditorWorkspaceSection
+          id="battle" label={translateLiteral('Moves & Effort')} modified={hasDraft(selected)}>
+          <div className="editor-task-groups">{battleFields}</div>
+        </EditorWorkspaceSection> : null}
       </> : <p className="empty-copy">{t('pla.empty')}</p>}
     </SectionedEditorWorkspace>
   </section>;

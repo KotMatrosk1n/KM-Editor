@@ -69,14 +69,17 @@ export function PokeJobsSection({ workflow, session, isEditing, isEditStarting, 
         </button>
         <span className="draft-action-summary">{t(dirty ? 'pokeJobs.draft' : pending !== null ? 'pokeJobs.staged' : 'pokeJobs.clean')}</span>
       </EditorSessionBarActions> : null}
-      <div className="editor-setting-row">
-        <label className="poke-jobs-setting">
-        <input type="checkbox" checked={desired} disabled={!canEdit} aria-describedby="poke-jobs-help"
-          onChange={event => { setDraft(event.target.checked); setFailed(false); }} />
-        <span><strong>{t('pokeJobs.title')}</strong><span id="poke-jobs-help">{t('pokeJobs.help')}</span></span>
-      </label>
+      <div className="editor-setting-row editor-record-context">
+        <div className="editor-record-action-rail">
+          <label className="poke-jobs-setting">
+            <input type="checkbox" checked={desired} disabled={!canEdit}
+              onChange={event => { setDraft(event.target.checked); setFailed(false); }} />
+            <strong>{t('pokeJobs.title')}</strong>
+          </label>
+          <ContextHelp label={t('pokeJobs.title')}>{t('pokeJobs.help')}</ContextHelp>
+        </div>
         <p role="status">{t('pokeJobs.current', { value: t(workflow?.disabled == null ? 'pokeJobs.unavailable'
-        : workflow.disabled ? 'pokeJobs.disabled' : 'pokeJobs.enabled') })}</p>
+          : workflow.disabled ? 'pokeJobs.disabled' : 'pokeJobs.enabled') })}</p>
       </div>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />

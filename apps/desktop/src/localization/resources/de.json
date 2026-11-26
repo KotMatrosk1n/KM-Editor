@@ -987,6 +987,7 @@
     "modelViewer.category.objects": "Objekte und Requisiten",
     "modelViewer.category.environment": "Umgebung",
     "modelViewer.category.other": "Andere oder nicht zugeordnet",
+    "modelViewer.variantCount": "Varianten",
     "modelViewer.variant": "Form {form}, Variante {gender}",
     "modelViewer.shiny": "Schillernd",
     "modelViewer.selectModel": "Modell auswählen",

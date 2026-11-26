@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { AdvancedEditorDetails } from '../../components/AdvancedEditorDetails';
 
+import { EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { ClipboardCheck, Save, Shirt, Trash2, Wrench } from 'lucide-react';
 import {
   Metric,
@@ -132,29 +132,61 @@ export function FashionUnlockSection({
         </div>
 
         {workflow ? (
-          <div className="flagwork-layout">
-            <div className="flagwork-stack">
-              <div className="exefs-table iv-screen-range-table" role="table" aria-label="Fashion Unlock reserved ranges">
-                <div className="exefs-row iv-screen-range-row exefs-row-heading" role="row">
-                  <span role="columnheader">Region</span>
-                  <span role="columnheader">Range</span>
+          <RecordEditorWorkspace id="fashion-unlock" className="fashion-unlock-layout" initialSection="install">
+            <EditorWorkspaceSection id="install" label={translateLiteral('Install')}>
+              <div className="form-actions">
+                <button
+                  className="primary-button"
+                  aria-busy={stagingAction === 'install'}
+                  disabled={!canStageInstall || isBusy || isInstallStaged}
+                  onClick={onStageInstall}
+                  type="button"
+                >
+                  <Wrench aria-hidden="true" size={16} />
+                  <span>{stagingAction === 'install' ? 'Staging install' : installLabel}</span>
+                </button>
+                <button
+                  className="danger-button"
+                  aria-busy={stagingAction === 'uninstall'}
+                  disabled={!canStageUninstall || isBusy || isUninstallStaged}
+                  onClick={onStageUninstall}
+                  type="button"
+                >
+                  <Trash2 aria-hidden="true" size={16} />
+                  <span>{stagingAction === 'uninstall' ? 'Staging uninstall' : 'Stage Uninstall'}</span>
+                </button>
+                {onCreateChangePlan && onApplyChangePlan ? (
+                  <>
+                    <button className="secondary-button" disabled={!canReviewPlan} onClick={onCreateChangePlan} type="button">
+                      <ClipboardCheck aria-hidden="true" size={16} />
+                      <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+                    </button>
+                    <button className="primary-button" disabled={!canApplyPlan} onClick={onApplyChangePlan} type="button">
+                      <Save aria-hidden="true" size={16} />
+                      <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                    </button>
+                  </>
+                ) : null}
+              </div>
+
+              <dl className="encounter-slot-detail">
+                <div><dt>Install message</dt><dd>{translateLiteral(workflow.installMessage)}</dd></div>
+                <div>
+                  <dt>Staged change</dt>
+                  <dd>{isInstallStaged ? 'Install or refresh' : isUninstallStaged ? 'Uninstall' : 'None'}</dd>
                 </div>
-                {workflow.reservedRegions.map((region) => (
-                  <div className="exefs-row iv-screen-range-row iv-screen-range-row-static" key={region.regionId} role="row">
-                    <span role="cell">{translateLiteral(region.label)}</span>
-                    <span data-localization-ignore="true" role="cell">{region.offsetLabel}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <aside aria-label="Fashion Unlock install details" className="encounter-inspector">
-              <div className="panel-heading">
-                <Shirt aria-hidden="true" size={18} />
-                <h3>Install Details</h3>
-              </div>
-
-              <AdvancedEditorDetails>
+                <div>
+                  <dt>Uninstall</dt>
+                  <dd>
+                    {isScarletViolet
+                      ? 'Restores only the Fashion Unlock-owned dress-up ownership bytes and keeps other exefs/main edits.'
+                      : 'Restores only Fashion Unlock-owned bytes and keeps other exefs/main edits.'}
+                  </dd>
+                </div>
+              </dl>
+            </EditorWorkspaceSection>
+            <EditorWorkspaceSection id="technical" label={translateLiteral('Technical')}>
+              <div className="editor-task-groups">
                 <dl className="item-provenance-list">
                   <div><dt>Install status</dt><dd>{formatBagHookStatus(workflow.installStatus)}</dd></div>
                   <div><dt>Game</dt><dd>{formatProjectGame(workflow.detectedGame, translateLiteral)}</dd></div>
@@ -172,62 +204,21 @@ export function FashionUnlockSection({
                   <div><dt>Layer</dt><dd>{formatSourceLayer(workflow.provenance.sourceLayer)}</dd></div>
                   <div><dt>File state</dt><dd>{formatFileState(workflow.provenance.fileState)}</dd></div>
                 </dl>
-              </AdvancedEditorDetails>
-
-              <div className="encounter-edit-form">
-                <div className="form-actions">
-                  <button
-                    className="primary-button"
-                    aria-busy={stagingAction === 'install'}
-                    disabled={!canStageInstall || isBusy || isInstallStaged}
-                    onClick={onStageInstall}
-                    type="button"
-                  >
-                    <Wrench aria-hidden="true" size={16} />
-                    <span>{stagingAction === 'install' ? 'Staging install' : installLabel}</span>
-                  </button>
-                  <button
-                    className="danger-button"
-                    aria-busy={stagingAction === 'uninstall'}
-                    disabled={!canStageUninstall || isBusy || isUninstallStaged}
-                    onClick={onStageUninstall}
-                    type="button"
-                  >
-                    <Trash2 aria-hidden="true" size={16} />
-                    <span>{stagingAction === 'uninstall' ? 'Staging uninstall' : 'Stage Uninstall'}</span>
-                  </button>
-                  {onCreateChangePlan && onApplyChangePlan ? (
-                    <>
-                      <button className="secondary-button" disabled={!canReviewPlan} onClick={onCreateChangePlan} type="button">
-                        <ClipboardCheck aria-hidden="true" size={16} />
-                        <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
-                      </button>
-                      <button className="primary-button" disabled={!canApplyPlan} onClick={onApplyChangePlan} type="button">
-                        <Save aria-hidden="true" size={16} />
-                        <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
-                      </button>
-                    </>
-                  ) : null}
+                <div className="exefs-table iv-screen-range-table" role="table" aria-label="Fashion Unlock reserved ranges">
+                  <div className="exefs-row iv-screen-range-row exefs-row-heading" role="row">
+                    <span role="columnheader">Region</span>
+                    <span role="columnheader">Range</span>
+                  </div>
+                  {workflow.reservedRegions.map((region) => (
+                    <div className="exefs-row iv-screen-range-row iv-screen-range-row-static" key={region.regionId} role="row">
+                      <span role="cell">{translateLiteral(region.label)}</span>
+                      <span data-localization-ignore="true" role="cell">{region.offsetLabel}</span>
+                    </div>
+                  ))}
                 </div>
-
-                <dl className="encounter-slot-detail">
-                  <div><dt>Install message</dt><dd>{translateLiteral(workflow.installMessage)}</dd></div>
-                  <div>
-                    <dt>Staged change</dt>
-                    <dd>{isInstallStaged ? 'Install or refresh' : isUninstallStaged ? 'Uninstall' : 'None'}</dd>
-                  </div>
-                  <div>
-                    <dt>Uninstall</dt>
-                    <dd>
-                      {isScarletViolet
-                        ? 'Restores only the Fashion Unlock-owned dress-up ownership bytes and keeps other exefs/main edits.'
-                        : 'Restores only Fashion Unlock-owned bytes and keeps other exefs/main edits.'}
-                    </dd>
-                  </div>
-                </dl>
               </div>
-            </aside>
-          </div>
+            </EditorWorkspaceSection>
+          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">Open Fashion Unlock from Advanced Editors to inspect ownership getter sites.</p>
         )}

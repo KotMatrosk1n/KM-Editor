@@ -3,19 +3,25 @@
 .sectioned-editor-workspace .pla-controls { gap: 8px; margin-block: 0; }
 .pla-record-detail { display: block; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pla-editor .editable-field-groups,
-.pla-battle-editor .editable-field-groups,
-.pla-wild-editor .editable-field-groups { grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); }
+.pla-battle-editor .editable-field-groups { grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); }
 .pla-pokemon-tutors-block { padding: 14px; background: var(--color-canvas); border: 1px solid var(--color-border); border-radius: 8px; }
 .pla-wild-editor .pla-wild-row { grid-template-columns: minmax(100px, 1fr) minmax(130px, 1.2fr); }
 .pla-wild-editor .pla-wild-references { max-height: 14rem; overflow: auto; overflow-wrap: anywhere; }
-.pla-wild-editor .trainer-party-card-grid { max-height: 25rem; overflow: auto; }
-@container (max-width: 68rem) {
-  .pla-wild-editor .encounters-layout { grid-template-columns: minmax(0, 1fr); }
-}
+.pla-wild-slots,
+.pla-wild-inspector { display: grid; align-content: start; gap: 8px; }
+.pla-wild-slots .editor-record-context > p { flex-basis: 100%; margin: 0; }
+.pla-wild-profile { display: block; color: var(--color-text-muted); font-weight: 400; }
+.pla-wild-inspector .editable-field-group legend { max-width: 100%; }
+.pla-wild-inspector .field-note { margin: 0; }
 .pla-control { display: flex; flex: 1 1 16rem; flex-direction: column; gap: .35rem; min-width: 0; }
 .pla-economy-editor .pla-economy-row { grid-template-columns: minmax(60px, .7fr) minmax(120px, 1.5fr) minmax(100px, 1fr) minmax(85px, .7fr); }
-.pla-economy-editor .pla-shop-slot-row { grid-template-columns: 42px minmax(100px, 1fr) minmax(85px, .5fr); }
-.pla-economy-editor .shop-inventory-editor-grid { grid-column: 1 / -1; max-height: 20rem; overflow: auto; }
+.pla-shop-inventory { max-height: 22rem; overflow: auto; overscroll-behavior: contain; }
+.pla-shop-inventory th:first-child { width: 5rem; }
+.pla-shop-inventory th:last-child { width: 9rem; }
+.pla-shop-inventory tr[data-selected='true'] { background: var(--color-control-hover); }
+.pla-shop-field-label {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+}
 .pla-economy-editor .pla-related-records { grid-column: 1 / -1; }
 .pla-economy-editor .pla-related-records ul { max-height: 16rem; overflow: auto; padding-inline-start: 1.5rem; }
 .pla-economy-editor .pla-related-records li { overflow-wrap: anywhere; }
@@ -25,7 +31,12 @@
 .pla-pagination { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-top: 1rem; }
 .pla-battle-editor .pla-battle-row { grid-template-columns: 52px minmax(140px, 1.4fr) 64px minmax(110px, 1fr) minmax(88px, .8fr); }
 .pla-battle-editor .pla-pagination { margin-top: 1rem; }
-.pla-battle-editor .trainer-party-card-grid { margin-bottom: 1rem; }
+.pla-party-toolbar { margin-bottom: .5rem; }
+.pla-party-toolbar p { margin: 0; }
+.pla-battle-editor .trainer-party-card-grid { margin-bottom: .75rem; }
+.pla-move-slot { display: flex; flex-wrap: wrap; align-items: start; gap: 6px; padding: 4px 0; border-bottom: 1px solid var(--color-border); }
+.pla-move-slot:last-child { border-bottom: 0; }
+.pla-move-slot > .editable-field-control { flex: 1 1 8rem; min-width: 0; }
 .pla-battle-editor .technical-tool-notice p { margin: 0; }
 .pla-data-editor .items-row { grid-template-columns: 72px minmax(160px, 1fr) minmax(110px, .7fr); }
 .pla-data-editor .moves-row { grid-template-columns: 52px minmax(140px, 1fr) 90px 90px 64px 72px 52px minmax(96px, .8fr); }
@@ -68,3 +79,27 @@
 
 .pla-pokemon-section .learnset-add-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr)); gap: 10px; align-items: end; margin-top: 12px; }
 .pla-pokemon-section .learnset-add-grid .path-field { min-width: 0; }
+
+.pla-rule-matrix .editable-field-control,
+.pla-recipe-matrix .editable-field-control { min-width: 0; position: relative; }
+.pla-rule-matrix .pla-matrix-field-label label,
+.pla-recipe-matrix .editable-field-label-row label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.pla-rule-matrix .editable-field-control {
+  display: grid;
+  gap: 4px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+}
+.pla-rule-matrix .editable-field-control > small { grid-column: 1 / -1; }
+.pla-rule-matrix input,
+.pla-recipe-matrix input { min-width: 0; }
+.pla-rule-matrix th:first-child { width: 28%; }
+.pla-recipe-matrix th:first-child { width: 15%; }
+.pla-recipe-matrix th:nth-child(2) { width: 58%; }
+.pla-rule-groups { margin-top: 10px; }

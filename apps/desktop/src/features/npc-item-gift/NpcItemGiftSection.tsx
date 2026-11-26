@@ -21,6 +21,9 @@ import {
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
 import { FieldLabel } from '../../components/FieldLabel';
+import { ContextHelp } from '../../components/ContextHelp';
+import { EditorRecordTable } from '../../components/EditorRecordTable';
+import { EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
 import { useLocalization } from '../../localization';
 import { formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
@@ -139,6 +142,7 @@ export function NpcItemGiftSection({
     [workflow?.itemOptions]
   );
 
+  const [npcSearch, setNpcSearch] = useState('');
   const [selectedNpcId, setSelectedNpcId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<NpcGiftDrafts>(() => createDrafts(cleanSelections));
   const [quantityInputOverrides, setQuantityInputOverrides] = useState<Record<string, string>>(
@@ -447,131 +451,27 @@ export function NpcItemGiftSection({
     }));
   };
 
+  const npcSearchText = npcSearch.trim().toLocaleLowerCase();
+  const npcRows = npcTabGroups.flatMap(group => group.npcs.map(npc => ({ npc, group: group.label })))
+    .filter(({ npc, group }) => !npcSearchText ||
+      [npc.npcName, group, ...npc.gifts.flatMap(gift => [gift.location, gift.relativePath, formatNpcGiftLabel(gift, translateLiteral)])]
+        .some(value => translateLiteral(value).toLocaleLowerCase().includes(npcSearchText)));
+
   return (
     <>
       <section aria-labelledby="npc-item-gift-heading" className="panel wide-panel">
         <div className="panel-heading">
           <Gift aria-hidden="true" size={18} />
           <h2 id="npc-item-gift-heading">NPC Item Gift</h2>
-        </div>
-
-        <div className="items-toolbar exefs-toolbar">
-          <Metric label="NPCs" value={workflow?.stats.npcCount.toString() ?? '0'} />
-          <Metric label="Gift groups" value={workflow?.stats.giftCount.toString() ?? '0'} />
-          <Metric label="Sources" value={workflow?.stats.sourceFileCount.toString() ?? '0'} />
-          <Metric label="Items" value={workflow?.stats.itemOptionCount.toString() ?? '0'} />
-          <Metric
-            label="Staged"
-            value={translateLiteral(stagedNpcId ? getNpcName(orderedNpcs, stagedNpcId) : 'No')}
-          />
-        </div>
-
-        <div className="npc-item-gift-warning" role="note">
-          <TriangleAlert aria-hidden="true" size={18} />
-          <span>
+          <ContextHelp label={translateLiteral('NPC Item Gift')}>
             Stage, review, and apply one NPC before switching to another. This keeps each
             AMX script patch scoped to the item cells for that NPC and preserves other mods
             in the same files.
-          </span>
+          </ContextHelp>
         </div>
 
-        {workflow ? (
-          <div className="npc-item-gift-editor">
-            {hasInvalidStagedChange ? (
-              <div className="npc-item-gift-blocker" role="alert">
-                <TriangleAlert aria-hidden="true" size={18} />
-                <span>
-                  The staged NPC Item Gift entry is invalid. Discard it from Pending Changes
-                  before editing or reviewing this workflow.
-                </span>
-              </div>
-            ) : globalEditBlockers.length > 0 || dirtyGiftBlockers.length > 0 ? (
-              <div className="npc-item-gift-blocker" role="status">
-                <TriangleAlert aria-hidden="true" size={18} />
-                <div>
-                  <strong>
-                    {globalEditBlockers.length > 0
-                      ? 'This NPC cannot be edited yet.'
-                      : 'Some changed gifts cannot be staged yet.'}
-                  </strong>
-                  <ul>
-                    {[...globalEditBlockers, ...dirtyGiftBlockers].map((blocker) => (
-                      <li key={blocker}>{blocker}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            ) : null}
-
-            <div className="npc-item-gift-tab-groups">
-              {npcTabGroups.map((group) => (
-                <section className="npc-item-gift-tab-group" key={group.groupId}>
-                  <h3>{translateLiteral(group.label)}</h3>
-                  <div
-                    aria-label={formatNpcGroupAriaLabel(group.label)}
-                    className="npc-item-gift-tabs"
-                    role="group"
-                  >
-                    {group.npcs.map((npc) => {
-                      const isSelected = selectedNpc?.npcId === npc.npcId;
-                      const isStaged = stagedNpcId === npc.npcId;
-                      return (
-                        <button
-                          aria-pressed={isSelected}
-                          className={[
-                            'npc-item-gift-tab',
-                            isSelected ? 'is-selected' : '',
-                            isStaged ? 'is-staged' : ''
-                          ]
-                            .filter(Boolean)
-                            .join(' ')}
-                          key={npc.npcId}
-                          onClick={() => selectNpc(npc)}
-                          type="button"
-                        >
-                          <span>{translateLiteral(npc.npcName)}</span>
-                          {isStaged ? (
-                            <span className="npc-item-gift-staged-badge">Staged</span>
-                          ) : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-              ))}
-            </div>
-
-            {selectedNpc ? (
-              <div className="npc-item-gift-stack">
-                {selectedNpc.gifts.map((gift) => (
-                  <NpcItemGiftCard
-                    blockers={giftEditBlockers.get(gift.giftId) ?? []}
-                    disabled={
-                      !canEditWorkflow ||
-                      hasStagedChange ||
-                      (giftEditBlockers.get(gift.giftId)?.length ?? 0) > 0
-                    }
-                    gift={gift}
-                    itemOptions={workflow.itemOptions}
-                    key={gift.giftId}
-                    onItemChange={updateItem}
-                    onQuantityBlur={commitQuantity}
-                    onQuantityChange={updateQuantity}
-                    onRestoreDefault={restoreGiftDefault}
-                    quantityError={invalidQuantityGiftIds.has(gift.giftId)}
-                    quantityValue={
-                      quantityInputOverrides[gift.giftId] ?? (
-                        drafts[gift.giftId] ?? cleanSelections[gift.giftId]
-                      )?.quantity.toString() ?? ''
-                    }
-                    selection={drafts[gift.giftId] ?? cleanSelections[gift.giftId]}
-                  />
-                ))}
-              </div>
-            ) : (
-              <p className="empty-copy">No NPC item gifts are loaded.</p>
-            )}
-
+        {workflow ? <RecordEditorWorkspace id="npc-item-gift" className="npc-item-gift-editor" initialSection="gifts"
+          sessionBar={
             <div className="type-chart-actions npc-item-gift-actions">
               <button
                 aria-busy={isStaging}
@@ -605,9 +505,100 @@ export function NpcItemGiftSection({
               </button>
             </div>
 
+          }
+          browserControls={
+        <div className="items-toolbar">
+          <label className="search-box items-search">
+            <input type="search" aria-label={translateLiteral('Search NPCs')} placeholder={translateLiteral('Search NPCs')}
+              value={npcSearch} onChange={event => setNpcSearch(event.target.value)} />
+          </label>
+          <Metric label="NPCs" value={workflow?.stats.npcCount.toString() ?? '0'} />
+          <Metric label="Gift groups" value={workflow?.stats.giftCount.toString() ?? '0'} />
+          <Metric label="Sources" value={workflow?.stats.sourceFileCount.toString() ?? '0'} />
+          <Metric label="Items" value={workflow?.stats.itemOptionCount.toString() ?? '0'} />
+          <Metric
+            label="Staged"
+            value={translateLiteral(stagedNpcId ? getNpcName(orderedNpcs, stagedNpcId) : 'No')}
+          />
+        </div>
+
+          }
+          browser={<EditorRecordTable label={translateLiteral('NPC Item Gift')} identityLabel={translateLiteral('NPC')}
+            rows={npcRows} rowId={row => row.npc.npcId} identity={row => translateLiteral(row.npc.npcName)}
+            onSelect={row => selectNpc(row.npc)} selection={selectedNpc?.npcId}
+            empty={translateLiteral('No matching NPCs.')} columns={[
+              { id: 'category', label: translateLiteral('Category'), value: row => translateLiteral(row.group) },
+              { id: 'gifts', label: translateLiteral('Gift groups'), numeric: true, value: row => row.npc.gifts.length },
+              { id: 'status', label: translateLiteral('Status'), value: row => row.npc.npcId === stagedNpcId ? translateLiteral('Staged') : '' },
+            ]} />}>
+          <EditorWorkspaceHeader>
+            {hasInvalidStagedChange ? (
+              <div className="npc-item-gift-blocker" role="alert">
+                <TriangleAlert aria-hidden="true" size={18} />
+                <span>
+                  The staged NPC Item Gift entry is invalid. Discard it from Pending Changes
+                  before editing or reviewing this workflow.
+                </span>
+              </div>
+            ) : globalEditBlockers.length > 0 || dirtyGiftBlockers.length > 0 ? (
+              <div className="npc-item-gift-blocker" role="status">
+                <TriangleAlert aria-hidden="true" size={18} />
+                <div>
+                  <strong>
+                    {globalEditBlockers.length > 0
+                      ? 'This NPC cannot be edited yet.'
+                      : 'Some changed gifts cannot be staged yet.'}
+                  </strong>
+                  <ul>
+                    {[...globalEditBlockers, ...dirtyGiftBlockers].map((blocker) => (
+                      <li key={blocker}>{blocker}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            ) : null}
+
+          </EditorWorkspaceHeader>
+          {selectedNpc ? <EditorWorkspaceHeader afterBrowser>
+            <EditorRecordHeading name={translateLiteral(selectedNpc.npcName)} />
+          </EditorWorkspaceHeader> : null}
+          <EditorWorkspaceSection id="gifts" label={translateLiteral('Gifts')}>
+            {selectedNpc ? (
+              <div className="npc-item-gift-stack">
+                {selectedNpc.gifts.map((gift) => (
+                  <NpcItemGiftCard
+                    blockers={giftEditBlockers.get(gift.giftId) ?? []}
+                    disabled={
+                      !canEditWorkflow ||
+                      hasStagedChange ||
+                      (giftEditBlockers.get(gift.giftId)?.length ?? 0) > 0
+                    }
+                    gift={gift}
+                    itemOptions={workflow.itemOptions}
+                    key={gift.giftId}
+                    onItemChange={updateItem}
+                    onQuantityBlur={commitQuantity}
+                    onQuantityChange={updateQuantity}
+                    onRestoreDefault={restoreGiftDefault}
+                    quantityError={invalidQuantityGiftIds.has(gift.giftId)}
+                    quantityValue={
+                      quantityInputOverrides[gift.giftId] ?? (
+                        drafts[gift.giftId] ?? cleanSelections[gift.giftId]
+                      )?.quantity.toString() ?? ''
+                    }
+                    selection={drafts[gift.giftId] ?? cleanSelections[gift.giftId]}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="empty-copy">No NPC item gifts are loaded.</p>
+            )}
+
+          </EditorWorkspaceSection>
+          <EditorWorkspaceSection id="source" label={translateLiteral('Source')}>
             <NpcItemGiftSourceSummary sources={workflow.sources} />
-          </div>
-        ) : (
+          </EditorWorkspaceSection>
+        </RecordEditorWorkspace> : (
           <p className="empty-copy">Open NPC Item Gift from Advanced Editors.</p>
         )}
       </section>
@@ -992,10 +983,6 @@ function groupNpcTabs(npcs: NpcItemGiftNpcGroup[]): NpcItemGiftTabGroup[] {
 function getNpcTabGroupId(npc: NpcItemGiftNpcGroup) {
   const baseNpcId = getBaseNpcId(npc.npcId);
   return getGiftTabGroupId(baseNpcId, npc.gifts[0]);
-}
-
-function formatNpcGroupAriaLabel(label: string) {
-  return /\bNPCs?$/i.test(label) ? label : `${label} NPCs`;
 }
 
 function splitNpcGroupForTabs(npc: NpcItemGiftNpcGroup): NpcItemGiftNpcGroup[] {

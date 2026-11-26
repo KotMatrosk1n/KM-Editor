@@ -70,16 +70,19 @@ export function YCommSection({ workflow, session, isEditing, isEditStarting, isS
         </button>
         <span className="draft-action-summary">{t(dirty ? 'yComm.draft' : pending !== null ? 'yComm.staged' : 'yComm.clean')}</span>
       </EditorSessionBarActions> : null}
-      <div className="editor-setting-row">
-        <label className="y-comm-setting">
-        <input type="checkbox" checked={desired} disabled={!canEdit} aria-describedby="y-comm-help"
-          onChange={event => { setDraft(event.target.checked); setFailed(false); }} />
-        <span><strong>{t('yComm.title')}</strong><span id="y-comm-help">{t('yComm.help')}</span></span>
-      </label>
+      <div className="editor-setting-row editor-record-context">
+        <div className="editor-record-action-rail">
+          <label className="y-comm-setting">
+            <input type="checkbox" checked={desired} disabled={!canEdit}
+              onChange={event => { setDraft(event.target.checked); setFailed(false); }} />
+            <strong>{t('yComm.title')}</strong>
+          </label>
+          <ContextHelp label={t('yComm.title')}>{t('yComm.help')}</ContextHelp>
+        </div>
         <p role="status">{t('yComm.current', { value: t(workflow?.disabled == null ? 'yComm.unavailable'
-        : workflow.disabled ? 'yComm.disabled' : 'yComm.enabled') })}</p>
-      {needsRepair ? <p>{t('yComm.repair')}</p> : null}
+          : workflow.disabled ? 'yComm.disabled' : 'yComm.enabled') })}</p>
       </div>
+      {needsRepair ? <p role="status">{t('yComm.repair')}</p> : null}
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />
   </FocusedEditorWorkspace>;

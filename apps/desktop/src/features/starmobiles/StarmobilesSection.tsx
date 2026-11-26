@@ -1,12 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { useEffect, useRef, useState } from 'react';
-import { Check, LockKeyhole, RotateCcw, Save, Star, X } from 'lucide-react';
+import { LockKeyhole, RotateCcw, Save, Star, X } from 'lucide-react';
 import { starmobileFieldMaximum as maximum, starmobileFields, starmobileMoveFields, starmobileTraitFields, starmobileTypeOptions, type StarmobileUpdate, type StarmobilesWorkflow } from '../../bridge/starmobilesContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { FocusedEditorWorkspace } from '../../components/FocusedEditorWorkspace';
 import { EditorSessionBar, EditorSessionBarActions } from '../../components/EditorSessionBar';
-import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
+import { EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
+import { EditorRecordTable } from '../../components/EditorRecordTable';
+import { EditorDetailGroup, EditorDetailValue } from '../../components/EditorRecordDetails';
 import { ContextHelp } from '../../components/ContextHelp';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { WorkflowPanelOutputSections, type WorkflowPanelOutput } from '../../components/workflowPanels';
@@ -120,23 +122,29 @@ export function StarmobilesSection({ workflow, isStaging, isEditing, isEditStart
     const key = `${row.id}/${field}`;
     const draft = drafts[key];
     const fieldInvalid = draft !== undefined && draftInvalid(draft);
-    return <label className="field" key={field}>
+    return <label className="starmobiles-field-row" key={field}>
       <span>{t(`starmobiles.field.${field}`)}</span>
       <input aria-label={`${t(`starmobiles.boss.${bossNames[row.bossType] ?? 'unknown'}`)} ${t(`starmobiles.field.${field}`)}`}
         type="text" inputMode="numeric" disabled={!canEdit} title={t('starmobiles.range', { maximum: maximum(field) })}
         aria-invalid={fieldInvalid || undefined} className={draft ? 'starmobiles-input-edited' : undefined}
         value={drafts[key]?.value ?? String(source)}
         onChange={event => setValue(row, field, event.target.value)} />
+      {statFields.some(stat => stat === field) ? <span className="muted">{row.vanillaValues?.[field] ?? '—'}</span> : null}
     </label>;
   };
 
+  const typeLabel = (value: string | number | undefined) => value === undefined ? '—'
+    : translateLiteral(starmobileTypeOptions.find(option => option.value === Number(value))?.label ?? String(value));
+  const moveInvalid = invalidMoveOrder || entries.some(draft => draft.field.startsWith('move') && draftInvalid(draft));
+  const localError = invalidMoveOrder ? t('starmobiles.moveOrder') : invalid ? t('starmobiles.invalid') : failed ? t('starmobiles.failed') : null;
   return <FocusedEditorWorkspace className="starmobiles-editor">
     <section className="panel wide-panel starmobiles-panel" aria-labelledby="starmobiles-heading">
       <div className="panel-heading"><Star size={20} aria-hidden="true" /><h2 id="starmobiles-heading">{t('starmobiles.title')}</h2></div>
-    <RecordEditorWorkspace id="starmobiles" className="starmobiles-layout" browserVisibleRows={1} browserControls={<>
-    <EditorSessionBar canEdit={available && !!selected} isEditing={isEditing} isStarting={isEditStarting}
-      label={t('starmobiles.title')} onStart={onStartEditSession} />
-    {isEditing ? <EditorSessionBarActions>
+    <RecordEditorWorkspace id="starmobiles" className="starmobiles-layout" initialSection="battle"
+      browserVisibleRows={5}
+      sessionBar={<><EditorSessionBar canEdit={available && !!selected} isEditing={isEditing} isStarting={isEditStarting}
+        label={t('starmobiles.title')} onStart={onStartEditSession} />
+      {isEditing ? <EditorSessionBarActions>
       <button className="primary-button" type="button" aria-busy={isStaging || undefined}
         disabled={!canEdit || invalid || isStaging || entries.length === 0} onClick={() => void stage()}>
         {isStaging ? <RotateCcw className="button-busy-icon" size={16} aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}
@@ -148,33 +156,44 @@ export function StarmobilesSection({ workflow, isStaging, isEditing, isEditStart
       </button>
       <span className="draft-action-summary">{t('starmobiles.draftCount', { count: entries.length })}</span>
     </EditorSessionBarActions> : null}
-    </>} browser={<div className="starmobiles-selector" role="group" aria-label={t('starmobiles.select')}>
-      {rows.map(row => {
-        const edited = entries.some(draft => draft.rowId === row.id);
-        return <button type="button" key={row.id} aria-pressed={selected?.id === row.id}
-          className={`starmobiles-boss starmobiles-boss-${bossNames[row.bossType] ?? 'unknown'}`}
-          onClick={() => setSelectedId(row.id)}>
+      </>}
+      browser={<EditorRecordTable label={t('starmobiles.select')} identityLabel={t('starmobiles.title')}
+        rows={rows} rowId={row => row.id} selection={selected?.id} onSelect={row => setSelectedId(row.id)}
+        empty={t('starmobiles.empty')} identity={row => <>
           <span className="starmobiles-sprite" aria-hidden="true">
-            {bossSprites[row.bossType] ? <img src={`/sprites/starmobiles/${bossSprites[row.bossType]}.png`} alt="" width={40} height={40} /> : <Star size={24} />}
+            {bossSprites[row.bossType] ? <img src={`/sprites/starmobiles/${bossSprites[row.bossType]}.png`} alt="" width={32} height={32} /> : <Star size={20} />}
           </span>
-          <span className="starmobiles-boss-copy"><strong>{bossLabel(row.bossType)}</strong>
-            <span>{t('starmobiles.field.level')} <b>{(drafts[`${row.id}/level`]?.value ?? row.values.level) || '…'}</b></span>
-          </span>
-          <span className="starmobiles-boss-status">{edited ? t('starmobiles.edited') : null}{selected?.id === row.id ? <Check size={16} aria-hidden="true" /> : null}</span>
-        </button>;
-      })}
-    </div>}>
-    {selected ? <section className="starmobiles-detail" aria-labelledby="starmobiles-selected-heading">
-      <div className="starmobiles-detail-heading">
-        <h3 id="starmobiles-selected-heading">{t('starmobiles.selectedTitle', { boss: bossLabel(selected.bossType) })}</h3>
-        <div className="starmobiles-actions">
-        <button className="secondary-button" type="button" disabled={!canEdit || isStaging || !selected.vanillaValues}
-          title={t('starmobiles.resetVanillaHelp')} onClick={resetSelectedToVanilla}>
-          <RotateCcw size={16} aria-hidden="true" />{t('starmobiles.resetVanilla')}
-        </button>
+          <span>{bossLabel(row.bossType)}</span>
+        </>} columns={[
+          { id: 'level', label: t('starmobiles.field.level'), numeric: true, value: row => drafts[`${row.id}/level`]?.value ?? row.values.level ?? '—' },
+          { id: 'types', label: translateLiteral('Types'), value: row => {
+            const primary = drafts[`${row.id}/type1`]?.value ?? row.values.type1;
+            const secondary = drafts[`${row.id}/type2`]?.value ?? row.values.type2;
+            return secondary === undefined || Number(primary) === Number(secondary)
+              ? typeLabel(primary) : `${typeLabel(primary)} / ${typeLabel(secondary)}`;
+          } },
+          { id: 'state', label: translateLiteral('State'), value: row => entries.some(draft => draft.rowId === row.id)
+            ? <span className="starmobiles-draft">{t('starmobiles.edited')}</span> : '—' },
+        ]} />}
+      browserFooter={localError ? <p className="editor-task-status validation-message" role="alert">{localError}</p> : undefined}>
+    {selected ? <>
+      <EditorWorkspaceHeader afterBrowser>
+        <div className="editor-record-context">
+          <EditorRecordHeading name={t('starmobiles.selectedTitle', { boss: bossLabel(selected.bossType) })} />
+          {isEditing ? <button className="secondary-button compact-button" type="button" disabled={!canEdit || isStaging || !selected.vanillaValues}
+            title={t('starmobiles.resetVanillaHelp')} onClick={resetSelectedToVanilla}>
+            <RotateCcw size={16} aria-hidden="true" />{t('starmobiles.resetVanilla')}
+          </button> : null}
         </div>
-      </div>
-      <div className="starmobiles-traits">
+      </EditorWorkspaceHeader>
+      <EditorWorkspaceSection id="battle" label={translateLiteral('Battle Setup')}
+        invalid={entries.some(draft => (['level', 'hpMultiplier', ...starmobileTraitFields] as const).some(field => field === draft.field) && draftInvalid(draft))}>
+        <div className="editor-task-groups">
+          <EditorDetailGroup label={translateLiteral('Scaling')}>
+            <div className="editor-task-list">{input(selected, 'level')}{input(selected, 'hpMultiplier')}</div>
+          </EditorDetailGroup>
+          <EditorDetailGroup label={translateLiteral('Traits')}>
+            <div className="editor-task-list">
         {starmobileTraitFields.map(field => {
           const source = selected.values[field];
           const draft = drafts[`${selected.id}/${field}`];
@@ -184,8 +203,9 @@ export function StarmobilesSection({ workflow, isStaging, isEditing, isEditStart
               ? option.value === 0 ? translateLiteral('None') : option.label : translateLiteral(option.label), disabled: false }));
           const hasCatalog = options.length > 0;
           if (source !== undefined && !options.some(option => option.value === source)) options.push({ value: source, label: String(source), disabled: true });
-          return <div className="field" key={field}>
-            <span>{label}{field === 'type2' ? <ContextHelp label={label}>{t('starmobiles.typesHelp')}</ContextHelp> : null}</span>
+          if (source === undefined) return null;
+          return <div key={field}>
+            <span className="editor-task-field-name">{label}{field === 'type2' ? <ContextHelp label={label}>{t('starmobiles.typesHelp')}</ContextHelp> : null}</span>
             <SearchableOptionInput ariaLabel={`${bossLabel(selected.bossType)} ${label}`} isFiniteCatalog localizeOptions={false}
               disabled={!canEdit || source === undefined || !hasCatalog} options={options}
               value={draft?.value ?? (source === undefined ? '' : String(source))}
@@ -193,26 +213,32 @@ export function StarmobilesSection({ workflow, isStaging, isEditing, isEditStart
               onChange={value => setValue(selected, field, value)} />
           </div>;
         })}
-      </div>
-      <div className="starmobiles-stats-heading">
-        <h4>{t('starmobiles.stats')}</h4>
-        <ContextHelp label={t('starmobiles.stats')}>{t('starmobiles.statsHelp')}</ContextHelp>
-      </div>
-      <div className="starmobiles-edit-layout">
-        <div className="starmobiles-level-fields">
-          {input(selected, 'level')}
-          {input(selected, 'hpMultiplier')}
+            </div>
+          </EditorDetailGroup>
         </div>
-        <div className="starmobiles-fields">{statFields.map(field => field === 'speed' ?
-          <label className="field" key={field}>
-            <span><span>{t('starmobiles.field.speed')}</span><ContextHelp label={t('starmobiles.field.speed')}>{t('starmobiles.speedHelp')}</ContextHelp></span>
-            <input aria-label={`${bossLabel(selected.bossType)} ${t('starmobiles.field.speed')}`} type="text" readOnly
-              value={selected.values.move1 === undefined ? '…' : selected.values.move1 & 255} />
-          </label> : input(selected, field))}</div>
-      </div>
-      <fieldset className="starmobiles-moves">
-        <legend>{t('starmobiles.moves')}</legend>
-        <div className="starmobiles-move-fields">
+      </EditorWorkspaceSection>
+      <EditorWorkspaceSection id="stats" label={t('starmobiles.stats')}
+        invalid={entries.some(draft => statFields.some(field => field === draft.field) && draftInvalid(draft))}>
+        <EditorDetailGroup label={t('starmobiles.stats')}
+          headingValue={<ContextHelp label={t('starmobiles.stats')}>{t('starmobiles.statsHelp')}</ContextHelp>}>
+          <div className="editor-task-list starmobiles-stat-grid">
+            <div className="editor-task-column-head"><span>{translateLiteral('Stat')}</span><span>{translateLiteral('Value')}</span><span>{translateLiteral('Original')}</span></div>
+            {statFields.map(field => field === 'speed' ?
+              <div key={field}>
+                <span className="editor-task-field-name">{t('starmobiles.field.speed')}
+                  <ContextHelp label={t('starmobiles.field.speed')}>{t('starmobiles.speedHelp')}</ContextHelp>
+                </span>
+                <output aria-label={`${bossLabel(selected.bossType)} ${t('starmobiles.field.speed')}`}>
+                  {selected.values.move1 === undefined ? '—' : selected.values.move1 & 255}
+                </output>
+                <span className="muted">{selected.vanillaValues?.move1 === undefined ? '—' : selected.vanillaValues.move1 & 255}</span>
+              </div> : input(selected, field))}
+          </div>
+        </EditorDetailGroup>
+      </EditorWorkspaceSection>
+      <EditorWorkspaceSection id="moves" label={t('starmobiles.moves')} invalid={moveInvalid}>
+        <EditorDetailGroup label={t('starmobiles.moves')}>
+          <div className="editor-task-list starmobiles-move-grid">
           {(['move1', ...starmobileMoveFields] as const).map((field, index) => {
             const source = selected.values[field];
             const locked = field === 'move1' || (source !== undefined && isSignature(source));
@@ -221,27 +247,30 @@ export function StarmobilesSection({ workflow, isStaging, isEditing, isEditStart
             const options = (workflow?.moveOptions ?? []).filter(option => option.canSelect || option.value === source)
               .map(option => ({ value: option.value, label: option.value === 0 ? t('starmobiles.noMove') : option.label, disabled: !option.canSelect }));
             if (source !== undefined && !options.some(option => option.value === source)) options.push({ value: source, label: String(source), disabled: true });
-            return <div className="field" key={field}>
-              <span className="starmobiles-move-label">{label}{locked ? <span className="starmobiles-lock"><LockKeyhole size={14} aria-hidden="true" />{t('starmobiles.signature')}</span> : null}</span>
+            return <div key={field}>
+              <span>{label}</span>
               <SearchableOptionInput ariaLabel={`${bossLabel(selected.bossType)} ${label}`}
                 disabled={!canEdit || locked || source === undefined || !workflow?.moveOptions.length}
                 ariaInvalid={draft ? draftInvalid(draft) : undefined} isFiniteCatalog localizeOptions={false}
                 className={draft ? 'starmobiles-input-edited' : undefined}
                 value={draft?.value ?? (source === undefined ? '' : String(source))} options={options}
                 onChange={value => { if (field !== 'move1' && !locked) setValue(selected, field, value); }} />
+              {locked ? <span className="starmobiles-lock"><LockKeyhole size={14} aria-hidden="true" />{t('starmobiles.signature')}</span> : <span />}
             </div>;
           })}
-        </div>
-      </fieldset>
-      <details className="starmobiles-details"><summary>{t('starmobiles.details')}</summary>
-        <dl>
-          <div><dt>{t('starmobiles.trainer')}</dt><dd data-localization-ignore="true">{selected.trainerId}</dd></div>
-          <div><dt>{t('starmobiles.event')}</dt><dd data-localization-ignore="true">{selected.eventId}</dd></div>
-          <div><dt>{t('starmobiles.difficulty')}</dt><dd>{selected.difficulty}</dd></div>
-        </dl>
-      </details>
-    </section> : null}
-    {workflow?.rows.length === 0 ? <p className="muted">{t('starmobiles.empty')}</p> : null}
+          </div>
+        </EditorDetailGroup>
+      </EditorWorkspaceSection>
+      <EditorWorkspaceSection id="details" label={t('starmobiles.details')}>
+        <EditorDetailGroup label={translateLiteral('Identity')}>
+          <dl className="editor-detail-list">
+            <EditorDetailValue label={t('starmobiles.trainer')} dataValue path>{selected.trainerId}</EditorDetailValue>
+            <EditorDetailValue label={t('starmobiles.event')} dataValue path>{selected.eventId}</EditorDetailValue>
+            <EditorDetailValue label={t('starmobiles.difficulty')}>{selected.difficulty}</EditorDetailValue>
+          </dl>
+        </EditorDetailGroup>
+      </EditorWorkspaceSection>
+    </> : null}
     </RecordEditorWorkspace>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />

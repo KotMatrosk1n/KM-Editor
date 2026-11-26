@@ -8,6 +8,7 @@ import { InteractiveTableRow, VirtualTableBody } from './components/VirtualTable
 import { EditorLayoutScope, RecordEditorWorkspace, EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, SectionedEditorWorkspace } from './components/SectionedEditorWorkspace';
 import { MoveDetails, MoveEditorWorkspace, MoveFlagCount, type MoveFieldControl, type MoveFieldGroup } from './features/moves/MoveEditorWorkspace';
 import { EditorDetailGroup, EditorDetailValue, PokemonDetailsStats } from './components/EditorRecordDetails';
+import { EditorRecordTable } from './components/EditorRecordTable';
 import { SpeciesDataMatrix, useSpeciesFieldFinder } from './components/SpeciesDataMatrix';
 import { PokemonSearchBox, PokemonTable, filterPokemonRecords, formatPokemonTypes, type PokemonSelectionRecord } from './components/PokemonSelection';
 import { stageModelAsset, stageModelTexture } from './features/model-viewer/modelTextureBridge';
@@ -34087,6 +34088,8 @@ function getActivePokemonInstanceFields(
   return fields.filter((field) => !isPokemonInstanceIvStatField(field.field));
 }
 
+const pokemonInstanceIvLockReason = 'Select Custom in IV preset to edit individual IVs.';
+
 function getPokemonInstanceIvStatDisabledReason(
   fieldName: string,
   fields: NumericEditableField[],
@@ -34100,9 +34103,7 @@ function getPokemonInstanceIvStatDisabledReason(
     return null;
   }
 
-  return isPokemonInstanceIvCustomSelected(fields, drafts)
-    ? null
-    : 'Select Custom in IV preset to edit individual IVs.';
+  return isPokemonInstanceIvCustomSelected(fields, drafts) ? null : pokemonInstanceIvLockReason;
 }
 
 function normalizePokemonStatDraftValue(
@@ -37963,6 +37964,87 @@ function getPokemonInstanceFieldGroup(field: NumericEditableField) {
   return 'Details';
 }
 
+function pokemonInstanceSections<TField extends NumericEditableField>({
+  groups, invalidFields, changedFields, translateLiteral, profile, renderField, groupFooter, groupLabel, drafts, idPrefix
+}: {
+  groups: { group: string; fields: TField[] }[];
+  invalidFields: { field: string }[];
+  changedFields: { field: string }[];
+  translateLiteral: (value: string) => string;
+  profile?: ReactNode;
+  drafts: Record<string, string>;
+  idPrefix: string;
+  renderField: (field: TField, compact?: boolean, ivDescriptionId?: string) => ReactNode;
+  groupFooter?: (group: { group: string; fields: TField[] }) => ReactNode;
+  groupLabel?: (group: string) => string;
+}) {
+  const sections = [
+    { id: 'pokemon', label: 'Pokemon', groups: ['Pokemon', 'Traits'] },
+    { id: 'moves', label: 'Moves', groups: ['Moves'] },
+    { id: 'stats', label: 'Stats', groups: ['Stats - IVs', 'Stats - EVs'] },
+    { id: 'request', label: 'Trade Request', groups: ['Trade Request'] },
+    { id: 'advanced', label: 'Advanced', groups: ['Trade Memory', 'Advanced', 'Details', 'Restoration Alpha Settings'] }
+  ];
+  const getStat = (field: TField) => statFieldKeysByEditableField[field.field as keyof typeof statFieldKeysByEditableField];
+  return sections.map(section => {
+    const sectionGroups = groups.filter(group => section.groups.includes(group.group));
+    const fields = sectionGroups.flatMap(group => group.fields);
+    const profileFields = section.id === 'pokemon' ? profile : null;
+    if (!fields.length && !profileFields) return null;
+    const fieldNames = new Set(fields.map(field => field.field));
+    if (profileFields) fieldNames.add('nickname');
+    const statColumns = section.id === 'stats' ? sectionGroups.map(group => ({
+      label: group.group === 'Stats - IVs' ? 'IV' : 'EV',
+      fields: group.fields.filter(getStat)
+    })).filter(column => column.fields.length > 0) : [];
+    const preset = statColumns.length ? fields.find(field => isPokemonInstanceIvPresetField(field.field)) : undefined;
+    const ivDescriptionId = preset && !isPokemonInstanceIvCustomSelected(fields, drafts) ? `${idPrefix}-iv-lock` : undefined;
+    return (
+      <EditorWorkspaceSection key={section.id} id={section.id} label={translateLiteral(section.label)}
+        invalid={invalidFields.some(field => fieldNames.has(field.field))}
+        modified={changedFields.some(field => fieldNames.has(field.field))}>
+        <div className="editor-task-groups pokemon-instance-groups">
+          {statColumns.length > 0 ? (
+            <EditorDetailGroup label={translateLiteral('Individual stats')}>
+              {preset ? <div className="pokemon-instance-field-list">{renderField(preset)}</div> : null}
+              {ivDescriptionId ? <p className="field-hint pokemon-instance-iv-lock" id={ivDescriptionId}>
+                {translateLiteral(pokemonInstanceIvLockReason)}
+              </p> : null}
+              <table className="pokemon-instance-stats">
+                <thead><tr><th scope="col">{translateLiteral('Stat')}</th>
+                  {statColumns.map(column => <th key={column.label} scope="col">{translateLiteral(column.label)}</th>)}
+                </tr></thead>
+                <tbody>{trainerProjectedStatRows.map(stat => {
+                  const row = statColumns.map(column => column.fields.find(field => getStat(field) === stat.key));
+                  return row.some(Boolean) ? <tr key={stat.key}>
+                    <th scope="row">{translateLiteral(stat.label)}</th>
+                    {row.map((field, index) => <td key={statColumns[index].label}>{field ? renderField(field, true, isPokemonInstanceIvStatField(field.field) ? ivDescriptionId : undefined) : '–'}</td>)}
+                  </tr> : null;
+                })}</tbody>
+              </table>
+            </EditorDetailGroup>
+          ) : null}
+          {sectionGroups.map(group => {
+            const groupFields = statColumns.length ? group.fields.filter(field => !getStat(field) && field !== preset) : group.fields;
+            const extra = group.group === 'Pokemon' ? profileFields : null;
+            const footer = groupFooter?.(group);
+            if (!groupFields.length && !extra && !footer) return null;
+            return (
+              <EditorDetailGroup key={group.group} label={groupLabel?.(group.group) ?? translateLiteral(group.group)}>
+                <div className="pokemon-instance-field-list">
+                  {groupFields.map(field => renderField(field))}
+                  {extra}
+                </div>
+                {footer}
+              </EditorDetailGroup>
+            );
+          })}
+        </div>
+      </EditorWorkspaceSection>
+    );
+  });
+}
+
 function getStaticEncounterFieldGroup(field: StaticEncounterEditableField) {
   return field.group ?? getPokemonInstanceFieldGroup(field);
 }
@@ -38140,7 +38222,7 @@ const searchableBooleanOptions: EditableFieldOption[] = [
   { label: 'No', value: 0 }
 ];
 
-function CustomGiftPokemonFields({ pokemon, fields, drafts: localDrafts, disabled, idPrefix, onChange, pokemonWorkflow }:
+function CustomGiftPokemonFields({ pokemon, fields, drafts: localDrafts, disabled, idPrefix, onChange, section, pokemonWorkflow }:
   CustomGiftFieldRenderProps & { pokemonWorkflow: PokemonWorkflow | null }) {
   const { translateLiteral } = useLocalization();
   const reference = pokemonWorkflow?.pokemon.find(row => row.speciesId === pokemon.speciesId && row.form === pokemon.form);
@@ -38154,19 +38236,22 @@ function CustomGiftPokemonFields({ pokemon, fields, drafts: localDrafts, disable
   const hasCustomIvs = pokemon.flawlessIvCount === 0 && Object.values(pokemon.ivs).some(value => value >= 0);
   const drafts = { ...Object.fromEntries(fields.map(field => [field.field,
     field.field === 'flawlessIvCount' && hasCustomIvs ? '-9999' : String(customGiftFieldValue(pokemon, field.field))])), ...localDrafts };
-  return <div className="editable-field-groups">{groupNumericEditableFields(editableFields, getPokemonInstanceFieldGroup).map(group =>
-    <fieldset className="editable-field-group" key={group.group}><legend>{translateLiteral(group.group)}</legend>
-      <div className="editable-field-grid">{group.fields.map(field => {
-        const currentValue = customGiftFieldValue(pokemon, field.field);
-        const draftValue = drafts[field.field];
-        return <GiftPokemonDraftField key={field.field} field={field} currentValue={currentValue} draftValue={draftValue}
-          disabled={disabled} disabledReason={getPokemonInstanceIvStatDisabledReason(field.field, editableFields, drafts) ?? undefined}
-          draftState={getTrainerFieldDraftState(draftValue, currentValue, field, { drafts, fields: editableFields,
-            getValue: name => customGiftFieldValue(pokemon, name) })}
-          formOptionContext={context} helpDomain="gifts" helpGame="swsh" idPrefix={idPrefix}
-          onChange={value => onChange(field.field, value)} />;
-      })}</div>
-    </fieldset>)}</div>;
+  const groups = groupNumericEditableFields(editableFields, getPokemonInstanceFieldGroup);
+  const summary = getTrainerDraftSummary(editableFields, drafts, name => customGiftFieldValue(pokemon, name));
+  const sections = pokemonInstanceSections({
+    groups, translateLiteral, invalidFields: summary.invalidFields, changedFields: summary.changedFields, drafts, idPrefix,
+    renderField: (field, compact, ivDescriptionId) => {
+      const currentValue = customGiftFieldValue(pokemon, field.field);
+      const draftValue = drafts[field.field];
+      return <GiftPokemonDraftField key={field.field} compact={compact} ariaDescribedBy={ivDescriptionId} field={field} currentValue={currentValue} draftValue={draftValue}
+        disabled={disabled} disabledReason={getPokemonInstanceIvStatDisabledReason(field.field, editableFields, drafts) ?? undefined}
+        draftState={getTrainerFieldDraftState(draftValue, currentValue, field, { drafts, fields: editableFields,
+          getValue: name => customGiftFieldValue(pokemon, name) })}
+        formOptionContext={context} helpDomain="gifts" helpGame="swsh" idPrefix={idPrefix}
+        onChange={value => onChange(field.field, value)} />;
+    }
+  });
+  return <>{sections.find(candidate => candidate?.key === section)}</>;
 }
 
 function GiftPokemonDraftField({
@@ -38483,55 +38568,11 @@ function GiftPokemonSection({
           <h2 id="gift-pokemon-heading">Gift Pokemon</h2>
         </div>
 
-        <div className="items-toolbar trainers-toolbar shiny-lock-toolbar">
-          <label className="search-box items-search">
-            <Search aria-hidden="true" size={18} />
-            <input
-              aria-label="Search gift Pokemon"
-              disabled={!workflow}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search gift Pokemon"
-              type="search"
-              value={searchText}
-            />
-          </label>
-          <Metric
-            label="Loaded gifts"
-            value={workflow ? workflow.stats.totalGiftCount.toString() : '0'}
-          />
-          <Metric
-            label="Egg gifts"
-            value={workflow ? workflow.stats.eggGiftCount.toString() : '0'}
-          />
-          <Metric
-            label="Fixed IV rows"
-            value={workflow ? workflow.stats.fixedIvGiftCount.toString() : '0'}
-          />
-          <button
-            className="primary-button compact-button"
-            disabled={!canRemoveGiftShinyLocks}
-            onClick={() => setIsShinyLockConfirmationOpen(true)}
-            title={removeGiftShinyLockTitle}
-            type="button"
-          >
-            <ShieldCheck aria-hidden="true" size={14} />
-            <span>Remove Gift Shiny Lock</span>
-          </button>
-        </div>
+
 
         {workflow ? (
-          <EditorSessionBar
-            canEdit={canEditGifts && selectedGift !== null}
-            isEditing={editSession !== null}
-            isStarting={isEditStarting}
-            label="Gift Pokemon"
-            onStart={onStartEditSession}
-          />
-        ) : null}
-
-        {workflow ? (
-          <RecordEditorWorkspace id="giftPokemon" className="trainers-layout" browser={
-            <div
+          <SelectedGiftPokemonPanel
+            browser={<div
               aria-colcount={5}
               aria-label="Gift Pokemon"
               aria-rowcount={filteredGifts.length + 1}
@@ -38566,10 +38607,40 @@ function GiftPokemonSection({
                   </InteractiveTableRow>
                 )}
               />
-            </div>
-          }>
-
-            <SelectedGiftPokemonPanel
+            </div>}
+            browserControls={<div className="pokemon-instance-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search gift Pokemon"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search gift Pokemon"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <span className="muted">{"Loaded gifts"} <strong>{workflow?.stats.totalGiftCount ?? 0}</strong></span>
+          <span className="muted">{"Egg gifts"} <strong>{workflow?.stats.eggGiftCount ?? 0}</strong></span>
+          <span className="muted">{"Fixed IV rows"} <strong>{workflow?.stats.fixedIvGiftCount ?? 0}</strong></span>
+          <button
+            className="primary-button compact-button"
+            disabled={!canRemoveGiftShinyLocks}
+            onClick={() => setIsShinyLockConfirmationOpen(true)}
+            title={removeGiftShinyLockTitle}
+            type="button"
+          >
+            <ShieldCheck aria-hidden="true" size={14} />
+            <span>Remove Gift Shiny Lock</span>
+          </button>
+        </div>}
+            sessionBar={<EditorSessionBar
+            canEdit={canEditGifts && selectedGift !== null}
+            isEditing={editSession !== null}
+            isStarting={isEditStarting}
+            label="Gift Pokemon"
+            onStart={onStartEditSession}
+          />}
               canEditGifts={canEditGifts}
               editSession={editSession}
               editableFields={workflow.editableFields}
@@ -38581,7 +38652,6 @@ function GiftPokemonSection({
               onUpdateGiftPokemonFields={onUpdateGiftPokemonFields}
               pokemonWorkflow={pokemonWorkflow}
             />
-          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">Open Gift Pokemon from Workflows to load backend gift data.</p>
         )}
@@ -38650,6 +38720,9 @@ function PokemonInstanceRecordHeading({
 }
 
 function SelectedGiftPokemonPanel({
+  browser,
+  browserControls,
+  sessionBar,
   canEditGifts,
   editSession,
   editableFields,
@@ -38661,6 +38734,9 @@ function SelectedGiftPokemonPanel({
   onUpdateGiftPokemonFields,
   pokemonWorkflow
 }: {
+  browser: ReactNode;
+  browserControls: ReactNode;
+  sessionBar: ReactNode;
   canEditGifts: boolean;
   editSession: EditSession | null;
   editableFields: GiftPokemonEditableField[];
@@ -38898,7 +38974,10 @@ function SelectedGiftPokemonPanel({
   }, [gift, giftDraftDefaults]);
 
   return (
-    <aside aria-label="Selected gift Pokemon provenance" className="trainer-inspector">
+    <RecordEditorWorkspace id="giftPokemon" className="trainers-layout pokemon-instance-workspace"
+      initialSection="pokemon" browser={browser} browserControls={browserControls}
+      sessionBar={sessionBar}>
+      <EditorWorkspaceHeader afterBrowser>
       <PublishedLocalEditorValidationDiagnostics
         domain="workflow.giftPokemon"
         issues={giftDraftSummary.invalidFields}
@@ -38910,8 +38989,10 @@ function SelectedGiftPokemonPanel({
           summary="No gift selected."
         />
       ) : null}
-      {gift ? (
-        <>
+      </EditorWorkspaceHeader>
+      {gift ? <>
+        <EditorWorkspaceHeader afterBrowser>
+          <div className="editor-record-context">
           <PokemonInstanceRecordHeading
             editorFamily={editorFamily}
             form={gift.form}
@@ -38921,290 +39002,8 @@ function SelectedGiftPokemonPanel({
           >
             {formatGiftPokemonLevelSummary(gift, editorFamily)}
           </PokemonInstanceRecordHeading>
-          <details className="pokemon-instance-source">
-            <summary>{translateLiteral('Details and source')}</summary>
-            <dl className="item-provenance-list">
-              <div>
-                <dt>Gift</dt>
-                <dd>{gift.label}</dd>
-              </div>
-              {editorFamily !== 'swsh' && gift.eventLabel ? (
-                <div>
-                  <dt>Event label</dt>
-                  <dd>{gift.eventLabel}</dd>
-                </div>
-              ) : null}
-              <div>
-                <dt>Data file</dt>
-                <dd>{gift.provenance.sourceFile}</dd>
-              </div>
-              <div>
-                <dt>Layer</dt>
-                <dd>{formatSourceLayer(gift.provenance.sourceLayer)}</dd>
-              </div>
-              <div>
-                <dt>File state</dt>
-                <dd>{formatFileState(gift.provenance.fileState)}</dd>
-              </div>
-              {editorFamily !== 'za' ? (
-                <div>
-                  <dt>Ball</dt>
-                  <dd>{gift.ballItem}</dd>
-                </div>
-              ) : null}
-              <div>
-                <dt>Held item</dt>
-                <dd>{gift.heldItem ?? 'None'}</dd>
-              </div>
-              {editorFamily === 'sv' || editorFamily === 'za' ? (
-                <>
-                  <div>
-                    <dt>Moves</dt>
-                    <dd>{formatGiftPokemonMoves(gift, t)}</dd>
-                  </div>
-                  {gift.teraTypeLabel !== null ? (
-                    <div>
-                      <dt>Tera type</dt>
-                      <dd>{gift.teraTypeLabel}</dd>
-                    </div>
-                  ) : null}
-                  {gift.scaleModeLabel !== null ? (
-                    <div>
-                      <dt>Scale</dt>
-                      <dd>{formatGiftPokemonScale(gift)}</dd>
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <div>
-                  <dt>Special Move</dt>
-                  <dd>{gift.specialMove ?? 'None'}</dd>
-                </div>
-              )}
-              <div>
-                <dt>IV detail</dt>
-                <dd>{formatGiftPokemonIvs(gift)}</dd>
-              </div>
-            </dl>
-          </details>
-
-          {editorFamily === 'za' && gift.eventLabel === 'sub_addpoke_rukario' ? (
-            <section className="technical-tool-notice technical-tool-notice-info">
-              <div className="technical-tool-notice-heading">
-                <Dumbbell aria-hidden="true" size={18} />
-                <div>
-                  <h3>{t('za.gifts.lucario.heading')}</h3>
-                  <p>{t('za.gifts.lucario.description')}</p>
-                </div>
-              </div>
-            </section>
-          ) : null}
-
-          {editorFamily === 'za' && gift.canEditAlphaSettings ? (
-            <section className="technical-tool-notice technical-tool-notice-info">
-              <div className="technical-tool-notice-heading">
-                <ShieldCheck aria-hidden="true" size={18} />
-                <div>
-                  <h3>{t('za.gifts.alpha.heading')}</h3>
-                  <p>{t('za.gifts.alpha.description')}</p>
-                  <p>
-                    {t('za.gifts.alpha.currentValues', {
-                      bonus: gift.alphaLevelBonus ?? 0,
-                      chance: gift.alphaChancePercent ?? 0
-                    })}
-                  </p>
-                </div>
-              </div>
-            </section>
-          ) : null}
-
-          <div className="trainer-edit-form">
-            <div className="editable-field-groups">
-              {giftFieldGroups.map((group) => (
-                <fieldset className="editable-field-group" key={group.group}>
-                  <legend>
-                    {group.group === 'Restoration Alpha Settings'
-                      ? t('za.gifts.alpha.heading')
-                      : group.group}
-                  </legend>
-                  <div className="editable-field-grid">
-                    {group.fields.map((field) => {
-                      const currentValue = getEditableGiftPokemonFieldValue(gift, field.field);
-                      const draftValue = giftDrafts[field.field] ?? '';
-                      const baseDraftState = getTrainerFieldDraftState(
-                        draftValue,
-                        currentValue,
-                        field,
-                        {
-                          drafts: giftDrafts,
-                          fields: contextualGiftFields,
-                          getValue: (fieldName) =>
-                            getEditableGiftPokemonFieldValue(gift, fieldName)
-                        }
-                      );
-                      const draftState =
-                        giftAlphaRangeError &&
-                        field.field === giftAlphaLevelBonusFieldName
-                          ? {
-                              ...baseDraftState,
-                              error: giftAlphaRangeError,
-                              isValid: false,
-                              normalizedValue: null
-                            }
-                          : baseDraftState;
-                      const alphaFieldLabel =
-                        field.field === giftAlphaChancePercentFieldName
-                          ? t('za.gifts.alpha.chanceLabel')
-                          : field.field === giftAlphaLevelBonusFieldName
-                            ? t('za.gifts.alpha.levelBonusLabel')
-                            : undefined;
-                      const alphaFieldHelp =
-                        field.field === giftAlphaChancePercentFieldName
-                          ? t('za.gifts.alpha.chanceHelp')
-                          : field.field === giftAlphaLevelBonusFieldName
-                            ? t('za.gifts.alpha.levelBonusHelp')
-                            : undefined;
-
-                      return (
-                        <GiftPokemonDraftField
-                          currentValue={currentValue}
-                          disabled={!canEditGifts || editSession === null}
-                          disabledReason={
-                            getPokemonInstanceIvStatDisabledReason(
-                              field.field,
-                              contextualGiftFields,
-                              giftDrafts
-                            ) ?? undefined
-                          }
-                          draftState={draftState}
-                          draftValue={draftValue}
-                          field={field}
-                          formOptionContext={giftFormOptionContext}
-                          helpDomain="gifts"
-                          helpGame={editorFamily}
-                          helpText={alphaFieldHelp}
-                          key={field.field}
-                          labelText={alphaFieldLabel}
-                          onChange={(value) => {
-                            const nextDrafts = {
-                              ...giftDrafts,
-                              [field.field]: value
-                            };
-                            const speciesField = contextualGiftFields.find(
-                              (candidate) => candidate.field === giftSpeciesFieldName
-                            );
-                            const formField = contextualGiftFields.find(
-                              (candidate) => candidate.field === formFieldName
-                            );
-                            const previousSpeciesId =
-                              parseEditableIntegerDraft(
-                                giftDrafts[giftSpeciesFieldName] ?? gift.speciesId.toString(),
-                                speciesField?.options
-                              );
-                            const previousForm =
-                              parseEditableIntegerDraft(
-                                giftDrafts[formFieldName] ?? gift.form.toString(),
-                                formField?.options
-                              ) ?? gift.form;
-                            let nextSpeciesId = previousSpeciesId ?? gift.speciesId;
-                            let nextForm = previousForm;
-                            let identityChanged = false;
-
-                            if (field.field === giftSpeciesFieldName) {
-                              const parsedSpeciesId = parseEditableIntegerDraft(
-                                value,
-                                field.options
-                              );
-                              if (
-                                parsedSpeciesId !== null &&
-                                parsedSpeciesId !== previousSpeciesId
-                              ) {
-                                nextSpeciesId = parsedSpeciesId;
-                                identityChanged = true;
-                                const resolvedForm = resolveSpeciesChangeForm({
-                                  gameFamily: editorFamily,
-                                  pokemonRecords: pokemonWorkflow?.pokemon,
-                                  previousForm,
-                                  sourceForm: gift.form,
-                                  sourceSpeciesId: gift.speciesId,
-                                  speciesField,
-                                  targetSpeciesId: parsedSpeciesId
-                                });
-                                if (formField && resolvedForm !== null) {
-                                  nextForm = resolvedForm;
-                                  nextDrafts[formFieldName] = resolvedForm.toString();
-                                }
-                              }
-                            } else if (field.field === formFieldName) {
-                              const parsedForm = parseEditableIntegerDraft(value, field.options);
-                              if (parsedForm !== null && parsedForm !== previousForm) {
-                                nextForm = parsedForm;
-                                identityChanged = true;
-                              }
-                            }
-
-                            if (identityChanged) {
-                              if (editorFamily === 'swsh') {
-                                const referencePokemon = pokemonWorkflow?.pokemon.find(
-                                  (pokemon) =>
-                                    pokemon.speciesId === nextSpeciesId &&
-                                    pokemon.form === nextForm
-                                );
-                                if (referencePokemon) {
-                                  preserveValidGiftDependencyOrReset(
-                                    nextDrafts,
-                                    contextualGiftFields,
-                                    abilityFieldName,
-                                    gift.ability,
-                                    createTrainerPokemonAbilityOptions(referencePokemon)
-                                  );
-                                  preserveValidGiftDependencyOrReset(
-                                    nextDrafts,
-                                    contextualGiftFields,
-                                    genderFieldName,
-                                    gift.gender,
-                                    createGiftPokemonGenderOptions(referencePokemon)
-                                  );
-                                }
-                              } else {
-                                const abilityField = contextualGiftFields.find(
-                                  (candidate) => candidate.field === abilityFieldName
-                                );
-                                if (abilityField?.options.some((option) => option.value === 0)) {
-                                  nextDrafts[abilityFieldName] = '0';
-                                }
-                              }
-                            }
-                            setGiftDraftsByIndex((currentDrafts) =>
-                              setFieldDraftRecord(
-                                currentDrafts,
-                                gift.giftIndex,
-                                nextDrafts,
-                                giftDraftDefaults
-                              )
-                            );
-                          }}
-                        />
-                      );
-                    })}
-                  </div>
-                  {group.group === 'Restoration Alpha Settings' ? (
-                    <div className="field-group-action-row za-spawner-field-note">
-                      <small
-                        className={
-                          giftAlphaRangeError
-                            ? 'editable-field-error'
-                            : 'editable-field-status'
-                        }
-                      >
-                        {giftAlphaRangeError ?? t('za.gifts.alpha.rangeRule')}
-                      </small>
-                    </div>
-                  ) : null}
-                </fieldset>
-              ))}
-            </div>
-            {editSession ? (
+          </div>
+          {editSession ? (
               <EditorSessionBarActions>
                 <button
                   aria-busy={isGiftPokemonUpdating || undefined}
@@ -39280,7 +39079,286 @@ function SelectedGiftPokemonPanel({
                 </span>
               </EditorSessionBarActions>
             ) : null}
-            {onStageGiftPokemonVanilla ? (
+        </EditorWorkspaceHeader>
+        {pokemonInstanceSections({
+          groups: giftFieldGroups,
+          invalidFields: giftDraftSummary.invalidFields,
+          changedFields: giftDraftSummary.changedFields,
+          translateLiteral,
+          drafts: giftDrafts,
+          idPrefix: 'gift',
+          renderField: (field, compact, ivDescriptionId) => {
+            const currentValue = getEditableGiftPokemonFieldValue(gift, field.field);
+            const draftValue = giftDrafts[field.field] ?? '';
+            const baseDraftState = getTrainerFieldDraftState(
+              draftValue,
+              currentValue,
+              field,
+              {
+                drafts: giftDrafts,
+                fields: contextualGiftFields,
+                getValue: (fieldName) =>
+                  getEditableGiftPokemonFieldValue(gift, fieldName)
+              }
+            );
+            const draftState =
+              giftAlphaRangeError &&
+              field.field === giftAlphaLevelBonusFieldName
+                ? {
+                    ...baseDraftState,
+                    error: giftAlphaRangeError,
+                    isValid: false,
+                    normalizedValue: null
+                  }
+                : baseDraftState;
+            const alphaFieldLabel =
+              field.field === giftAlphaChancePercentFieldName
+                ? t('za.gifts.alpha.chanceLabel')
+                : field.field === giftAlphaLevelBonusFieldName
+                  ? t('za.gifts.alpha.levelBonusLabel')
+                  : undefined;
+            const alphaFieldHelp =
+              field.field === giftAlphaChancePercentFieldName
+                ? t('za.gifts.alpha.chanceHelp')
+                : field.field === giftAlphaLevelBonusFieldName
+                  ? t('za.gifts.alpha.levelBonusHelp')
+                  : undefined;
+
+            return (
+              <GiftPokemonDraftField
+                compact={compact}
+                ariaDescribedBy={ivDescriptionId}
+                currentValue={currentValue}
+                disabled={!canEditGifts || editSession === null}
+                disabledReason={
+                  getPokemonInstanceIvStatDisabledReason(
+                    field.field,
+                    contextualGiftFields,
+                    giftDrafts
+                  ) ?? undefined
+                }
+                draftState={draftState}
+                draftValue={draftValue}
+                field={field}
+                formOptionContext={giftFormOptionContext}
+                helpDomain="gifts"
+                helpGame={editorFamily}
+                helpText={alphaFieldHelp}
+                key={field.field}
+                labelText={alphaFieldLabel}
+                onChange={(value) => {
+                  const nextDrafts = {
+                    ...giftDrafts,
+                    [field.field]: value
+                  };
+                  const speciesField = contextualGiftFields.find(
+                    (candidate) => candidate.field === giftSpeciesFieldName
+                  );
+                  const formField = contextualGiftFields.find(
+                    (candidate) => candidate.field === formFieldName
+                  );
+                  const previousSpeciesId =
+                    parseEditableIntegerDraft(
+                      giftDrafts[giftSpeciesFieldName] ?? gift.speciesId.toString(),
+                      speciesField?.options
+                    );
+                  const previousForm =
+                    parseEditableIntegerDraft(
+                      giftDrafts[formFieldName] ?? gift.form.toString(),
+                      formField?.options
+                    ) ?? gift.form;
+                  let nextSpeciesId = previousSpeciesId ?? gift.speciesId;
+                  let nextForm = previousForm;
+                  let identityChanged = false;
+
+                  if (field.field === giftSpeciesFieldName) {
+                    const parsedSpeciesId = parseEditableIntegerDraft(
+                      value,
+                      field.options
+                    );
+                    if (
+                      parsedSpeciesId !== null &&
+                      parsedSpeciesId !== previousSpeciesId
+                    ) {
+                      nextSpeciesId = parsedSpeciesId;
+                      identityChanged = true;
+                      const resolvedForm = resolveSpeciesChangeForm({
+                        gameFamily: editorFamily,
+                        pokemonRecords: pokemonWorkflow?.pokemon,
+                        previousForm,
+                        sourceForm: gift.form,
+                        sourceSpeciesId: gift.speciesId,
+                        speciesField,
+                        targetSpeciesId: parsedSpeciesId
+                      });
+                      if (formField && resolvedForm !== null) {
+                        nextForm = resolvedForm;
+                        nextDrafts[formFieldName] = resolvedForm.toString();
+                      }
+                    }
+                  } else if (field.field === formFieldName) {
+                    const parsedForm = parseEditableIntegerDraft(value, field.options);
+                    if (parsedForm !== null && parsedForm !== previousForm) {
+                      nextForm = parsedForm;
+                      identityChanged = true;
+                    }
+                  }
+
+                  if (identityChanged) {
+                    if (editorFamily === 'swsh') {
+                      const referencePokemon = pokemonWorkflow?.pokemon.find(
+                        (pokemon) =>
+                          pokemon.speciesId === nextSpeciesId &&
+                          pokemon.form === nextForm
+                      );
+                      if (referencePokemon) {
+                        preserveValidGiftDependencyOrReset(
+                          nextDrafts,
+                          contextualGiftFields,
+                          abilityFieldName,
+                          gift.ability,
+                          createTrainerPokemonAbilityOptions(referencePokemon)
+                        );
+                        preserveValidGiftDependencyOrReset(
+                          nextDrafts,
+                          contextualGiftFields,
+                          genderFieldName,
+                          gift.gender,
+                          createGiftPokemonGenderOptions(referencePokemon)
+                        );
+                      }
+                    } else {
+                      const abilityField = contextualGiftFields.find(
+                        (candidate) => candidate.field === abilityFieldName
+                      );
+                      if (abilityField?.options.some((option) => option.value === 0)) {
+                        nextDrafts[abilityFieldName] = '0';
+                      }
+                    }
+                  }
+                  setGiftDraftsByIndex((currentDrafts) =>
+                    setFieldDraftRecord(
+                      currentDrafts,
+                      gift.giftIndex,
+                      nextDrafts,
+                      giftDraftDefaults
+                    )
+                  );
+                }}
+              />
+            );
+
+          },
+          groupFooter: (group) => group.group === 'Restoration Alpha Settings' ? (
+          <div className="field-group-action-row za-spawner-field-note">
+            <small
+              className={
+                giftAlphaRangeError
+                  ? 'editable-field-error'
+                  : 'editable-field-status'
+              }
+            >
+              {giftAlphaRangeError ?? t('za.gifts.alpha.rangeRule')}
+            </small>
+          </div>
+                  ) : null,
+          groupLabel: (group) => group === 'Restoration Alpha Settings' ? t('za.gifts.alpha.heading') : translateLiteral(group)
+        })}
+        <EditorWorkspaceSection id="details" label={translateLiteral('Details')}>
+          <div className="editor-task-groups">
+            <EditorDetailGroup label={translateLiteral('Source and identity')}>
+            <dl className="editor-detail-list">
+              <div>
+                <dt>Gift</dt>
+                <dd>{gift.label}</dd>
+              </div>
+              {editorFamily !== 'swsh' && gift.eventLabel ? (
+                <div>
+                  <dt>Event label</dt>
+                  <dd>{gift.eventLabel}</dd>
+                </div>
+              ) : null}
+              <EditorDetailValue label="Data file" dataValue path>{gift.provenance.sourceFile}</EditorDetailValue>
+              <div>
+                <dt>Layer</dt>
+                <dd>{formatSourceLayer(gift.provenance.sourceLayer)}</dd>
+              </div>
+              <div>
+                <dt>File state</dt>
+                <dd>{formatFileState(gift.provenance.fileState)}</dd>
+              </div>
+              {editorFamily !== 'za' ? (
+                <div>
+                  <dt>Ball</dt>
+                  <dd>{gift.ballItem}</dd>
+                </div>
+              ) : null}
+              <div>
+                <dt>Held item</dt>
+                <dd>{gift.heldItem ?? 'None'}</dd>
+              </div>
+              {editorFamily === 'sv' || editorFamily === 'za' ? (
+                <>
+                  <div>
+                    <dt>Moves</dt>
+                    <dd>{formatGiftPokemonMoves(gift, t)}</dd>
+                  </div>
+                  {gift.teraTypeLabel !== null ? (
+                    <div>
+                      <dt>Tera type</dt>
+                      <dd>{gift.teraTypeLabel}</dd>
+                    </div>
+                  ) : null}
+                  {gift.scaleModeLabel !== null ? (
+                    <div>
+                      <dt>Scale</dt>
+                      <dd>{formatGiftPokemonScale(gift)}</dd>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <div>
+                  <dt>Special Move</dt>
+                  <dd>{gift.specialMove ?? 'None'}</dd>
+                </div>
+              )}
+              <div>
+                <dt>IV detail</dt>
+                <dd>{formatGiftPokemonIvs(gift)}</dd>
+              </div>
+            </dl>
+            </EditorDetailGroup>
+            <div className="pokemon-instance-notices">{editorFamily === 'za' && gift.eventLabel === 'sub_addpoke_rukario' ? (
+            <section className="technical-tool-notice technical-tool-notice-info">
+              <div className="technical-tool-notice-heading">
+                <Dumbbell aria-hidden="true" size={18} />
+                <div>
+                  <h3>{t('za.gifts.lucario.heading')}</h3>
+                  <p>{t('za.gifts.lucario.description')}</p>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {editorFamily === 'za' && gift.canEditAlphaSettings ? (
+            <section className="technical-tool-notice technical-tool-notice-info">
+              <div className="technical-tool-notice-heading">
+                <ShieldCheck aria-hidden="true" size={18} />
+                <div>
+                  <h3>{t('za.gifts.alpha.heading')}</h3>
+                  <p>{t('za.gifts.alpha.description')}</p>
+                  <p>
+                    {t('za.gifts.alpha.currentValues', {
+                      bonus: gift.alphaLevelBonus ?? 0,
+                      chance: gift.alphaChancePercent ?? 0
+                    })}
+                  </p>
+                </div>
+              </div>
+            </section>
+          ) : null}</div>
+          </div>
+          {onStageGiftPokemonVanilla ? (
               <div className="za-encounter-revert-action">
                 <button
                   aria-busy={isGiftPokemonUpdating || undefined}
@@ -39311,13 +39389,9 @@ function SelectedGiftPokemonPanel({
                 </small>
               </div>
             ) : null}
-
-          </div>
-        </>
-      ) : (
-        <p className="empty-copy">No gift selected.</p>
-      )}
-    </aside>
+        </EditorWorkspaceSection>
+      </> : <p className="empty-copy">No gift selected.</p>}
+    </RecordEditorWorkspace>
   );
 }
 
@@ -39403,55 +39477,11 @@ function TradePokemonSection({
           <h2 id="trade-pokemon-heading">Trade Pokemon</h2>
         </div>
 
-        <div className="items-toolbar trainers-toolbar shiny-lock-toolbar">
-          <label className="search-box items-search">
-            <Search aria-hidden="true" size={18} />
-            <input
-              aria-label="Search trade Pokemon"
-              disabled={!workflow}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search trade Pokemon"
-              type="search"
-              value={searchText}
-            />
-          </label>
-          <Metric
-            label="Loaded trades"
-            value={workflow ? workflow.stats.totalTradeCount.toString() : '0'}
-          />
-          <Metric
-            label="Fixed IV rows"
-            value={workflow ? workflow.stats.fixedIvTradeCount.toString() : '0'}
-          />
-          <Metric
-            label="Sources"
-            value={workflow ? workflow.stats.sourceFileCount.toString() : '0'}
-          />
-          <button
-            className="primary-button compact-button"
-            disabled={!canRemoveTradeShinyLocks}
-            onClick={() => setIsShinyLockConfirmationOpen(true)}
-            title={removeTradeShinyLockTitle}
-            type="button"
-          >
-            <ShieldCheck aria-hidden="true" size={14} />
-            <span>Remove Trade Shiny Lock</span>
-          </button>
-        </div>
+
 
         {workflow ? (
-          <EditorSessionBar
-            canEdit={canEditTrades && selectedTrade !== null}
-            isEditing={editSession !== null}
-            isStarting={isEditStarting}
-            label="Trade Pokemon"
-            onStart={onStartEditSession}
-          />
-        ) : null}
-
-        {workflow ? (
-          <RecordEditorWorkspace id="tradePokemon" className="trainers-layout" browser={
-            <div
+          <SelectedTradePokemonPanel
+            browser={<div
               aria-colcount={7}
               aria-label="Trade Pokemon"
               aria-rowcount={filteredTrades.length + 1}
@@ -39496,10 +39526,40 @@ function TradePokemonSection({
                   </InteractiveTableRow>
                 )}
               />
-            </div>
-          }>
-
-            <SelectedTradePokemonPanel
+            </div>}
+            browserControls={<div className="pokemon-instance-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search trade Pokemon"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search trade Pokemon"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <span className="muted">{"Loaded trades"} <strong>{workflow?.stats.totalTradeCount ?? 0}</strong></span>
+          <span className="muted">{"Fixed IV rows"} <strong>{workflow?.stats.fixedIvTradeCount ?? 0}</strong></span>
+          <span className="muted">{"Sources"} <strong>{workflow?.stats.sourceFileCount ?? 0}</strong></span>
+          <button
+            className="primary-button compact-button"
+            disabled={!canRemoveTradeShinyLocks}
+            onClick={() => setIsShinyLockConfirmationOpen(true)}
+            title={removeTradeShinyLockTitle}
+            type="button"
+          >
+            <ShieldCheck aria-hidden="true" size={14} />
+            <span>Remove Trade Shiny Lock</span>
+          </button>
+        </div>}
+            sessionBar={<EditorSessionBar
+            canEdit={canEditTrades && selectedTrade !== null}
+            isEditing={editSession !== null}
+            isStarting={isEditStarting}
+            label="Trade Pokemon"
+            onStart={onStartEditSession}
+          />}
               canEditTrades={canEditTrades}
               editSession={editSession}
               editableFields={workflow.editableFields}
@@ -39511,7 +39571,6 @@ function TradePokemonSection({
               pokemonWorkflow={pokemonWorkflow}
               trade={selectedTrade}
             />
-          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">Open Trade Pokemon from Workflows to load backend trade data.</p>
         )}
@@ -39543,6 +39602,9 @@ function TradePokemonSection({
 }
 
 function SelectedTradePokemonPanel({
+  browser,
+  browserControls,
+  sessionBar,
   canEditTrades,
   editSession,
   editableFields,
@@ -39554,6 +39616,9 @@ function SelectedTradePokemonPanel({
   pokemonWorkflow,
   trade
 }: {
+  browser: ReactNode;
+  browserControls: ReactNode;
+  sessionBar: ReactNode;
   canEditTrades: boolean;
   editSession: EditSession | null;
   editableFields: TradePokemonEditableField[];
@@ -39761,7 +39826,10 @@ function SelectedTradePokemonPanel({
   }, [trade, tradeDraftDefaults]);
 
   return (
-    <aside aria-label="Selected trade Pokemon provenance" className="trainer-inspector">
+    <RecordEditorWorkspace id="tradePokemon" className="trainers-layout pokemon-instance-workspace"
+      initialSection="pokemon" browser={browser} browserControls={browserControls}
+      sessionBar={sessionBar}>
+      <EditorWorkspaceHeader afterBrowser>
       <PublishedLocalEditorValidationDiagnostics
         domain="workflow.tradePokemon"
         issues={tradeDraftSummary.invalidFields}
@@ -39773,8 +39841,10 @@ function SelectedTradePokemonPanel({
           summary="No trade selected."
         />
       ) : null}
-      {trade ? (
-        <>
+      </EditorWorkspaceHeader>
+      {trade ? <>
+        <EditorWorkspaceHeader afterBrowser>
+          <div className="editor-record-context">
           <PokemonInstanceRecordHeading
             editorFamily={editorFamily}
             form={trade.form}
@@ -39784,294 +39854,8 @@ function SelectedTradePokemonPanel({
           >
             {isZaTradeWorkflow ? `Lv. ${trade.level}` : `${formatTradePokemonRequestLabel(trade, editorFamily)} requested · Lv. ${trade.level} received`}
           </PokemonInstanceRecordHeading>
-          <details className="pokemon-instance-source">
-            <summary>{translateLiteral('Details and source')}</summary>
-            <dl className="item-provenance-list">
-              <div>
-                <dt>Trade</dt>
-                <dd>{trade.label}</dd>
-              </div>
-              <div>
-                <dt>Data file</dt>
-                <dd>{trade.provenance.sourceFile}</dd>
-              </div>
-              <div>
-                <dt>Layer</dt>
-                <dd>{formatSourceLayer(trade.provenance.sourceLayer)}</dd>
-              </div>
-              <div>
-                <dt>File state</dt>
-                <dd>{formatFileState(trade.provenance.fileState)}</dd>
-              </div>
-              <div>
-                <dt>{isZaTradeWorkflow ? 'Request source' : 'Requested'}</dt>
-                <dd>{formatTradePokemonRequestLabel(trade, editorFamily)}</dd>
-              </div>
-              <div>
-                <dt>Received</dt>
-                <dd>{`${formatSpeciesFormLabel(trade.species, trade.form, trade.speciesId, editorFamily)} Lv. ${trade.level}`}</dd>
-              </div>
-              <div>
-                <dt>Ball</dt>
-                <dd>{trade.ballItem}</dd>
-              </div>
-              <div>
-                <dt>Held item</dt>
-                <dd>{trade.heldItem ?? 'None'}</dd>
-              </div>
-              <div>
-                <dt>{editorFamily === 'sv' || editorFamily === 'za' ? 'Moves' : 'Relearn moves'}</dt>
-                <dd>{formatTradePokemonRelearnMoves(trade)}</dd>
-              </div>
-              {editorFamily === 'sv' || editorFamily === 'za' ? (
-                <>
-                  <div>
-                    <dt>Event label</dt>
-                    <dd>{trade.eventLabel ?? 'None'}</dd>
-                  </div>
-                  {trade.teraTypeLabel !== null ? (
-                    <div>
-                      <dt>Tera type</dt>
-                      <dd>{trade.teraTypeLabel}</dd>
-                    </div>
-                  ) : null}
-                  {trade.scaleModeLabel !== null ? (
-                    <div>
-                      <dt>Scale</dt>
-                      <dd>{formatTradePokemonScale(trade)}</dd>
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <>
-                  <div>
-                    <dt>Memory</dt>
-                    <dd>{formatTradePokemonMemory(trade)}</dd>
-                  </div>
-                  <div>
-                    <dt>Identifiers</dt>
-                    <dd>{`${trade.hash0} / ${trade.hash1} / ${trade.hash2}`}</dd>
-                  </div>
-                </>
-              )}
-              <div>
-                <dt>IV detail</dt>
-                <dd>{formatTradePokemonIvs(trade)}</dd>
-              </div>
-            </dl>
-          </details>
-
-          <div className="trainer-edit-form">
-            {editorFamily === 'swsh' ? (
-              <label className="editable-field">
-                <span>{t('trades.nickname')}</span>
-                <input
-                  aria-invalid={tradeDraftSummary.invalidFields.some(field => field.field === 'nickname') || undefined}
-                  disabled={!canEditTrades || editSession === null}
-                  maxLength={12}
-                  onChange={event => setTradeDraftsByIndex(current => setFieldDraftRecord(current, trade.tradeIndex,
-                    { ...tradeDrafts, nickname: event.target.value }, tradeDraftDefaults))}
-                  type="text"
-                  value={tradeDrafts.nickname ?? ''}
-                />
-                <small>{t(tradeDraftSummary.invalidFields.some(field => field.field === 'nickname') ? 'trades.nicknameInvalid' : 'trades.nicknameHelp')}</small>
-              </label>
-            ) : null}
-            <div className="editable-field-groups">
-              {tradeFieldGroups.map((group) => (
-                <fieldset className="editable-field-group" key={group.group}>
-                  <legend>{group.group}</legend>
-                  <div className="editable-field-grid">
-                    {group.fields.map((field) => {
-                      const currentValue = getEditableTradePokemonFieldValue(trade, field.field);
-                      const draftValue = tradeDrafts[field.field] ?? '';
-                      const draftState = getTrainerFieldDraftState(
-                        draftValue,
-                        currentValue,
-                        field,
-                        {
-                          drafts: tradeDrafts,
-                          fields: contextualTradeFields,
-                          getValue: (fieldName) =>
-                            getEditableTradePokemonFieldValue(trade, fieldName)
-                        }
-                      );
-                      const disabledReason =
-                        getTradeFieldDisabledReason(field.field) ??
-                          getPokemonInstanceIvStatDisabledReason(
-                            field.field,
-                            contextualTradeFields,
-                            tradeDrafts
-                          );
-
-                      return (
-                        <GiftPokemonDraftField
-                          currentValue={currentValue}
-                          disabled={
-                            !canEditTrades ||
-                            editSession === null ||
-                            disabledReason !== null
-                          }
-                          disabledReason={disabledReason ?? undefined}
-                          draftState={draftState}
-                          draftValue={draftValue}
-                          field={field}
-                          formOptionContext={
-                            field.field === tradeRequiredFormFieldName
-                              ? requestedTradeFormOptionContext
-                              : receivedTradeFormOptionContext
-                          }
-                          helpDomain="trades"
-                          helpGame={editorFamily}
-                          key={field.field}
-                          onChange={(value) => {
-                            const nextDrafts = {
-                              ...tradeDrafts,
-                              [field.field]: value
-                            };
-                            const speciesField = contextualTradeFields.find(
-                              (candidate) => candidate.field === giftSpeciesFieldName
-                            );
-                            const formField = contextualTradeFields.find(
-                              (candidate) => candidate.field === formFieldName
-                            );
-                            const requestedSpeciesField = contextualTradeFields.find(
-                              (candidate) => candidate.field === tradeRequiredSpeciesFieldName
-                            );
-                            const requestedFormField = contextualTradeFields.find(
-                              (candidate) => candidate.field === tradeRequiredFormFieldName
-                            );
-                            const previousSpeciesId =
-                              parseEditableIntegerDraft(
-                                tradeDrafts[giftSpeciesFieldName] ?? trade.speciesId.toString(),
-                                speciesField?.options
-                              );
-                            const previousForm =
-                              parseEditableIntegerDraft(
-                                tradeDrafts[formFieldName] ?? trade.form.toString(),
-                                formField?.options
-                              ) ?? trade.form;
-                            let nextSpeciesId = previousSpeciesId ?? trade.speciesId;
-                            let nextForm = previousForm;
-                            let identityChanged = false;
-
-                            if (field.field === giftSpeciesFieldName) {
-                              const parsedSpeciesId = parseEditableIntegerDraft(
-                                value,
-                                field.options
-                              );
-                              if (
-                                parsedSpeciesId !== null &&
-                                parsedSpeciesId !== previousSpeciesId
-                              ) {
-                                nextSpeciesId = parsedSpeciesId;
-                                identityChanged = true;
-                                const resolvedForm = resolveSpeciesChangeForm({
-                                  gameFamily: editorFamily,
-                                  pokemonRecords: pokemonWorkflow?.pokemon,
-                                  previousForm,
-                                  sourceForm: trade.form,
-                                  sourceSpeciesId: trade.speciesId,
-                                  speciesField,
-                                  targetSpeciesId: parsedSpeciesId
-                                });
-                                if (formField && resolvedForm !== null) {
-                                  nextForm = resolvedForm;
-                                  nextDrafts[formFieldName] = resolvedForm.toString();
-                                }
-                              }
-                            } else if (field.field === formFieldName) {
-                              const parsedForm = parseEditableIntegerDraft(value, field.options);
-                              if (parsedForm !== null && parsedForm !== previousForm) {
-                                nextForm = parsedForm;
-                                identityChanged = true;
-                              }
-                            } else if (field.field === tradeRequiredSpeciesFieldName) {
-                              const previousRequestedSpeciesId =
-                                parseEditableIntegerDraft(
-                                  tradeDrafts[tradeRequiredSpeciesFieldName] ??
-                                    trade.requiredSpeciesId.toString(),
-                                  requestedSpeciesField?.options
-                                );
-                              const parsedRequestedSpeciesId = parseEditableIntegerDraft(
-                                value,
-                                field.options
-                              );
-                              if (
-                                parsedRequestedSpeciesId !== null &&
-                                parsedRequestedSpeciesId !== previousRequestedSpeciesId &&
-                                requestedFormField
-                              ) {
-                                const previousRequestedForm =
-                                  parseOptionalInteger(
-                                    tradeDrafts[tradeRequiredFormFieldName] ??
-                                      trade.requiredForm.toString()
-                                  ) ?? trade.requiredForm;
-                                const resolvedForm = resolveSpeciesChangeForm({
-                                  gameFamily: editorFamily,
-                                  pokemonRecords: pokemonWorkflow?.pokemon,
-                                  previousForm: previousRequestedForm,
-                                  sourceForm: trade.requiredForm,
-                                  sourceSpeciesId: trade.requiredSpeciesId,
-                                  speciesField: requestedSpeciesField,
-                                  targetSpeciesId: parsedRequestedSpeciesId
-                                });
-                                if (resolvedForm !== null) {
-                                  nextDrafts[tradeRequiredFormFieldName] =
-                                    resolvedForm.toString();
-                                }
-                              }
-                            }
-
-                            if (identityChanged) {
-                              if (editorFamily === 'swsh') {
-                                const referencePokemon = pokemonWorkflow?.pokemon.find(
-                                  (pokemon) =>
-                                    pokemon.speciesId === nextSpeciesId &&
-                                    pokemon.form === nextForm
-                                );
-                                if (referencePokemon) {
-                                  preserveValidGiftDependencyOrReset(
-                                    nextDrafts,
-                                    contextualTradeFields,
-                                    abilityFieldName,
-                                    trade.ability,
-                                    createTrainerPokemonAbilityOptions(referencePokemon)
-                                  );
-                                  preserveValidGiftDependencyOrReset(
-                                    nextDrafts,
-                                    contextualTradeFields,
-                                    genderFieldName,
-                                    trade.gender,
-                                    createGiftPokemonGenderOptions(referencePokemon)
-                                  );
-                                }
-                              } else {
-                                const abilityField = contextualTradeFields.find(
-                                  (candidate) => candidate.field === abilityFieldName
-                                );
-                                if (abilityField?.options.some((option) => option.value === 0)) {
-                                  nextDrafts[abilityFieldName] = '0';
-                                }
-                              }
-                            }
-                            setTradeDraftsByIndex((currentDrafts) =>
-                              setFieldDraftRecord(
-                                currentDrafts,
-                                trade.tradeIndex,
-                                nextDrafts,
-                                tradeDraftDefaults
-                              )
-                            );
-                          }}
-                        />
-                      );
-                    })}
-                  </div>
-                </fieldset>
-              ))}
-            </div>
-            {editSession ? (
+          </div>
+          {editSession ? (
               <EditorSessionBarActions>
                 <button
                   aria-busy={isTradePokemonUpdating || undefined}
@@ -40142,13 +39926,300 @@ function SelectedTradePokemonPanel({
                 </span>
               </EditorSessionBarActions>
             ) : null}
+        </EditorWorkspaceHeader>
+        {pokemonInstanceSections({
+          groups: tradeFieldGroups,
+          invalidFields: tradeDraftSummary.invalidFields,
+          changedFields: tradeDraftSummary.changedFields,
+          translateLiteral,
+          drafts: tradeDrafts,
+          idPrefix: 'trade',
+          profile: editorFamily === 'swsh' ? (
+            <div className="pokemon-instance-profile-extra">
+              <label className="editable-field">
+                <span>{t('trades.nickname')}</span>
+                <input
+                  aria-invalid={tradeDraftSummary.invalidFields.some(field => field.field === 'nickname') || undefined}
+                  disabled={!canEditTrades || editSession === null}
+                  maxLength={12}
+                  onChange={event => setTradeDraftsByIndex(current => setFieldDraftRecord(current, trade.tradeIndex,
+          { ...tradeDrafts, nickname: event.target.value }, tradeDraftDefaults))}
+                  type="text"
+                  value={tradeDrafts.nickname ?? ''}
+                />
+                <small>{t(tradeDraftSummary.invalidFields.some(field => field.field === 'nickname') ? 'trades.nicknameInvalid' : 'trades.nicknameHelp')}</small>
+              </label>
+            </div>
+          ) : null,
+          renderField: (field, compact, ivDescriptionId) => {
+            const currentValue = getEditableTradePokemonFieldValue(trade, field.field);
+            const draftValue = tradeDrafts[field.field] ?? '';
+            const draftState = getTrainerFieldDraftState(
+              draftValue,
+              currentValue,
+              field,
+              {
+                drafts: tradeDrafts,
+                fields: contextualTradeFields,
+                getValue: (fieldName) =>
+                  getEditableTradePokemonFieldValue(trade, fieldName)
+              }
+            );
+            const disabledReason =
+              getTradeFieldDisabledReason(field.field) ??
+                getPokemonInstanceIvStatDisabledReason(
+                  field.field,
+                  contextualTradeFields,
+                  tradeDrafts
+                );
+
+            return (
+              <GiftPokemonDraftField
+                compact={compact}
+                ariaDescribedBy={disabledReason === pokemonInstanceIvLockReason ? ivDescriptionId : undefined}
+                currentValue={currentValue}
+                disabled={
+                  !canEditTrades ||
+                  editSession === null ||
+                  disabledReason !== null
+                }
+                disabledReason={disabledReason ?? undefined}
+                draftState={draftState}
+                draftValue={draftValue}
+                field={field}
+                formOptionContext={
+                  field.field === tradeRequiredFormFieldName
+                    ? requestedTradeFormOptionContext
+                    : receivedTradeFormOptionContext
+                }
+                helpDomain="trades"
+                helpGame={editorFamily}
+                key={field.field}
+                onChange={(value) => {
+                  const nextDrafts = {
+                    ...tradeDrafts,
+                    [field.field]: value
+                  };
+                  const speciesField = contextualTradeFields.find(
+                    (candidate) => candidate.field === giftSpeciesFieldName
+                  );
+                  const formField = contextualTradeFields.find(
+                    (candidate) => candidate.field === formFieldName
+                  );
+                  const requestedSpeciesField = contextualTradeFields.find(
+                    (candidate) => candidate.field === tradeRequiredSpeciesFieldName
+                  );
+                  const requestedFormField = contextualTradeFields.find(
+                    (candidate) => candidate.field === tradeRequiredFormFieldName
+                  );
+                  const previousSpeciesId =
+                    parseEditableIntegerDraft(
+                      tradeDrafts[giftSpeciesFieldName] ?? trade.speciesId.toString(),
+                      speciesField?.options
+                    );
+                  const previousForm =
+                    parseEditableIntegerDraft(
+                      tradeDrafts[formFieldName] ?? trade.form.toString(),
+                      formField?.options
+                    ) ?? trade.form;
+                  let nextSpeciesId = previousSpeciesId ?? trade.speciesId;
+                  let nextForm = previousForm;
+                  let identityChanged = false;
+
+                  if (field.field === giftSpeciesFieldName) {
+                    const parsedSpeciesId = parseEditableIntegerDraft(
+                      value,
+                      field.options
+                    );
+                    if (
+                      parsedSpeciesId !== null &&
+                      parsedSpeciesId !== previousSpeciesId
+                    ) {
+                      nextSpeciesId = parsedSpeciesId;
+                      identityChanged = true;
+                      const resolvedForm = resolveSpeciesChangeForm({
+                        gameFamily: editorFamily,
+                        pokemonRecords: pokemonWorkflow?.pokemon,
+                        previousForm,
+                        sourceForm: trade.form,
+                        sourceSpeciesId: trade.speciesId,
+                        speciesField,
+                        targetSpeciesId: parsedSpeciesId
+                      });
+                      if (formField && resolvedForm !== null) {
+                        nextForm = resolvedForm;
+                        nextDrafts[formFieldName] = resolvedForm.toString();
+                      }
+                    }
+                  } else if (field.field === formFieldName) {
+                    const parsedForm = parseEditableIntegerDraft(value, field.options);
+                    if (parsedForm !== null && parsedForm !== previousForm) {
+                      nextForm = parsedForm;
+                      identityChanged = true;
+                    }
+                  } else if (field.field === tradeRequiredSpeciesFieldName) {
+                    const previousRequestedSpeciesId =
+                      parseEditableIntegerDraft(
+                        tradeDrafts[tradeRequiredSpeciesFieldName] ??
+                          trade.requiredSpeciesId.toString(),
+                        requestedSpeciesField?.options
+                      );
+                    const parsedRequestedSpeciesId = parseEditableIntegerDraft(
+                      value,
+                      field.options
+                    );
+                    if (
+                      parsedRequestedSpeciesId !== null &&
+                      parsedRequestedSpeciesId !== previousRequestedSpeciesId &&
+                      requestedFormField
+                    ) {
+                      const previousRequestedForm =
+                        parseOptionalInteger(
+                          tradeDrafts[tradeRequiredFormFieldName] ??
+                            trade.requiredForm.toString()
+                        ) ?? trade.requiredForm;
+                      const resolvedForm = resolveSpeciesChangeForm({
+                        gameFamily: editorFamily,
+                        pokemonRecords: pokemonWorkflow?.pokemon,
+                        previousForm: previousRequestedForm,
+                        sourceForm: trade.requiredForm,
+                        sourceSpeciesId: trade.requiredSpeciesId,
+                        speciesField: requestedSpeciesField,
+                        targetSpeciesId: parsedRequestedSpeciesId
+                      });
+                      if (resolvedForm !== null) {
+                        nextDrafts[tradeRequiredFormFieldName] =
+                          resolvedForm.toString();
+                      }
+                    }
+                  }
+
+                  if (identityChanged) {
+                    if (editorFamily === 'swsh') {
+                      const referencePokemon = pokemonWorkflow?.pokemon.find(
+                        (pokemon) =>
+                          pokemon.speciesId === nextSpeciesId &&
+                          pokemon.form === nextForm
+                      );
+                      if (referencePokemon) {
+                        preserveValidGiftDependencyOrReset(
+                          nextDrafts,
+                          contextualTradeFields,
+                          abilityFieldName,
+                          trade.ability,
+                          createTrainerPokemonAbilityOptions(referencePokemon)
+                        );
+                        preserveValidGiftDependencyOrReset(
+                          nextDrafts,
+                          contextualTradeFields,
+                          genderFieldName,
+                          trade.gender,
+                          createGiftPokemonGenderOptions(referencePokemon)
+                        );
+                      }
+                    } else {
+                      const abilityField = contextualTradeFields.find(
+                        (candidate) => candidate.field === abilityFieldName
+                      );
+                      if (abilityField?.options.some((option) => option.value === 0)) {
+                        nextDrafts[abilityFieldName] = '0';
+                      }
+                    }
+                  }
+                  setTradeDraftsByIndex((currentDrafts) =>
+                    setFieldDraftRecord(
+                      currentDrafts,
+                      trade.tradeIndex,
+                      nextDrafts,
+                      tradeDraftDefaults
+                    )
+                  );
+                }}
+              />
+            );
+
+          }
+        })}
+        <EditorWorkspaceSection id="details" label={translateLiteral('Details')}>
+          <div className="editor-task-groups">
+            <EditorDetailGroup label={translateLiteral('Source and identity')}>
+            <dl className="editor-detail-list">
+              <div>
+                <dt>Trade</dt>
+                <dd>{trade.label}</dd>
+              </div>
+              <EditorDetailValue label="Data file" dataValue path>{trade.provenance.sourceFile}</EditorDetailValue>
+              <div>
+                <dt>Layer</dt>
+                <dd>{formatSourceLayer(trade.provenance.sourceLayer)}</dd>
+              </div>
+              <div>
+                <dt>File state</dt>
+                <dd>{formatFileState(trade.provenance.fileState)}</dd>
+              </div>
+              <div>
+                <dt>{isZaTradeWorkflow ? 'Request source' : 'Requested'}</dt>
+                <dd>{formatTradePokemonRequestLabel(trade, editorFamily)}</dd>
+              </div>
+              <div>
+                <dt>Received</dt>
+                <dd>{`${formatSpeciesFormLabel(trade.species, trade.form, trade.speciesId, editorFamily)} Lv. ${trade.level}`}</dd>
+              </div>
+              <div>
+                <dt>Ball</dt>
+                <dd>{trade.ballItem}</dd>
+              </div>
+              <div>
+                <dt>Held item</dt>
+                <dd>{trade.heldItem ?? 'None'}</dd>
+              </div>
+              <div>
+                <dt>{editorFamily === 'sv' || editorFamily === 'za' ? 'Moves' : 'Relearn moves'}</dt>
+                <dd>{formatTradePokemonRelearnMoves(trade)}</dd>
+              </div>
+              {editorFamily === 'sv' || editorFamily === 'za' ? (
+                <>
+                  <div>
+                    <dt>Event label</dt>
+                    <dd>{trade.eventLabel ?? 'None'}</dd>
+                  </div>
+                  {trade.teraTypeLabel !== null ? (
+                    <div>
+                      <dt>Tera type</dt>
+                      <dd>{trade.teraTypeLabel}</dd>
+                    </div>
+                  ) : null}
+                  {trade.scaleModeLabel !== null ? (
+                    <div>
+                      <dt>Scale</dt>
+                      <dd>{formatTradePokemonScale(trade)}</dd>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <div>
+                    <dt>Memory</dt>
+                    <dd>{formatTradePokemonMemory(trade)}</dd>
+                  </div>
+                  <div>
+                    <dt>Identifiers</dt>
+                    <dd>{`${trade.hash0} / ${trade.hash1} / ${trade.hash2}`}</dd>
+                  </div>
+                </>
+              )}
+              <div>
+                <dt>IV detail</dt>
+                <dd>{formatTradePokemonIvs(trade)}</dd>
+              </div>
+            </dl>
+            </EditorDetailGroup>
 
           </div>
-        </>
-      ) : (
-        <p className="empty-copy">No trade selected.</p>
-      )}
-    </aside>
+
+        </EditorWorkspaceSection>
+      </> : <p className="empty-copy">No trade selected.</p>}
+    </RecordEditorWorkspace>
   );
 }
 
@@ -40206,45 +40277,11 @@ function RentalPokemonSection({
           <h2 id="rental-pokemon-heading">Rental Pokemon</h2>
         </div>
 
-        <div className="items-toolbar trainers-toolbar">
-          <label className="search-box items-search">
-            <Search aria-hidden="true" size={18} />
-            <input
-              aria-label="Search rental Pokemon"
-              disabled={!workflow}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search rental Pokemon"
-              type="search"
-              value={searchText}
-            />
-          </label>
-          <Metric
-            label="Loaded rentals"
-            value={workflow ? workflow.stats.totalRentalCount.toString() : '0'}
-          />
-          <Metric
-            label="Perfect IV rows"
-            value={workflow ? workflow.stats.perfectIvRentalCount.toString() : '0'}
-          />
-          <Metric
-            label="Sources"
-            value={workflow ? workflow.stats.sourceFileCount.toString() : '0'}
-          />
-        </div>
+
 
         {workflow ? (
-          <EditorSessionBar
-            canEdit={canEditRentals && selectedRental !== null}
-            isEditing={editSession !== null}
-            isStarting={isEditStarting}
-            label="Rental Pokemon"
-            onStart={onStartEditSession}
-          />
-        ) : null}
-
-        {workflow ? (
-          <RecordEditorWorkspace id="rentalPokemon" className="trainers-layout" browser={
-            <div
+          <SelectedRentalPokemonPanel
+            browser={<div
               aria-colcount={7}
               aria-label="Rental Pokemon"
               aria-rowcount={filteredRentals.length + 1}
@@ -40287,10 +40324,30 @@ function RentalPokemonSection({
                   </InteractiveTableRow>
                 )}
               />
-            </div>
-          }>
-
-            <SelectedRentalPokemonPanel
+            </div>}
+            browserControls={<div className="pokemon-instance-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search rental Pokemon"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search rental Pokemon"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <span className="muted">{"Loaded rentals"} <strong>{workflow?.stats.totalRentalCount ?? 0}</strong></span>
+          <span className="muted">{"Perfect IV rows"} <strong>{workflow?.stats.perfectIvRentalCount ?? 0}</strong></span>
+          <span className="muted">{"Sources"} <strong>{workflow?.stats.sourceFileCount ?? 0}</strong></span>
+        </div>}
+            sessionBar={<EditorSessionBar
+            canEdit={canEditRentals && selectedRental !== null}
+            isEditing={editSession !== null}
+            isStarting={isEditStarting}
+            label="Rental Pokemon"
+            onStart={onStartEditSession}
+          />}
               canEditRentals={canEditRentals}
               editSession={editSession}
               editableFields={workflow.editableFields}
@@ -40300,7 +40357,6 @@ function RentalPokemonSection({
               pokemonWorkflow={pokemonWorkflow}
               rental={selectedRental}
             />
-          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">Open Rental Pokemon from Workflows to load backend rental data.</p>
         )}
@@ -40312,6 +40368,9 @@ function RentalPokemonSection({
 }
 
 function SelectedRentalPokemonPanel({
+  browser,
+  browserControls,
+  sessionBar,
   canEditRentals,
   editSession,
   editableFields,
@@ -40321,6 +40380,9 @@ function SelectedRentalPokemonPanel({
   pokemonWorkflow,
   rental
 }: {
+  browser: ReactNode;
+  browserControls: ReactNode;
+  sessionBar: ReactNode;
   canEditRentals: boolean;
   editSession: EditSession | null;
   editableFields: RentalPokemonEditableField[];
@@ -40467,7 +40529,10 @@ function SelectedRentalPokemonPanel({
   }, [rental, rentalDraftDefaults]);
 
   return (
-    <aside aria-label="Selected rental Pokemon provenance" className="trainer-inspector">
+    <RecordEditorWorkspace id="rentalPokemon" className="trainers-layout pokemon-instance-workspace"
+      initialSection="pokemon" browser={browser} browserControls={browserControls}
+      sessionBar={sessionBar}>
+      <EditorWorkspaceHeader afterBrowser>
       <PublishedLocalEditorValidationDiagnostics
         domain="workflow.rentalPokemon"
         issues={rentalDraftSummary.invalidFields}
@@ -40479,8 +40544,10 @@ function SelectedRentalPokemonPanel({
           summary="No rental selected."
         />
       ) : null}
-      {rental ? (
-        <>
+      </EditorWorkspaceHeader>
+      {rental ? <>
+        <EditorWorkspaceHeader afterBrowser>
+          <div className="editor-record-context">
           <PokemonInstanceRecordHeading
             editorFamily={'swsh'}
             form={rental.form}
@@ -40490,206 +40557,8 @@ function SelectedRentalPokemonPanel({
           >
             {`Lv. ${rental.level}`}
           </PokemonInstanceRecordHeading>
-          <details className="pokemon-instance-source">
-            <summary>{translateLiteral('Details and source')}</summary>
-            <dl className="item-provenance-list">
-              <div>
-                <dt>Rental</dt>
-                <dd>{rental.label}</dd>
-              </div>
-              <div>
-                <dt>Data file</dt>
-                <dd>{rental.provenance.sourceFile}</dd>
-              </div>
-              <div>
-                <dt>Layer</dt>
-                <dd>{formatSourceLayer(rental.provenance.sourceLayer)}</dd>
-              </div>
-              <div>
-                <dt>File state</dt>
-                <dd>{formatFileState(rental.provenance.fileState)}</dd>
-              </div>
-              <div>
-                <dt>Pokemon</dt>
-                <dd>{`${formatSpeciesFormLabel(rental.species, rental.form, rental.speciesId)} Lv. ${rental.level}`}</dd>
-              </div>
-              <div>
-                <dt>Ball</dt>
-                <dd>{rental.ballItem}</dd>
-              </div>
-              <div>
-                <dt>Held item</dt>
-                <dd>{rental.heldItem ?? 'None'}</dd>
-              </div>
-              <div>
-                <dt>Ability</dt>
-                <dd>{rental.abilityLabel}</dd>
-              </div>
-              <div>
-                <dt>Nature / Gender</dt>
-                <dd>{`${rental.natureLabel} / ${rental.genderLabel}`}</dd>
-              </div>
-              <div>
-                <dt>Trainer ID</dt>
-                <dd>{rental.trainerId}</dd>
-              </div>
-              <div>
-                <dt>Identifiers</dt>
-                <dd>{`${rental.hash1} / ${rental.hash2}`}</dd>
-              </div>
-              <div>
-                <dt>Moves</dt>
-                <dd>{formatRentalPokemonMoves(rental)}</dd>
-              </div>
-              <div>
-                <dt>EV detail</dt>
-                <dd>{formatRentalPokemonStats(rental.evs)}</dd>
-              </div>
-              <div>
-                <dt>IV detail</dt>
-                <dd>{formatRentalPokemonIvs(rental)}</dd>
-              </div>
-            </dl>
-          </details>
-
-          <div className="trainer-edit-form">
-            <div className="editable-field-groups">
-              {rentalFieldGroups.map((group) => (
-                <fieldset className="editable-field-group" key={group.group}>
-                  <legend>{group.group}</legend>
-                  <div className="editable-field-grid">
-                    {group.fields.map((field) => {
-                      const currentValue = getEditableRentalPokemonFieldValue(
-                        rental,
-                        field.field
-                      );
-                      const draftValue = rentalDrafts[field.field] ?? '';
-                      const draftState = getRentalPokemonFieldDraftState(
-                        rental,
-                        draftValue,
-                        currentValue,
-                        field,
-                        contextualRentalFields,
-                        rentalDrafts
-                      );
-
-                      return (
-                        <GiftPokemonDraftField
-                          currentValue={currentValue}
-                          disabled={!canEditRentals || editSession === null}
-                          disabledReason={
-                            getPokemonInstanceIvStatDisabledReason(
-                              field.field,
-                              contextualRentalFields,
-                              rentalDrafts
-                            ) ?? undefined
-                          }
-                          draftState={draftState}
-                          draftValue={draftValue}
-                          field={field}
-                          formOptionContext={rentalFormOptionContext}
-                          helpDomain="rentals"
-                          helpGame="swsh"
-                          key={field.field}
-                          onChange={(value) => {
-                            const nextDrafts = {
-                              ...rentalDrafts,
-                              [field.field]: value
-                            };
-                            const speciesField = contextualRentalFields.find(
-                              (candidate) => candidate.field === giftSpeciesFieldName
-                            );
-                            const formField = contextualRentalFields.find(
-                              (candidate) => candidate.field === formFieldName
-                            );
-                            const previousSpeciesId =
-                              parseEditableIntegerDraft(
-                                rentalDrafts[giftSpeciesFieldName] ??
-                                  rental.speciesId.toString(),
-                                speciesField?.options
-                              );
-                            const previousForm =
-                              parseEditableIntegerDraft(
-                                rentalDrafts[formFieldName] ?? rental.form.toString(),
-                                formField?.options
-                              ) ?? rental.form;
-                            let nextSpeciesId = previousSpeciesId ?? rental.speciesId;
-                            let nextForm = previousForm;
-                            let identityChanged = false;
-
-                            if (field.field === giftSpeciesFieldName) {
-                              const parsedSpeciesId = parseEditableIntegerDraft(
-                                value,
-                                field.options
-                              );
-                              if (
-                                parsedSpeciesId !== null &&
-                                parsedSpeciesId !== previousSpeciesId
-                              ) {
-                                nextSpeciesId = parsedSpeciesId;
-                                identityChanged = true;
-                                const resolvedForm = resolveSpeciesChangeForm({
-                                  gameFamily: 'swsh',
-                                  pokemonRecords: pokemonWorkflow?.pokemon,
-                                  previousForm,
-                                  sourceForm: rental.form,
-                                  sourceSpeciesId: rental.speciesId,
-                                  speciesField,
-                                  targetSpeciesId: parsedSpeciesId
-                                });
-                                if (formField && resolvedForm !== null) {
-                                  nextForm = resolvedForm;
-                                  nextDrafts[formFieldName] = resolvedForm.toString();
-                                }
-                              }
-                            } else if (field.field === formFieldName) {
-                              const parsedForm = parseEditableIntegerDraft(value, field.options);
-                              if (parsedForm !== null && parsedForm !== previousForm) {
-                                nextForm = parsedForm;
-                                identityChanged = true;
-                              }
-                            }
-
-                            if (identityChanged) {
-                              const referencePokemon = pokemonWorkflow?.pokemon.find(
-                                (pokemon) =>
-                                  pokemon.speciesId === nextSpeciesId &&
-                                  pokemon.form === nextForm
-                              );
-                              if (referencePokemon) {
-                                preserveValidGiftDependencyOrReset(
-                                  nextDrafts,
-                                  contextualRentalFields,
-                                  abilityFieldName,
-                                  rental.ability,
-                                  createRentalPokemonAbilityOptions(referencePokemon)
-                                );
-                                preserveValidGiftDependencyOrReset(
-                                  nextDrafts,
-                                  contextualRentalFields,
-                                  genderFieldName,
-                                  rental.gender,
-                                  createGiftPokemonGenderOptions(referencePokemon)
-                                );
-                              }
-                            }
-                            setRentalDraftsByIndex((currentDrafts) =>
-                              setFieldDraftRecord(
-                                currentDrafts,
-                                rental.rentalIndex,
-                                nextDrafts,
-                                rentalDraftDefaults
-                              )
-                            );
-                          }}
-                        />
-                      );
-                    })}
-                  </div>
-                </fieldset>
-              ))}
-            </div>
-            {editSession ? (
+          </div>
+          {editSession ? (
               <EditorSessionBarActions>
                 <button
                   aria-busy={isRentalPokemonUpdating || undefined}
@@ -40751,13 +40620,210 @@ function SelectedRentalPokemonPanel({
                 </span>
               </EditorSessionBarActions>
             ) : null}
+        </EditorWorkspaceHeader>
+        {pokemonInstanceSections({
+          groups: rentalFieldGroups,
+          invalidFields: rentalDraftSummary.invalidFields,
+          changedFields: rentalDraftSummary.changedFields,
+          translateLiteral,
+          drafts: rentalDrafts,
+          idPrefix: 'rental',
+          renderField: (field, compact, ivDescriptionId) => {
+            const currentValue = getEditableRentalPokemonFieldValue(
+              rental,
+              field.field
+            );
+            const draftValue = rentalDrafts[field.field] ?? '';
+            const draftState = getRentalPokemonFieldDraftState(
+              rental,
+              draftValue,
+              currentValue,
+              field,
+              contextualRentalFields,
+              rentalDrafts
+            );
+
+            return (
+              <GiftPokemonDraftField
+                compact={compact}
+                ariaDescribedBy={ivDescriptionId}
+                currentValue={currentValue}
+                disabled={!canEditRentals || editSession === null}
+                disabledReason={
+                  getPokemonInstanceIvStatDisabledReason(
+                    field.field,
+                    contextualRentalFields,
+                    rentalDrafts
+                  ) ?? undefined
+                }
+                draftState={draftState}
+                draftValue={draftValue}
+                field={field}
+                formOptionContext={rentalFormOptionContext}
+                helpDomain="rentals"
+                helpGame="swsh"
+                key={field.field}
+                onChange={(value) => {
+                  const nextDrafts = {
+                    ...rentalDrafts,
+                    [field.field]: value
+                  };
+                  const speciesField = contextualRentalFields.find(
+                    (candidate) => candidate.field === giftSpeciesFieldName
+                  );
+                  const formField = contextualRentalFields.find(
+                    (candidate) => candidate.field === formFieldName
+                  );
+                  const previousSpeciesId =
+                    parseEditableIntegerDraft(
+                      rentalDrafts[giftSpeciesFieldName] ??
+                        rental.speciesId.toString(),
+                      speciesField?.options
+                    );
+                  const previousForm =
+                    parseEditableIntegerDraft(
+                      rentalDrafts[formFieldName] ?? rental.form.toString(),
+                      formField?.options
+                    ) ?? rental.form;
+                  let nextSpeciesId = previousSpeciesId ?? rental.speciesId;
+                  let nextForm = previousForm;
+                  let identityChanged = false;
+
+                  if (field.field === giftSpeciesFieldName) {
+                    const parsedSpeciesId = parseEditableIntegerDraft(
+                      value,
+                      field.options
+                    );
+                    if (
+                      parsedSpeciesId !== null &&
+                      parsedSpeciesId !== previousSpeciesId
+                    ) {
+                      nextSpeciesId = parsedSpeciesId;
+                      identityChanged = true;
+                      const resolvedForm = resolveSpeciesChangeForm({
+                        gameFamily: 'swsh',
+                        pokemonRecords: pokemonWorkflow?.pokemon,
+                        previousForm,
+                        sourceForm: rental.form,
+                        sourceSpeciesId: rental.speciesId,
+                        speciesField,
+                        targetSpeciesId: parsedSpeciesId
+                      });
+                      if (formField && resolvedForm !== null) {
+                        nextForm = resolvedForm;
+                        nextDrafts[formFieldName] = resolvedForm.toString();
+                      }
+                    }
+                  } else if (field.field === formFieldName) {
+                    const parsedForm = parseEditableIntegerDraft(value, field.options);
+                    if (parsedForm !== null && parsedForm !== previousForm) {
+                      nextForm = parsedForm;
+                      identityChanged = true;
+                    }
+                  }
+
+                  if (identityChanged) {
+                    const referencePokemon = pokemonWorkflow?.pokemon.find(
+                      (pokemon) =>
+                        pokemon.speciesId === nextSpeciesId &&
+                        pokemon.form === nextForm
+                    );
+                    if (referencePokemon) {
+                      preserveValidGiftDependencyOrReset(
+                        nextDrafts,
+                        contextualRentalFields,
+                        abilityFieldName,
+                        rental.ability,
+                        createRentalPokemonAbilityOptions(referencePokemon)
+                      );
+                      preserveValidGiftDependencyOrReset(
+                        nextDrafts,
+                        contextualRentalFields,
+                        genderFieldName,
+                        rental.gender,
+                        createGiftPokemonGenderOptions(referencePokemon)
+                      );
+                    }
+                  }
+                  setRentalDraftsByIndex((currentDrafts) =>
+                    setFieldDraftRecord(
+                      currentDrafts,
+                      rental.rentalIndex,
+                      nextDrafts,
+                      rentalDraftDefaults
+                    )
+                  );
+                }}
+              />
+            );
+
+          }
+        })}
+        <EditorWorkspaceSection id="details" label={translateLiteral('Details')}>
+          <div className="editor-task-groups">
+            <EditorDetailGroup label={translateLiteral('Source and identity')}>
+            <dl className="editor-detail-list">
+              <div>
+                <dt>Rental</dt>
+                <dd>{rental.label}</dd>
+              </div>
+              <EditorDetailValue label="Data file" dataValue path>{rental.provenance.sourceFile}</EditorDetailValue>
+              <div>
+                <dt>Layer</dt>
+                <dd>{formatSourceLayer(rental.provenance.sourceLayer)}</dd>
+              </div>
+              <div>
+                <dt>File state</dt>
+                <dd>{formatFileState(rental.provenance.fileState)}</dd>
+              </div>
+              <div>
+                <dt>Pokemon</dt>
+                <dd>{`${formatSpeciesFormLabel(rental.species, rental.form, rental.speciesId)} Lv. ${rental.level}`}</dd>
+              </div>
+              <div>
+                <dt>Ball</dt>
+                <dd>{rental.ballItem}</dd>
+              </div>
+              <div>
+                <dt>Held item</dt>
+                <dd>{rental.heldItem ?? 'None'}</dd>
+              </div>
+              <div>
+                <dt>Ability</dt>
+                <dd>{rental.abilityLabel}</dd>
+              </div>
+              <div>
+                <dt>Nature / Gender</dt>
+                <dd>{`${rental.natureLabel} / ${rental.genderLabel}`}</dd>
+              </div>
+              <div>
+                <dt>Trainer ID</dt>
+                <dd>{rental.trainerId}</dd>
+              </div>
+              <div>
+                <dt>Identifiers</dt>
+                <dd>{`${rental.hash1} / ${rental.hash2}`}</dd>
+              </div>
+              <div>
+                <dt>Moves</dt>
+                <dd>{formatRentalPokemonMoves(rental)}</dd>
+              </div>
+              <div>
+                <dt>EV detail</dt>
+                <dd>{formatRentalPokemonStats(rental.evs)}</dd>
+              </div>
+              <div>
+                <dt>IV detail</dt>
+                <dd>{formatRentalPokemonIvs(rental)}</dd>
+              </div>
+            </dl>
+            </EditorDetailGroup>
 
           </div>
-        </>
-      ) : (
-        <p className="empty-copy">No rental selected.</p>
-      )}
-    </aside>
+
+        </EditorWorkspaceSection>
+      </> : <p className="empty-copy">No rental selected.</p>}
+    </RecordEditorWorkspace>
   );
 }
 
@@ -41032,8 +41098,8 @@ function DynamaxAdventuresSection({
                 </p>
               </div>
             ) : null}
-            <RecordEditorWorkspace id="dynamaxAdventures" className="trainers-layout" browser={
-              <div
+            <SelectedDynamaxAdventurePanel
+              browser={<div
               aria-colcount={6}
               aria-label="Dynamax Adventure encounters"
               aria-rowcount={filteredEncounters.length + 1}
@@ -41088,10 +41154,7 @@ function DynamaxAdventuresSection({
                   </InteractiveTableRow>
                 )}
               />
-            </div>
-            }>
-
-            <SelectedDynamaxAdventurePanel
+            </div>}
               canEditDynamaxAdventures={canEditDynamaxAdventures}
               changePlan={changePlan}
               editDisabledReason={dynamaxAdventureEditDisabledReason}
@@ -41111,7 +41174,6 @@ function DynamaxAdventuresSection({
               outputWritesReady={outputWritesReady}
               safeNormalSpeciesOptions={workflow.safeNormalSpeciesOptions}
             />
-            </RecordEditorWorkspace>
             <details className="editor-technical-disclosure">
               <summary id="dynamax-adventure-route-planner-heading">{t('routePlanner.title')}</summary>
               <DynamaxAdventureSeedPlanner
@@ -41141,6 +41203,7 @@ function DynamaxAdventuresSection({
 }
 
 function SelectedDynamaxAdventurePanel({
+  browser,
   canEditDynamaxAdventures,
   changePlan,
   editDisabledReason,
@@ -41160,6 +41223,7 @@ function SelectedDynamaxAdventurePanel({
   outputWritesReady,
   safeNormalSpeciesOptions
 }: {
+  browser: ReactNode;
   canEditDynamaxAdventures: boolean;
   changePlan: ChangePlan | null;
   editDisabledReason?: string;
@@ -41550,128 +41614,20 @@ function SelectedDynamaxAdventurePanel({
   };
 
   return (
-    <>
+    <RecordEditorWorkspace id="dynamaxAdventures" className="adventure-workspace" browser={browser} initialSection="pokemon">
+      <EditorWorkspaceHeader afterBrowser>
       <PublishedLocalEditorValidationDiagnostics
         domain="workflow.dynamaxAdventures"
         issues={adventureDraftSummary.invalidFields}
       />
-      <aside
-        aria-label="Selected Dynamax Adventure"
-        className="trainer-inspector dynamax-adventure-summary"
-      >
-        {encounter ? (
-          <>
-            <EditorRecordHeading name={encounter.label} id={encounter.entryIndex} />
-            <div
-              data-localization-ignore="true"
-            >
-              <PokemonSummaryCard
-                editorFamily="swsh"
-                form={encounter.form}
-                name={formatSpeciesFormLabel(
-                  encounter.species,
-                  encounter.form,
-                  encounter.speciesId
-                )}
-                speciesId={encounter.speciesId}
-                subtitle={`Adventure #${encounter.adventureIndex} | Lv. ${encounter.level}`}
-                title={formatSpeciesFormLabel(
-                  encounter.species,
-                  encounter.form,
-                  encounter.speciesId
-                )}
-              />
-            </div>
-
-            <details className="pokemon-instance-source">
-              <summary>{translateLiteral('Details')}</summary>
-              <dl className="item-provenance-list dynamax-adventure-provenance">
-                <div>
-                  <dt>Encounter</dt>
-                  <dd data-localization-ignore="true">{encounter.label}</dd>
-                </div>
-                <div>
-                  <dt>Index</dt>
-                  <dd data-localization-ignore="true">{encounter.entryIndex}</dd>
-                </div>
-                <div>
-                  <dt>Adventure</dt>
-                  <dd data-localization-ignore="true">{encounter.adventureIndex}</dd>
-                </div>
-                <div>
-                  <dt>Data file</dt>
-                  <dd data-localization-ignore="true">{encounter.provenance.sourceFile}</dd>
-                </div>
-                <div>
-                  <dt>Layer</dt>
-                  <dd>{formatSourceLayer(encounter.provenance.sourceLayer)}</dd>
-                </div>
-                <div>
-                  <dt>File state</dt>
-                  <dd>{formatFileState(encounter.provenance.fileState)}</dd>
-                </div>
-                <div>
-                  <dt>Pokemon</dt>
-                  <dd data-localization-ignore="true">{`${formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)} Lv. ${encounter.level}`}</dd>
-                </div>
-                <div>
-                  <dt>Ability</dt>
-                  <dd data-localization-ignore="true">{encounter.abilityLabel}</dd>
-                </div>
-                <div>
-                  <dt>Gigantamax</dt>
-                  <dd>{encounter.gigantamaxLabel}</dd>
-                </div>
-                <div>
-                  <dt>Moves</dt>
-                  <dd data-localization-ignore="true">
-                    {formatDynamaxAdventureMoves(encounter)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>IV detail</dt>
-                  <dd data-localization-ignore="true">
-                    {formatDynamaxAdventureIvs(encounter)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Ball item</dt>
-                  <dd data-localization-ignore="true">{encounter.ballItem}</dd>
-                </div>
-                <div>
-                  <dt>Game version</dt>
-                  <dd>{encounter.versionLabel}</dd>
-                </div>
-                <div>
-                  <dt>Shiny roll</dt>
-                  <dd>{encounter.shinyRollLabel}</dd>
-                </div>
-                <div>
-                  <dt>OT gender</dt>
-                  <dd>{encounter.otGenderLabel}</dd>
-                </div>
-                <div>
-                  <dt>Single-capture Pokemon</dt>
-                  <dd>{encounter.isSingleCapture ? 'Yes' : 'No'}</dd>
-                </div>
-                <div>
-                  <dt>Requires story progress</dt>
-                  <dd>{encounter.isStoryProgressGated ? 'Yes' : 'No'}</dd>
-                </div>
-              </dl>
-            </details>
-          </>
-        ) : (
-          <p className="empty-copy">No Adventure encounter selected.</p>
-        )}
-      </aside>
-
-      {encounter ? (
-        <section
-          aria-label={translateLiteral('Encounter')}
-          className="trainer-inspector dynamax-adventure-editor"
-        >
-          <div className="trainer-edit-form dynamax-adventure-edit-form">
+      {encounter ? <div className="editor-record-context">
+        <div className="pokemon-instance-heading">
+          <PokemonSprite className="slot-tab-sprite" name={formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)} preferStatic />
+          <EditorRecordHeading name={encounter.label} id={encounter.entryIndex} />
+        </div>
+        <span className="draft-action-summary">Adventure #{encounter.adventureIndex} · Lv. {encounter.level}</span>
+      </div> : <p className="empty-copy">No Adventure encounter selected.</p>}
+      {encounter ? <>
             {!encounter.isEditable ? (
               <span className="status-pill">Read-only</span>
             ) : null}
@@ -41725,78 +41681,6 @@ function SelectedDynamaxAdventurePanel({
                   </>
                 )}
               </div>
-            </div>
-            <div className="editable-field-groups dynamax-adventure-field-groups">
-              {adventureFieldGroups.map((group) => (
-                <fieldset
-                  className="editable-field-group dynamax-adventure-field-group"
-                  data-field-group={group.group}
-                  key={group.group}
-                >
-                  <legend>{group.group}</legend>
-                  <div className="editable-field-grid">
-                    {group.fields.map((field) => {
-                      const currentValue = getEditableDynamaxAdventureFieldValue(
-                        encounter,
-                        field.field
-                      );
-                      const disabledReason =
-                        editDisabledReason ??
-                        getPokemonInstanceIvStatDisabledReason(
-                          field.field,
-                          adventureFields,
-                          drafts
-                        ) ??
-                        getDynamaxAdventureFieldDisabledReason(field, encounter) ??
-                        undefined;
-                      const draftValue = drafts[field.field] ?? '';
-                      const draftState = getTrainerFieldDraftState(
-                        draftValue,
-                        currentValue,
-                        field,
-                        {
-                          clampIvStats: isPokemonInstanceIvCustomSelected(
-                            adventureFields,
-                            drafts
-                          ),
-                          drafts,
-                          fields: adventureFields,
-                          getValue: (fieldName) =>
-                            getEditableDynamaxAdventureFieldValue(encounter, fieldName)
-                        }
-                      );
-                      const draftedSpeciesId =
-                        parseEditableIntegerDraft(
-                          drafts[giftSpeciesFieldName] ?? encounter.speciesId.toString(),
-                          adventureFields.find(
-                            (candidate) => candidate.field === giftSpeciesFieldName
-                          )?.options
-                        ) ?? encounter.speciesId;
-
-                      return (
-                        <GiftPokemonDraftField
-                          currentValue={currentValue}
-                          disabled={!canEditSelectedAdventure}
-                          disabledReason={disabledReason}
-                          draftState={draftState}
-                          draftValue={draftValue}
-                          field={field}
-                          formOptionContext={{
-                            abilityOptions: adventureAbilityOptions,
-                            gameFamily: 'swsh',
-                            species: encounter.species,
-                            speciesId: draftedSpeciesId
-                          }}
-                          helpDomain="adventures"
-                          helpGame="swsh"
-                          key={field.field}
-                          onChange={(value) => handleAdventureDraftChange(field, value)}
-                        />
-                      );
-                    })}
-                  </div>
-                </fieldset>
-              ))}
             </div>
             <div className="draft-action-row">
               <button
@@ -41949,10 +41833,159 @@ function SelectedDynamaxAdventurePanel({
                 })}
               </span>
             </div>
-          </div>
-        </section>
-      ) : null}
-    </>
+      </> : null}
+      </EditorWorkspaceHeader>
+      {encounter ? <>
+        {pokemonInstanceSections({
+          groups: adventureFieldGroups,
+          invalidFields: adventureDraftSummary.invalidFields,
+          changedFields: adventureDraftSummary.changedFields,
+          translateLiteral,
+          drafts: drafts,
+          idPrefix: 'adventure',
+          renderField: (field, compact, ivDescriptionId) => {
+                      const currentValue = getEditableDynamaxAdventureFieldValue(
+                        encounter,
+                        field.field
+                      );
+                      const disabledReason =
+                        editDisabledReason ??
+                        getPokemonInstanceIvStatDisabledReason(
+                          field.field,
+                          adventureFields,
+                          drafts
+                        ) ??
+                        getDynamaxAdventureFieldDisabledReason(field, encounter) ??
+                        undefined;
+                      const draftValue = drafts[field.field] ?? '';
+                      const draftState = getTrainerFieldDraftState(
+                        draftValue,
+                        currentValue,
+                        field,
+                        {
+                          clampIvStats: isPokemonInstanceIvCustomSelected(
+                            adventureFields,
+                            drafts
+                          ),
+                          drafts,
+                          fields: adventureFields,
+                          getValue: (fieldName) =>
+                            getEditableDynamaxAdventureFieldValue(encounter, fieldName)
+                        }
+                      );
+                      const draftedSpeciesId =
+                        parseEditableIntegerDraft(
+                          drafts[giftSpeciesFieldName] ?? encounter.speciesId.toString(),
+                          adventureFields.find(
+                            (candidate) => candidate.field === giftSpeciesFieldName
+                          )?.options
+                        ) ?? encounter.speciesId;
+
+                      return (
+                        <GiftPokemonDraftField
+                          compact={compact}
+                ariaDescribedBy={disabledReason === pokemonInstanceIvLockReason ? ivDescriptionId : undefined}
+                          currentValue={currentValue}
+                          disabled={!canEditSelectedAdventure}
+                          disabledReason={disabledReason}
+                          draftState={draftState}
+                          draftValue={draftValue}
+                          field={field}
+                          formOptionContext={{
+                            abilityOptions: adventureAbilityOptions,
+                            gameFamily: 'swsh',
+                            species: encounter.species,
+                            speciesId: draftedSpeciesId
+                          }}
+                          helpDomain="adventures"
+                          helpGame="swsh"
+                          key={field.field}
+                          onChange={(value) => handleAdventureDraftChange(field, value)}
+                        />
+                      );
+          }
+        })}
+        <EditorWorkspaceSection id="details" label={translateLiteral('Details')}>
+          <EditorDetailGroup label={translateLiteral('Source and identity')}>
+            <dl className="editor-detail-list">
+                <div>
+                  <dt>Encounter</dt>
+                  <dd data-localization-ignore="true">{encounter.label}</dd>
+                </div>
+                <div>
+                  <dt>Index</dt>
+                  <dd data-localization-ignore="true">{encounter.entryIndex}</dd>
+                </div>
+                <div>
+                  <dt>Adventure</dt>
+                  <dd data-localization-ignore="true">{encounter.adventureIndex}</dd>
+                </div>
+                <div>
+                  <dt>Data file</dt>
+                  <dd data-localization-ignore="true">{encounter.provenance.sourceFile}</dd>
+                </div>
+                <div>
+                  <dt>Layer</dt>
+                  <dd>{formatSourceLayer(encounter.provenance.sourceLayer)}</dd>
+                </div>
+                <div>
+                  <dt>File state</dt>
+                  <dd>{formatFileState(encounter.provenance.fileState)}</dd>
+                </div>
+                <div>
+                  <dt>Pokemon</dt>
+                  <dd data-localization-ignore="true">{`${formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)} Lv. ${encounter.level}`}</dd>
+                </div>
+                <div>
+                  <dt>Ability</dt>
+                  <dd data-localization-ignore="true">{encounter.abilityLabel}</dd>
+                </div>
+                <div>
+                  <dt>Gigantamax</dt>
+                  <dd>{encounter.gigantamaxLabel}</dd>
+                </div>
+                <div>
+                  <dt>Moves</dt>
+                  <dd data-localization-ignore="true">
+                    {formatDynamaxAdventureMoves(encounter)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>IV detail</dt>
+                  <dd data-localization-ignore="true">
+                    {formatDynamaxAdventureIvs(encounter)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Ball item</dt>
+                  <dd data-localization-ignore="true">{encounter.ballItem}</dd>
+                </div>
+                <div>
+                  <dt>Game version</dt>
+                  <dd>{encounter.versionLabel}</dd>
+                </div>
+                <div>
+                  <dt>Shiny roll</dt>
+                  <dd>{encounter.shinyRollLabel}</dd>
+                </div>
+                <div>
+                  <dt>OT gender</dt>
+                  <dd>{encounter.otGenderLabel}</dd>
+                </div>
+                <div>
+                  <dt>Single-capture Pokemon</dt>
+                  <dd>{encounter.isSingleCapture ? 'Yes' : 'No'}</dd>
+                </div>
+                <div>
+                  <dt>Requires story progress</dt>
+                  <dd>{encounter.isStoryProgressGated ? 'Yes' : 'No'}</dd>
+                </div>
+              </dl>
+
+          </EditorDetailGroup>
+        </EditorWorkspaceSection>
+      </> : null}
+    </RecordEditorWorkspace>
   );
 }
 
@@ -42773,47 +42806,6 @@ function ShopsSection({
     }
   }, [selectedShop?.inventory, selectedShop?.shopId, selectedSlot]);
 
-  const renderShopTable = (label: string, shops: ShopRecord[]) => {
-    const localizedLabel = translateLiteral(label);
-
-    return (
-      <section className="shop-table-section" aria-label={localizedLabel}>
-        <h3>{localizedLabel}</h3>
-        <div className="shops-table" role="table" aria-label={localizedLabel}>
-          <div className="shops-row shops-row-heading" role="row">
-            <span role="columnheader">{translateLiteral('Type')}</span>
-            <span role="columnheader">{translateLiteral('Name')}</span>
-            <span role="columnheader">{translateLiteral('Inventory')}</span>
-            <span role="columnheader">{translateLiteral('Location')}</span>
-            <span role="columnheader">{translateLiteral('Items')}</span>
-            <span role="columnheader">{translateLiteral('Summary')}</span>
-          </div>
-          {shops.map((shop) => (
-            <InteractiveTableRow
-              className={`shops-row ${
-                selectedShop?.shopId === shop.shopId ? 'shops-row-selected' : ''
-              } ${pendingShopIds.has(shop.shopId) ? 'shops-row-pending' : ''}`}
-              aria-selected={selectedShop?.shopId === shop.shopId}
-              key={shop.shopId}
-              onClick={() => onSelectShop(shop.shopId)}
-              role="row"
-            >
-              <span role="cell">{translateLiteral(shop.kind)}</span>
-              <span role="cell">{translateLiteral(shop.name)}</span>
-              <span role="cell">{translateLiteral(shop.inventoryLabel)}</span>
-              <span role="cell">{translateLiteral(shop.location)}</span>
-              <span role="cell">{shop.inventory.length}</span>
-              <span role="cell">{translateLiteral(shop.inventorySummary)}</span>
-            </InteractiveTableRow>
-          ))}
-          {shops.length === 0 ? (
-            <p className="empty-copy shop-table-empty">{translateLiteral('No matching shops.')}</p>
-          ) : null}
-        </div>
-      </section>
-    );
-  };
-
   return (
     <>
       <section aria-labelledby="shops-heading" className="panel wide-panel">
@@ -42834,18 +42826,10 @@ function ShopsSection({
               value={searchText}
             />
           </label>
-          <Metric
-            label={translateLiteral('Loaded shops')}
-            value={workflow ? workflow.stats.totalShopCount.toString() : '0'}
-          />
-          <Metric
-            label={translateLiteral('Inventory rows')}
-            value={workflow ? workflow.stats.totalInventoryItemCount.toString() : '0'}
-          />
-          <Metric
-            label={translateLiteral('Pending changes')}
-            value={(editSession?.pendingEdits.length ?? 0).toString()}
-          />
+          <span className="draft-action-summary">
+            {filteredShops.length} / {workflow?.stats.totalShopCount ?? 0} {translateLiteral('Shops')}
+            {' · '}{pendingShopIds.size} {translateLiteral('Staged')}
+          </span>
         </div>
 
         {workflow ? (
@@ -42859,20 +42843,18 @@ function ShopsSection({
         ) : null}
 
         {workflow ? (
-          <RecordEditorWorkspace id="shops" className={`shops-layout ${isFlatShopList ? 'sv-shops-layout' : 'swsh-shops-layout'}`} browser={
-            <div className="shops-table-stack">
-              {isFlatShopList ? (
-                renderShopTable('Shops', filteredShops)
-              ) : (
-                <>
-                  {renderShopTable('Badge Shops', badgeShops)}
-                  {renderShopTable('Miscellaneous Shops', miscellaneousShops)}
-                </>
-              )}
-            </div>
-          }>
-
-            <SelectedShopPanel
+          <SelectedShopPanel
+              browser={<EditorRecordTable label={translateLiteral('Shops')} identityLabel={translateLiteral('Shop')}
+              rows={filteredShops} rowId={shop => shop.shopId} identity={shop => translateLiteral(shop.name)}
+              selection={selectedShop?.shopId} onSelect={shop => onSelectShop(shop.shopId)}
+              empty={translateLiteral('No matching shops.')}
+              columns={[
+                { id: 'type', label: translateLiteral('Type'), value: shop => translateLiteral(shop.kind) },
+                { id: 'location', label: translateLiteral('Location'), value: shop => translateLiteral(shop.location) },
+                { id: 'inventory', label: translateLiteral('Inventory'), value: shop => translateLiteral(shop.inventoryLabel) },
+                { id: 'slots', label: translateLiteral('Items'), numeric: true, value: shop => shop.inventory.length },
+                { id: 'change', label: translateLiteral('State'), value: shop => pendingShopIds.has(shop.shopId) ? translateLiteral('Staged') : '' }
+              ]} />}
               canEditShops={canEditShops}
               editSession={editSession}
               editorFamily={workflow.editorFamily}
@@ -42886,7 +42868,6 @@ function ShopsSection({
               selectedSlot={selectedSlot}
               shop={selectedShop}
             />
-          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">
             {translateLiteral('Open Shops from Workflows to load backend shop data.')}
@@ -42900,6 +42881,7 @@ function ShopsSection({
 }
 
 function SelectedShopPanel({
+  browser,
   canEditShops,
   editSession,
   editorFamily,
@@ -42913,6 +42895,7 @@ function SelectedShopPanel({
   selectedSlot,
   shop
 }: {
+  browser: ReactNode;
   canEditShops: boolean;
   editSession: EditSession | null;
   editorFamily: FieldHelpGame;
@@ -43306,7 +43289,8 @@ function SelectedShopPanel({
   }, [onOpenItem, pendingOpenItem]);
 
   return (
-    <aside aria-label={translateLiteral('Selected shop provenance')} className="shop-inspector">
+    <RecordEditorWorkspace id="shops" className="shop-workspace" browser={browser} initialSection="inventory">
+      <EditorWorkspaceHeader afterBrowser>
       <PublishedLocalEditorValidationDiagnostics
         domain="workflow.shops"
         issues={[
@@ -43343,57 +43327,7 @@ function SelectedShopPanel({
           summary="No shop selected."
         />
       ) : null}
-      {shop ? (
-        <>
-          <EditorRecordHeading name={translateLiteral(shop.name)} />
-          <details className="pokemon-instance-source">
-            <summary>{translateLiteral('Source')}</summary>
-            <dl className="item-provenance-list">
-              <div>
-                <dt>{translateLiteral('Name')}</dt>
-                <dd>{translateLiteral(shop.name)}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Inventory')}</dt>
-                <dd>{translateLiteral(shop.inventoryLabel)}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Type')}</dt>
-                <dd>{translateLiteral(shop.kind)}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Hash')}</dt>
-                <dd>{shop.sourceHash}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Summary')}</dt>
-                <dd>{translateLiteral(shop.inventorySummary)}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Source file')}</dt>
-                <dd>{shop.provenance.sourceFile}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Layer')}</dt>
-                <dd>{translateLiteral(formatSourceLayer(shop.provenance.sourceLayer))}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('File state')}</dt>
-                <dd>{translateLiteral(formatFileState(shop.provenance.fileState))}</dd>
-              </div>
-            </dl>
-          </details>
-
-          <div className="shop-edit-form">
-            <div className="shop-inventory-header">
-              <strong>{translateLiteral('Inventory')}</strong>
-              <span className="draft-action-summary">
-                {changedSlotCount} {translateLiteral('Pending changes')} / {shopInventoryRows.length}{' '}
-                {translateLiteral('slots')}
-              </span>
-            </div>
-
-            {editSession ? (
+      {shop && editSession ? (
               <EditorSessionBarActions>
                 <button
                   aria-busy={(isShopUpdating || isItemUpdating) || undefined}
@@ -43464,8 +43398,75 @@ function SelectedShopPanel({
                   .
                 </span>
               </EditorSessionBarActions>
-            ) : null}
+      ) : null}
+      {pendingOpenItem ? (
+        <ShopItemNavigationModal
+          onCancel={() => setPendingOpenItem(null)}
+          onConfirm={handleConfirmOpenItem}
+        />
+      ) : null}
+      </EditorWorkspaceHeader>
+      {shop ? (
+        <>
+          <EditorWorkspaceHeader afterBrowser>
+            <div className="editor-record-context">
+              <EditorRecordHeading name={translateLiteral(shop.name)} />
+              <span className="draft-action-summary">{translateLiteral(shop.kind)} · {translateLiteral(shop.location)}</span>
+            </div>
+          </EditorWorkspaceHeader>
+          <EditorWorkspaceSection id="source" label={translateLiteral('Source')}>
+            <EditorDetailGroup label={translateLiteral('Inventory provenance')}>
+              <dl className="editor-detail-list">
+              <div>
+                <dt>{translateLiteral('Name')}</dt>
+                <dd>{translateLiteral(shop.name)}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Inventory')}</dt>
+                <dd>{translateLiteral(shop.inventoryLabel)}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Type')}</dt>
+                <dd>{translateLiteral(shop.kind)}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Hash')}</dt>
+                <dd>{shop.sourceHash}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Summary')}</dt>
+                <dd>{translateLiteral(shop.inventorySummary)}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Source file')}</dt>
+                <dd>{shop.provenance.sourceFile}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Layer')}</dt>
+                <dd>{translateLiteral(formatSourceLayer(shop.provenance.sourceLayer))}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('File state')}</dt>
+                <dd>{translateLiteral(formatFileState(shop.provenance.fileState))}</dd>
+              </div>
+            </dl>
 
+            </EditorDetailGroup>
+          </EditorWorkspaceSection>
+          <EditorWorkspaceSection id="inventory" label={translateLiteral('Inventory')}
+            invalid={hasInvalidShopDrafts} modified={changedSlotCount > 0}>
+          <div className="shop-edit-form">
+            <div className="shop-inventory-header">
+              <strong>{translateLiteral('Inventory')}</strong>
+              <span className="draft-action-summary">
+                {changedSlotCount} {translateLiteral('Pending changes')} / {shopInventoryRows.length}{' '}
+                {translateLiteral('slots')}
+              </span>
+            </div>
+
+
+
+            <div className="shop-task-layout"><div>
             {shopInventoryRows.length > 0 ? (
               <div className="shop-inventory-editor-grid">
                 <div className="shop-inventory-editor-row shop-inventory-editor-heading">
@@ -43826,80 +43827,6 @@ function SelectedShopPanel({
             ) : (
               <p className="empty-copy">{translateLiteral('No inventory slots.')}</p>
             )}
-            {selectedInventoryItem && selectedRowFields.length > 0 ? (
-              <div className="shop-row-detail-editor">
-                <div className="shop-inventory-header">
-                  <strong>{translateLiteral('Selected Slot Details')}</strong>
-                  <span className="draft-action-summary">
-                    {translateLiteral('Slot')} #{selectedInventoryItem.slot}
-                  </span>
-                </div>
-                <div className="editable-field-grid shop-row-field-grid">
-                  {selectedRowFields.map((field) => {
-                    const rowField = getContextualShopRowField(
-                      field,
-                      selectedInventoryItem,
-                      currentShopDraft
-                    );
-                    const originalValue = selectedInventoryItem.fieldValues[field.field] ?? '';
-                    const draftValue =
-                      currentShopDraft.fieldDrafts[selectedInventoryItem.slot]?.[field.field] ??
-                      originalValue;
-                    const isInvalid = isShopRowFieldDraftInvalid(rowField, draftValue);
-                    const errorId = `shop-row-${shop.shopId}-${selectedInventoryItem.slot}-${field.field}-error`;
-                    const localizedRowFieldLabel = translateLiteral(rowField.label);
-                    const localizedRowFieldHelp = getEditableFieldHelp(rowField, t, {
-                      domain: 'shops',
-                      game: editorFamily,
-                      label: localizedRowFieldLabel
-                    });
-
-                    return (
-                      <div
-                        className={`path-field shop-slot-detail-field ${
-                          draftValue !== originalValue ? 'editable-field-changed' : ''
-                        } ${isInvalid ? 'editable-field-invalid' : ''}`}
-                        key={field.field}
-                      >
-                        <FieldLabel
-                          help={localizedRowFieldHelp}
-                          htmlFor={`shop-row-${shop.shopId}-${selectedInventoryItem.slot}-${field.field}`}
-                          label={localizedRowFieldLabel}
-                        />
-                        <ShopRowFieldInput
-                          ariaDescribedBy={isInvalid ? errorId : undefined}
-                          ariaInvalid={isInvalid ? true : undefined}
-                          disabled={
-                            !canEditShops ||
-                            editSession === null
-                          }
-                          draftValue={draftValue}
-                          field={rowField}
-                          helpGame={editorFamily}
-                          id={`shop-row-${shop.shopId}-${selectedInventoryItem.slot}-${field.field}`}
-                          onChange={(value) =>
-                            updateCurrentShopDraft((currentDraft) =>
-                              updateShopRowFieldDraft(
-                                currentDraft,
-                                selectedInventoryItem,
-                                field.field,
-                                value
-                              )
-                            )
-                          }
-                          textOptions={getShopRowTextOptions(rowField, selectedInventoryItem, currentShopDraft)}
-                        />
-                        {isInvalid ? (
-                          <small className="editable-field-error" id={errorId}>
-                            {translateLiteral(getIntegerDraftFieldError(draftValue, rowField))}
-                          </small>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
             {editSession && shop.canEditInventoryOrder ? (
               <div className="shop-inventory-add-row">
                 <div className="path-field shop-inventory-item-field">
@@ -43975,18 +43902,89 @@ function SelectedShopPanel({
                 </button>
               </div>
             ) : null}
+            </div>
+            {selectedInventoryItem && selectedRowFields.length > 0 ? (
+              <EditorDetailGroup label={translateLiteral('Slot settings')}>
+                <div className="shop-inventory-header">
+                  <strong>{translateLiteral(selectedInventoryItem.itemName)}</strong>
+                  <span className="draft-action-summary">
+                    {translateLiteral('Slot')} #{selectedInventoryItem.slot}
+                  </span>
+                </div>
+                <div className="pokemon-instance-field-list">
+                  {selectedRowFields.map((field) => {
+                    const rowField = getContextualShopRowField(
+                      field,
+                      selectedInventoryItem,
+                      currentShopDraft
+                    );
+                    const originalValue = selectedInventoryItem.fieldValues[field.field] ?? '';
+                    const draftValue =
+                      currentShopDraft.fieldDrafts[selectedInventoryItem.slot]?.[field.field] ??
+                      originalValue;
+                    const isInvalid = isShopRowFieldDraftInvalid(rowField, draftValue);
+                    const errorId = `shop-row-${shop.shopId}-${selectedInventoryItem.slot}-${field.field}-error`;
+                    const localizedRowFieldLabel = translateLiteral(rowField.label);
+                    const localizedRowFieldHelp = getEditableFieldHelp(rowField, t, {
+                      domain: 'shops',
+                      game: editorFamily,
+                      label: localizedRowFieldLabel
+                    });
+
+                    return (
+                      <div
+                        className={`path-field editable-field-control shop-slot-detail-field ${
+                          draftValue !== originalValue ? 'editable-field-changed' : ''
+                        } ${isInvalid ? 'editable-field-invalid' : ''}`}
+                        key={field.field}
+                      >
+                        <FieldLabel
+                          help={localizedRowFieldHelp}
+                          htmlFor={`shop-row-${shop.shopId}-${selectedInventoryItem.slot}-${field.field}`}
+                          label={localizedRowFieldLabel}
+                        />
+                        <ShopRowFieldInput
+                          ariaDescribedBy={isInvalid ? errorId : undefined}
+                          ariaInvalid={isInvalid ? true : undefined}
+                          disabled={
+                            !canEditShops ||
+                            editSession === null
+                          }
+                          draftValue={draftValue}
+                          field={rowField}
+                          helpGame={editorFamily}
+                          id={`shop-row-${shop.shopId}-${selectedInventoryItem.slot}-${field.field}`}
+                          onChange={(value) =>
+                            updateCurrentShopDraft((currentDraft) =>
+                              updateShopRowFieldDraft(
+                                currentDraft,
+                                selectedInventoryItem,
+                                field.field,
+                                value
+                              )
+                            )
+                          }
+                          textOptions={getShopRowTextOptions(rowField, selectedInventoryItem, currentShopDraft)}
+                        />
+                        {isInvalid ? (
+                          <small className="editable-field-error" id={errorId}>
+                            {translateLiteral(getIntegerDraftFieldError(draftValue, rowField))}
+                          </small>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </EditorDetailGroup>
+            ) : null}
+            </div>
           </div>
+          </EditorWorkspaceSection>
         </>
       ) : (
         <p className="empty-copy">{translateLiteral('No shop selected.')}</p>
       )}
-      {pendingOpenItem ? (
-        <ShopItemNavigationModal
-          onCancel={() => setPendingOpenItem(null)}
-          onConfirm={handleConfirmOpenItem}
-        />
-      ) : null}
-    </aside>
+    </RecordEditorWorkspace>
   );
 }
 
@@ -48972,6 +48970,7 @@ function TeraRaidsSection({
     Record<string, Record<string, string>>
   >({});
   const cancelActiveEditSession = useCancelActiveEditSession();
+  const [sectionRequest, setSectionRequest] = useState<{ sectionId: string; focus?: boolean }>();
   const [rewardKind, setRewardKind] = useState<'fixed' | 'lottery'>('fixed');
   const [selectedRewardRecordId, setSelectedRewardRecordId] = useState<string | null>(null);
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
@@ -49214,153 +49213,36 @@ function TeraRaidsSection({
         ) : null}
 
         {workflow ? (
-          <RecordEditorWorkspace id="teraRaids" className="encounters-layout" browser={
-            <div
-              className="raid-rewards-table"
-              role="table"
-              aria-label={translateLiteral('Tera raid rows')}
-            >
-              <div className="raid-rewards-row raid-rewards-row-heading" role="row">
-                <span role="columnheader">{translateLiteral('Region')}</span>
-                <span role="columnheader">{translateLiteral('Stars')}</span>
-                <span role="columnheader">{translateLiteral('Game')}</span>
-                <span role="columnheader">{translateLiteral('Pokemon')}</span>
-              </div>
-              {filteredRaids.map((raid) => {
-                const raidLabel = formatSpeciesFormLabel(raid.species, raid.form, raid.speciesId);
-
-                return (
-                  <InteractiveTableRow
-                    className={`raid-rewards-row ${
-                      selectedRaid?.recordId === raid.recordId ? 'raid-rewards-row-selected' : ''
-                    } ${
-                      pendingTeraRaidRecordIds.has(raid.recordId) ? 'raid-rewards-row-pending' : ''
-                    }`}
-                    key={raid.recordId}
-                    onClick={() => onSelectRaid(raid.recordId)}
-                    role="row"
-                  >
-                    <span role="cell">{raid.region}</span>
-                    <span role="cell">{raid.starLabel}</span>
-                    <span role="cell">{raid.versionLabel}</span>
-                    <span role="cell">{raidLabel}</span>
-                  </InteractiveTableRow>
-                );
-              })}
-            </div>
-          }>
-
-            <aside
-              aria-label={translateLiteral('Selected Tera raid')}
-              className="encounter-inspector"
-            >
-              {selectedRaid ? (
-                <>
-                  <EditorRecordHeading
-                    name={formatSpeciesFormLabel(selectedRaid.species, selectedRaid.form, selectedRaid.speciesId)}
-                    id={selectedRaid.starLabel}
-                  />
-                  <details className="pokemon-instance-source">
-                    <summary>{translateLiteral('Source')}</summary>
-                    <dl className="item-provenance-list">
-                      <div>
-                        <dt>{translateLiteral('Pokemon')}</dt>
-                        <dd data-localization-ignore="true">
-                          {formatSpeciesFormLabel(
-                            selectedRaid.species,
-                            selectedRaid.form,
-                            selectedRaid.speciesId
-                          )}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>{translateLiteral('Region')}</dt>
-                        <dd>{translateLiteral(selectedRaid.region)}</dd>
-                      </div>
-                      <div>
-                        <dt>{translateLiteral('Stars')}</dt>
-                        <dd>{translateLiteral(selectedRaid.starLabel)}</dd>
-                      </div>
-                      <div>
-                        <dt>{translateLiteral('Game')}</dt>
-                        <dd>{translateLiteral(selectedRaid.versionLabel)}</dd>
-                      </div>
-                      <div>
-                        <dt>{translateLiteral('Source file')}</dt>
-                        <dd data-localization-ignore="true">{selectedRaid.provenance.sourceFile}</dd>
-                      </div>
-                      <div>
-                        <dt>{translateLiteral('Layer')}</dt>
-                        <dd>{translateLiteral(formatSourceLayer(selectedRaid.provenance.sourceLayer))}</dd>
-                      </div>
-                      <div>
-                        <dt>{translateLiteral('File state')}</dt>
-                        <dd>{translateLiteral(formatFileState(selectedRaid.provenance.fileState))}</dd>
-                      </div>
-                    </dl>
-                  </details>
-
-                  <div className="encounter-edit-form">
-                    <div
-                      className="encounter-slot-tabs"
-                      aria-label={translateLiteral('Selected Tera raid summary')}
-                    >
-                      <div className="slot-tab-button slot-tab-button-readonly">
-                        <PokemonSprite
-                          className="slot-tab-sprite"
-                          name={formatSpeciesFormLabel(
-                            selectedRaid.species,
-                            selectedRaid.form,
-                            selectedRaid.speciesId
-                          )}
-                          preferStatic
-                        />
-                        <strong>{selectedRaid.starLabel}</strong>
-                        <span data-localization-ignore="true">
-                          {formatSpeciesFormLabel(
-                            selectedRaid.species,
-                            selectedRaid.form,
-                            selectedRaid.speciesId
-                          )}
-                        </span>
-                        <small>
-                          {`${translateLiteral(selectedRaid.teraTypeLabel)} ${translateLiteral('Tera')}`}
-                        </small>
-                      </div>
-                    </div>
-
-                    <dl className="encounter-slot-detail">
-                      <div>
-                        <dt>{translateLiteral('Level')}</dt>
-                        <dd>{selectedRaid.level}</dd>
-                      </div>
-                      <div>
-                        <dt>{translateLiteral('Tera type')}</dt>
-                        <dd>{translateLiteral(selectedRaid.teraTypeLabel)}</dd>
-                      </div>
-                      <div>
-                        <dt>{translateLiteral('Ability')}</dt>
-                        <dd>{translateLiteral(selectedRaid.abilityLabel)}</dd>
-                      </div>
-                      <div>
-                        <dt>{translateLiteral('Nature')}</dt>
-                        <dd>{translateLiteral(selectedRaid.natureLabel)}</dd>
-                      </div>
-                      <div>
-                        <dt>{translateLiteral('IVs')}</dt>
-                        <dd>{translateLiteral(selectedRaid.ivSummary)}</dd>
-                      </div>
-                      <div>
-                        <dt>{translateLiteral('Fixed rewards')}</dt>
-                        <dd data-localization-ignore="true">{selectedRaid.fixedRewardPreview}</dd>
-                      </div>
-                      <div>
-                        <dt>{translateLiteral('Lottery rewards')}</dt>
-                        <dd data-localization-ignore="true">{selectedRaid.lotteryRewardPreview}</dd>
-                      </div>
-                    </dl>
-
-                    {editSession ? (
+          <RecordEditorWorkspace id="teraRaids" className="tera-raid-workspace" initialSection="boss"
+            activeSectionRequest={sectionRequest}
+            browser={
+              <EditorRecordTable label={translateLiteral('Tera raid rows')} identityLabel={translateLiteral('Pokemon')}
+                rows={filteredRaids} rowId={raid => raid.recordId} selection={selectedRaid?.recordId}
+                identity={raid => formatSpeciesFormLabel(raid.species, raid.form, raid.speciesId)}
+                onSelect={raid => onSelectRaid(raid.recordId)}
+                columns={[
+                  { id: 'region', label: translateLiteral('Region'), value: raid => raid.region },
+                  { id: 'stars', label: translateLiteral('Stars'), value: raid => raid.starLabel },
+                  { id: 'game', label: translateLiteral('Game'), value: raid => raid.versionLabel },
+                  { id: 'state', label: translateLiteral('State'), value: raid => draftsByRecordId[raid.recordId] ? translateLiteral('Draft') : pendingTeraRaidRecordIds.has(raid.recordId) ? translateLiteral('Staged') : '' }
+                ]} empty={translateLiteral('No Tera raid selected.')} />
+            }>
+            {selectedRaid ? <>
+              <EditorWorkspaceHeader afterBrowser>
+                <div className="editor-record-context">
+                  <div className="pokemon-instance-record">
+                    <PokemonSprite className="gift-pokemon-sprite" editorFamily="sv" form={selectedRaid.form}
+                      name={selectedRaid.species} speciesId={selectedRaid.speciesId} preferStatic />
+                    <EditorRecordHeading
+                      name={formatSpeciesFormLabel(selectedRaid.species, selectedRaid.form, selectedRaid.speciesId)}
+                      id={selectedRaid.starLabel} />
+                  </div>
+                  <span className="muted">{[selectedRaid.region, selectedRaid.versionLabel].map(translateLiteral).join(' · ')}</span>
+                </div>
+              </EditorWorkspaceHeader>
+              <EditorWorkspaceSection id="boss" label={translateLiteral('Raid Boss')}
+                modified={Boolean(draftsByRecordId[selectedRaid.recordId])}>
+                {editSession ? (
                       <TeraRaidDraftPanel
                         canEdit={canEditTeraRaids}
                         draftKey={selectedRaid.recordId}
@@ -49387,8 +49269,34 @@ function TeraRaidsSection({
                         pokemonRecords={pokemonWorkflow?.pokemon}
                         saveLabel="Stage Raid"
                       />
-                    ) : null}
+                ) : (
 
+                    <dl className="encounter-slot-detail">
+                      <div>
+                        <dt>{translateLiteral('Level')}</dt>
+                        <dd>{selectedRaid.level}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Tera type')}</dt>
+                        <dd>{translateLiteral(selectedRaid.teraTypeLabel)}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Ability')}</dt>
+                        <dd>{translateLiteral(selectedRaid.abilityLabel)}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Nature')}</dt>
+                        <dd>{translateLiteral(selectedRaid.natureLabel)}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('IVs')}</dt>
+                        <dd>{translateLiteral(selectedRaid.ivSummary)}</dd>
+                      </div>
+                    </dl>
+                )}
+              </EditorWorkspaceSection>
+              <EditorWorkspaceSection id="rewards" label={translateLiteral('Rewards')}
+                modified={activeRewardTable?.rewards.some(reward => Boolean(draftsByRecordId[reward.recordId]))}>
                     <div className="encounter-slot-header">
                       <strong>{translateLiteral('Rewards')}</strong>
                       <SearchableOptionInput
@@ -49453,33 +49361,21 @@ function TeraRaidsSection({
                           </div>
                         ) : null}
 
-                        <div
-                          className="encounter-slot-tabs"
-                          aria-label={translateLiteral('Tera raid reward rows')}
-                        >
-                          {activeRewardRows.map((reward) => (
-                            <button
-                              aria-pressed={reward.recordId === selectedReward?.recordId}
-                              className={`slot-tab-button ${
-                                pendingTeraRaidRecordIds.has(reward.recordId)
-                                  ? 'slot-tab-button-pending'
-                                  : ''
-                              }`}
-                              key={reward.recordId}
-                              onClick={() => setSelectedRewardRecordId(reward.recordId)}
-                              type="button"
-                            >
-                              <strong>{`#${reward.slot}`}</strong>
-                              <span data-localization-ignore="true">{reward.itemName}</span>
-                              <small>
-                                {rewardKind === 'lottery' && reward.rate !== null
-                                  ? `${reward.count} ${translateLiteral('at')} ${reward.rate}`
-                                  : `${translateLiteral('Count')} ${reward.count}`}
-                              </small>
-                            </button>
-                          ))}
-                        </div>
-
+                        <div className="raid-slot-workspace">
+                          <div className="editor-slot-browser">
+                            <EditorRecordTable label={translateLiteral('Tera raid reward rows')}
+                              identityLabel={translateLiteral('Item')} rows={activeRewardRows}
+                              rowId={reward => reward.recordId} selection={selectedReward?.recordId}
+                              identity={reward => <span data-localization-ignore="true">{reward.itemName}</span>}
+                              onSelect={reward => setSelectedRewardRecordId(reward.recordId)}
+                              columns={[
+                                { id: 'slot', label: translateLiteral('Slot'), value: reward => reward.slot, numeric: true },
+                                { id: 'count', label: translateLiteral('Count'), value: reward => reward.count, numeric: true },
+                                ...(rewardKind === 'lottery' ? [{ id: 'rate', label: translateLiteral('Rate'), value: (reward: typeof activeRewardRows[number]) => reward.rate, numeric: true }] : []),
+                                { id: 'state', label: translateLiteral('State'), value: reward => draftsByRecordId[reward.recordId] ? translateLiteral('Draft') : pendingTeraRaidRecordIds.has(reward.recordId) ? translateLiteral('Staged') : '' }
+                              ]} empty={translateLiteral('No reward row selected.')} />
+                          </div>
+                          <div>
                         {selectedReward ? (
                           <>
                             <dl className="encounter-slot-detail">
@@ -49540,18 +49436,54 @@ function TeraRaidsSection({
                             {translateLiteral('No reward row selected.')}
                           </p>
                         )}
+                          </div>
+                        </div>
                       </>
                     ) : (
                       <p className="empty-copy">
                         {translateLiteral('No linked reward table found for this raid.')}
                       </p>
                     )}
-                  </div>
-                </>
-              ) : (
-                <p className="empty-copy">{translateLiteral('No Tera raid selected.')}</p>
-              )}
-            </aside>
+              </EditorWorkspaceSection>
+              <EditorWorkspaceSection id="source" label={translateLiteral('Source')}>
+                    <dl className="item-provenance-list">
+                      <div>
+                        <dt>{translateLiteral('Pokemon')}</dt>
+                        <dd data-localization-ignore="true">
+                          {formatSpeciesFormLabel(
+                            selectedRaid.species,
+                            selectedRaid.form,
+                            selectedRaid.speciesId
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Region')}</dt>
+                        <dd>{translateLiteral(selectedRaid.region)}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Stars')}</dt>
+                        <dd>{translateLiteral(selectedRaid.starLabel)}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Game')}</dt>
+                        <dd>{translateLiteral(selectedRaid.versionLabel)}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Source file')}</dt>
+                        <dd data-localization-ignore="true">{selectedRaid.provenance.sourceFile}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Layer')}</dt>
+                        <dd>{translateLiteral(formatSourceLayer(selectedRaid.provenance.sourceLayer))}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('File state')}</dt>
+                        <dd>{translateLiteral(formatFileState(selectedRaid.provenance.fileState))}</dd>
+                      </div>
+                    </dl>
+              </EditorWorkspaceSection>
+            </> : <p className="empty-copy">{translateLiteral('No Tera raid selected.')}</p>}
           </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">
@@ -49566,6 +49498,7 @@ function TeraRaidsSection({
                 disabled={isTeraRaidUpdating}
                 onClick={() =>
                   onSelectRaid(nextHiddenTeraRaidDraftTarget.raidRecordId, () => {
+                    setSectionRequest({ sectionId: nextHiddenTeraRaidDraftTarget.rewardKind === null ? 'boss' : 'rewards', focus: true });
                     if (nextHiddenTeraRaidDraftTarget.rewardKind === null) {
                       setSelectedRewardRecordId(null);
                       return;
@@ -49691,11 +49624,10 @@ function TeraRaidDraftPanel({
         domain="workflow.teraRaids"
         issues={draftSummary.invalidFields}
       />
-      <div className="editable-field-groups">
+      <div className="editor-task-groups">
         {fieldGroups.map((group) => (
-          <fieldset className="editable-field-group" key={group.group}>
-            <legend>{translateLiteral(group.group)}</legend>
-            <div className="editable-field-grid">
+          <EditorDetailGroup key={group.group} label={translateLiteral(group.group)}>
+            <div className="pokemon-instance-field-list">
               {group.fields.map((field) => {
                 const currentValue = getValue(field.field);
                 const draftValue = drafts[field.field] ?? '';
@@ -49784,7 +49716,7 @@ function TeraRaidDraftPanel({
                 );
               })}
             </div>
-          </fieldset>
+          </EditorDetailGroup>
         ))}
       </div>
 
@@ -49970,8 +49902,8 @@ function RaidBattlesSection({
         ) : null}
 
         {workflow ? (
-          <RecordEditorWorkspace id="raidBattles" className="encounters-layout" browser={
-            <div
+          <SelectedRaidBattlePanel
+              browser={<div
               className="raid-rewards-table"
               role="table"
               aria-label={translateLiteral('Raid battle tables')}
@@ -50005,10 +49937,7 @@ function RaidBattlesSection({
                   {translateLiteral('No matching raid battle tables.')}
                 </p>
               ) : null}
-            </div>
-          }>
-
-            <SelectedRaidBattlePanel
+            </div>}
               battleSlot={selectedBattleSlot}
               canEditRaidBattles={canEditRaidBattles}
               editSession={editSession}
@@ -50021,7 +49950,6 @@ function RaidBattlesSection({
               table={selectedTable}
               tables={workflow.tables}
             />
-          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">Open Raid Battles from Workflows to load backend battle data.</p>
         )}
@@ -50033,6 +49961,7 @@ function RaidBattlesSection({
 }
 
 function SelectedRaidBattlePanel({
+  browser,
   battleSlot,
   canEditRaidBattles,
   editSession,
@@ -50045,6 +49974,7 @@ function SelectedRaidBattlePanel({
   table,
   tables
 }: {
+  browser: ReactNode;
   battleSlot: RaidBattleSlotRecord | null;
   canEditRaidBattles: boolean;
   editSession: EditSession | null;
@@ -50222,7 +50152,8 @@ function SelectedRaidBattlePanel({
   }, [raidBattleDraftDefaults, raidBattleDraftKey]);
 
   return (
-    <aside aria-label="Selected raid battle provenance" className="encounter-inspector">
+    <RecordEditorWorkspace id="raidBattles" className="raid-task-workspace" browser={browser} initialSection="slots">
+      <EditorWorkspaceHeader afterBrowser>
       <PublishedLocalEditorValidationDiagnostics
         domain="workflow.raidBattles"
         issues={raidBattleTableDraftSummary.invalidFields}
@@ -50247,149 +50178,129 @@ function SelectedRaidBattlePanel({
           {t('editorDrafts.discardUnavailable')}
         </button>
       ) : null}
+      </EditorWorkspaceHeader>
       {table ? (
         <>
+          <EditorWorkspaceHeader afterBrowser>
+            <div className="editor-record-context">
           <EditorRecordHeading name={table.displayName} id={table.gameVersion} />
-          <details className="pokemon-instance-source">
-            <summary>{translateLiteral('Source')}</summary>
-            <dl className="item-provenance-list">
-              <div>
-                <dt>Table</dt>
-                <dd>{table.displayName}</dd>
-              </div>
-              <div>
-                <dt>Hash</dt>
-                <dd>{table.sourceTableHash}</dd>
-              </div>
-              <div>
-                <dt>Game</dt>
-                <dd>{table.gameVersion}</dd>
-              </div>
-              <div>
-                <dt>Source file</dt>
-                <dd>{table.provenance.sourceFile}</dd>
-              </div>
-              <div>
-                <dt>Layer</dt>
-                <dd>{formatSourceLayer(table.provenance.sourceLayer)}</dd>
-              </div>
-              <div>
-                <dt>File state</dt>
-                <dd>{formatFileState(table.provenance.fileState)}</dd>
-              </div>
-            </dl>
-          </details>
-
-          <div className="encounter-edit-form">
-            <div className="encounter-slot-header">
-              <strong>Battle slots</strong>
-              <SearchableOptionInput
-                ariaLabel="Raid battle slot"
-                data-km-source-site="raid-battle-slot-option"
-                disabled={table.slots.length === 0}
-                isFiniteCatalog
-                localizeOptions={false}
-                onChange={(value) => onSelectSlot(Number(value))}
-                options={table.slots.map((candidate) => ({
-                  label: `Slot ${candidate.slot}: ${formatSpeciesFormLabel(
-                    candidate.species,
-                    candidate.form,
-                    candidate.speciesId
-                  )}`,
-                  value: candidate.slot
-                }))}
-                value={selectedSlot?.toString() ?? ''}
-              />
+              {battleSlot ? <span className="draft-action-summary">{translateLiteral('Slot')} #{battleSlot.slot}</span> : null}
             </div>
+            {battleSlot ? <>
+                {editSession ? (
+                  <EditorSessionBarActions>
+                    <button
+                      aria-busy={isRaidBattleUpdating || undefined}
+                      className="primary-button"
+                      disabled={!canSaveRaidBattleDrafts}
+                      onClick={async () => {
+                        if (!table || !battleSlot || !raidBattleDraftKey) {
+                          return;
+                        }
 
-            {battleSlot ? (
-              <>
-                <div className="encounter-slot-tabs" aria-label="Raid battle slot list">
-                  {table.slots.map((candidate) => {
-                    const slotLabel = formatSpeciesFormLabel(
-                      candidate.species,
-                      candidate.form,
-                      candidate.speciesId
-                    );
-
-                    return (
+                        const submittedDraftsBySlot = Object.fromEntries(
+                          table.slots.flatMap((slotRecord) => {
+                            const key = `${table.tableId}:${slotRecord.slot}`;
+                            const submittedDraft = draftsBySlotKey[key];
+                            return submittedDraft
+                              ? [[key, { ...submittedDraft }] as const]
+                              : [];
+                          })
+                        );
+                        const didSave = await onUpdateRaidBattleSlotFields(
+                          raidBattleTableDraftSummary.updates
+                        );
+                        if (didSave) {
+                          setDraftsBySlotKey((currentDrafts) => {
+                            let nextDrafts = currentDrafts;
+                            for (const [key, submittedDraft] of Object.entries(
+                              submittedDraftsBySlot
+                            )) {
+                              nextDrafts = clearSubmittedKeyedEditorDraft(
+                                nextDrafts,
+                                key,
+                                submittedDraft,
+                                areFieldDraftsEqual
+                              );
+                            }
+                            return nextDrafts;
+                          });
+                        }
+                      }}
+                      type="button"
+                    >
+                      <BusyActionContent
+                        busyLabel="Staging"
+                        icon={<Save aria-hidden="true" size={16} />}
+                        isBusy={isRaidBattleUpdating}
+                        label="Stage"
+                      />
+                    </button>
+                    {nextRaidBattleDraftTarget ? (
                       <button
-                        aria-pressed={candidate.slot === selectedSlot}
-                        className="slot-tab-button"
-                        key={candidate.slot}
-                        onClick={() => onSelectSlot(candidate.slot)}
+                        className="secondary-button"
+                        disabled={isRaidBattleUpdating}
+                        onClick={() =>
+                          onReviewDraftTarget(
+                            nextRaidBattleDraftTarget.tableId,
+                            nextRaidBattleDraftTarget.slot
+                          )
+                        }
                         type="button"
                       >
-                        <PokemonSprite className="slot-tab-sprite" name={slotLabel} preferStatic />
-                        <strong>{`#${candidate.slot}`}</strong>
-                        <span>{slotLabel}</span>
-                        <small>{candidate.probabilitySummary}</small>
+                        {t('editorDrafts.reviewNext')}
                       </button>
-                    );
-                  })}
-                </div>
-
-                <details className="pokemon-instance-source">
-                  <summary>{translateLiteral('Details')}</summary>
-                  <dl className="encounter-slot-detail">
-                    <div>
-                      <dt>Pokemon</dt>
-                      <dd>
-                        {formatSpeciesFormLabel(
-                          battleSlot.species,
-                          battleSlot.form,
-                          battleSlot.speciesId
-                        )} ({battleSlot.speciesId})
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Ability</dt>
-                      <dd>{battleSlot.abilityLabel}</dd>
-                    </div>
-                    <div>
-                      <dt>Gender</dt>
-                      <dd>{battleSlot.genderLabel}</dd>
-                    </div>
-                    <div>
-                      <dt>G-Max</dt>
-                      <dd>{battleSlot.isGigantamax ? 'Yes' : 'No'}</dd>
-                    </div>
-                    <div>
-                      <dt>Perfect IVs</dt>
-                      <dd>{battleSlot.flawlessIvs}</dd>
-                    </div>
-                    <div>
-                      <dt>Star odds</dt>
-                      <dd>{battleSlot.probabilitySummary}</dd>
-                    </div>
-                    <div>
-                      <dt>Level table</dt>
-                      <dd>{battleSlot.levelTableHash}</dd>
-                    </div>
-                    <div>
-                      <dt>Drop table</dt>
-                      <dd>{battleSlot.dropTableHash}</dd>
-                    </div>
-                    <div>
-                      <dt>Drop rewards</dt>
-                      <dd>{formatRaidBattleRewardLink(battleSlot.dropRewardLink)}</dd>
-                    </div>
-                    <div>
-                      <dt>Bonus table</dt>
-                      <dd>{battleSlot.bonusTableHash}</dd>
-                    </div>
-                    <div>
-                      <dt>Bonus rewards</dt>
-                      <dd>{formatRaidBattleRewardLink(battleSlot.bonusRewardLink)}</dd>
-                    </div>
-                  </dl>
-                </details>
-
-                <div className="editable-field-groups">
+                    ) : null}
+                    {unavailableRaidBattleDraftKeys.length > 0 ? (
+                      <button
+                        className="danger-button"
+                        disabled={isRaidBattleUpdating}
+                        onClick={discardUnavailableRaidBattleDrafts}
+                        type="button"
+                      >
+                        {t('editorDrafts.discardUnavailable')}
+                      </button>
+                    ) : null}
+                    <button
+                      className="danger-button"
+                      disabled={isRaidBattleUpdating}
+                      onClick={() => cancelActiveEditSession(() => setDraftsBySlotKey({}))}
+                      type="button"
+                    >
+                      <X aria-hidden="true" size={16} />
+                      <span>Cancel</span>
+                    </button>
+                    <span className="draft-action-summary">
+                      {formatDraftSummary(raidBattleTableDraftSummary)};{' '}
+                      {t('editorDrafts.summary.raidBattles', {
+                        count: outstandingRaidBattleDraftCount,
+                        unavailableCount: unavailableRaidBattleDraftKeys.length
+                      })}
+                    </span>
+                  </EditorSessionBarActions>
+                ) : null}
+            </> : null}
+          </EditorWorkspaceHeader>
+          <EditorWorkspaceSection id="slots" label={translateLiteral('Battle slots')}>
+            <div className="raid-slot-workspace">
+              <div className="editor-slot-browser">
+                <EditorRecordTable label={translateLiteral('Battle slots')} identityLabel={translateLiteral('Pokemon')}
+                  rows={table.slots} rowId={slot => String(slot.slot)} selection={selectedSlot === null ? undefined : String(selectedSlot)}
+                  onSelect={slot => onSelectSlot(slot.slot)} identity={slot => <><PokemonSprite className="slot-tab-sprite" name={formatSpeciesFormLabel(slot.species, slot.form, slot.speciesId)} preferStatic />
+                  <span>#{slot.slot} {formatSpeciesFormLabel(slot.species, slot.form, slot.speciesId)}</span></>}
+                  empty={translateLiteral('No slots available.')}
+                  columns={[
+                    { id: 'odds', label: translateLiteral('Star odds'), value: slot => slot.probabilitySummary },
+                    { id: 'draft', label: translateLiteral('State'), value: slot =>
+                      draftsBySlotKey[`${table.tableId}:${slot.slot}`] ? translateLiteral('Draft') : '' }
+                  ]} />
+              </div>
+                          {battleSlot ? (
+              <>
+                <div className="editor-task-groups">
                   {raidBattleFieldGroups.map((group) => (
-                    <fieldset className="editable-field-group" key={group.group}>
-                      <legend>{group.group}</legend>
-                      <div className="editable-field-grid">
+                    <EditorDetailGroup key={group.group} label={translateLiteral(group.group)}>
+                      <div className="pokemon-instance-field-list">
                         {group.fields.map((field) => {
                           const currentValue = getEditableRaidBattleFieldValue(
                             battleSlot,
@@ -50495,112 +50406,109 @@ function SelectedRaidBattlePanel({
                           );
                         })}
                       </div>
-                    </fieldset>
+                    </EditorDetailGroup>
                   ))}
                 </div>
-                {editSession ? (
-                  <EditorSessionBarActions>
-                    <button
-                      aria-busy={isRaidBattleUpdating || undefined}
-                      className="primary-button"
-                      disabled={!canSaveRaidBattleDrafts}
-                      onClick={async () => {
-                        if (!table || !battleSlot || !raidBattleDraftKey) {
-                          return;
-                        }
-
-                        const submittedDraftsBySlot = Object.fromEntries(
-                          table.slots.flatMap((slotRecord) => {
-                            const key = `${table.tableId}:${slotRecord.slot}`;
-                            const submittedDraft = draftsBySlotKey[key];
-                            return submittedDraft
-                              ? [[key, { ...submittedDraft }] as const]
-                              : [];
-                          })
-                        );
-                        const didSave = await onUpdateRaidBattleSlotFields(
-                          raidBattleTableDraftSummary.updates
-                        );
-                        if (didSave) {
-                          setDraftsBySlotKey((currentDrafts) => {
-                            let nextDrafts = currentDrafts;
-                            for (const [key, submittedDraft] of Object.entries(
-                              submittedDraftsBySlot
-                            )) {
-                              nextDrafts = clearSubmittedKeyedEditorDraft(
-                                nextDrafts,
-                                key,
-                                submittedDraft,
-                                areFieldDraftsEqual
-                              );
-                            }
-                            return nextDrafts;
-                          });
-                        }
-                      }}
-                      type="button"
-                    >
-                      <BusyActionContent
-                        busyLabel="Staging"
-                        icon={<Save aria-hidden="true" size={16} />}
-                        isBusy={isRaidBattleUpdating}
-                        label="Stage"
-                      />
-                    </button>
-                    {nextRaidBattleDraftTarget ? (
-                      <button
-                        className="secondary-button"
-                        disabled={isRaidBattleUpdating}
-                        onClick={() =>
-                          onReviewDraftTarget(
-                            nextRaidBattleDraftTarget.tableId,
-                            nextRaidBattleDraftTarget.slot
-                          )
-                        }
-                        type="button"
-                      >
-                        {t('editorDrafts.reviewNext')}
-                      </button>
-                    ) : null}
-                    {unavailableRaidBattleDraftKeys.length > 0 ? (
-                      <button
-                        className="danger-button"
-                        disabled={isRaidBattleUpdating}
-                        onClick={discardUnavailableRaidBattleDrafts}
-                        type="button"
-                      >
-                        {t('editorDrafts.discardUnavailable')}
-                      </button>
-                    ) : null}
-                    <button
-                      className="danger-button"
-                      disabled={isRaidBattleUpdating}
-                      onClick={() => cancelActiveEditSession(() => setDraftsBySlotKey({}))}
-                      type="button"
-                    >
-                      <X aria-hidden="true" size={16} />
-                      <span>Cancel</span>
-                    </button>
-                    <span className="draft-action-summary">
-                      {formatDraftSummary(raidBattleTableDraftSummary)};{' '}
-                      {t('editorDrafts.summary.raidBattles', {
-                        count: outstandingRaidBattleDraftCount,
-                        unavailableCount: unavailableRaidBattleDraftKeys.length
-                      })}
-                    </span>
-                  </EditorSessionBarActions>
-                ) : null}
               </>
             ) : (
               <p className="empty-copy">No raid battle selected.</p>
             )}
 
-          </div>
+
+            </div>
+          </EditorWorkspaceSection>
+          <EditorWorkspaceSection id="source" label={translateLiteral('Source')}>
+            <div className="editor-task-groups">
+              <EditorDetailGroup label={translateLiteral('Table provenance')}>
+                            <dl className="editor-detail-list">
+              <div>
+                <dt>Table</dt>
+                <dd>{table.displayName}</dd>
+              </div>
+              <div>
+                <dt>Hash</dt>
+                <dd>{table.sourceTableHash}</dd>
+              </div>
+              <div>
+                <dt>Game</dt>
+                <dd>{table.gameVersion}</dd>
+              </div>
+              <div>
+                <dt>Source file</dt>
+                <dd>{table.provenance.sourceFile}</dd>
+              </div>
+              <div>
+                <dt>Layer</dt>
+                <dd>{formatSourceLayer(table.provenance.sourceLayer)}</dd>
+              </div>
+              <div>
+                <dt>File state</dt>
+                <dd>{formatFileState(table.provenance.fileState)}</dd>
+              </div>
+            </dl>
+
+              </EditorDetailGroup>
+              {battleSlot ? <EditorDetailGroup label={translateLiteral('Slot details')}>
+                <dl className="editor-detail-list">
+                    <div>
+                      <dt>Pokemon</dt>
+                      <dd>
+                        {formatSpeciesFormLabel(
+                          battleSlot.species,
+                          battleSlot.form,
+                          battleSlot.speciesId
+                        )} ({battleSlot.speciesId})
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Ability</dt>
+                      <dd>{battleSlot.abilityLabel}</dd>
+                    </div>
+                    <div>
+                      <dt>Gender</dt>
+                      <dd>{battleSlot.genderLabel}</dd>
+                    </div>
+                    <div>
+                      <dt>G-Max</dt>
+                      <dd>{battleSlot.isGigantamax ? 'Yes' : 'No'}</dd>
+                    </div>
+                    <div>
+                      <dt>Perfect IVs</dt>
+                      <dd>{battleSlot.flawlessIvs}</dd>
+                    </div>
+                    <div>
+                      <dt>Star odds</dt>
+                      <dd>{battleSlot.probabilitySummary}</dd>
+                    </div>
+                    <div>
+                      <dt>Level table</dt>
+                      <dd>{battleSlot.levelTableHash}</dd>
+                    </div>
+                    <div>
+                      <dt>Drop table</dt>
+                      <dd>{battleSlot.dropTableHash}</dd>
+                    </div>
+                    <div>
+                      <dt>Drop rewards</dt>
+                      <dd>{formatRaidBattleRewardLink(battleSlot.dropRewardLink)}</dd>
+                    </div>
+                    <div>
+                      <dt>Bonus table</dt>
+                      <dd>{battleSlot.bonusTableHash}</dd>
+                    </div>
+                    <div>
+                      <dt>Bonus rewards</dt>
+                      <dd>{formatRaidBattleRewardLink(battleSlot.bonusRewardLink)}</dd>
+                    </div>
+                  </dl>
+              </EditorDetailGroup> : null}
+            </div>
+          </EditorWorkspaceSection>
         </>
       ) : (
         <p className="empty-copy">No raid battle table selected.</p>
       )}
-    </aside>
+    </RecordEditorWorkspace>
   );
 }
 
@@ -50741,8 +50649,8 @@ function RaidRewardsSection({
         ) : null}
 
         {workflow ? (
-          <RecordEditorWorkspace id="raidRewards" className="encounters-layout" browser={
-            <div
+          <SelectedRaidRewardPanel
+              browser={<div
               className="raid-rewards-table"
               role="table"
               aria-label={translateLiteral(title)}
@@ -50776,10 +50684,7 @@ function RaidRewardsSection({
                   {translateLiteral('No matching reward tables.')}
                 </p>
               ) : null}
-            </div>
-          }>
-
-            <SelectedRaidRewardPanel
+            </div>}
               canEditRaidRewards={canEditRaidRewards}
               editSession={editSession}
               editableFields={workflow.editableFields}
@@ -50793,7 +50698,6 @@ function RaidRewardsSection({
               table={selectedTable}
               tables={workflow.tables}
             />
-          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">{translateLiteral(emptyCopy)}</p>
         )}
@@ -50805,6 +50709,7 @@ function RaidRewardsSection({
 }
 
 function SelectedRaidRewardPanel({
+  browser,
   canEditRaidRewards,
   editSession,
   editableFields,
@@ -50818,6 +50723,7 @@ function SelectedRaidRewardPanel({
   table,
   tables
 }: {
+  browser: ReactNode;
   canEditRaidRewards: boolean;
   editSession: EditSession | null;
   editableFields: RaidRewardEditableField[];
@@ -50957,10 +50863,8 @@ function SelectedRaidRewardPanel({
   }, [raidRewardDraftDefaults, raidRewardDraftKey]);
 
   return (
-    <aside
-      aria-label={translateLiteral('Selected raid reward provenance')}
-      className="encounter-inspector"
-    >
+    <RecordEditorWorkspace id={sectionId} className="raid-task-workspace" browser={browser} initialSection="slots">
+      <EditorWorkspaceHeader afterBrowser>
       <PublishedLocalEditorValidationDiagnostics
         domain="workflow.raidRewards"
         issues={raidRewardDraftSummary.invalidFields}
@@ -50985,156 +50889,15 @@ function SelectedRaidRewardPanel({
           {t('editorDrafts.discardUnavailable')}
         </button>
       ) : null}
+      </EditorWorkspaceHeader>
       {table ? (
         <>
+          <EditorWorkspaceHeader afterBrowser>
+            <div className="editor-record-context">
           <EditorRecordHeading id={table.sourceTableHash} name={translateLiteral(table.rewardKindLabel)} />
-          <details className="pokemon-instance-source">
-            <summary>{translateLiteral('Source')}</summary>
-            <dl className="item-provenance-list">
-              <div>
-                <dt>{translateLiteral('Table')}</dt>
-                <dd>{table.sourceTableHash}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Kind')}</dt>
-                <dd>{translateLiteral(table.rewardKindLabel)}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Archive member')}</dt>
-                <dd>{translateLiteral(table.archiveMember)}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Source file')}</dt>
-                <dd>{table.provenance.sourceFile}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Layer')}</dt>
-                <dd>{translateLiteral(formatSourceLayer(table.provenance.sourceLayer))}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('File state')}</dt>
-                <dd>{translateLiteral(formatFileState(table.provenance.fileState))}</dd>
-              </div>
-            </dl>
-          </details>
-          <div className="encounter-edit-form">
-            <div className="encounter-slot-header">
-              <strong>{translateLiteral('Rewards')}</strong>
-              <SearchableOptionInput
-                ariaLabel={translateLiteral('Raid reward slot')}
-                data-km-source-site="raid-reward-slot-option"
-                disabled={table.rewards.length === 0}
-                isFiniteCatalog
-                localizeOptions={false}
-                onChange={(value) => onSelectSlot(Number(value))}
-                options={table.rewards.map((candidate) => ({
-                  label: `${translateLiteral('Slot')} ${candidate.slot}: ${translateLiteral(
-                    candidate.itemName
-                  )}`,
-                  value: candidate.slot
-                }))}
-                value={selectedSlot?.toString() ?? ''}
-              />
+              {reward ? <span className="draft-action-summary">{translateLiteral('Slot')} #{reward.slot}</span> : null}
             </div>
-
-            {reward ? (
-              <>
-                <dl className="encounter-slot-detail">
-                  <div>
-                    <dt>{translateLiteral('Item')}</dt>
-                    <dd>
-                      {translateLiteral(reward.itemName)} ({reward.itemId})
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{translateLiteral('Entry ID')}</dt>
-                    <dd>{reward.entryId}</dd>
-                  </div>
-                  <div>
-                    <dt>{translateLiteral(getRaidRewardValuesLabel(table.rewardKind))}</dt>
-                    <dd>
-                      {translateLiteral(formatRaidRewardValues(table.rewardKind, reward.values))}
-                    </dd>
-                  </div>
-                </dl>
-
-                <div
-                  className="raid-reward-slot-grid"
-                  aria-label={translateLiteral('Raid reward slots')}
-                >
-                  {table.rewards.slice(0, 10).map((candidate) => (
-                    <button
-                      aria-pressed={candidate.slot === selectedSlot}
-                      className="slot-tab-button"
-                      key={candidate.slot}
-                      onClick={() => onSelectSlot(candidate.slot)}
-                      type="button"
-                    >
-                      <strong>{`#${candidate.slot}`}</strong>
-                      <span>{translateLiteral(candidate.itemName)}</span>
-                      <small>
-                        {translateLiteral(formatRaidRewardSlotSummary(table.rewardKind, candidate))}
-                      </small>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="editable-field-groups">
-                  {raidRewardFieldGroups.map((group) => (
-                    <fieldset className="editable-field-group" key={group.group}>
-                      <legend>{translateLiteral(group.group)}</legend>
-                      <div className="editable-field-grid">
-                        {group.fields.map((field) => {
-                          const currentValue = getEditableRaidRewardFieldValue(
-                            reward,
-                            field.field
-                          );
-                          const draftValue = drafts[field.field] ?? '';
-                          const draftState = getTrainerFieldDraftState(
-                            draftValue,
-                            currentValue,
-                            field
-                          );
-
-                          return (
-                            <TrainerDraftField
-                              currentValue={currentValue}
-                              disabled={
-                                !canEditRaidRewards ||
-                                editSession === null
-                              }
-                              draftState={draftState}
-                              draftValue={draftValue}
-                              field={field}
-                              helpDomain="raidRewards"
-                              helpGame="swsh"
-                              idPrefix="raid-reward-field"
-                              key={field.field}
-                              onChange={(value) => {
-                                if (!raidRewardDraftKey) {
-                                  return;
-                                }
-
-                                const nextDrafts = {
-                                  ...drafts,
-                                  [field.field]: value
-                                };
-                                setDraftsBySlotKey((currentDrafts) =>
-                                  setFieldDraftRecord(
-                                    currentDrafts,
-                                    raidRewardDraftKey,
-                                    nextDrafts,
-                                    raidRewardDraftDefaults
-                                  )
-                                );
-                              }}
-                            />
-                          );
-                        })}
-                      </div>
-                    </fieldset>
-                  ))}
-                </div>
+            {reward ? <>
                 {editSession ? (
                   <EditorSessionBarActions>
                     <button
@@ -51218,17 +50981,144 @@ function SelectedRaidRewardPanel({
                     </span>
                   </EditorSessionBarActions>
                 ) : null}
+            </> : null}
+          </EditorWorkspaceHeader>
+          <EditorWorkspaceSection id="slots" label={translateLiteral('Reward slots')}>
+            <div className="raid-slot-workspace">
+              <div className="editor-slot-browser">
+                <EditorRecordTable label={translateLiteral('Reward slots')} identityLabel={translateLiteral('Item')}
+                  rows={table.rewards} rowId={slot => String(slot.slot)} selection={selectedSlot === null ? undefined : String(selectedSlot)}
+                  onSelect={slot => onSelectSlot(slot.slot)} identity={slot => <span>#{slot.slot} {translateLiteral(slot.itemName)}</span>}
+                  empty={translateLiteral('No slots available.')}
+                  columns={[
+                    { id: 'values', label: translateLiteral(getRaidRewardValuesLabel(table.rewardKind)), value: slot => translateLiteral(formatRaidRewardSlotSummary(table.rewardKind, slot)) },
+                    { id: 'draft', label: translateLiteral('State'), value: slot =>
+                      draftsBySlotKey[`${table.tableId}:${slot.slot}`] ? translateLiteral('Draft') : '' }
+                  ]} />
+              </div>
+                          {reward ? (
+              <>
+                <div className="editor-task-groups">
+                  {raidRewardFieldGroups.map((group) => (
+                    <EditorDetailGroup key={group.group} label={translateLiteral(group.group)}>
+                      <div className="pokemon-instance-field-list">
+                        {group.fields.map((field) => {
+                          const currentValue = getEditableRaidRewardFieldValue(
+                            reward,
+                            field.field
+                          );
+                          const draftValue = drafts[field.field] ?? '';
+                          const draftState = getTrainerFieldDraftState(
+                            draftValue,
+                            currentValue,
+                            field
+                          );
+
+                          return (
+                            <TrainerDraftField
+                              currentValue={currentValue}
+                              disabled={
+                                !canEditRaidRewards ||
+                                editSession === null
+                              }
+                              draftState={draftState}
+                              draftValue={draftValue}
+                              field={field}
+                              helpDomain="raidRewards"
+                              helpGame="swsh"
+                              idPrefix="raid-reward-field"
+                              key={field.field}
+                              onChange={(value) => {
+                                if (!raidRewardDraftKey) {
+                                  return;
+                                }
+
+                                const nextDrafts = {
+                                  ...drafts,
+                                  [field.field]: value
+                                };
+                                setDraftsBySlotKey((currentDrafts) =>
+                                  setFieldDraftRecord(
+                                    currentDrafts,
+                                    raidRewardDraftKey,
+                                    nextDrafts,
+                                    raidRewardDraftDefaults
+                                  )
+                                );
+                              }}
+                            />
+                          );
+                        })}
+                      </div>
+                    </EditorDetailGroup>
+                  ))}
+                </div>
               </>
             ) : (
               <p className="empty-copy">{translateLiteral('No raid reward selected.')}</p>
             )}
 
-          </div>
+
+            </div>
+          </EditorWorkspaceSection>
+          <EditorWorkspaceSection id="source" label={translateLiteral('Source')}>
+            <div className="editor-task-groups">
+              <EditorDetailGroup label={translateLiteral('Table provenance')}>
+                            <dl className="editor-detail-list">
+              <div>
+                <dt>{translateLiteral('Table')}</dt>
+                <dd>{table.sourceTableHash}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Kind')}</dt>
+                <dd>{translateLiteral(table.rewardKindLabel)}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Archive member')}</dt>
+                <dd>{translateLiteral(table.archiveMember)}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Source file')}</dt>
+                <dd>{table.provenance.sourceFile}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Layer')}</dt>
+                <dd>{translateLiteral(formatSourceLayer(table.provenance.sourceLayer))}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('File state')}</dt>
+                <dd>{translateLiteral(formatFileState(table.provenance.fileState))}</dd>
+              </div>
+            </dl>
+
+              </EditorDetailGroup>
+              {reward ? <EditorDetailGroup label={translateLiteral('Slot details')}>
+                <dl className="editor-detail-list">
+                  <div>
+                    <dt>{translateLiteral('Item')}</dt>
+                    <dd>
+                      {translateLiteral(reward.itemName)} ({reward.itemId})
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{translateLiteral('Entry ID')}</dt>
+                    <dd>{reward.entryId}</dd>
+                  </div>
+                  <div>
+                    <dt>{translateLiteral(getRaidRewardValuesLabel(table.rewardKind))}</dt>
+                    <dd>
+                      {translateLiteral(formatRaidRewardValues(table.rewardKind, reward.values))}
+                    </dd>
+                  </div>
+                </dl>
+              </EditorDetailGroup> : null}
+            </div>
+          </EditorWorkspaceSection>
         </>
       ) : (
         <p className="empty-copy">{translateLiteral('No reward table selected.')}</p>
       )}
-    </aside>
+    </RecordEditorWorkspace>
   );
 }
 
@@ -51374,7 +51264,26 @@ function BehaviorSection({
           <h2 id="behavior-heading">{translateLiteral('Behavior')}</h2>
         </div>
 
-        <div className="items-toolbar encounters-toolbar">
+        {workflow ? (
+          <SelectedBehaviorPanel
+            browser={<div className="raid-rewards-table" role="table" aria-label={translateLiteral('Behavior entries')}>
+              <div className="raid-rewards-row raid-rewards-row-heading" role="row">
+                {['Pokemon', 'Behavior', 'Hitbox radius', 'Grass shake radius', 'Status'].map(label =>
+                  <span role="columnheader" key={label}>{translateLiteral(label)}</span>)}
+              </div>
+              <VirtualTableBody items={filteredEntries} getKey={entry => entry.entryId} resetKey={normalizedSearch}
+                renderRow={entry => <InteractiveTableRow aria-selected={selectedEntry?.entryId === entry.entryId}
+                  className={`raid-rewards-row ${selectedEntry?.entryId === entry.entryId ? 'raid-rewards-row-selected' : ''}`}
+                  onClick={() => onSelectEntry(entry.entryId)}>
+                  <span data-localization-ignore="true" role="cell">{formatBehaviorSpecies(entry)}</span>
+                  <span role="cell">{translateLiteral(entry.behaviorLabel)}</span>
+                  <span role="cell">{formatBehaviorNumber(entry.hitboxRadius)}</span>
+                  <span role="cell">{formatBehaviorNumber(entry.grassShakeRadius)}</span>
+                  <span role="cell">{pendingBehaviorEntryIds.has(entry.entryId) ? translateLiteral('Pending changes') : '—'}</span>
+                </InteractiveTableRow>} />
+              {!filteredEntries.length ? <p className="empty-copy">{translateLiteral('No matching behavior entries.')}</p> : null}
+            </div>}
+            browserControls={<div className="items-toolbar encounters-toolbar">
           <label className="search-box items-search">
             <Search aria-hidden="true" size={18} />
             <input
@@ -51398,73 +51307,22 @@ function BehaviorSection({
             label={translateLiteral('Pending changes')}
             value={pendingBehaviorEditCount.toString()}
           />
-        </div>
-
-        {workflow ? (
-          <EditorSessionBar
+        </div>}
+            sessionBar={<EditorSessionBar
             canEdit={canEditBehavior && selectedEntry !== null}
             isEditing={editSession !== null}
             isStarting={isEditStarting}
             label="Behavior"
             onStart={onStartEditSession}
+          />}
+            canEditBehavior={canEditBehavior}
+            editSession={editSession}
+            entry={selectedEntry}
+            fields={workflow.fields}
+            isBehaviorUpdating={isBehaviorUpdating}
+            onSelectEntry={onSelectEntry}
+            onUpdateBehaviorEntryFields={onUpdateBehaviorEntryFields}
           />
-        ) : null}
-
-        {workflow ? (
-          <RecordEditorWorkspace id="behavior" className="encounters-layout behavior-layout" browser={
-            <div className="raid-rewards-table" role="table" aria-label={translateLiteral('Behavior entries')}>
-              <div className="raid-rewards-row raid-rewards-row-heading" role="row">
-                <span role="columnheader">{translateLiteral('Pokemon')}</span>
-                <span role="columnheader">{translateLiteral('Behavior')}</span>
-                <span role="columnheader">{translateLiteral('Anchor')}</span>
-                <span role="columnheader">{translateLiteral('Range')}</span>
-              </div>
-              {filteredEntries.map((entry) => (
-                <InteractiveTableRow
-                  aria-selected={selectedEntry?.entryId === entry.entryId}
-                  className={`raid-rewards-row ${
-                    selectedEntry?.entryId === entry.entryId
-                      ? 'raid-rewards-row-selected'
-                      : ''
-                  } ${
-                    pendingBehaviorEntryIds.has(entry.entryId) ? 'raid-rewards-row-pending' : ''
-                  }`}
-                  key={entry.entryId}
-                  onClick={() => onSelectEntry(entry.entryId)}
-                  role="row"
-                >
-                  <span data-localization-ignore="true" role="cell">
-                    {formatBehaviorSpecies(entry)}
-                  </span>
-                  <span role="cell">{translateLiteral(entry.behaviorLabel)}</span>
-                  <span data-localization-ignore={entry.modelPart ? 'true' : undefined} role="cell">
-                    {entry.modelPart || translateLiteral('n/a')}
-                  </span>
-                  <span role="cell">
-                    {translateLiteral('Hitbox radius')} {formatBehaviorNumber(entry.hitboxRadius)} /{' '}
-                    {translateLiteral('Grass shake radius')}{' '}
-                    {formatBehaviorNumber(entry.grassShakeRadius)}
-                  </span>
-                </InteractiveTableRow>
-              ))}
-              {filteredEntries.length === 0 ? (
-                <div className="empty-copy" role="status">
-                  {translateLiteral('No matching behavior entries.')}
-                </div>
-              ) : null}
-            </div>
-          }>
-
-            <SelectedBehaviorPanel
-              canEditBehavior={canEditBehavior}
-              editSession={editSession}
-              entry={selectedEntry}
-              fields={workflow.fields}
-              isBehaviorUpdating={isBehaviorUpdating}
-              onSelectEntry={onSelectEntry}
-              onUpdateBehaviorEntryFields={onUpdateBehaviorEntryFields}
-            />
-          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">
             {translateLiteral('Open Behavior from Workflows to load symbol behavior data.')}
@@ -51478,7 +51336,7 @@ function BehaviorSection({
 }
 
 function SelectedBehaviorPanel({
-  canEditBehavior,
+  browser, browserControls, sessionBar, canEditBehavior,
   editSession,
   entry,
   fields,
@@ -51486,6 +51344,9 @@ function SelectedBehaviorPanel({
   onSelectEntry,
   onUpdateBehaviorEntryFields
 }: {
+  browser: ReactNode;
+  browserControls: ReactNode;
+  sessionBar: ReactNode;
   canEditBehavior: boolean;
   editSession: EditSession | null;
   entry: BehaviorEntryRecord | null;
@@ -51584,15 +51445,74 @@ function SelectedBehaviorPanel({
     );
   };
 
-  return (
-    <aside
-      aria-label={translateLiteral('Selected behavior entry provenance')}
-      className="encounter-inspector"
-    >
-      <PublishedLocalEditorValidationDiagnostics
-        domain="workflow.behavior"
-        issues={behaviorDraftSummary.invalidFields}
-      />
+  return <RecordEditorWorkspace id="behavior" className="behavior-record-workspace"
+    initialSection={behaviorFieldGroups[0]?.group ?? 'source'} browser={browser} browserControls={browserControls}
+    sessionBar={<>{sessionBar}{entry && editSession ? (
+              <EditorSessionBarActions>
+                <button
+                  aria-busy={isBehaviorUpdating || undefined}
+                  className="primary-button"
+                  disabled={!canSaveBehaviorDrafts}
+                  onClick={async () => {
+                    if (!entry) {
+                      return;
+                    }
+
+                    const submittedDraft = { ...drafts };
+                    const didSave = await onUpdateBehaviorEntryFields(
+                      entry.entryId,
+                      behaviorDraftSummary.changedFields.map((change) => ({
+                        field: change.field,
+                        value: change.value
+                      }))
+                    );
+                    if (didSave) {
+                      setDraftsByEntryId((currentDrafts) =>
+                        clearSubmittedKeyedEditorDraft(
+                          currentDrafts,
+                          entry.entryId,
+                          submittedDraft,
+                          areFieldDraftsEqual
+                        )
+                      );
+                    }
+                  }}
+                  type="button"
+                >
+                  <BusyActionContent
+                    busyLabel="Staging"
+                    icon={<Save aria-hidden="true" size={16} />}
+                    isBusy={isBehaviorUpdating}
+                    label="Stage"
+                  />
+                </button>
+                {nextBehaviorDraftKey !== null ? (
+                  <button
+                    className="secondary-button"
+                    disabled={isBehaviorUpdating}
+                    onClick={() => onSelectEntry(nextBehaviorDraftKey)}
+                    type="button"
+                  >
+                    {t('editorDrafts.reviewNext')}
+                  </button>
+                ) : null}
+                <button
+                  className="danger-button"
+                  disabled={isBehaviorUpdating}
+                  onClick={() => cancelActiveEditSession(() => setDraftsByEntryId({}))}
+                  type="button"
+                >
+                  <X aria-hidden="true" size={16} />
+                  <span>Cancel</span>
+                </button>
+                <span className="draft-action-summary">
+                  {formatDraftSummary(behaviorDraftSummary)};{' '}
+                  {t('editorDrafts.summary.behavior', {
+                    count: outstandingBehaviorDraftKeys.length
+                  })}
+                </span>
+              </EditorSessionBarActions>
+            ) : null}
       {editSession && !entry ? (
         <EmptySelectionEditorSessionActions
           isBusy={isBehaviorUpdating}
@@ -51600,77 +51520,17 @@ function SelectedBehaviorPanel({
           summary="No behavior entry selected."
         />
       ) : null}
-      <div className="panel-heading">
-        <Activity aria-hidden="true" size={18} />
-        <h3>{translateLiteral('Selected Behavior')}</h3>
-      </div>
-
-      {entry ? (
-        <>
-          <dl className="item-provenance-list">
-            <div>
-              <dt>{translateLiteral('Pokemon')}</dt>
-              <dd data-localization-ignore="true">{formatBehaviorSpecies(entry)}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Behavior')}</dt>
-              <dd>{translateLiteral(entry.behaviorLabel)}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Model anchor')}</dt>
-              <dd data-localization-ignore={entry.modelPart ? 'true' : undefined}>
-                {entry.modelPart || translateLiteral('n/a')}
-              </dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Source file')}</dt>
-              <dd>{entry.provenance.sourceFile}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Layer')}</dt>
-              <dd>{translateLiteral(formatSourceLayer(entry.provenance.sourceLayer))}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('File state')}</dt>
-              <dd>{translateLiteral(formatFileState(entry.provenance.fileState))}</dd>
-            </div>
-          </dl>
-
-          <div className="encounter-edit-form">
-            <dl className="encounter-slot-detail">
-              <div>
-                <dt>{translateLiteral('Hitbox radius')}</dt>
-                <dd>{formatBehaviorNumber(entry.hitboxRadius)}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Grass shake radius')}</dt>
-                <dd>{formatBehaviorNumber(entry.grassShakeRadius)}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Internal name')}</dt>
-                <dd data-localization-ignore={entry.internalSpeciesName ? 'true' : undefined}>
-                  {entry.internalSpeciesName || translateLiteral('n/a')}
-                </dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Hash 1')}</dt>
-                <dd>{entry.hash1}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Hash 2')}</dt>
-                <dd>{entry.hash2}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Entry')}</dt>
-                <dd>#{entry.index}</dd>
-              </div>
-            </dl>
-
-            <div className="editable-field-groups behavior-field-groups">
-              {behaviorFieldGroups.map((group) => (
-                <fieldset className="editable-field-group" key={group.group}>
-                  <legend>{translateLiteral(group.group)}</legend>
-                  <div className="editable-field-grid">
+</>}>
+      <EditorWorkspaceHeader>
+        <PublishedLocalEditorValidationDiagnostics domain="workflow.behavior" issues={behaviorDraftSummary.invalidFields} />
+      </EditorWorkspaceHeader>
+      {entry ? <EditorWorkspaceHeader afterBrowser>
+        <EditorRecordHeading name={formatBehaviorSpecies(entry)} id={entry.index} />
+      </EditorWorkspaceHeader> : null}
+      {entry ? behaviorFieldGroups.map(group => <EditorWorkspaceSection
+        key={group.group} id={group.group} label={translateLiteral(group.group)}
+        modified={group.fields.some(field => drafts[field.field] !== behaviorDraftDefaults[field.field])}>
+        <div className="pokemon-instance-field-list">
                     {group.fields.map((field) => {
                       const currentValue = getBehaviorEntryFieldValue(entry, field.field);
                       const draftValue = drafts[field.field] ?? currentValue;
@@ -51790,85 +51650,63 @@ function SelectedBehaviorPanel({
                         </div>
                       );
                     })}
-                  </div>
-                </fieldset>
-              ))}
+        </div>
+      </EditorWorkspaceSection>) : null}
+      {entry ? <EditorWorkspaceSection id="source" label={t('editorSections.details')}>
+        <div className="editor-task-groups">
+          <dl className="editor-detail-list">
+            <div>
+              <dt>{translateLiteral('Pokemon')}</dt>
+              <dd data-localization-ignore="true">{formatBehaviorSpecies(entry)}</dd>
             </div>
+            <div>
+              <dt>{translateLiteral('Behavior')}</dt>
+              <dd>{translateLiteral(entry.behaviorLabel)}</dd>
+            </div>
+            <div>
+              <dt>{translateLiteral('Model anchor')}</dt>
+              <dd data-localization-ignore={entry.modelPart ? 'true' : undefined}>
+                {entry.modelPart || translateLiteral('n/a')}
+              </dd>
+            </div>
+            <div>
+              <dt>{translateLiteral('Source file')}</dt>
+              <dd className="editor-detail-path" data-localization-ignore="true">{entry.provenance.sourceFile}</dd>
+            </div>
+            <div>
+              <dt>{translateLiteral('Layer')}</dt>
+              <dd>{translateLiteral(formatSourceLayer(entry.provenance.sourceLayer))}</dd>
+            </div>
+            <div>
+              <dt>{translateLiteral('File state')}</dt>
+              <dd>{translateLiteral(formatFileState(entry.provenance.fileState))}</dd>
+            </div>
+          </dl>
 
-            {editSession ? (
-              <EditorSessionBarActions>
-                <button
-                  aria-busy={isBehaviorUpdating || undefined}
-                  className="primary-button"
-                  disabled={!canSaveBehaviorDrafts}
-                  onClick={async () => {
-                    if (!entry) {
-                      return;
-                    }
+            <dl className="editor-detail-list">
+              <div>
+                <dt>{translateLiteral('Internal name')}</dt>
+                <dd data-localization-ignore={entry.internalSpeciesName ? 'true' : undefined}>
+                  {entry.internalSpeciesName || translateLiteral('n/a')}
+                </dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Hash 1')}</dt>
+                <dd>{entry.hash1}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Hash 2')}</dt>
+                <dd>{entry.hash2}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Entry')}</dt>
+                <dd>#{entry.index}</dd>
+              </div>
+            </dl>
 
-                    const submittedDraft = { ...drafts };
-                    const didSave = await onUpdateBehaviorEntryFields(
-                      entry.entryId,
-                      behaviorDraftSummary.changedFields.map((change) => ({
-                        field: change.field,
-                        value: change.value
-                      }))
-                    );
-                    if (didSave) {
-                      setDraftsByEntryId((currentDrafts) =>
-                        clearSubmittedKeyedEditorDraft(
-                          currentDrafts,
-                          entry.entryId,
-                          submittedDraft,
-                          areFieldDraftsEqual
-                        )
-                      );
-                    }
-                  }}
-                  type="button"
-                >
-                  <BusyActionContent
-                    busyLabel="Staging"
-                    icon={<Save aria-hidden="true" size={16} />}
-                    isBusy={isBehaviorUpdating}
-                    label="Stage"
-                  />
-                </button>
-                {nextBehaviorDraftKey !== null ? (
-                  <button
-                    className="secondary-button"
-                    disabled={isBehaviorUpdating}
-                    onClick={() => onSelectEntry(nextBehaviorDraftKey)}
-                    type="button"
-                  >
-                    {t('editorDrafts.reviewNext')}
-                  </button>
-                ) : null}
-                <button
-                  className="danger-button"
-                  disabled={isBehaviorUpdating}
-                  onClick={() => cancelActiveEditSession(() => setDraftsByEntryId({}))}
-                  type="button"
-                >
-                  <X aria-hidden="true" size={16} />
-                  <span>Cancel</span>
-                </button>
-                <span className="draft-action-summary">
-                  {formatDraftSummary(behaviorDraftSummary)};{' '}
-                  {t('editorDrafts.summary.behavior', {
-                    count: outstandingBehaviorDraftKeys.length
-                  })}
-                </span>
-              </EditorSessionBarActions>
-            ) : null}
-
-          </div>
-        </>
-      ) : (
-        <p className="empty-copy">{translateLiteral('No behavior entry selected.')}</p>
-      )}
-    </aside>
-  );
+        </div>
+      </EditorWorkspaceSection> : <p className="empty-copy">{translateLiteral('No behavior entry selected.')}</p>}
+  </RecordEditorWorkspace>;
 }
 
 const emptyPlacedObjects: PlacedObjectRecord[] = [];
@@ -53028,6 +52866,7 @@ function FlagworkSaveSection({
     workflow?.saveBlocks[0] ??
     null;
 
+  const [catalog, setCatalog] = useState<'flags' | 'saveKeys'>('flags');
   return (
     <>
       <section aria-labelledby="flagwork-save-heading" className="panel wide-panel advanced-editor-workspace">
@@ -53070,69 +52909,38 @@ function FlagworkSaveSection({
         </div>
 
         {workflow ? (
-          <RecordEditorWorkspace id="flagworkSave" className="flagwork-layout" browser={
-            <div className="flagwork-stack">
-              <div className="flagwork-table" role="table" aria-label="Flagwork records">
-                <div className="flagwork-row flagwork-row-heading" role="row">
-                  <span role="columnheader">Table</span>
-                  <span role="columnheader">Index</span>
-                  <span role="columnheader">Kind</span>
-                  <span role="columnheader">Name</span>
-                  <span role="columnheader">Save key</span>
-                </div>
-                {filteredFlags.map((flag) => (
-                  <InteractiveTableRow
-                    className={`flagwork-row ${
-                      selectedFlag?.flagId === flag.flagId ? 'flagwork-row-selected' : ''
-                    }`}
-                    key={flag.flagId}
-                    onClick={() => onSelectFlag(flag.flagId)}
-                    role="row"
-                  >
-                    <span role="cell">{flag.table}</span>
-                    <span role="cell">{flag.index}</span>
-                    <span role="cell">{flag.kind}</span>
-                    <span role="cell">{flag.name}</span>
-                    <span role="cell">{flag.low32Key}</span>
-                  </InteractiveTableRow>
-                ))}
-              </div>
-
-              <div className="flagwork-table" role="table" aria-label="Save key records">
-                <div className="flagwork-row flagwork-row-heading" role="row">
-                  <span role="columnheader">Key</span>
-                  <span role="columnheader">Kind</span>
-                  <span role="columnheader">Value</span>
-                  <span role="columnheader">Name</span>
-                  <span role="columnheader">Hash</span>
-                </div>
-                {filteredSaveBlocks.map((saveBlock) => (
-                  <InteractiveTableRow
-                    className={`flagwork-row ${
-                      selectedSaveBlock?.blockId === saveBlock.blockId
-                        ? 'flagwork-row-selected'
-                        : ''
-                    }`}
-                    key={saveBlock.blockId}
-                    onClick={() => onSelectSaveBlock(saveBlock.blockId)}
-                    role="row"
-                  >
-                    <span role="cell">{saveBlock.key}</span>
-                    <span role="cell">{saveBlock.kind}</span>
-                    <span role="cell">{saveBlock.valueKind}</span>
-                    <span role="cell">{saveBlock.name}</span>
-                    <span role="cell">{saveBlock.hash}</span>
-                  </InteractiveTableRow>
-                ))}
-              </div>
-            </div>
-          }>
-
-            <SelectedFlagworkSavePanel
-              flag={selectedFlag}
-              saveBlock={selectedSaveBlock}
-              saveFile={workflow.saveFile}
-            />
+          <RecordEditorWorkspace id="flagworkSave" className="flagwork-workspace" initialSection="details"
+            browserVisibleRows={5}
+            browserControls={<div className="editor-record-context" role="group" aria-label={translateLiteral('Catalog')}>
+              <button type="button" className="editor-section-choice" aria-pressed={catalog === 'flags'}
+                onClick={() => setCatalog('flags')}>{translateLiteral('Flags and works')} ({filteredFlags.length})</button>
+              <button type="button" className="editor-section-choice" aria-pressed={catalog === 'saveKeys'}
+                onClick={() => setCatalog('saveKeys')}>{translateLiteral('Save keys')} ({filteredSaveBlocks.length})</button>
+            </div>}
+            browser={catalog === 'flags' ? <EditorRecordTable key="flags" label={translateLiteral('Flagwork records')}
+              identityLabel={translateLiteral('Name')} rows={filteredFlags} rowId={flag => flag.flagId}
+              identity={flag => flag.name} selection={selectedFlag?.flagId} onSelect={flag => onSelectFlag(flag.flagId)}
+              columns={[
+                { id: 'table', label: translateLiteral('Table'), value: flag => flag.table },
+                { id: 'index', label: translateLiteral('Index'), value: flag => flag.index, numeric: true },
+                { id: 'kind', label: translateLiteral('Kind'), value: flag => flag.kind },
+                { id: 'key', label: translateLiteral('Save key'), value: flag => flag.low32Key }
+              ]} /> : <EditorRecordTable key="saveKeys" label={translateLiteral('Save key records')}
+              identityLabel={translateLiteral('Key')} rows={filteredSaveBlocks} rowId={row => row.blockId}
+              identity={row => row.key} selection={selectedSaveBlock?.blockId} onSelect={row => onSelectSaveBlock(row.blockId)}
+              columns={[
+                { id: 'name', label: translateLiteral('Name'), value: row => row.name },
+                { id: 'kind', label: translateLiteral('Kind'), value: row => row.kind },
+                { id: 'value', label: translateLiteral('Value'), value: row => row.valueKind },
+                { id: 'hash', label: translateLiteral('Hash'), value: row => row.hash }
+              ]} />}>
+            <EditorWorkspaceHeader afterBrowser>
+              <EditorRecordHeading name={selectedFlag?.name ?? selectedSaveBlock?.name ?? translateLiteral('Selected Save Key')}
+                id={selectedFlag?.low32Key ?? selectedSaveBlock?.key} />
+            </EditorWorkspaceHeader>
+            <EditorWorkspaceSection id="details" label={translateLiteral('Details')}>
+              <SelectedFlagworkSavePanel flag={selectedFlag} saveBlock={selectedSaveBlock} saveFile={workflow.saveFile} />
+            </EditorWorkspaceSection>
           </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">
@@ -53373,189 +53181,124 @@ function BagHookSection({
         </div>
 
         {workflow ? (
-          <RecordEditorWorkspace id="bagHook" className="flagwork-layout" browser={
-            <div className="flagwork-stack">
-              <div className="exefs-table" role="table" aria-label="Bag Hook slots">
-                <div className="exefs-row bag-hook-row exefs-row-heading" role="row">
-                  <span role="columnheader">Slot</span>
-                  <span role="columnheader">Status</span>
-                  <span role="columnheader">Reserved for</span>
-                  <span role="columnheader">Item</span>
-                  <span role="columnheader">Owner</span>
-                </div>
-                {workflow.slots.map((slot) => (
-                  <InteractiveTableRow
-                    className={`exefs-row bag-hook-row ${
-                      selectedRecord?.slot === slot.slot ? 'exefs-row-selected' : ''
-                    }`}
-                    key={slot.slot}
-                    onClick={() => onSelectSlot(slot.slot)}
-                    role="row"
-                  >
-                    <span role="cell">#{slot.slot}</span>
-                    <span role="cell">
-                      <span className={`status-pill ${getExeFsStatusClassName(slot.status)}`}>
-                        {formatBagHookStatus(slot.status)}
-                      </span>
-                    </span>
-                    <span role="cell">{slot.reservedFor}</span>
-                    <span role="cell">
-                      {slot.itemId === null
-                        ? 'Empty'
-                        : `${slot.itemName} (#${slot.itemId}) x${slot.quantity ?? 1}`}
-                    </span>
-                    <span role="cell">
-                      {slot.itemId === null || slot.status === 'empty' || slot.status === 'unavailable'
-                        ? ''
-                        : slot.owner}
-                    </span>
-                  </InteractiveTableRow>
-                ))}
+          <RecordEditorWorkspace
+            id="bagHook"
+            className="bag-hook-workspace"
+            initialSection="slot"
+            sessionBar={
+              <div className="editor-session-bar">
+          <div className="editor-record-action-rail">
+            <button
+              aria-busy={isStaging || undefined}
+              className="primary-button"
+              disabled={!canStageInstall}
+              onClick={onStageInstall}
+              type="button"
+            >
+              <BusyActionContent
+                busyLabel="Staging"
+                icon={<Wrench aria-hidden="true" size={16} />}
+                isBusy={isStaging}
+                label={stageInstallLabel}
+              />
+            </button>
+            <button
+              aria-busy={isStaging || undefined}
+              className="danger-button"
+              disabled={!canStageUninstall}
+              onClick={onStageUninstall}
+              type="button"
+            >
+              <BusyActionContent
+                busyLabel="Staging"
+                icon={<Trash2 aria-hidden="true" size={16} />}
+                isBusy={isStaging}
+                label="Stage Uninstall"
+              />
+            </button>
+            <button
+              aria-busy={isChangePlanCreating || undefined}
+              className="secondary-button"
+              disabled={!canReviewPlan}
+              onClick={onCreateChangePlan}
+              type="button"
+            >
+              <BusyActionContent
+                busyLabel="Reviewing"
+                icon={<ClipboardCheck aria-hidden="true" size={16} />}
+                isBusy={isChangePlanCreating}
+                label="Review"
+              />
+            </button>
+            <button
+              aria-busy={isChangePlanApplying || undefined}
+              className="primary-button"
+              disabled={!canApplyPlan}
+              onClick={onApplyChangePlan}
+              type="button"
+            >
+              <BusyActionContent
+                busyLabel="Applying"
+                icon={<Save aria-hidden="true" size={16} />}
+                isBusy={isChangePlanApplying}
+                label="Apply"
+              />
+            </button>
+          </div>
+                <p>{workflow.installMessage}</p>
+                {canStageUninstall ? <p>Uninstall removes Bag Hook and dependent Royal Candy and Starting Items output.</p> : null}
               </div>
-            </div>
-          }>
-
-            <aside aria-label="Selected Bag Hook slot" className="encounter-inspector">
-              <div className="panel-heading">
-                <Wrench aria-hidden="true" size={18} />
-                <h3>{selectedRecord ? `${translateLiteral('Slot')} ${selectedRecord.slot}` : translateLiteral('Selected Slot')}</h3>
-              </div>
-
-              {selectedRecord ? (
-                <>
-                  <AdvancedEditorDetails>
-                    <dl className="item-provenance-list">
-                      <div>
-                        <dt>Install status</dt>
-                        <dd>{formatBagHookStatus(workflow.installStatus)}</dd>
-                      </div>
-                      <div>
-                        <dt>Slot</dt>
-                        <dd>#{selectedRecord.slot}</dd>
-                      </div>
-                      <div>
-                        <dt>Status</dt>
-                        <dd>{formatBagHookStatus(selectedRecord.status)}</dd>
-                      </div>
-                      <div>
-                        <dt>Reserved for</dt>
-                        <dd>{selectedRecord.reservedFor}</dd>
-                      </div>
-                      <div>
-                        <dt>Owner</dt>
-                        <dd>{selectedRecord.owner}</dd>
-                      </div>
-                      <div>
-                        <dt>Source file</dt>
-                        <dd>{selectedRecord.provenance.sourceFile}</dd>
-                      </div>
-                      <div>
-                        <dt>Layer</dt>
-                        <dd>{formatSourceLayer(selectedRecord.provenance.sourceLayer)}</dd>
-                      </div>
-                      <div>
-                        <dt>File state</dt>
-                        <dd>{formatFileState(selectedRecord.provenance.fileState)}</dd>
-                      </div>
-                    </dl>
-                  </AdvancedEditorDetails>
-
-                  <div className="encounter-edit-form">
-                    <div className="form-actions">
-                      <button
-                        aria-busy={isStaging || undefined}
-                        className="primary-button"
-                        disabled={!canStageInstall}
-                        onClick={onStageInstall}
-                        type="button"
-                      >
-                        <BusyActionContent
-                          busyLabel="Staging"
-                          icon={<Wrench aria-hidden="true" size={16} />}
-                          isBusy={isStaging}
-                          label={stageInstallLabel}
-                        />
-                      </button>
-                      <button
-                        aria-busy={isStaging || undefined}
-                        className="danger-button"
-                        disabled={!canStageUninstall}
-                        onClick={onStageUninstall}
-                        type="button"
-                      >
-                        <BusyActionContent
-                          busyLabel="Staging"
-                          icon={<Trash2 aria-hidden="true" size={16} />}
-                          isBusy={isStaging}
-                          label="Stage Uninstall"
-                        />
-                      </button>
-                      <button
-                        aria-busy={isChangePlanCreating || undefined}
-                        className="secondary-button"
-                        disabled={!canReviewPlan}
-                        onClick={onCreateChangePlan}
-                        type="button"
-                      >
-                        <BusyActionContent
-                          busyLabel="Reviewing"
-                          icon={<ClipboardCheck aria-hidden="true" size={16} />}
-                          isBusy={isChangePlanCreating}
-                          label="Review"
-                        />
-                      </button>
-                      <button
-                        aria-busy={isChangePlanApplying || undefined}
-                        className="primary-button"
-                        disabled={!canApplyPlan}
-                        onClick={onApplyChangePlan}
-                        type="button"
-                      >
-                        <BusyActionContent
-                          busyLabel="Applying"
-                          icon={<Save aria-hidden="true" size={16} />}
-                          isBusy={isChangePlanApplying}
-                          label="Apply"
-                        />
-                      </button>
-                    </div>
-
-                    <dl className="encounter-slot-detail">
-                      <div>
-                        <dt>Install message</dt>
-                        <dd>{workflow.installMessage}</dd>
-                      </div>
-                      <div>
-                        <dt>Slot notes</dt>
-                        <dd>{selectedRecord.notes}</dd>
-                      </div>
-                      <div>
-                        <dt>Item</dt>
-                        <dd>
-                          {selectedRecord.itemId === null
-                            ? 'None'
-                            : `${selectedRecord.itemName} (#${selectedRecord.itemId})`}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Uninstall impact</dt>
-                        <dd>
-                          Removes Bag Hook plus dependent Royal Candy and Starting Items output.
-                        </dd>
-                      </div>
-                    </dl>
-                  </div>
-                </>
-              ) : (
-                <p className="empty-copy">No Bag Hook slot selected.</p>
-              )}
-            </aside>
+            }
+            browser={
+              <EditorRecordTable
+                label="Bag Hook slots"
+                identityLabel="Slot"
+                rows={workflow.slots}
+                rowId={(slot) => String(slot.slot)}
+                identity={(slot) => '#'+slot.slot}
+                selection={selectedRecord ? String(selectedRecord.slot) : undefined}
+                onSelect={(slot) => onSelectSlot(slot.slot)}
+                columns={[
+                  { id: 'status', label: 'Status', value: (slot) => (
+                    <span className={'status-pill '+getExeFsStatusClassName(slot.status)}>
+                      {formatBagHookStatus(slot.status)}
+                    </span>
+                  ) },
+                  { id: 'reserved', label: 'Reserved for', value: (slot) => slot.reservedFor },
+                  { id: 'item', label: 'Item', value: (slot) => slot.itemId === null
+                    ? 'Empty' : slot.itemName+' (#'+slot.itemId+') ×'+(slot.quantity ?? 1) },
+                  { id: 'owner', label: 'Owner', value: (slot) =>
+                    slot.itemId === null || slot.status === 'empty' || slot.status === 'unavailable' ? '' : slot.owner }
+                ]}
+              />
+            }
+          >
+            {selectedRecord ? <>
+              <EditorWorkspaceHeader afterBrowser>
+                <EditorRecordHeading id={'#'+selectedRecord.slot} name={selectedRecord.reservedFor} />
+              </EditorWorkspaceHeader>
+              <EditorWorkspaceSection id="slot" label="Slot">
+                <dl className="item-provenance-list">
+                  <div><dt>Status</dt><dd>{formatBagHookStatus(selectedRecord.status)}</dd></div>
+                  <div><dt>Item</dt><dd>{selectedRecord.itemId === null
+                    ? 'None' : selectedRecord.itemName+' (#'+selectedRecord.itemId+')'}</dd></div>
+                  <div><dt>Owner</dt><dd>{selectedRecord.owner}</dd></div>
+                  <div><dt>Slot notes</dt><dd>{selectedRecord.notes}</dd></div>
+                </dl>
+              </EditorWorkspaceSection>
+              <EditorWorkspaceSection id="source" label="Source">
+                <dl className="item-provenance-list">
+                  <div><dt>Source file</dt><dd>{selectedRecord.provenance.sourceFile}</dd></div>
+                  <div><dt>Layer</dt><dd>{formatSourceLayer(selectedRecord.provenance.sourceLayer)}</dd></div>
+                  <div><dt>File state</dt><dd>{formatFileState(selectedRecord.provenance.fileState)}</dd></div>
+                </dl>
+              </EditorWorkspaceSection>
+            </> : <p className="empty-copy">No Bag Hook slot selected.</p>}
           </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">Open Bag Hook from Hooks to inspect the startup hook slots.</p>
         )}
       </section>
-
       <WorkflowPanelOutputSections
         output={panelOutput}
         workflowDiagnostics={workflow?.diagnostics ?? []}
@@ -53669,33 +53412,86 @@ function IvScreenSection({
         </div>
 
         {workflow ? (
-          <div className="flagwork-layout">
-            <div className="flagwork-stack">
-              <div className="exefs-table iv-screen-range-table" role="table" aria-label="IV Screen reserved ranges">
-                <div className="exefs-row iv-screen-range-row exefs-row-heading" role="row">
-                  <span role="columnheader">Region</span>
-                  <span role="columnheader">Range</span>
+          <RecordEditorWorkspace id="iv-screen" className="iv-screen-layout" initialSection="install">
+            <EditorWorkspaceSection id="install" label={translateLiteral('Install')}>
+              <div className="form-actions">
+                <button
+                  aria-busy={isStaging || undefined}
+                  className="primary-button"
+                  disabled={!canStageInstall}
+                  onClick={onStageInstall}
+                  type="button"
+                >
+                  <BusyActionContent
+                    busyLabel="Staging"
+                    icon={<Wrench aria-hidden="true" size={16} />}
+                    isBusy={isStaging}
+                    label={installLabel}
+                  />
+                </button>
+                <button
+                  aria-busy={isStaging || undefined}
+                  className="danger-button"
+                  disabled={!canStageUninstall}
+                  onClick={onStageUninstall}
+                  type="button"
+                >
+                  <BusyActionContent
+                    busyLabel="Staging"
+                    icon={<Trash2 aria-hidden="true" size={16} />}
+                    isBusy={isStaging}
+                    label="Stage Uninstall"
+                  />
+                </button>
+                <button
+                  aria-busy={isChangePlanCreating || undefined}
+                  className="secondary-button"
+                  disabled={!canReviewPlan}
+                  onClick={onCreateChangePlan}
+                  type="button"
+                >
+                  <BusyActionContent
+                    busyLabel="Reviewing"
+                    icon={<ClipboardCheck aria-hidden="true" size={16} />}
+                    isBusy={isChangePlanCreating}
+                    label="Review"
+                  />
+                </button>
+                <button
+                  aria-busy={isChangePlanApplying || undefined}
+                  className="primary-button"
+                  disabled={!canApplyPlan}
+                  onClick={onApplyChangePlan}
+                  type="button"
+                >
+                  <BusyActionContent
+                    busyLabel="Applying"
+                    icon={<Save aria-hidden="true" size={16} />}
+                    isBusy={isChangePlanApplying}
+                    label="Apply"
+                  />
+                </button>
+              </div>
+
+              <dl className="encounter-slot-detail">
+                <div>
+                  <dt>Install message</dt>
+                  <dd>{workflow.installMessage}</dd>
                 </div>
-                {workflow.reservedRegions.map((region) => (
-                  <div
-                    className="exefs-row iv-screen-range-row iv-screen-range-row-static"
-                    key={region.regionId}
-                    role="row"
-                  >
-                    <span role="cell">{translateLiteral(region.label)}</span>
-                    <span role="cell">{region.offsetLabel}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <aside aria-label="IV Screen install details" className="encounter-inspector">
-              <div className="panel-heading">
-                <Dna aria-hidden="true" size={18} />
-                <h3>Install Details</h3>
-              </div>
-
-              <AdvancedEditorDetails>
+                <div>
+                  <dt>Staged change</dt>
+                  <dd>
+                    {isInstallStaged
+                      ? 'Install or refresh'
+                      : isUninstallStaged
+                        ? 'Uninstall'
+                        : 'None'}
+                  </dd>
+                </div>
+              </dl>
+            </EditorWorkspaceSection>
+            <EditorWorkspaceSection id="technical" label={translateLiteral('Technical')}>
+              <div className="editor-task-groups">
                 <dl className="item-provenance-list">
                   <div>
                     <dt>Install status</dt>
@@ -53742,87 +53538,25 @@ function IvScreenSection({
                     <dd>{formatFileState(workflow.provenance.fileState)}</dd>
                   </div>
                 </dl>
-              </AdvancedEditorDetails>
-
-              <div className="encounter-edit-form">
-                <div className="form-actions">
-                  <button
-                    aria-busy={isStaging || undefined}
-                    className="primary-button"
-                    disabled={!canStageInstall}
-                    onClick={onStageInstall}
-                    type="button"
-                  >
-                    <BusyActionContent
-                      busyLabel="Staging"
-                      icon={<Wrench aria-hidden="true" size={16} />}
-                      isBusy={isStaging}
-                      label={installLabel}
-                    />
-                  </button>
-                  <button
-                    aria-busy={isStaging || undefined}
-                    className="danger-button"
-                    disabled={!canStageUninstall}
-                    onClick={onStageUninstall}
-                    type="button"
-                  >
-                    <BusyActionContent
-                      busyLabel="Staging"
-                      icon={<Trash2 aria-hidden="true" size={16} />}
-                      isBusy={isStaging}
-                      label="Stage Uninstall"
-                    />
-                  </button>
-                  <button
-                    aria-busy={isChangePlanCreating || undefined}
-                    className="secondary-button"
-                    disabled={!canReviewPlan}
-                    onClick={onCreateChangePlan}
-                    type="button"
-                  >
-                    <BusyActionContent
-                      busyLabel="Reviewing"
-                      icon={<ClipboardCheck aria-hidden="true" size={16} />}
-                      isBusy={isChangePlanCreating}
-                      label="Review"
-                    />
-                  </button>
-                  <button
-                    aria-busy={isChangePlanApplying || undefined}
-                    className="primary-button"
-                    disabled={!canApplyPlan}
-                    onClick={onApplyChangePlan}
-                    type="button"
-                  >
-                    <BusyActionContent
-                      busyLabel="Applying"
-                      icon={<Save aria-hidden="true" size={16} />}
-                      isBusy={isChangePlanApplying}
-                      label="Apply"
-                    />
-                  </button>
+                <div className="exefs-table iv-screen-range-table" role="table" aria-label="IV Screen reserved ranges">
+                  <div className="exefs-row iv-screen-range-row exefs-row-heading" role="row">
+                    <span role="columnheader">Region</span>
+                    <span role="columnheader">Range</span>
+                  </div>
+                  {workflow.reservedRegions.map((region) => (
+                    <div
+                      className="exefs-row iv-screen-range-row iv-screen-range-row-static"
+                      key={region.regionId}
+                      role="row"
+                    >
+                      <span role="cell">{translateLiteral(region.label)}</span>
+                      <span role="cell">{region.offsetLabel}</span>
+                    </div>
+                  ))}
                 </div>
-
-                <dl className="encounter-slot-detail">
-                  <div>
-                    <dt>Install message</dt>
-                    <dd>{workflow.installMessage}</dd>
-                  </div>
-                  <div>
-                    <dt>Staged change</dt>
-                    <dd>
-                      {isInstallStaged
-                        ? 'Install or refresh'
-                        : isUninstallStaged
-                          ? 'Uninstall'
-                          : 'None'}
-                    </dd>
-                  </div>
-                </dl>
               </div>
-            </aside>
-          </div>
+            </EditorWorkspaceSection>
+          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">Open IV Screen from Advanced Editors to inspect the hook.</p>
         )}
@@ -54043,106 +53777,143 @@ function HyperTrainingSection({
         </div>
 
         {workflow ? (
-          <div className="flagwork-layout">
-            <div className="flagwork-stack">
-              <div className="hyper-training-control">
-                <label className="checkbox-field" htmlFor="hyper-training-pokemon-center">
-                  <input id="hyper-training-pokemon-center" type="checkbox"
-                    aria-describedby="hyper-training-pokemon-center-help"
-                    checked={pokemonCenterEnabled}
-                    disabled={workflow.summary.availability !== 'available' || workflow.installStatus === 'blocked'}
-                    onChange={event => { centerEditedRef.current = true; setPokemonCenterEnabled(event.target.checked); }} />
-                  <span>{t('hyperTraining.centerEnabled')}</span>
-                </label>
-                <p id="hyper-training-pokemon-center-help">{t('hyperTraining.centerHelp')}</p>
-                {workflow.pokemonCenterMessage ? <p className="input-error">{translateLiteral(workflow.pokemonCenterMessage)}</p> : null}
-                <h3>{t('hyperTraining.paymentItems')}</h3>
-                <p>{t('hyperTraining.itemsHelp')}</p>
-                <div className="hyper-training-payment-items">
-                  {(['hyperTraining.bottleReplacement', 'hyperTraining.goldReplacement'] as const).map((key, index) => <div className="table-cell-control" key={key}>
-                    <FieldLabel htmlFor={`hyper-training-item-${index}`} label={t(key)} help={t(index === 0 ? 'hyperTraining.singleHelp' : 'hyperTraining.allHelp')} />
-                    <SearchableOptionInput id={`hyper-training-item-${index}`} ariaLabel={t(key)}
-                      ariaInvalid={!validItems} disabled={workflow.summary.availability !== 'available' || workflow.installStatus === 'blocked' || itemOptions.length === 0}
-                      value={itemInputs[index]!} options={itemOptions} localizeOptions={false} required
-                      onChange={value => setItemInputs(current => current.map((item, slot) => slot === index ? value : item))} />
-                  </div>)}
-                </div>
-                {itemError ? <p className="input-error">{itemError}</p> : null}
-                {!itemSync ? <p>{t('hyperTraining.itemsSync')}</p> : null}
-                <div className="hyper-training-level-readout">
-                  <div className="editable-field-label-row">
-                    <span>{translateLiteral('Minimum level')}</span>
-                    <ContextHelp label={translateLiteral('Minimum level')}>
-                      {t('hyperTraining.minimumLevelHelp')}
-                    </ContextHelp>
-                  </div>
-                  <strong>Lv. {sliderValue}</strong>
-                </div>
-                <input
-                  aria-label="Hyper Training minimum level"
-                  className="hyper-training-slider"
-                  max={maximumAllowed}
-                  min={minimumAllowed}
-                  onChange={(event) => setLevelInput(event.target.value)}
-                  step={1}
-                  type="range"
-                  value={sliderValue}
-                />
-                <div className="hyper-training-input-row">
-                  <div className="table-cell-control">
-                    <FieldLabel
-                      help={t('hyperTraining.cutoffHelp')}
-                      htmlFor="hyper-training-cutoff"
-                      label={translateLiteral('Cutoff')}
-                    />
-                    <input
-                      aria-invalid={levelError ? 'true' : undefined}
-                      id="hyper-training-cutoff"
-                      inputMode="numeric"
-                      max={maximumAllowed}
-                      min={minimumAllowed}
-                      onChange={(event) => setLevelInput(event.target.value)}
-                      step={1}
-                      type="text"
-                      value={levelInput}
-                    />
-                  </div>
+          <RecordEditorWorkspace id="hyperTraining" className="editor-operation-workspace" initialSection="settings" browserControls={
+              <div className="action-row">
                   <button
-                    aria-busy={isStaging || undefined}
-                    className="primary-button"
-                    disabled={!canStage}
-                    onClick={() => {
-                      if (normalizedMinimumLevel !== null) {
-                        onStageMinimumLevel(normalizedMinimumLevel, itemValues[0], itemValues[1], pokemonCenterEnabled);
-                      }
-                    }}
+                    aria-busy={isChangePlanCreating || undefined}
+                    className="secondary-button"
+                    disabled={!canReviewPlan}
+                    onClick={onCreateChangePlan}
                     type="button"
                   >
                     <BusyActionContent
-                      busyLabel="Staging"
-                      icon={<Save aria-hidden="true" size={16} />}
-                      isBusy={isStaging}
-                      label={t('hyperTraining.stageSettings')}
+                      busyLabel="Reviewing"
+                      icon={<ClipboardCheck aria-hidden="true" size={16} />}
+                      isBusy={isChangePlanCreating}
+                      label="Review"
                     />
                   </button>
                   <button
-                    className="secondary-button"
-                    disabled={!canRestore}
-                    onClick={() => {
-                      setLevelInput(vanillaMinimumLevel.toString());
-                      setItemInputs(['795', '796']);
-                      setPokemonCenterEnabled(false);
-                      onStageMinimumLevel(vanillaMinimumLevel, 795, 796, false);
-                    }}
+                    aria-busy={isChangePlanApplying || undefined}
+                    className="primary-button"
+                    disabled={!canApplyPlan}
+                    onClick={onApplyChangePlan}
                     type="button"
                   >
-                    <RotateCcw aria-hidden="true" size={16} />
-                    <span>{translateLiteral('Restore to Vanilla')}</span>
+                    <BusyActionContent
+                      busyLabel="Applying"
+                      icon={<Save aria-hidden="true" size={16} />}
+                      isBusy={isChangePlanApplying}
+                      label="Apply"
+                    />
                   </button>
-                </div>
-                {levelError ? <p className="input-error">{levelError}</p> : null}
               </div>
-
+          }>
+            <EditorWorkspaceSection id="settings" label={translateLiteral('Settings')}>
+              <div className="editor-task-groups">
+                <EditorDetailGroup label={translateLiteral('Level requirement')}>
+                  <div className="hyper-training-level-readout">
+                    <div className="editable-field-label-row">
+                      <span>{translateLiteral('Minimum level')}</span>
+                      <ContextHelp label={translateLiteral('Minimum level')}>
+                        {t('hyperTraining.minimumLevelHelp')}
+                      </ContextHelp>
+                    </div>
+                    <strong>Lv. {sliderValue}</strong>
+                  </div>
+                  <input
+                    aria-label="Hyper Training minimum level"
+                    className="hyper-training-slider"
+                    max={maximumAllowed}
+                    min={minimumAllowed}
+                    onChange={(event) => setLevelInput(event.target.value)}
+                    step={1}
+                    type="range"
+                    value={sliderValue}
+                  />
+                  <div className="hyper-training-input-row">
+                    <div className="table-cell-control">
+                      <FieldLabel
+                        help={t('hyperTraining.cutoffHelp')}
+                        htmlFor="hyper-training-cutoff"
+                        label={translateLiteral('Cutoff')}
+                      />
+                      <input
+                        aria-invalid={levelError ? 'true' : undefined}
+                        id="hyper-training-cutoff"
+                        inputMode="numeric"
+                        max={maximumAllowed}
+                        min={minimumAllowed}
+                        onChange={(event) => setLevelInput(event.target.value)}
+                        step={1}
+                        type="text"
+                        value={levelInput}
+                      />
+                    </div>
+                    <button
+                      aria-busy={isStaging || undefined}
+                      className="primary-button"
+                      disabled={!canStage}
+                      onClick={() => {
+                        if (normalizedMinimumLevel !== null) {
+                          onStageMinimumLevel(normalizedMinimumLevel, itemValues[0], itemValues[1], pokemonCenterEnabled);
+                        }
+                      }}
+                      type="button"
+                    >
+                      <BusyActionContent
+                        busyLabel="Staging"
+                        icon={<Save aria-hidden="true" size={16} />}
+                        isBusy={isStaging}
+                        label={t('hyperTraining.stageSettings')}
+                      />
+                    </button>
+                    <button
+                      className="secondary-button"
+                      disabled={!canRestore}
+                      onClick={() => {
+                        setLevelInput(vanillaMinimumLevel.toString());
+                        setItemInputs(['795', '796']);
+                        setPokemonCenterEnabled(false);
+                        onStageMinimumLevel(vanillaMinimumLevel, 795, 796, false);
+                      }}
+                      type="button"
+                    >
+                      <RotateCcw aria-hidden="true" size={16} />
+                      <span>{translateLiteral('Restore to Vanilla')}</span>
+                    </button>
+                  </div>
+                  {levelError ? <p className="input-error">{levelError}</p> : null}
+                </EditorDetailGroup>
+                <EditorDetailGroup label={t('hyperTraining.paymentItems')}>
+                  <p>{t('hyperTraining.itemsHelp')}</p>
+                  <div className="hyper-training-payment-items">
+                    {(['hyperTraining.bottleReplacement', 'hyperTraining.goldReplacement'] as const).map((key, index) => <div className="table-cell-control" key={key}>
+                      <FieldLabel htmlFor={`hyper-training-item-${index}`} label={t(key)} help={t(index === 0 ? 'hyperTraining.singleHelp' : 'hyperTraining.allHelp')} />
+                      <SearchableOptionInput id={`hyper-training-item-${index}`} ariaLabel={t(key)}
+                        ariaInvalid={!validItems} disabled={workflow.summary.availability !== 'available' || workflow.installStatus === 'blocked' || itemOptions.length === 0}
+                        value={itemInputs[index]!} options={itemOptions} localizeOptions={false} required
+                        onChange={value => setItemInputs(current => current.map((item, slot) => slot === index ? value : item))} />
+                    </div>)}
+                  </div>
+                  {itemError ? <p className="input-error">{itemError}</p> : null}
+                  {!itemSync ? <p>{t('hyperTraining.itemsSync')}</p> : null}
+                </EditorDetailGroup>
+                <EditorDetailGroup label={translateLiteral('Pokémon Center')}>
+                  <label className="checkbox-field" htmlFor="hyper-training-pokemon-center">
+                    <input id="hyper-training-pokemon-center" type="checkbox"
+                      aria-describedby="hyper-training-pokemon-center-help"
+                      checked={pokemonCenterEnabled}
+                      disabled={workflow.summary.availability !== 'available' || workflow.installStatus === 'blocked'}
+                      onChange={event => { centerEditedRef.current = true; setPokemonCenterEnabled(event.target.checked); }} />
+                    <span>{t('hyperTraining.centerEnabled')}</span>
+                  </label>
+                  <p id="hyper-training-pokemon-center-help">{t('hyperTraining.centerHelp')}</p>
+                  {workflow.pokemonCenterMessage ? <p className="input-error">{translateLiteral(workflow.pokemonCenterMessage)}</p> : null}
+                </EditorDetailGroup>
+              </div>
+            </EditorWorkspaceSection>
+            <EditorWorkspaceSection id="source" label={translateLiteral('Source')}>
               <div
                 className="exefs-table hyper-training-source-table"
                 role="table"
@@ -54157,14 +53928,6 @@ function HyperTrainingSection({
                   <HyperTrainingSourceRow key={source.sourceId} source={source} />
                 ))}
               </div>
-            </div>
-
-            <aside aria-label="Hyper Training script details" className="encounter-inspector">
-              <div className="panel-heading">
-                <Dumbbell aria-hidden="true" size={18} />
-                <h3>Cutoff Details</h3>
-              </div>
-
               <AdvancedEditorDetails>
                 <dl className="item-provenance-list">
                   <div>
@@ -54218,40 +53981,8 @@ function HyperTrainingSection({
                 </dl>
               </AdvancedEditorDetails>
 
-              <div className="encounter-edit-form">
-                <div className="form-actions">
-                  <button
-                    aria-busy={isChangePlanCreating || undefined}
-                    className="secondary-button"
-                    disabled={!canReviewPlan}
-                    onClick={onCreateChangePlan}
-                    type="button"
-                  >
-                    <BusyActionContent
-                      busyLabel="Reviewing"
-                      icon={<ClipboardCheck aria-hidden="true" size={16} />}
-                      isBusy={isChangePlanCreating}
-                      label="Review"
-                    />
-                  </button>
-                  <button
-                    aria-busy={isChangePlanApplying || undefined}
-                    className="primary-button"
-                    disabled={!canApplyPlan}
-                    onClick={onApplyChangePlan}
-                    type="button"
-                  >
-                    <BusyActionContent
-                      busyLabel="Applying"
-                      icon={<Save aria-hidden="true" size={16} />}
-                      isBusy={isChangePlanApplying}
-                      label="Apply"
-                    />
-                  </button>
-                </div>
-              </div>
-            </aside>
-          </div>
+            </EditorWorkspaceSection>
+          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">Open Hyper Training from Advanced Editors to inspect the NPC script.</p>
         )}
@@ -54525,8 +54256,70 @@ function CatchCapSection({
         </div>
 
         {workflow ? (
-          <div className="flagwork-layout">
-            <div className="flagwork-stack">
+          <RecordEditorWorkspace id="catchCap" className="catch-cap-workspace" initialSection="caps"
+            browserVisibleRows={6}
+            browserControls={
+              <div className="action-row">
+                <button
+                  aria-busy={isStaging || undefined}
+                  className="primary-button"
+                  disabled={!canStage}
+                  onClick={() => selectedCaps && onStageCaps(selectedCaps)}
+                  type="button"
+                >
+                  <BusyActionContent
+                    busyLabel={translateLiteral('Staging')}
+                    icon={<ClipboardCheck aria-hidden="true" size={16} />}
+                    isBusy={isStaging}
+                    label={translateLiteral('Stage Caps')}
+                  />
+                </button>
+                <button
+                  aria-busy={isStaging || undefined}
+                  className="danger-button"
+                  disabled={!canStageUninstall}
+                  onClick={onStageUninstall}
+                  type="button"
+                >
+                  <BusyActionContent
+                    busyLabel={translateLiteral('Staging')}
+                    icon={<Trash2 aria-hidden="true" size={16} />}
+                    isBusy={isStaging}
+                    label={translateLiteral('Stage Uninstall')}
+                  />
+                </button>
+                <button
+                  aria-busy={isChangePlanCreating || undefined}
+                  className="secondary-button"
+                  disabled={!canReviewPlan}
+                  onClick={onCreateChangePlan}
+                  type="button"
+                >
+                  <BusyActionContent
+                    busyLabel={translateLiteral('Reviewing')}
+                    icon={<ClipboardCheck aria-hidden="true" size={16} />}
+                    isBusy={isChangePlanCreating}
+                    label={translateLiteral('Review')}
+                  />
+                </button>
+                <button
+                  aria-busy={isChangePlanApplying || undefined}
+                  className="primary-button"
+                  disabled={!canApplyPlan}
+                  onClick={onApplyChangePlan}
+                  type="button"
+                >
+                  <BusyActionContent
+                    busyLabel={translateLiteral('Applying')}
+                    icon={<Save aria-hidden="true" size={16} />}
+                    isBusy={isChangePlanApplying}
+                    label={translateLiteral('Apply')}
+                  />
+                </button>
+              </div>
+
+            }
+            browser={
               <div
                 className="exefs-table catch-cap-table"
                 role="table"
@@ -54660,20 +54453,28 @@ function CatchCapSection({
                   );
                 })}
               </div>
-            </div>
-
-            <aside
-              aria-label={translateLiteral('Selected Catch Cap')}
-              className="encounter-inspector"
-            >
-              <div className="panel-heading">
-                <ShieldCheck aria-hidden="true" size={18} />
-                <h3>{translateLiteral('Selected Cap')}</h3>
-              </div>
-
-              {selectedCap ? (
-                <>
-                  <AdvancedEditorDetails>
+            }
+          >
+            <EditorWorkspaceHeader afterBrowser>
+              <EditorRecordHeading name={selectedCap ? translateLiteral(selectedCap.label) : translateLiteral('Catch Cap')} />
+            </EditorWorkspaceHeader>
+            <EditorWorkspaceSection id="caps" label={translateLiteral('Installation')}>
+                    <dl className="encounter-slot-detail">
+                      <div>
+                        <dt>{translateLiteral('Install message')}</dt>
+                        <dd>{translateLiteral(workflow.installMessage)}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Uninstall')}</dt>
+                        <dd>
+                          {translateLiteral(
+                            'Use Stage Uninstall, then Review and Apply. It restores only Catch Cap-owned ExeFS bytes, preserves Royal Candy when installed, and does not touch Bag Hook or Starting Items.'
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+            </EditorWorkspaceSection>
+            {selectedCap ? <EditorWorkspaceSection id="technical" label={translateLiteral('Technical')}>
                     <dl className="item-provenance-list">
                       <div>
                         <dt>{translateLiteral('Install status')}</dt>
@@ -54723,74 +54524,6 @@ function CatchCapSection({
                         <dt>{translateLiteral('File state')}</dt>
                         <dd>{translateLiteral(formatFileState(workflow.provenance.fileState))}</dd>
                       </div>
-                    </dl>
-                  </AdvancedEditorDetails>
-
-                  <div className="encounter-edit-form">
-                    <div className="form-actions">
-                      <button
-                        aria-busy={isStaging || undefined}
-                        className="primary-button"
-                        disabled={!canStage}
-                        onClick={() => selectedCaps && onStageCaps(selectedCaps)}
-                        type="button"
-                      >
-                        <BusyActionContent
-                          busyLabel={translateLiteral('Staging')}
-                          icon={<ClipboardCheck aria-hidden="true" size={16} />}
-                          isBusy={isStaging}
-                          label={translateLiteral('Stage Caps')}
-                        />
-                      </button>
-                      <button
-                        aria-busy={isStaging || undefined}
-                        className="danger-button"
-                        disabled={!canStageUninstall}
-                        onClick={onStageUninstall}
-                        type="button"
-                      >
-                        <BusyActionContent
-                          busyLabel={translateLiteral('Staging')}
-                          icon={<Trash2 aria-hidden="true" size={16} />}
-                          isBusy={isStaging}
-                          label={translateLiteral('Stage Uninstall')}
-                        />
-                      </button>
-                      <button
-                        aria-busy={isChangePlanCreating || undefined}
-                        className="secondary-button"
-                        disabled={!canReviewPlan}
-                        onClick={onCreateChangePlan}
-                        type="button"
-                      >
-                        <BusyActionContent
-                          busyLabel={translateLiteral('Reviewing')}
-                          icon={<ClipboardCheck aria-hidden="true" size={16} />}
-                          isBusy={isChangePlanCreating}
-                          label={translateLiteral('Review')}
-                        />
-                      </button>
-                      <button
-                        aria-busy={isChangePlanApplying || undefined}
-                        className="primary-button"
-                        disabled={!canApplyPlan}
-                        onClick={onApplyChangePlan}
-                        type="button"
-                      >
-                        <BusyActionContent
-                          busyLabel={translateLiteral('Applying')}
-                          icon={<Save aria-hidden="true" size={16} />}
-                          isBusy={isChangePlanApplying}
-                          label={translateLiteral('Apply')}
-                        />
-                      </button>
-                    </div>
-
-                    <dl className="encounter-slot-detail">
-                      <div>
-                        <dt>{translateLiteral('Install message')}</dt>
-                        <dd>{translateLiteral(workflow.installMessage)}</dd>
-                      </div>
                       <div>
                         <dt>{translateLiteral('Logic')}</dt>
                         <dd>{workflow.logicExpression}</dd>
@@ -54799,24 +54532,9 @@ function CatchCapSection({
                         <dt>{translateLiteral('Logic SHA-256')}</dt>
                         <dd>{workflow.capLogicSha256}</dd>
                       </div>
-                      <div>
-                        <dt>{translateLiteral('Uninstall')}</dt>
-                        <dd>
-                          {translateLiteral(
-                            'Use Stage Uninstall, then Review and Apply. It restores only Catch Cap-owned ExeFS bytes, preserves Royal Candy when installed, and does not touch Bag Hook or Starting Items.'
-                          )}
-                        </dd>
-                      </div>
                     </dl>
-                  </div>
-                </>
-              ) : (
-                <p className="empty-copy">
-                  {translateLiteral('No Catch Cap row selected.')}
-                </p>
-              )}
-            </aside>
-          </div>
+            </EditorWorkspaceSection> : null}
+          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">
             {translateLiteral('Open Catch Cap from Advanced Editors to load cap values.')}
@@ -54932,92 +54650,71 @@ function ExeFsPatchSection({
               {translateLiteral('No matching ExeFS records.')}
             </p>
           ) : (
-            <RecordEditorWorkspace id="exefsPatches" className="flagwork-layout" browser={
-            <div className="flagwork-stack">
-              <div
-                className="exefs-table"
-                role="table"
-                aria-label={translateLiteral('ExeFS patch records')}
-              >
-                <div className="exefs-row exefs-row-heading" role="row">
-                  <span role="columnheader">{translateLiteral('Patch')}</span>
-                  <span role="columnheader">{translateLiteral('Status')}</span>
-                  <span role="columnheader">{translateLiteral('Target')}</span>
-                  <span role="columnheader">{translateLiteral('Kind')}</span>
-                  <span role="columnheader">{translateLiteral('Details')}</span>
-                </div>
-                {filteredPatches.map((patch) => (
-                  <InteractiveTableRow
-                    aria-selected={selectedPatch?.patchId === patch.patchId}
-                    className={`exefs-row ${
-                      selectedPatch?.patchId === patch.patchId ? 'exefs-row-selected' : ''
-                    }`}
-                    key={patch.patchId}
-                    onClick={() => onSelectPatch(patch.patchId)}
-                    role="row"
-                  >
-                    <span role="cell">{translateLiteral(patch.name)}</span>
-                    <span role="cell">
-                      <span className={`status-pill ${getExeFsStatusClassName(patch.status)}`}>
-                        {translateLiteral(formatExeFsStatusLabel(patch.status))}
-                      </span>
-                    </span>
-                    <span role="cell">{patch.targetFile}</span>
-                    <span role="cell">{translateLiteral(patch.patchKind)}</span>
-                    <span role="cell">
-                      {translateLiteral(patch.details[0] ?? patch.description)}
-                    </span>
-                  </InteractiveTableRow>
-                ))}
-              </div>
-
-              <div
-                className="exefs-table"
-                role="table"
-                aria-label={translateLiteral('ExeFS compatibility checks')}
-              >
-                <div className="exefs-row exefs-check-row exefs-row-heading" role="row">
-                  <span role="columnheader">{translateLiteral('Check')}</span>
-                  <span role="columnheader">{translateLiteral('Status')}</span>
-                  <span role="columnheader">{translateLiteral('Area')}</span>
-                  <span role="columnheader">{translateLiteral('Offset')}</span>
-                  <span role="columnheader">{translateLiteral('Actual')}</span>
-                </div>
-                {checksForSelectedPatch.map((check) => (
-                  <InteractiveTableRow
-                    aria-selected={selectedCheck?.checkId === check.checkId}
-                    className={`exefs-row exefs-check-row ${
-                      selectedCheck?.checkId === check.checkId ? 'exefs-row-selected' : ''
-                    }`}
-                    key={check.checkId}
-                    onClick={() => onSelectCheck(check.checkId)}
-                    role="row"
-                  >
-                    <span role="cell">{translateLiteral(check.name)}</span>
-                    <span role="cell">
-                      <span className={`status-pill ${getExeFsStatusClassName(check.status)}`}>
+            <RecordEditorWorkspace id="exefsPatches" className="exefs-patches-layout" initialSection="checks" browser={
+              <EditorRecordTable label={translateLiteral('ExeFS patch records')} identityLabel={translateLiteral('Patch')}
+                rows={filteredPatches} rowId={patch => patch.patchId} selection={selectedPatch?.patchId}
+                onSelect={patch => onSelectPatch(patch.patchId)} identity={patch => translateLiteral(patch.name)}
+                columns={[
+                  { id: 'status', label: translateLiteral('Status'), value: patch => <span className={getExeFsStatusClassName(patch.status)}>
+                    {translateLiteral(formatExeFsStatusLabel(patch.status))}
+                  </span> },
+                  { id: 'target', label: translateLiteral('Target'), value: patch => patch.targetFile },
+                  { id: 'kind', label: translateLiteral('Kind'), value: patch => translateLiteral(patch.patchKind) }
+                ]} />
+            }>
+              {selectedPatch ? <EditorWorkspaceHeader afterBrowser>
+                <EditorRecordHeading name={translateLiteral(selectedPatch.name)} />
+              </EditorWorkspaceHeader> : null}
+              <EditorWorkspaceSection id="checks" label={translateLiteral('Compatibility Checks')}
+                summary={checksForSelectedPatch.length}>
+                <div className="editor-slot-browser">
+                  <EditorRecordTable label={translateLiteral('ExeFS compatibility checks')} identityLabel={translateLiteral('Check')}
+                    rows={checksForSelectedPatch} rowId={check => check.checkId} selection={selectedCheck?.checkId}
+                    onSelect={check => onSelectCheck(check.checkId)} identity={check => translateLiteral(check.name)}
+                    columns={[
+                      { id: 'status', label: translateLiteral('Status'), value: check => <span className={getExeFsStatusClassName(check.status)}>
                         {translateLiteral(formatExeFsStatusLabel(check.status))}
-                      </span>
-                    </span>
-                    <span role="cell">{translateLiteral(check.area)}</span>
-                    <span role="cell">{check.offset || 'n/a'}</span>
-                    <span role="cell">{translateLiteral(check.actual)}</span>
-                  </InteractiveTableRow>
-                ))}
-              </div>
-            </div>
-          }>
-
-            <SelectedExeFsPatchPanel
-              canStageWorkflow={canStageWorkflow}
-              check={selectedCheck}
-              checkPatchName={selectedCheckPatchName}
-              isStaging={isStaging}
-              onStagePatch={onStagePatch}
-              patch={selectedPatch}
-              segments={filteredSegments}
-            />
-          </RecordEditorWorkspace>
+                      </span> },
+                      { id: 'area', label: translateLiteral('Area'), value: check => translateLiteral(check.area) },
+                      { id: 'offset', label: translateLiteral('Offset'), value: check => check.offset || 'n/a' },
+                      { id: 'actual', label: translateLiteral('Actual'), value: check => translateLiteral(check.actual) }
+                    ]} />
+                </div>
+                <SelectedExeFsPatchPanel canStageWorkflow={canStageWorkflow} check={selectedCheck}
+                  checkPatchName={selectedCheckPatchName} isStaging={isStaging} onStagePatch={onStagePatch}
+                  patch={selectedPatch} />
+              </EditorWorkspaceSection>
+              {filteredSegments.length > 0 ? <EditorWorkspaceSection id="segments" label={translateLiteral('Segments')}
+                summary={filteredSegments.length}>
+                <div className="exefs-segment-list">
+                  <table className="editor-data-matrix">
+                    <thead><tr>{['Segment', 'Status', 'File', 'Memory', 'Size', 'Compressed size', 'SHA-256'].map(label =>
+                      <th scope="col" key={label}>{translateLiteral(label)}</th>)}</tr></thead>
+                    <tbody>{filteredSegments.map(segment => <tr key={segment.segmentId}>
+                      <th scope="row">{segment.name}</th>
+                      <td>{translateLiteral(formatExeFsStatusLabel(segment.hashStatus))}</td>
+                      <td>{segment.fileOffset}</td><td>{segment.memoryOffset}</td>
+                      <td>{segment.decompressedSize}</td><td>{segment.compressedSize}</td>
+                      <td className="exefs-segment-hash">{segment.sha256}</td>
+                    </tr>)}</tbody>
+                  </table>
+                </div>
+                <dl className="item-provenance-list">
+                  <div>
+                    <dt>{translateLiteral('Source file')}</dt>
+                    <dd>{filteredSegments[0].provenance.sourceFile}</dd>
+                  </div>
+                  <div>
+                    <dt>{translateLiteral('Layer')}</dt>
+                    <dd>{translateLiteral(formatSourceLayer(filteredSegments[0].provenance.sourceLayer))}</dd>
+                  </div>
+                  <div>
+                    <dt>{translateLiteral('File state')}</dt>
+                    <dd>{translateLiteral(formatFileState(filteredSegments[0].provenance.fileState))}</dd>
+                  </div>
+                </dl>
+              </EditorWorkspaceSection> : null}
+            </RecordEditorWorkspace>
           )
         ) : (
           <p className="empty-copy">
@@ -55037,8 +54734,7 @@ function SelectedExeFsPatchPanel({
   checkPatchName,
   isStaging,
   onStagePatch,
-  patch,
-  segments
+  patch
 }: {
   canStageWorkflow: boolean;
   check: ExeFsPatchCheckRecord | null;
@@ -55046,14 +54742,13 @@ function SelectedExeFsPatchPanel({
   isStaging: boolean;
   onStagePatch: (patchId: string) => void;
   patch: ExeFsPatchRecord | null;
-  segments: ExeFsSegmentRecord[];
 }) {
   const { translateLiteral } = useLocalization();
-  const provenance = check?.provenance ?? patch?.provenance ?? segments[0]?.provenance ?? null;
+  const provenance = check?.provenance ?? patch?.provenance ?? null;
   const canStagePatch =
     canStageWorkflow && (patch?.status === 'available' || patch?.status === 'warning');
-  const hasSelection = patch !== null || check !== null || segments.length > 0;
-  const heading = check ? 'Selected Check' : patch ? 'Selected Patch' : 'Selected Segment';
+  const hasSelection = patch !== null || check !== null;
+  const heading = check ? 'Selected Check' : 'Selected Patch';
 
   return (
     <aside
@@ -55156,41 +54851,6 @@ function SelectedExeFsPatchPanel({
             </div>
           ) : null}
 
-          {segments.length > 0 ? (
-            <div
-              className="exefs-segment-list"
-              aria-label={translateLiteral('ExeFS segments')}
-            >
-              {segments.map((segment) => (
-                <dl className="encounter-slot-detail" key={segment.segmentId}>
-                  <div>
-                    <dt>{segment.name}</dt>
-                    <dd>{translateLiteral(formatExeFsStatusLabel(segment.hashStatus))}</dd>
-                  </div>
-                  <div>
-                    <dt>{translateLiteral('File')}</dt>
-                    <dd>{segment.fileOffset}</dd>
-                  </div>
-                  <div>
-                    <dt>{translateLiteral('Memory')}</dt>
-                    <dd>{segment.memoryOffset}</dd>
-                  </div>
-                  <div>
-                    <dt>{translateLiteral('Size')}</dt>
-                    <dd>{segment.decompressedSize}</dd>
-                  </div>
-                  <div>
-                    <dt>{translateLiteral('Compressed size')}</dt>
-                    <dd>{segment.compressedSize}</dd>
-                  </div>
-                  <div>
-                    <dt>{translateLiteral('SHA-256')}</dt>
-                    <dd>{segment.sha256}</dd>
-                  </div>
-                </dl>
-              ))}
-            </div>
-          ) : null}
         </>
       ) : (
         <p className="empty-copy">{translateLiteral('No ExeFS check selected.')}</p>
@@ -55431,67 +55091,34 @@ function RoyalCandySection({
               {t('royalCandy.noMatches')}
             </p>
           ) : (
-            <div className="royal-candy-layout">
-              <div
-                aria-label={translateLiteral('Royal Candy workflows')}
-                className="exefs-table royal-candy-workflow-table"
-                role="group"
-              >
-                {filteredWorkflows.map((candidate) => (
-                  <button
-                    aria-pressed={selectedWorkflow?.workflowId === candidate.workflowId}
-                    className="royal-candy-workflow-choice secondary-button"
-                    key={candidate.workflowId}
-                    onClick={() => onSelectWorkflow(candidate.workflowId)}
-                    type="button"
-                  >
-                    <span className="royal-candy-choice-title">
-                      {royalCandyWorkflowNameKeys[candidate.workflowId]
-                        ? t(royalCandyWorkflowNameKeys[candidate.workflowId]!)
-                        : translateLiteral(candidate.name)}
-                    </span>
-                    <span>
-                      <span className={`status-pill ${getExeFsStatusClassName(candidate.status)}`}>
+              <SelectedRoyalCandyPanel
+                browser={
+                <EditorRecordTable
+                  label={translateLiteral('Royal Candy workflows')}
+                  identityLabel={translateLiteral('Workflow')}
+                  rows={filteredWorkflows}
+                  rowId={(candidate) => candidate.workflowId}
+                  selection={selectedWorkflow?.workflowId}
+                  onSelect={(candidate) => onSelectWorkflow(candidate.workflowId)}
+                  identity={(candidate) => royalCandyWorkflowNameKeys[candidate.workflowId]
+                    ? t(royalCandyWorkflowNameKeys[candidate.workflowId]!)
+                    : translateLiteral(candidate.name)}
+                  columns={[
+                    { id: 'status', label: translateLiteral('Status'), value: (candidate) => (
+                      <span className={'status-pill '+getExeFsStatusClassName(candidate.status)}>
                         {translateLiteral(formatRoyalCandyStatus(candidate.status))}
                       </span>
-                    </span>
-                    <span>{translateLiteral(formatRoyalCandyMode(candidate.mode))}</span>
-                    <span>
-                      {t('royalCandy.itemFromTemplate', {
-                        itemId: candidate.itemId,
-                        templateItemId: candidate.templateItemId
-                      })}
-                    </span>
-                    <span>{translateLiteral(candidate.target)}</span>
-                    <span className="royal-candy-choice-description">{translateLiteral(candidate.description)}</span>
-                  </button>
-                ))}
-              </div>
-
-              <SelectedRoyalCandyPanel
-                canStageWorkflow={workflow.summary.availability === 'available'}
-                canShowDependencyWarning={
-                  selectedWorkflow !== null &&
-                  getRoyalCandyDependencyWarning(workflow, selectedWorkflow.workflowId) !== null
+                    ) },
+                    { id: 'mode', label: translateLiteral('Mode'), value: (candidate) =>
+                      translateLiteral(formatRoyalCandyMode(candidate.mode)) },
+                    { id: 'item', label: translateLiteral('Item'), value: (candidate) =>
+                      t('royalCandy.itemFromTemplate', { itemId: candidate.itemId, templateItemId: candidate.templateItemId }) },
+                    { id: 'target', label: translateLiteral('Target'), value: (candidate) =>
+                      translateLiteral(candidate.target) }
+                  ]}
+                />
                 }
-                check={selectedCheck}
-                changePlan={panelOutput.changePlan}
-                editSession={editSession}
-                hasLevelCapLocalDrafts={hasLevelCapLocalDrafts}
-                isChangePlanApplying={isChangePlanApplying}
-                isChangePlanCreating={isChangePlanCreating}
-                isStaging={isStaging}
-                levelCapInputs={levelCapInputs}
-                onApplyChangePlan={onApplyChangePlan}
-                onCreateChangePlan={onCreateChangePlan}
-                onLevelCapInputChange={(slot, value) =>
-                  setLevelCapInputs((current) => ({ ...current, [slot]: value }))
-                }
-                onStageWorkflow={onStageWorkflow}
-                outputs={visibleOutputs}
-                selectedWorkflow={selectedWorkflow}
-              />
-
+                checks={
               <div
                 aria-label={translateLiteral('Royal Candy checks and planned outputs')}
                 className="exefs-table royal-candy-target-table"
@@ -55556,7 +55183,29 @@ function RoyalCandySection({
                   </div>
                 ))}
               </div>
-            </div>
+                }
+                canStageWorkflow={workflow.summary.availability === 'available'}
+                canShowDependencyWarning={
+                  selectedWorkflow !== null &&
+                  getRoyalCandyDependencyWarning(workflow, selectedWorkflow.workflowId) !== null
+                }
+                check={selectedCheck}
+                changePlan={panelOutput.changePlan}
+                editSession={editSession}
+                hasLevelCapLocalDrafts={hasLevelCapLocalDrafts}
+                isChangePlanApplying={isChangePlanApplying}
+                isChangePlanCreating={isChangePlanCreating}
+                isStaging={isStaging}
+                levelCapInputs={levelCapInputs}
+                onApplyChangePlan={onApplyChangePlan}
+                onCreateChangePlan={onCreateChangePlan}
+                onLevelCapInputChange={(slot, value) =>
+                  setLevelCapInputs((current) => ({ ...current, [slot]: value }))
+                }
+                onStageWorkflow={onStageWorkflow}
+                outputs={visibleOutputs}
+                selectedWorkflow={selectedWorkflow}
+              />
           )
         ) : (
           <p className="empty-copy">
@@ -55576,6 +55225,8 @@ function RoyalCandySection({
 }
 
 function SelectedRoyalCandyPanel({
+  browser,
+  checks,
   canStageWorkflow,
   canShowDependencyWarning,
   check,
@@ -55593,6 +55244,8 @@ function SelectedRoyalCandyPanel({
   outputs,
   selectedWorkflow
 }: {
+  browser: ReactNode;
+  checks: ReactNode;
   canStageWorkflow: boolean;
   canShowDependencyWarning: boolean;
   check: RoyalCandyWorkflowCheckRecord | null;
@@ -55719,10 +55372,7 @@ function SelectedRoyalCandyPanel({
     !isStaging;
 
   return (
-    <aside
-      aria-label={translateLiteral('Selected Royal Candy workflow provenance')}
-      className="encounter-inspector royal-candy-inspector"
-    >
+    <>
       <PublishedLocalEditorValidationDiagnostics
         domain="workflow.royalCandy"
         issues={parsedLevelCaps.flatMap((levelCap, index) => {
@@ -55740,72 +55390,15 @@ function SelectedRoyalCandyPanel({
             : [];
         })}
       />
-      <div className="panel-heading">
-        <CheckCircle aria-hidden="true" size={18} />
-        <h3>{translateLiteral('Selected Workflow')}</h3>
-      </div>
+      <RecordEditorWorkspace id="royalCandy" className="royal-candy-workspace" initialSection="configure" browser={browser}>
+        {selectedWorkflow ? <EditorWorkspaceHeader afterBrowser>
+          <EditorRecordHeading name={royalCandyWorkflowNameKeys[selectedWorkflow.workflowId]
+            ? t(royalCandyWorkflowNameKeys[selectedWorkflow.workflowId]!)
+            : translateLiteral(selectedWorkflow.name)} />
+        </EditorWorkspaceHeader> : null}
+        <EditorWorkspaceSection id="configure" label={translateLiteral('Configure')}>
+          {selectedWorkflow ? (
 
-      {selectedWorkflow ? (
-        <>
-          <AdvancedEditorDetails>
-            <dl className="item-provenance-list">
-              <div>
-                <dt>{translateLiteral('Workflow')}</dt>
-                <dd>
-                  {royalCandyWorkflowNameKeys[selectedWorkflow.workflowId]
-                    ? t(royalCandyWorkflowNameKeys[selectedWorkflow.workflowId]!)
-                    : translateLiteral(selectedWorkflow.name)}
-                </dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Status')}</dt>
-                <dd>{translateLiteral(formatRoyalCandyStatus(selectedWorkflow.status))}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Mode')}</dt>
-                <dd>{translateLiteral(formatRoyalCandyMode(selectedWorkflow.mode))}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Item')}</dt>
-                <dd>
-                  {t('royalCandy.itemFromTemplate', {
-                    itemId: selectedWorkflow.itemId,
-                    templateItemId: selectedWorkflow.templateItemId
-                  })}
-                </dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Target')}</dt>
-                <dd>{translateLiteral(selectedWorkflow.target)}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Check')}</dt>
-                <dd>{check?.checkId.split(':').pop() ?? 'n/a'}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Check status')}</dt>
-                <dd>{check ? translateLiteral(formatRoyalCandyStatus(check.status)) : 'n/a'}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Source file')}</dt>
-                <dd>{provenance?.sourceFile ?? 'n/a'}</dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('Layer')}</dt>
-                <dd>
-                  {provenance
-                    ? translateLiteral(formatSourceLayer(provenance.sourceLayer))
-                    : 'n/a'}
-                </dd>
-              </div>
-              <div>
-                <dt>{translateLiteral('File state')}</dt>
-                <dd>
-                  {provenance ? translateLiteral(formatFileState(provenance.fileState)) : 'n/a'}
-                </dd>
-              </div>
-            </dl>
-          </AdvancedEditorDetails>
 
           <div
             className={`encounter-edit-form royal-candy-edit-form ${
@@ -55971,13 +55564,73 @@ function SelectedRoyalCandyPanel({
               </ol>
             </div>
           </div>
-        </>
-      ) : (
-        <p className="empty-copy">
-          {translateLiteral('No Royal Candy workflow selected.')}
-        </p>
-      )}
-    </aside>
+          ) : <p className="empty-copy">{translateLiteral('No Royal Candy workflow selected.')}</p>}
+        </EditorWorkspaceSection>
+        <EditorWorkspaceSection id="preflight" label={translateLiteral('Preflight and Outputs')}>
+          {checks}
+          {check ? <p className="field-note">{translateLiteral(check.message)}</p> : null}
+        </EditorWorkspaceSection>
+        {selectedWorkflow ? <EditorWorkspaceSection id="source" label={translateLiteral('Source')}>
+            <dl className="item-provenance-list">
+              <div>
+                <dt>{translateLiteral('Workflow')}</dt>
+                <dd>
+                  {royalCandyWorkflowNameKeys[selectedWorkflow.workflowId]
+                    ? t(royalCandyWorkflowNameKeys[selectedWorkflow.workflowId]!)
+                    : translateLiteral(selectedWorkflow.name)}
+                </dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Status')}</dt>
+                <dd>{translateLiteral(formatRoyalCandyStatus(selectedWorkflow.status))}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Mode')}</dt>
+                <dd>{translateLiteral(formatRoyalCandyMode(selectedWorkflow.mode))}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Item')}</dt>
+                <dd>
+                  {t('royalCandy.itemFromTemplate', {
+                    itemId: selectedWorkflow.itemId,
+                    templateItemId: selectedWorkflow.templateItemId
+                  })}
+                </dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Target')}</dt>
+                <dd>{translateLiteral(selectedWorkflow.target)}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Check')}</dt>
+                <dd>{check?.checkId.split(':').pop() ?? 'n/a'}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Check status')}</dt>
+                <dd>{check ? translateLiteral(formatRoyalCandyStatus(check.status)) : 'n/a'}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Source file')}</dt>
+                <dd>{provenance?.sourceFile ?? 'n/a'}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Layer')}</dt>
+                <dd>
+                  {provenance
+                    ? translateLiteral(formatSourceLayer(provenance.sourceLayer))
+                    : 'n/a'}
+                </dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('File state')}</dt>
+                <dd>
+                  {provenance ? translateLiteral(formatFileState(provenance.fileState)) : 'n/a'}
+                </dd>
+              </div>
+            </dl>
+        </EditorWorkspaceSection> : null}
+      </RecordEditorWorkspace>
+    </>
   );
 }
 
@@ -56239,232 +55892,155 @@ function StartingItemsSection({
         </div>
 
         {workflow ? (
-          <RecordEditorWorkspace id="startingItems" className="flagwork-layout" browser={
-            <div className="flagwork-stack">
-              <div className="exefs-table starting-items-table" role="table" aria-label="Starting Items slots">
-                <div className="exefs-row starting-items-row exefs-row-heading" role="row">
-                  <span role="columnheader">Slot</span>
-                  <span role="columnheader">Status</span>
-                  <span role="columnheader">Item</span>
-                  <span role="columnheader">Quantity</span>
-                </div>
-                {parsedGrants.map((grant) => {
-                  const quantityErrorId = `starting-item-quantity-error-${grant.slot}`;
-                  const itemErrorId = `starting-item-error-${grant.slot}`;
-
-                  return (
-                    <div
-                      className={`exefs-row starting-items-row ${
-                        selectedGrant?.slot === grant.slot ? 'exefs-row-selected' : ''
-                      }`}
-                      key={grant.slot}
-                      onClick={() => onSelectSlot(grant.slot)}
-                      role="row"
-                    >
-                      <span role="cell">#{grant.slot}</span>
-                      <span role="cell">
-                        <span className={`status-pill ${getExeFsStatusClassName(grant.status)}`}>
-                          {formatBagHookStatus(grant.status)}
-                        </span>
-                      </span>
-                      <div className="table-cell-control" role="cell">
-                        <SearchableOptionInput
-                          ariaLabel={`Item for Bag Hook slot ${grant.slot}`}
-                          ariaDescribedBy={grant.itemError ? itemErrorId : undefined}
-                          ariaInvalid={grant.itemError ? true : undefined}
-                          disabled={workflow.installStatus !== 'available'}
-                          emptyOptionLabel="No item"
-                          onChange={(nextValue) => {
-                            const nextItemId = parseCanonicalPositiveInteger(nextValue);
-                            const nextItem = nextItemId === null
-                              ? null
-                              : itemOptionLookup.get(nextItemId);
-                            setGrantInputs((current) => ({
-                              ...current,
-                              [grant.slot]: {
-                                itemId: nextValue,
-                                quantity:
-                                  nextItem?.isKeyItem
-                                    ? '1'
-                                    : (current[grant.slot]?.quantity ?? '1')
-                              }
-                            }));
-                          }}
-                          onFocus={() => onSelectSlot(grant.slot)}
-                          options={startingItemOptions}
-                          value={grant.inputItemId}
-                        />
-                        {grant.itemError ? (
-                          <small className="editable-field-error" id={itemErrorId}>
-                            {grant.itemError}
-                          </small>
-                        ) : null}
-                      </div>
-                      <div className="table-cell-control" role="cell">
-                        <input
-                          aria-describedby={grant.quantityError ? quantityErrorId : undefined}
-                          aria-invalid={grant.quantityError ? 'true' : undefined}
-                          aria-label={`Quantity for Bag Hook slot ${grant.slot}`}
-                          className={grant.quantityError ? 'input-error' : undefined}
-                          disabled={
-                            workflow.installStatus !== 'available' ||
-                            grant.inputItemId.trim().length === 0 ||
-                            grant.selectedItem?.isKeyItem === true
-                          }
-                          max={999}
-                          min={1}
-                          onChange={(event) =>
-                            setGrantInputs((current) => ({
-                              ...current,
-                              [grant.slot]: {
-                                itemId: current[grant.slot]?.itemId ?? '',
-                                quantity: event.target.value
-                              }
-                            }))
-                          }
-                          onFocus={() => onSelectSlot(grant.slot)}
-                          step={1}
-                          type="number"
-                          value={grant.inputQuantity}
-                        />
-                        {grant.quantityError ? (
-                          <small className="editable-field-error" id={quantityErrorId}>
-                            {grant.quantityError}
-                          </small>
-                        ) : null}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+          <RecordEditorWorkspace id="startingItems" className="starting-items-workspace" initialSection="grant"
+            browserVisibleRows={5}
+            sessionBar={<>
+            <div className="form-actions">
+              <button
+                aria-busy={isStaging || undefined}
+                className="primary-button"
+                disabled={!canUseStageButton}
+                onClick={() => onStageGrants(selectedGrants)}
+                type="button"
+              >
+                <BusyActionContent
+                  busyLabel="Staging"
+                  icon={<ClipboardCheck aria-hidden="true" size={16} />}
+                  isBusy={isStaging}
+                  label="Stage Items"
+                />
+              </button>
+              <button
+                aria-busy={isChangePlanCreating || undefined}
+                className="secondary-button"
+                disabled={!canReviewPlan}
+                onClick={onCreateChangePlan}
+                type="button"
+              >
+                <BusyActionContent
+                  busyLabel="Reviewing"
+                  icon={<ClipboardCheck aria-hidden="true" size={16} />}
+                  isBusy={isChangePlanCreating}
+                  label="Review"
+                />
+              </button>
+              <button
+                aria-busy={isChangePlanApplying || undefined}
+                className="primary-button"
+                disabled={!canApplyPlan}
+                onClick={onApplyChangePlan}
+                type="button"
+              >
+                <BusyActionContent
+                  busyLabel="Applying"
+                  icon={<Save aria-hidden="true" size={16} />}
+                  isBusy={isChangePlanApplying}
+                  label="Apply"
+                />
+              </button>
             </div>
-          }>
-
-            <aside aria-label="Selected Starting Items slot" className="encounter-inspector">
-              <div className="panel-heading">
-                <Package aria-hidden="true" size={18} />
-                <h3>Selected Slot</h3>
-              </div>
-
-              {selectedGrant ? (
-                <>
-                  <AdvancedEditorDetails>
-                    <dl className="item-provenance-list">
-                      <div>
-                        <dt>Starting Items status</dt>
-                        <dd>{formatBagHookStatus(workflow.installStatus)}</dd>
-                      </div>
-                      <div>
-                        <dt>Slot</dt>
-                        <dd>#{selectedGrant.slot}</dd>
-                      </div>
-                      <div>
-                        <dt>Selected item</dt>
-                        <dd>
-                          {selectedGrant.selectedItem
-                            ? `${selectedGrant.selectedItem.name} (#${selectedGrant.selectedItem.itemId})`
-                            : 'None'}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Quantity</dt>
-                        <dd>
-                          {selectedGrant.selectedItem
-                            ? selectedGrant.selectedItem.isKeyItem
-                              ? '1 (key item)'
-                              : selectedGrant.inputQuantity
-                            : 'n/a'}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Source file</dt>
-                        <dd>{selectedGrant.provenance.sourceFile}</dd>
-                      </div>
-                      <div>
-                        <dt>Layer</dt>
-                        <dd>{formatSourceLayer(selectedGrant.provenance.sourceLayer)}</dd>
-                      </div>
-                      <div>
-                        <dt>File state</dt>
-                        <dd>{formatFileState(selectedGrant.provenance.fileState)}</dd>
-                      </div>
-                    </dl>
-                  </AdvancedEditorDetails>
-
-                  <div className="encounter-edit-form">
-                    <div className="form-actions">
-                      <button
-                        aria-busy={isStaging || undefined}
-                        className="primary-button"
-                        disabled={!canUseStageButton}
-                        onClick={() => onStageGrants(selectedGrants)}
-                        type="button"
-                      >
-                        <BusyActionContent
-                          busyLabel="Staging"
-                          icon={<ClipboardCheck aria-hidden="true" size={16} />}
-                          isBusy={isStaging}
-                          label="Stage Items"
-                        />
-                      </button>
-                      <button
-                        aria-busy={isChangePlanCreating || undefined}
-                        className="secondary-button"
-                        disabled={!canReviewPlan}
-                        onClick={onCreateChangePlan}
-                        type="button"
-                      >
-                        <BusyActionContent
-                          busyLabel="Reviewing"
-                          icon={<ClipboardCheck aria-hidden="true" size={16} />}
-                          isBusy={isChangePlanCreating}
-                          label="Review"
-                        />
-                      </button>
-                      <button
-                        aria-busy={isChangePlanApplying || undefined}
-                        className="primary-button"
-                        disabled={!canApplyPlan}
-                        onClick={onApplyChangePlan}
-                        type="button"
-                      >
-                        <BusyActionContent
-                          busyLabel="Applying"
-                          icon={<Save aria-hidden="true" size={16} />}
-                          isBusy={isChangePlanApplying}
-                          label="Apply"
-                        />
-                      </button>
-                    </div>
-
-                    <dl className="encounter-slot-detail">
-                      <div>
-                        <dt>Install message</dt>
-                        <dd>{workflow.installMessage}</dd>
-                      </div>
-                      <div>
-                        <dt>Current slot item</dt>
-                        <dd>
-                          {selectedGrant.itemId === null
-                            ? 'None'
-                            : `${selectedGrant.itemName} (#${selectedGrant.itemId}) x${selectedGrant.quantity}`}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Slot rule</dt>
-                        <dd>Starting Items can use slots 2-20 only.</dd>
-                      </div>
-                      <div>
-                        <dt>Remove grants</dt>
-                        <dd>Choose No item for occupied Starting Items slots, then apply the staged slot update.</dd>
-                      </div>
-                    </dl>
-                  </div>
-                </>
-              ) : (
-                <p className="empty-copy">No Starting Items slot selected.</p>
-              )}
-            </aside>
+              <p className="editor-task-status" role="status">{translateLiteral(workflow.installMessage)}</p>
+            </>}
+            browser={<EditorRecordTable label={translateLiteral('Starting Items slots')}
+              identityLabel={translateLiteral('Slot')} rows={parsedGrants} rowId={grant => String(grant.slot)}
+              identity={grant => '#' + grant.slot} selection={String(selectedGrant?.slot ?? '')}
+              onSelect={grant => onSelectSlot(grant.slot)}
+              columns={[
+                { id: 'item', label: translateLiteral('Item'), value: grant => grant.selectedItem?.name ?? translateLiteral('No item') },
+                { id: 'quantity', label: translateLiteral('Quantity'), value: grant => grant.selectedItem ? grant.inputQuantity : '—', numeric: true },
+                { id: 'status', label: translateLiteral('Status'), value: grant => grant.itemError || grant.quantityError
+                  ? <span className="editable-field-error">{grant.itemError ?? grant.quantityError}</span>
+                  : translateLiteral(formatBagHookStatus(grant.status)) }
+              ]} />}>
+            {selectedGrant ? <EditorWorkspaceHeader afterBrowser>
+              <EditorRecordHeading name={selectedGrant.selectedItem?.name ?? translateLiteral('No item')} id={'#' + selectedGrant.slot} />
+            </EditorWorkspaceHeader> : null}
+            {selectedGrant ? <EditorWorkspaceSection id="grant" label={translateLiteral('Grant')}
+              invalid={Boolean(selectedGrant.itemError || selectedGrant.quantityError)}>
+              {(() => {
+                const grant = selectedGrant;
+                const itemErrorId = 'starting-item-error-' + grant.slot;
+                const quantityErrorId = 'starting-item-quantity-error-' + grant.slot;
+                return <div className="editor-task-groups starting-item-fields">
+      <div className="table-cell-control">
+        <strong>{translateLiteral("Item")}</strong>
+        <SearchableOptionInput
+          ariaLabel={`Item for Bag Hook slot ${grant.slot}`}
+          ariaDescribedBy={grant.itemError ? itemErrorId : undefined}
+          ariaInvalid={grant.itemError ? true : undefined}
+          disabled={workflow.installStatus !== 'available'}
+          emptyOptionLabel="No item"
+          onChange={(nextValue) => {
+            const nextItemId = parseCanonicalPositiveInteger(nextValue);
+            const nextItem = nextItemId === null
+              ? null
+              : itemOptionLookup.get(nextItemId);
+            setGrantInputs((current) => ({
+              ...current,
+              [grant.slot]: {
+                itemId: nextValue,
+                quantity:
+                  nextItem?.isKeyItem
+                    ? '1'
+                    : (current[grant.slot]?.quantity ?? '1')
+              }
+            }));
+          }}
+          options={startingItemOptions}
+          value={grant.inputItemId}
+        />
+        {grant.itemError ? (
+          <small className="editable-field-error" id={itemErrorId}>
+            {grant.itemError}
+          </small>
+        ) : null}
+      </div>
+      <div className="table-cell-control">
+        <strong>{translateLiteral("Quantity")}</strong>
+        <input
+          aria-describedby={grant.quantityError ? quantityErrorId : undefined}
+          aria-invalid={grant.quantityError ? 'true' : undefined}
+          aria-label={`Quantity for Bag Hook slot ${grant.slot}`}
+          className={grant.quantityError ? 'input-error' : undefined}
+          disabled={
+            workflow.installStatus !== 'available' ||
+            grant.inputItemId.trim().length === 0 ||
+            grant.selectedItem?.isKeyItem === true
+          }
+          max={999}
+          min={1}
+          onChange={(event) =>
+            setGrantInputs((current) => ({
+              ...current,
+              [grant.slot]: {
+                itemId: current[grant.slot]?.itemId ?? '',
+                quantity: event.target.value
+              }
+            }))
+          }
+          step={1}
+          type="number"
+          value={grant.inputQuantity}
+        />
+        {grant.quantityError ? (
+          <small className="editable-field-error" id={quantityErrorId}>
+            {grant.quantityError}
+          </small>
+        ) : null}
+      </div>
+                  {grant.selectedItem?.isKeyItem ? <p className="field-note">{translateLiteral('Key item quantities are locked to 1.')}</p> : null}
+                </div>;
+              })()}
+            </EditorWorkspaceSection> : null}
+            {selectedGrant ? <EditorWorkspaceSection id="details" label={translateLiteral('Details')}>
+              <dl className="item-provenance-list">
+                <div><dt>{translateLiteral('Current slot item')}</dt><dd>{selectedGrant.itemId === null ? translateLiteral('None') :
+                  selectedGrant.itemName + ' (#' + selectedGrant.itemId + ') ×' + selectedGrant.quantity}</dd></div>
+                <div><dt>{translateLiteral('Source file')}</dt><dd>{selectedGrant.provenance.sourceFile}</dd></div>
+                <div><dt>{translateLiteral('Layer')}</dt><dd>{formatSourceLayer(selectedGrant.provenance.sourceLayer)}</dd></div>
+                <div><dt>{translateLiteral('File state')}</dt><dd>{formatFileState(selectedGrant.provenance.fileState)}</dd></div>
+              </dl>
+            </EditorWorkspaceSection> : null}
           </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">
@@ -56702,210 +56278,6 @@ function FpsPatchSection({
           <p>{t(`fpsPatch.summary.${statusKey}`)}</p>
         </div>
 
-        <div className="health-grid technical-tool-context-grid">
-          <Metric
-            label={translateLiteral('Detected game')}
-            value={status ? formatCatchCapProjectGame(status.detectedGame, translateLiteral) : t('technicalTool.value.notChecked')}
-          />
-          <Metric label={t('technicalTool.context.supportedBuild')} value={t('fpsPatch.supportedBuild')} />
-          <Metric
-            label={translateLiteral('Build ID')}
-            value={status?.buildId ?? t('technicalTool.value.notChecked')}
-            valueIsRaw={Boolean(status?.buildId)}
-          />
-          <Metric
-            label={translateLiteral('Output Root')}
-            value={outputRootPath.trim() || t('technicalTool.value.notConfigured')}
-            valueIsRaw={Boolean(outputRootPath.trim())}
-          />
-        </div>
-
-        <div className="technical-tool-subsystem-grid">
-          <article className="technical-tool-subsystem-card">
-            <div className="technical-tool-subsystem-heading">
-              <ShieldCheck aria-hidden="true" size={18} />
-              <div>
-                <h3>{t('fpsPatch.exefs.title')}</h3>
-                <p>{t('fpsPatch.exefs.description')}</p>
-              </div>
-            </div>
-            <strong className="technical-tool-ratio" data-localization-ignore="true">
-              {status ? `${status.patchedMainSiteCount}/${status.mainSiteCount}` : '--'}
-            </strong>
-            <span>{t('fpsPatch.exefs.ratioLabel')}</span>
-          </article>
-
-          <article className="technical-tool-subsystem-card">
-            <div className="technical-tool-subsystem-heading">
-              <Layers aria-hidden="true" size={18} />
-              <div>
-                <h3>{t('fpsPatch.romfs.title')}</h3>
-                <p>{t('fpsPatch.romfs.description')}</p>
-              </div>
-            </div>
-            <dl className="technical-tool-counts">
-              <div>
-                <dt>{t('fpsPatch.romfs.current')}</dt>
-                <dd data-localization-ignore="true">{status ? status.patchedRomFsFileCount.toLocaleString(formatLocale) : '--'}</dd>
-              </div>
-              <div>
-                <dt>{t('fpsPatch.romfs.refreshable')}</dt>
-                <dd data-localization-ignore="true">{status ? status.staleOwnedRomFsFileCount.toLocaleString(formatLocale) : '--'}</dd>
-              </div>
-              <div>
-                <dt>{t('fpsPatch.romfs.notInstalled')}</dt>
-                <dd data-localization-ignore="true">{status ? notInstalledRomFsFileCount.toLocaleString(formatLocale) : '--'}</dd>
-              </div>
-              <div>
-                <dt>{t('fpsPatch.romfs.conflicts')}</dt>
-                <dd data-localization-ignore="true">{status ? status.conflictingRomFsFileCount.toLocaleString(formatLocale) : '--'}</dd>
-              </div>
-            </dl>
-          </article>
-        </div>
-
-        {status && status.animationTimingComponents.length > 0 ? (
-          <section
-            className="technical-tool-component-section fps-patch-animation-timing-section"
-            aria-labelledby="fps-patch-animation-timing-heading"
-          >
-            <div>
-              <h3 id="fps-patch-animation-timing-heading">
-                {t('fpsPatch.animationTiming.title')}
-              </h3>
-              <p>{t('fpsPatch.animationTiming.description')}</p>
-            </div>
-            <p className="fps-patch-animation-timing-scope">
-              <ShieldCheck aria-hidden="true" size={16} />
-              <span>{t('fpsPatch.animationTiming.scope')}</span>
-            </p>
-            <div className="fps-patch-animation-timing-grid">
-              {status.animationTimingComponents.map((component) => {
-                const currentStateKey = getFpsPatchAnimationTimingCurrentStateKey(component);
-                const desiredState = desiredAnimationTimingComponentIdSet.has(component.id)
-                  ? 'synchronized'
-                  : 'removeKmTiming';
-
-                return (
-                  <article
-                    aria-labelledby={`fps-patch-${component.id}-heading`}
-                    className={`fps-patch-animation-timing-card ${
-                      component.inputState === 'blocked'
-                        ? 'fps-patch-animation-timing-card-input-blocked'
-                        : ''
-                    }`}
-                    key={component.id}
-                  >
-                    <div className="fps-patch-animation-timing-card-heading">
-                      <h4 id={`fps-patch-${component.id}-heading`}>
-                        {t(`fpsPatch.category.${component.id}.label`)}
-                      </h4>
-                      <p>{t(`fpsPatch.category.${component.id}.detail`)}</p>
-                    </div>
-                    <div className="fps-patch-animation-timing-state-row">
-                      <div>
-                        <span>{t('fpsPatch.animationTiming.current')}</span>
-                        <span
-                          className={`status-pill ${getFpsPatchAnimationTimingStatusClassName(currentStateKey)}`}
-                        >
-                          {t(`fpsPatch.animationTiming.state.${currentStateKey}`)}
-                        </span>
-                      </div>
-                      <div>
-                        <span>
-                          <label htmlFor={`fps-patch-${component.id}-desired`}>
-                            {t('fpsPatch.animationTiming.desired')}
-                          </label>
-                        </span>
-                        <SearchableOptionInput
-                          ariaLabel={t('fpsPatch.animationTiming.desired')}
-                          data-km-source-site="fps-patch-animation-timing-desired-option"
-                          disabled={status.status === 'unsupported'}
-                          id={`fps-patch-${component.id}-desired`}
-                          isFiniteCatalog
-                          localizeOptions={false}
-                          onChange={(value) =>
-                            handleDesiredAnimationTimingChange(
-                              component.id,
-                              value === 'synchronized'
-                            )
-                          }
-                          options={[
-                            {
-                              disabled: component.inputState === 'blocked',
-                              label: t('fpsPatch.animationTiming.desiredState.synchronized'),
-                              value: 'synchronized'
-                            },
-                            {
-                              label: t('fpsPatch.animationTiming.desiredState.removeKmTiming'),
-                              value: 'removeKmTiming'
-                            }
-                          ]}
-                          value={desiredState}
-                        />
-                      </div>
-                    </div>
-                    {component.inputState === 'blocked' ? (
-                      <details className="fps-patch-animation-timing-input-warning">
-                        <summary>
-                          <AlertTriangle aria-hidden="true" size={16} />
-                          <strong>{t('fpsPatch.animationTiming.inputUnavailable')}</strong>
-                          <span
-                            className="fps-patch-animation-timing-input-count"
-                            data-localization-ignore="true"
-                          >
-                            {component.inputDiagnostics.length}
-                          </span>
-                          <ChevronDown
-                            aria-hidden="true"
-                            className="fps-patch-animation-timing-input-chevron"
-                            size={16}
-                          />
-                        </summary>
-                        {component.inputDiagnostics.length > 0 ? (
-                          <FpsPatchDiagnosticList diagnostics={component.inputDiagnostics} />
-                        ) : null}
-                      </details>
-                    ) : null}
-                    <dl className="fps-patch-animation-timing-counts">
-                      <div>
-                        <dt>{t('fpsPatch.animationTiming.files.verified')}</dt>
-                        <dd data-localization-ignore="true">
-                          {component.managedFileCount.toLocaleString(formatLocale)}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>{t('fpsPatch.animationTiming.files.current')}</dt>
-                        <dd data-localization-ignore="true">
-                          {component.patchedFileCount.toLocaleString(formatLocale)}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>{t('fpsPatch.animationTiming.files.earlier')}</dt>
-                        <dd data-localization-ignore="true">
-                          {component.staleOwnedFileCount.toLocaleString(formatLocale)}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>{t('fpsPatch.animationTiming.files.conflicts')}</dt>
-                        <dd data-localization-ignore="true">
-                          {component.conflictingFileCount.toLocaleString(formatLocale)}
-                        </dd>
-                      </div>
-                    </dl>
-                  </article>
-                );
-              })}
-            </div>
-            {hasAnimationTimingConfigurationChanges ? (
-              <p aria-live="polite" className="fps-patch-animation-timing-pending">
-                <RefreshCw aria-hidden="true" size={16} />
-                <span>{t('fpsPatch.animationTiming.pending')}</span>
-              </p>
-            ) : null}
-          </section>
-        ) : null}
-
         {status && status.staleOwnedRomFsFileCount > 0 ? (
           <section className="technical-tool-notice technical-tool-notice-info" aria-labelledby="fps-patch-refresh-heading">
             <div className="technical-tool-notice-heading">
@@ -56972,24 +56344,6 @@ function FpsPatchSection({
             ) : null}
           </section>
         ) : null}
-
-        <details className="technical-tool-details">
-          <summary>{t('technicalTool.technicalContract')}</summary>
-          <dl>
-            <div>
-              <dt>{t('technicalTool.contract.executable')}</dt>
-              <dd>{t('fpsPatch.contract.executable')}</dd>
-            </div>
-            <div>
-              <dt>{t('technicalTool.contract.generatedOutput')}</dt>
-              <dd>{t('fpsPatch.contract.generatedOutput')}</dd>
-            </div>
-            <div>
-              <dt>{t('technicalTool.contract.restoration')}</dt>
-              <dd>{t('fpsPatch.contract.restoration')}</dd>
-            </div>
-          </dl>
-        </details>
 
         {isBusy ? <LoadingProgress className="is-compact" label={t('workbench.section.fps-patch.label')}
           detail={translateLiteral(isLoading ? 'Refreshing' : 'Working')} operationKey={isLoading ? 'refresh' : 'apply'} /> : null}
@@ -57091,6 +56445,237 @@ function FpsPatchSection({
             <FpsPatchDiagnosticList diagnostics={status.restoreDiagnostics} />
           </details>
         ) : null}
+        <RecordEditorWorkspace id="fpsPatch" className="editor-operation-workspace" initialSection="installation">
+            <EditorWorkspaceSection id="installation" label={t('technicalTool.status.installation')}>
+              <div className="health-grid technical-tool-context-grid">
+                <Metric
+                  label={translateLiteral('Detected game')}
+                  value={status ? formatCatchCapProjectGame(status.detectedGame, translateLiteral) : t('technicalTool.value.notChecked')}
+                />
+                <Metric label={t('technicalTool.context.supportedBuild')} value={t('fpsPatch.supportedBuild')} />
+                <Metric
+                  label={translateLiteral('Build ID')}
+                  value={status?.buildId ?? t('technicalTool.value.notChecked')}
+                  valueIsRaw={Boolean(status?.buildId)}
+                />
+                <Metric
+                  label={translateLiteral('Output Root')}
+                  value={outputRootPath.trim() || t('technicalTool.value.notConfigured')}
+                  valueIsRaw={Boolean(outputRootPath.trim())}
+                />
+              </div>
+
+              <div className="technical-tool-subsystem-grid">
+                <article className="technical-tool-subsystem-card">
+                  <div className="technical-tool-subsystem-heading">
+                    <ShieldCheck aria-hidden="true" size={18} />
+                    <div>
+                      <h3>{t('fpsPatch.exefs.title')}</h3>
+                      <p>{t('fpsPatch.exefs.description')}</p>
+                    </div>
+                  </div>
+                  <strong className="technical-tool-ratio" data-localization-ignore="true">
+                    {status ? `${status.patchedMainSiteCount}/${status.mainSiteCount}` : '--'}
+                  </strong>
+                  <span>{t('fpsPatch.exefs.ratioLabel')}</span>
+                </article>
+
+                <article className="technical-tool-subsystem-card">
+                  <div className="technical-tool-subsystem-heading">
+                    <Layers aria-hidden="true" size={18} />
+                    <div>
+                      <h3>{t('fpsPatch.romfs.title')}</h3>
+                      <p>{t('fpsPatch.romfs.description')}</p>
+                    </div>
+                  </div>
+                  <dl className="technical-tool-counts">
+                    <div>
+                      <dt>{t('fpsPatch.romfs.current')}</dt>
+                      <dd data-localization-ignore="true">{status ? status.patchedRomFsFileCount.toLocaleString(formatLocale) : '--'}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('fpsPatch.romfs.refreshable')}</dt>
+                      <dd data-localization-ignore="true">{status ? status.staleOwnedRomFsFileCount.toLocaleString(formatLocale) : '--'}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('fpsPatch.romfs.notInstalled')}</dt>
+                      <dd data-localization-ignore="true">{status ? notInstalledRomFsFileCount.toLocaleString(formatLocale) : '--'}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('fpsPatch.romfs.conflicts')}</dt>
+                      <dd data-localization-ignore="true">{status ? status.conflictingRomFsFileCount.toLocaleString(formatLocale) : '--'}</dd>
+                    </div>
+                  </dl>
+                </article>
+              </div>
+
+            </EditorWorkspaceSection>
+            {status && status.animationTimingComponents.length > 0 ? (
+              <EditorWorkspaceSection id="timing" label={t('fpsPatch.animationTiming.title')}>
+                {status && status.animationTimingComponents.length > 0 ? (
+                  <section
+                    className="technical-tool-component-section fps-patch-animation-timing-section"
+                    aria-labelledby="fps-patch-animation-timing-heading"
+                  >
+                    <div>
+                      <h3 id="fps-patch-animation-timing-heading">
+                        {t('fpsPatch.animationTiming.title')}
+                      </h3>
+                      <p>{t('fpsPatch.animationTiming.description')}</p>
+                    </div>
+                    <p className="fps-patch-animation-timing-scope">
+                      <ShieldCheck aria-hidden="true" size={16} />
+                      <span>{t('fpsPatch.animationTiming.scope')}</span>
+                    </p>
+                    <div className="fps-patch-animation-timing-grid">
+                      {status.animationTimingComponents.map((component) => {
+                        const currentStateKey = getFpsPatchAnimationTimingCurrentStateKey(component);
+                        const desiredState = desiredAnimationTimingComponentIdSet.has(component.id)
+                          ? 'synchronized'
+                          : 'removeKmTiming';
+
+                        return (
+                          <article
+                            aria-labelledby={`fps-patch-${component.id}-heading`}
+                            className={`fps-patch-animation-timing-card ${
+                              component.inputState === 'blocked'
+                                ? 'fps-patch-animation-timing-card-input-blocked'
+                                : ''
+                            }`}
+                            key={component.id}
+                          >
+                            <div className="fps-patch-animation-timing-card-heading">
+                              <h4 id={`fps-patch-${component.id}-heading`}>
+                                {t(`fpsPatch.category.${component.id}.label`)}
+                              </h4>
+                              <p>{t(`fpsPatch.category.${component.id}.detail`)}</p>
+                            </div>
+                            <div className="fps-patch-animation-timing-state-row">
+                              <div>
+                                <span>{t('fpsPatch.animationTiming.current')}</span>
+                                <span
+                                  className={`status-pill ${getFpsPatchAnimationTimingStatusClassName(currentStateKey)}`}
+                                >
+                                  {t(`fpsPatch.animationTiming.state.${currentStateKey}`)}
+                                </span>
+                              </div>
+                              <div>
+                                <span>
+                                  <label htmlFor={`fps-patch-${component.id}-desired`}>
+                                    {t('fpsPatch.animationTiming.desired')}
+                                  </label>
+                                </span>
+                                <SearchableOptionInput
+                                  ariaLabel={t('fpsPatch.animationTiming.desired')}
+                                  data-km-source-site="fps-patch-animation-timing-desired-option"
+                                  disabled={status.status === 'unsupported'}
+                                  id={`fps-patch-${component.id}-desired`}
+                                  isFiniteCatalog
+                                  localizeOptions={false}
+                                  onChange={(value) =>
+                                    handleDesiredAnimationTimingChange(
+                                      component.id,
+                                      value === 'synchronized'
+                                    )
+                                  }
+                                  options={[
+                                    {
+                                      disabled: component.inputState === 'blocked',
+                                      label: t('fpsPatch.animationTiming.desiredState.synchronized'),
+                                      value: 'synchronized'
+                                    },
+                                    {
+                                      label: t('fpsPatch.animationTiming.desiredState.removeKmTiming'),
+                                      value: 'removeKmTiming'
+                                    }
+                                  ]}
+                                  value={desiredState}
+                                />
+                              </div>
+                            </div>
+                            {component.inputState === 'blocked' ? (
+                              <details className="fps-patch-animation-timing-input-warning">
+                                <summary>
+                                  <AlertTriangle aria-hidden="true" size={16} />
+                                  <strong>{t('fpsPatch.animationTiming.inputUnavailable')}</strong>
+                                  <span
+                                    className="fps-patch-animation-timing-input-count"
+                                    data-localization-ignore="true"
+                                  >
+                                    {component.inputDiagnostics.length}
+                                  </span>
+                                  <ChevronDown
+                                    aria-hidden="true"
+                                    className="fps-patch-animation-timing-input-chevron"
+                                    size={16}
+                                  />
+                                </summary>
+                                {component.inputDiagnostics.length > 0 ? (
+                                  <FpsPatchDiagnosticList diagnostics={component.inputDiagnostics} />
+                                ) : null}
+                              </details>
+                            ) : null}
+                            <dl className="fps-patch-animation-timing-counts">
+                              <div>
+                                <dt>{t('fpsPatch.animationTiming.files.verified')}</dt>
+                                <dd data-localization-ignore="true">
+                                  {component.managedFileCount.toLocaleString(formatLocale)}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt>{t('fpsPatch.animationTiming.files.current')}</dt>
+                                <dd data-localization-ignore="true">
+                                  {component.patchedFileCount.toLocaleString(formatLocale)}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt>{t('fpsPatch.animationTiming.files.earlier')}</dt>
+                                <dd data-localization-ignore="true">
+                                  {component.staleOwnedFileCount.toLocaleString(formatLocale)}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt>{t('fpsPatch.animationTiming.files.conflicts')}</dt>
+                                <dd data-localization-ignore="true">
+                                  {component.conflictingFileCount.toLocaleString(formatLocale)}
+                                </dd>
+                              </div>
+                            </dl>
+                          </article>
+                        );
+                      })}
+                    </div>
+                    {hasAnimationTimingConfigurationChanges ? (
+                      <p aria-live="polite" className="fps-patch-animation-timing-pending">
+                        <RefreshCw aria-hidden="true" size={16} />
+                        <span>{t('fpsPatch.animationTiming.pending')}</span>
+                      </p>
+                    ) : null}
+                  </section>
+                ) : null}
+
+              </EditorWorkspaceSection>
+            ) : null}
+            <EditorWorkspaceSection id="technical" label={t('technicalTool.technicalContract')}>
+              <div className="technical-tool-reference">
+                  <dl>
+                    <div>
+                      <dt>{t('technicalTool.contract.executable')}</dt>
+                      <dd>{t('fpsPatch.contract.executable')}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('technicalTool.contract.generatedOutput')}</dt>
+                      <dd>{t('fpsPatch.contract.generatedOutput')}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('technicalTool.contract.restoration')}</dt>
+                      <dd>{t('fpsPatch.contract.restoration')}</dd>
+                    </div>
+                  </dl>
+
+              </div>
+            </EditorWorkspaceSection>
+        </RecordEditorWorkspace>
       </section>
 
       {status && status.diagnostics.length > 0 ? (
@@ -57321,108 +56906,6 @@ function ProfanityFilterSection({
           <p>{t(`profanityFilter.summary.${statusKey}`)}</p>
         </div>
 
-        <div className="health-grid technical-tool-context-grid">
-          <Metric
-            label={translateLiteral('Detected game')}
-            value={status ? formatCatchCapProjectGame(status.detectedGame, translateLiteral) : t('technicalTool.value.notChecked')}
-          />
-          <Metric label={t('technicalTool.context.supportedBuild')} value={t('profanityFilter.supportedBuild')} />
-          <Metric
-            label={translateLiteral('Build ID')}
-            value={status?.buildId ?? t('technicalTool.value.notChecked')}
-            valueIsRaw={Boolean(status?.buildId)}
-          />
-          <Metric
-            label={translateLiteral('Source')}
-            value={status ? translateLiteral(formatProfanityFilterSourceLayer(status.sourceLayer)) : t('technicalTool.value.notChecked')}
-          />
-          <Metric
-            label={translateLiteral('Output Root')}
-            value={outputRootPath.trim() || t('technicalTool.value.notConfigured')}
-            valueIsRaw={Boolean(outputRootPath.trim())}
-          />
-        </div>
-
-        <div className="technical-tool-overview-grid">
-          <article>
-            <h3>{t('profanityFilter.behavior.title')}</h3>
-            <p>{t('profanityFilter.behavior.description')}</p>
-          </article>
-          <article>
-            <h3>{t('profanityFilter.scope.title')}</h3>
-            <p>{t('profanityFilter.scope.description')}</p>
-          </article>
-          <article>
-            <h3>{t('profanityFilter.preservation.title')}</h3>
-            <p>{t('profanityFilter.preservation.description')}</p>
-          </article>
-        </div>
-
-        <details className="editor-technical-disclosure">
-          <summary>{t('profanityFilter.details.title')}</summary>
-          <div className="technical-tool-reference">
-            <section className="technical-tool-component-section" aria-labelledby="profanity-filter-details-heading">
-              <div>
-                <h3 id="profanity-filter-details-heading">{t('profanityFilter.details.title')}</h3>
-                <p>{t('profanityFilter.details.description')}</p>
-              </div>
-              <dl className="technical-tool-contract-grid">
-                <div>
-                  <dt>{translateLiteral('File')}</dt>
-                  <dd><code data-localization-ignore="true">exefs/main</code></dd>
-                </div>
-                <div>
-                  <dt>{translateLiteral('Patch site')}</dt>
-                  <dd><code data-localization-ignore="true">{status?.patchOffsetHex ?? '--'}</code></dd>
-                </div>
-                <div>
-                  <dt>{translateLiteral('Owned bytes')}</dt>
-                  <dd>{t('profanityFilter.details.ownedBytes')}</dd>
-                </div>
-                <div>
-                  <dt>{t('profanityFilter.details.observedState')}</dt>
-                  <dd>{patchShapeValue}</dd>
-                </div>
-              </dl>
-            </section>
-
-            <section className="technical-tool-component-section" aria-labelledby="profanity-filter-behavior-heading">
-              <div>
-                <h3 id="profanity-filter-behavior-heading">{t('profanityFilter.instructionTable.title')}</h3>
-                <p>{t('profanityFilter.instructionTable.description')}</p>
-              </div>
-              <div className="technical-tool-instruction-table">
-                <div>
-                  <strong>{t('profanityFilter.instructionTable.vanilla')}</strong>
-                  <code data-localization-ignore="true">Sword 0x97E37E86 / Shield 0x97E37E7A</code>
-                  <span>{t('profanityFilter.instructionTable.vanillaBehavior')}</span>
-                </div>
-                <div>
-                  <strong>{t('profanityFilter.instructionTable.km')}</strong>
-                  <code data-localization-ignore="true">0x2A1F03E0 · mov w0, wzr</code>
-                  <span>{t('profanityFilter.instructionTable.kmBehavior')}</span>
-                </div>
-                <div>
-                  <strong>{t('profanityFilter.instructionTable.compatible')}</strong>
-                  <code data-localization-ignore="true">0x52800000 · mov w0, #0</code>
-                  <span>{t('profanityFilter.instructionTable.compatibleBehavior')}</span>
-                </div>
-              </div>
-            </section>
-
-          </div>
-        </details>
-
-        <section className="technical-tool-notice technical-tool-notice-info" aria-labelledby="profanity-filter-restore-heading">
-          <div className="technical-tool-notice-heading">
-            <RotateCcw aria-hidden="true" size={18} />
-            <div>
-              <h3 id="profanity-filter-restore-heading">{t('profanityFilter.restore.title')}</h3>
-              <p>{t('profanityFilter.restore.description')}</p>
-            </div>
-          </div>
-        </section>
-
         {isBusy ? <LoadingProgress className="is-compact" label={t('profanityFilter.title')}
           detail={translateLiteral(isLoading ? 'Refreshing' : 'Working')} operationKey={isLoading ? 'refresh' : 'apply'} /> : null}
         <div className="action-row technical-tool-action-row">
@@ -57482,6 +56965,111 @@ function ProfanityFilterSection({
             ) : null}
           </div>
         ) : null}
+        <RecordEditorWorkspace id="profanityFilter" className="editor-operation-workspace" initialSection="installation">
+            <EditorWorkspaceSection id="installation" label={t('technicalTool.status.installation')}>
+              <div className="technical-tool-overview-grid">
+                <article>
+                  <h3>{t('profanityFilter.behavior.title')}</h3>
+                  <p>{t('profanityFilter.behavior.description')}</p>
+                </article>
+                <article>
+                  <h3>{t('profanityFilter.scope.title')}</h3>
+                  <p>{t('profanityFilter.scope.description')}</p>
+                </article>
+                <article>
+                  <h3>{t('profanityFilter.preservation.title')}</h3>
+                  <p>{t('profanityFilter.preservation.description')}</p>
+                </article>
+              </div>
+
+              <section className="technical-tool-notice technical-tool-notice-info" aria-labelledby="profanity-filter-restore-heading">
+                <div className="technical-tool-notice-heading">
+                  <RotateCcw aria-hidden="true" size={18} />
+                  <div>
+                    <h3 id="profanity-filter-restore-heading">{t('profanityFilter.restore.title')}</h3>
+                    <p>{t('profanityFilter.restore.description')}</p>
+                  </div>
+                </div>
+              </section>
+
+            </EditorWorkspaceSection>
+            <EditorWorkspaceSection id="technical" label={t('profanityFilter.details.title')}>
+              <div className="health-grid technical-tool-context-grid">
+                <Metric
+                  label={translateLiteral('Detected game')}
+                  value={status ? formatCatchCapProjectGame(status.detectedGame, translateLiteral) : t('technicalTool.value.notChecked')}
+                />
+                <Metric label={t('technicalTool.context.supportedBuild')} value={t('profanityFilter.supportedBuild')} />
+                <Metric
+                  label={translateLiteral('Build ID')}
+                  value={status?.buildId ?? t('technicalTool.value.notChecked')}
+                  valueIsRaw={Boolean(status?.buildId)}
+                />
+                <Metric
+                  label={translateLiteral('Source')}
+                  value={status ? translateLiteral(formatProfanityFilterSourceLayer(status.sourceLayer)) : t('technicalTool.value.notChecked')}
+                />
+                <Metric
+                  label={translateLiteral('Output Root')}
+                  value={outputRootPath.trim() || t('technicalTool.value.notConfigured')}
+                  valueIsRaw={Boolean(outputRootPath.trim())}
+                />
+              </div>
+
+                <div className="technical-tool-reference">
+                  <section className="technical-tool-component-section" aria-labelledby="profanity-filter-details-heading">
+                    <div>
+                      <h3 id="profanity-filter-details-heading">{t('profanityFilter.details.title')}</h3>
+                      <p>{t('profanityFilter.details.description')}</p>
+                    </div>
+                    <dl className="technical-tool-contract-grid">
+                      <div>
+                        <dt>{translateLiteral('File')}</dt>
+                        <dd><code data-localization-ignore="true">exefs/main</code></dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Patch site')}</dt>
+                        <dd><code data-localization-ignore="true">{status?.patchOffsetHex ?? '--'}</code></dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Owned bytes')}</dt>
+                        <dd>{t('profanityFilter.details.ownedBytes')}</dd>
+                      </div>
+                      <div>
+                        <dt>{t('profanityFilter.details.observedState')}</dt>
+                        <dd>{patchShapeValue}</dd>
+                      </div>
+                    </dl>
+                  </section>
+
+                  <section className="technical-tool-component-section" aria-labelledby="profanity-filter-behavior-heading">
+                    <div>
+                      <h3 id="profanity-filter-behavior-heading">{t('profanityFilter.instructionTable.title')}</h3>
+                      <p>{t('profanityFilter.instructionTable.description')}</p>
+                    </div>
+                    <div className="technical-tool-instruction-table">
+                      <div>
+                        <strong>{t('profanityFilter.instructionTable.vanilla')}</strong>
+                        <code data-localization-ignore="true">Sword 0x97E37E86 / Shield 0x97E37E7A</code>
+                        <span>{t('profanityFilter.instructionTable.vanillaBehavior')}</span>
+                      </div>
+                      <div>
+                        <strong>{t('profanityFilter.instructionTable.km')}</strong>
+                        <code data-localization-ignore="true">0x2A1F03E0 · mov w0, wzr</code>
+                        <span>{t('profanityFilter.instructionTable.kmBehavior')}</span>
+                      </div>
+                      <div>
+                        <strong>{t('profanityFilter.instructionTable.compatible')}</strong>
+                        <code data-localization-ignore="true">0x52800000 · mov w0, #0</code>
+                        <span>{t('profanityFilter.instructionTable.compatibleBehavior')}</span>
+                      </div>
+                    </div>
+                  </section>
+
+                </div>
+
+            </EditorWorkspaceSection>
+        </RecordEditorWorkspace>
       </section>
 
       {status && status.diagnostics.length > 0 ? (
@@ -64830,41 +64418,6 @@ function useRegisterEditorDraftDirty(section: WorkbenchSection, isDirty: boolean
     registerEditorDraftDirty(section, isDirty);
     return () => registerEditorDraftDirty(section, false);
   }, [isDirty, registerEditorDraftDirty, section]);
-}
-
-function PokemonSummaryCard({
-  editorFamily,
-  form,
-  name,
-  speciesId,
-  spriteName,
-  subtitle,
-  title
-}: {
-  editorFamily?: EditorUiFamily;
-  form?: number;
-  name: string;
-  speciesId?: number;
-  spriteName?: string | null;
-  subtitle: string;
-  title: string;
-}) {
-  return (
-    <div className="pokemon-summary-card">
-      <PokemonSprite
-        className="pokemon-summary-sprite"
-        editorFamily={editorFamily}
-        form={form}
-        name={name}
-        speciesId={speciesId}
-        spriteName={spriteName}
-      />
-      <div className="pokemon-summary-main">
-        <strong className="pokemon-summary-title">{title}</strong>
-        <span className="pokemon-summary-subtitle">{subtitle}</span>
-      </div>
-    </div>
-  );
 }
 
 function PokemonSprite({
