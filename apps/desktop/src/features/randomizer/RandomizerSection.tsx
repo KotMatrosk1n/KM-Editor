@@ -49,9 +49,7 @@ export function RandomizerSection({
   const [rollSeed, setRollSeed] = useState<string | null>(null);
   const [outputHash, setOutputHash] = useState<string | null>(null);
   const [importedReplayConfig, setImportedReplayConfig] = useState<RandomizerConfig | null>(null);
-  const [expandedCategoryIds, setExpandedCategoryIds] = useState<Set<string>>(
-    () => new Set(['stats'])
-  );
+  const [categoryId, setCategoryId] = useState('stats');
   const [seedOutput, setSeedOutput] = useState('');
   const [diagnostics, setDiagnostics] = useState<ApiDiagnostic[]>([]);
   const [applyResult, setApplyResult] = useState<ApplyResult | null>(null);
@@ -174,22 +172,6 @@ export function RandomizerSection({
     clearImportedReplay();
   };
 
-  const handleToggleCategory = (categoryId: string) => {
-    if (activeOperationRef.current !== null) {
-      return;
-    }
-    setExpandedCategoryIds((current) => {
-      const next = new Set(current);
-      if (next.has(categoryId)) {
-        next.delete(categoryId);
-      } else {
-        next.add(categoryId);
-      }
-
-      return next;
-    });
-  };
-
   const handleToggleOption = (key: RandomizerOptionKey) => {
     if (activeOperationRef.current !== null) {
       return;
@@ -233,7 +215,7 @@ export function RandomizerSection({
     draftRevisionRef.current += 1;
     setOptions(defaultRandomizerOptions);
     setTrainerLevelDraft('100');
-    setExpandedCategoryIds(new Set(['stats']));
+    setCategoryId('stats');
     clearImportedReplay();
   };
 
@@ -423,6 +405,33 @@ export function RandomizerSection({
           <h2 id="randomizer-heading">Randomizer</h2>
         </div>
 
+        <div className="randomizer-action-row">
+          <button
+            className="secondary-button"
+            disabled={isConfigurationLocked}
+            onClick={handleResetOptions}
+            title={t('randomizer.reset.help')}
+            type="button"
+          >
+            <RotateCcw aria-hidden="true" size={16} />
+            <span>Reset Selections</span>
+          </button>
+          <button
+            className="primary-button"
+            disabled={!canRandomize}
+            onClick={() => setIsConfirmOpen(true)}
+            title={
+              canRandomize
+                ? 'Randomize the selected data and write it to Output Root.'
+                : 'Select at least one option and validate editable project paths first.'
+            }
+            type="button"
+          >
+            <Shuffle aria-hidden="true" size={16} />
+            <span>{isApplying ? 'Randomizing' : 'Randomize'}</span>
+          </button>
+        </div>
+
         <div className="randomizer-configuration">
           <div className="randomizer-seed-row">
             <div className="path-field">
@@ -455,7 +464,7 @@ export function RandomizerSection({
       </section>
 
       <RandomizerSettings options={options} locked={isConfigurationLocked}
-        expandedCategoryIds={expandedCategoryIds} onToggleCategory={handleToggleCategory}
+        categoryId={categoryId} onSelectCategory={setCategoryId}
         onToggle={handleToggleOption} onTrainerChange={handleTrainerChange}
         levelDraft={trainerLevelDraft} levelValid={trainerLevelValid} onLevelChange={handleTrainerLevelChange} />
 
@@ -466,33 +475,7 @@ export function RandomizerSection({
       >
         <div className="panel-heading">
           <Save aria-hidden="true" size={18} />
-          <h2 id="randomizer-apply-heading">Apply Randomizer</h2>
-        </div>
-        <div className="randomizer-action-row">
-          <button
-            className="secondary-button"
-            disabled={isConfigurationLocked}
-            onClick={handleResetOptions}
-            title={t('randomizer.reset.help')}
-            type="button"
-          >
-            <RotateCcw aria-hidden="true" size={16} />
-            <span>Reset Selections</span>
-          </button>
-          <button
-            className="primary-button"
-            disabled={!canRandomize}
-            onClick={() => setIsConfirmOpen(true)}
-            title={
-              canRandomize
-                ? 'Randomize the selected data and write it to Output Root.'
-                : 'Select at least one option and validate editable project paths first.'
-            }
-            type="button"
-          >
-            <Shuffle aria-hidden="true" size={16} />
-            <span>{isApplying ? 'Randomizing' : 'Randomize'}</span>
-          </button>
+          <h2 id="randomizer-apply-heading">{translateLiteral('Share and Replay Seeds')}</h2>
         </div>
         <div className="randomizer-output-seed">
           <div className="randomizer-output-seed-heading">

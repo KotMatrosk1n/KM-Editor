@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { useEffect, useRef, useState } from 'react';
 import { ChartNoAxesCombined, RotateCcw, Save, X } from 'lucide-react';
 import { type SummaryStatsWorkflow } from '../../bridge/summaryStatsContracts';
@@ -73,18 +74,24 @@ export function SummaryStatsSection({ workflow, isStaging, isEditing, isEditStar
           <X size={16} aria-hidden="true" />{translateLiteral('Cancel')}
         </button>
       </EditorSessionBarActions> : null}
-      <div className="summary-stats-setting editor-setting-row">
-        <label><input type="checkbox" checked={enabled} disabled={!canEdit}
-          onChange={event => choose(event.target.checked)} /><span>{t('summaryStats.enable')}</span></label>
-        <button type="button" className="secondary-button" disabled={!canEdit} onClick={() => choose(false)}>
-          <RotateCcw size={16} aria-hidden="true" />{t('summaryStats.restore')}
-        </button>
-      </div>
-      <ol className="summary-stats-modes" aria-label={t('summaryStats.cycle')}>
-        {(['stats', 'ivs', 'evs', 'graph'] as const).map(mode => <li key={mode}>
-          <strong>{t(`summaryStats.mode.${mode}`)}</strong><p>{t(`summaryStats.mode.${mode}.help`)}</p>
-        </li>)}
-      </ol>
+      <RecordEditorWorkspace id="summary-stats" className="summary-stats-layout" initialSection="setting">
+        <EditorWorkspaceSection id="setting" label={translateLiteral('Settings')}>
+          <div className="summary-stats-setting editor-setting-row">
+            <label><input type="checkbox" checked={enabled} disabled={!canEdit}
+              onChange={event => choose(event.target.checked)} /><span>{t('summaryStats.enable')}</span></label>
+            <button type="button" className="secondary-button" disabled={!canEdit} onClick={() => choose(false)}>
+              <RotateCcw size={16} aria-hidden="true" />{t('summaryStats.restore')}
+            </button>
+          </div>
+        </EditorWorkspaceSection>
+        <EditorWorkspaceSection id="views" label={t('summaryStats.cycle')}>
+          <ol className="summary-stats-modes" aria-label={t('summaryStats.cycle')}>
+            {(['stats', 'ivs', 'evs', 'graph'] as const).map(mode => <li key={mode}>
+              <strong>{t(`summaryStats.mode.${mode}`)}</strong><p>{t(`summaryStats.mode.${mode}.help`)}</p>
+            </li>)}
+          </ol>
+        </EditorWorkspaceSection>
+      </RecordEditorWorkspace>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />
   </FocusedEditorWorkspace>;

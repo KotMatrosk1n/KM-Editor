@@ -987,6 +987,7 @@
     "modelViewer.category.objects": "Об’єкти та предмети",
     "modelViewer.category.environment": "Оточення",
     "modelViewer.category.other": "Інше або без категорії",
+    "modelViewer.variantCount": "Варіанти",
     "modelViewer.variant": "Форма {form}, варіант {gender}",
     "modelViewer.shiny": "Блискучий",
     "modelViewer.selectModel": "Виберіть модель",

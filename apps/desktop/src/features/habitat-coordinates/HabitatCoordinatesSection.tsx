@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { ContextHelp } from '../../components/ContextHelp';
-import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
+import { EditorRecordTable } from '../../components/EditorRecordTable';
+import { EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import {
   ChevronLeft,
   ChevronRight,
@@ -89,10 +90,11 @@ export function HabitatCoordinatesSection({
   panelOutput,
   workflow
 }: HabitatCoordinatesSectionProps) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const page = workflow?.page ?? null;
   const initialSearchSource = page?.search ?? '';
   const [searchDraft, setSearchDraft] = useCoalescedTextInputState(initialSearchSource);
+  const [coordinateSectionRequest, setCoordinateSectionRequest] = useState<{ sectionId: string }>();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [coordinateDrafts, setCoordinateDrafts] = useState<Record<string, string>>({});
   const [draftReviewTargets, setDraftReviewTargets] = useState<
@@ -489,6 +491,7 @@ export function HabitatCoordinatesSection({
       return;
     }
 
+    setCoordinateSectionRequest({ sectionId: 'coordinate' });
     const targetQueryKey = createHabitatCoordinatesQueryKey(nextDraftTarget.query);
     const currentQueryKey = page
       ? createHabitatCoordinatesQueryKey(queryFromPage(page, {}))
@@ -637,6 +640,7 @@ export function HabitatCoordinatesSection({
         ) : null}
 
         <RecordEditorWorkspace id="habitatCoordinates" className="habitat-coordinate-card-workspace"
+          initialSection="coordinate" activeSectionRequest={coordinateSectionRequest}
           browserControls={<>
             <div className="habitat-coordinate-card-heading">
               <h3 id="habitat-coordinate-list-heading">{t('habitatCoordinates.list.title')}</h3>
@@ -682,77 +686,26 @@ export function HabitatCoordinatesSection({
               id="habitat-coordinate-list"
               role="tabpanel"
             >
-              {page?.records.map((record) => {
-                const selected = rowKey(record) === selectedKey;
-                const effective = record.stagedCoordinate ?? { x: record.x, y: record.y };
-                const formName = record.formName ?? t(
-                  record.binding.formNo === 0
-                    ? 'habitatCoordinates.row.form.standard'
-                    : 'habitatCoordinates.row.form.number',
-                  { number: record.binding.formNo }
-                );
-                return (
-                  <button
-                    aria-pressed={selected}
-                    className="habitat-coordinate-row"
-                    disabled={isLoading}
-                    key={rowKey(record)}
-                    onClick={() => setSelectedKey(rowKey(record))}
-                    type="button"
-                  >
-                    <span className="habitat-coordinate-row-identity">
-                      <strong data-localization-ignore="true">{record.speciesName}</strong>
-                      <small>
-                        <span data-localization-ignore={record.formName ? 'true' : undefined}>
-                          {formName}
-                        </span>
-                        <span aria-hidden="true"> · </span>
-                        <span className="sr-only">, </span>
-                        <span>
-                          {t('habitatCoordinates.row.pokedexNumber', {
-                            number: record.binding.devNo
-                          })}
-                        </span>
-                      </small>
-                    </span>
-                    <span className="habitat-coordinate-row-meta">
-                      <span className="habitat-coordinate-row-cell">
-                        <small>
-                          {t('habitatCoordinates.row.cell', {
-                            region: t(`habitatCoordinates.region.${page.region}`)
-                          })}
-                        </small>
-                        <span>
-                          {t('habitatCoordinates.row.coordinate', {
-                            x: effective.x,
-                            y: effective.y
-                          })}
-                        </span>
-                      </span>
-                      {record.isStaged ? <strong>{t('habitatCoordinates.staged')}</strong> : null}
-                    </span>
-                    <span className="sr-only">
-                      {t('habitatCoordinates.editor.version')}:{' '}
-                      {record.binding.versionA
-                        ? t('habitatCoordinates.version.scarlet')
-                        : null}
-                      {record.binding.versionA && record.binding.versionB ? ', ' : null}
-                      {record.binding.versionB
-                        ? t('habitatCoordinates.version.violet')
-                        : null}
-                      {'. '}
-                      {t('habitatCoordinates.editor.occurrence')}:{' '}
-                      {t('habitatCoordinates.editor.occurrenceValue', {
-                        group: record.binding.outerGroupOccurrence + 1,
-                        row: record.binding.rowOccurrence + 1
-                      })}
-                    </span>
-                  </button>
-                );
-              })}
-              {page && page.records.length === 0 ? (
-                <p className="empty-copy">{t('habitatCoordinates.list.empty')}</p>
-              ) : null}
+              <EditorRecordTable label={t('habitatCoordinates.list.title')} identityLabel={t('habitatCoordinates.editor.pokemon')}
+                rows={page?.records ?? []} rowId={rowKey} selection={selectedKey ?? undefined} disabled={isLoading}
+                onSelect={record => setSelectedKey(rowKey(record))}
+                identity={record => <span className="habitat-coordinate-row-identity">
+                  <strong data-localization-ignore="true">{record.speciesName}</strong>
+                  <small>{record.formName ?? t(record.binding.formNo === 0
+                    ? 'habitatCoordinates.row.form.standard' : 'habitatCoordinates.row.form.number', { number: record.binding.formNo })}
+                    {' · '}{t('habitatCoordinates.row.pokedexNumber', { number: record.binding.devNo })}</small>
+                </span>}
+                columns={[
+                  { id: 'version', label: t('habitatCoordinates.editor.version'), value: record => [
+                    record.binding.versionA ? t('habitatCoordinates.version.scarlet') : null,
+                    record.binding.versionB ? t('habitatCoordinates.version.violet') : null,
+                  ].filter(Boolean).join(' · ') },
+                  { id: 'occurrence', label: t('habitatCoordinates.editor.occurrence'), value: record =>
+                    t('habitatCoordinates.editor.occurrenceValue', { group: record.binding.outerGroupOccurrence + 1, row: record.binding.rowOccurrence + 1 }) },
+                  { id: 'x', label: 'X', numeric: true, value: record => record.stagedCoordinate?.x ?? record.x },
+                  { id: 'y', label: 'Y', numeric: true, value: record => record.stagedCoordinate?.y ?? record.y },
+                  { id: 'status', label: translateLiteral('Status'), value: record => record.isStaged ? t('habitatCoordinates.staged') : '—' },
+                ]} empty={page ? t('habitatCoordinates.list.empty') : undefined} />
             </div>}
           browserFooter={<div className="habitat-coordinate-pagination">
               <button
@@ -783,64 +736,12 @@ export function HabitatCoordinatesSection({
                 <ChevronRight aria-hidden="true" size={16} />
               </button>
             </div>}>
-          <section aria-labelledby="habitat-coordinate-editor-heading" className="habitat-coordinate-card">
-            <div className="habitat-coordinate-card-heading">
-              <h3 id="habitat-coordinate-editor-heading">{t('habitatCoordinates.editor.title')}</h3>
-            </div>
-            {selectedRecord && selectedRegion ? (
+          {selectedRecord && selectedRegion ? <>
+            <EditorWorkspaceHeader afterBrowser>
+              <EditorRecordHeading name={selectedRecord.speciesName} id={selectedRecord.binding.devNo} />
+            </EditorWorkspaceHeader>
+            <EditorWorkspaceSection id="coordinate" label={t('habitatCoordinates.editor.coordinate')}>
               <div className="habitat-coordinate-editor">
-                <dl>
-                  <div>
-                    <dt>{t('habitatCoordinates.editor.pokemon')}</dt>
-                    <dd data-localization-ignore="true">{selectedRecord.speciesName}</dd>
-                  </div>
-                  <div>
-                    <dt>{t('habitatCoordinates.editor.form')}</dt>
-                    <dd data-localization-ignore={selectedRecord.formName ? 'true' : undefined}>
-                      {selectedRecord.formName ?? t(
-                        selectedRecord.binding.formNo === 0
-                          ? 'habitatCoordinates.row.form.standard'
-                          : 'habitatCoordinates.row.form.number',
-                        { number: selectedRecord.binding.formNo }
-                      )}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{t('habitatCoordinates.editor.identity')}</dt>
-                    <dd>
-                      {t('habitatCoordinates.editor.identityValue', {
-                        form: selectedRecord.binding.formNo,
-                        species: selectedRecord.binding.devNo
-                      })}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{t('habitatCoordinates.editor.version')}</dt>
-                    <dd>
-                      {selectedRecord.binding.versionA
-                        ? t('habitatCoordinates.version.scarlet')
-                        : null}
-                      {selectedRecord.binding.versionA && selectedRecord.binding.versionB ? ' · ' : null}
-                      {selectedRecord.binding.versionB
-                        ? t('habitatCoordinates.version.violet')
-                        : null}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{t('habitatCoordinates.editor.occurrence')}</dt>
-                    <dd>
-                      {t('habitatCoordinates.editor.occurrenceValue', {
-                        group: selectedRecord.binding.outerGroupOccurrence + 1,
-                        row: selectedRecord.binding.rowOccurrence + 1
-                      })}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{t('habitatCoordinates.editor.source')}</dt>
-                    <dd data-localization-ignore="true">{selectedRegion.sourceFile}</dd>
-                  </div>
-                </dl>
-
                 <label className="field-label" htmlFor="habitat-coordinate-value">
                   {t('habitatCoordinates.editor.coordinate')}
                 </label>
@@ -913,7 +814,62 @@ export function HabitatCoordinatesSection({
                   ) : null}
                 </div>
               </div>
-            ) : (
+            </EditorWorkspaceSection>
+            <EditorWorkspaceSection id="binding" label={t('editorSections.details')}>
+                <dl className="editor-detail-list">
+                  <div>
+                    <dt>{t('habitatCoordinates.editor.pokemon')}</dt>
+                    <dd data-localization-ignore="true">{selectedRecord.speciesName}</dd>
+                  </div>
+                  <div>
+                    <dt>{t('habitatCoordinates.editor.form')}</dt>
+                    <dd data-localization-ignore={selectedRecord.formName ? 'true' : undefined}>
+                      {selectedRecord.formName ?? t(
+                        selectedRecord.binding.formNo === 0
+                          ? 'habitatCoordinates.row.form.standard'
+                          : 'habitatCoordinates.row.form.number',
+                        { number: selectedRecord.binding.formNo }
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{t('habitatCoordinates.editor.identity')}</dt>
+                    <dd>
+                      {t('habitatCoordinates.editor.identityValue', {
+                        form: selectedRecord.binding.formNo,
+                        species: selectedRecord.binding.devNo
+                      })}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{t('habitatCoordinates.editor.version')}</dt>
+                    <dd>
+                      {selectedRecord.binding.versionA
+                        ? t('habitatCoordinates.version.scarlet')
+                        : null}
+                      {selectedRecord.binding.versionA && selectedRecord.binding.versionB ? ' · ' : null}
+                      {selectedRecord.binding.versionB
+                        ? t('habitatCoordinates.version.violet')
+                        : null}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{t('habitatCoordinates.editor.occurrence')}</dt>
+                    <dd>
+                      {t('habitatCoordinates.editor.occurrenceValue', {
+                        group: selectedRecord.binding.outerGroupOccurrence + 1,
+                        row: selectedRecord.binding.rowOccurrence + 1
+                      })}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{t('habitatCoordinates.editor.source')}</dt>
+                    <dd className="editor-detail-path" data-localization-ignore="true">{selectedRegion.sourceFile}</dd>
+                  </div>
+                </dl>
+
+            </EditorWorkspaceSection>
+            </> : (
               <>
                 <p className="empty-copy">{t('habitatCoordinates.editor.noSelection')}</p>
                 <p aria-live="polite" className="field-hint">
@@ -950,7 +906,6 @@ export function HabitatCoordinatesSection({
                 ) : null}
               </>
             )}
-          </section>
         </RecordEditorWorkspace>
 
         {feedback ? (

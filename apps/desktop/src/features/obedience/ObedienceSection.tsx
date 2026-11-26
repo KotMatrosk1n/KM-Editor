@@ -10,6 +10,7 @@ import { EditorSessionBar, EditorSessionBarActions } from '../../components/Edit
 import { FocusedEditorWorkspace } from '../../components/FocusedEditorWorkspace';
 import { WorkflowPanelOutputSections, type WorkflowPanelOutput } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization';
+import '../../components/editorRecordTable.css';
 import './ObedienceSection.css';
 
 type Props = {
@@ -76,21 +77,36 @@ export function ObedienceSection({ workflow, session, isEditing, isEditStarting,
         </button>
         <span className="draft-action-summary">{t(dirty ? 'obedience.draft' : pending ? 'obedience.staged' : 'obedience.clean')}</span>
       </EditorSessionBarActions> : null}
-      <div className="obedience-grid editor-property-ledger">
-        <div className="obedience-ledger-header context-help-heading">
-          {t('obedience.level')}
-          <ContextHelp label={t('obedience.level')}>{t('obedience.help')}</ContextHelp>
-        </div>
-        <span id="obedience-help" hidden>{t('obedience.help')}</span>
-        {desired.map((value, index) => <label className="obedience-card" key={index}>
-          <span>{t('obedience.badges', { count: index })}</span>
-          <input type="text" inputMode="numeric" value={value} disabled={!canEdit}
-            aria-label={t('obedience.limitLabel', { count: index })} aria-describedby="obedience-help"
-            aria-invalid={!Number.isInteger(values[index]) || values[index] < 1 || values[index] > 100 || undefined}
-            onChange={event => { const next = [...desired]; next[index] = event.target.value; setDraft(next); setFailed(false); }} />
-          <small>{t('obedience.vanilla', { level: defaultObedienceSelections[index] })}</small>
-        </label>)}
-      </div>
+      <span id="obedience-help" hidden>{t('obedience.help')}</span>
+      <table className="editor-record-table obedience-table" aria-label={t('obedience.title')}>
+        <thead><tr>
+          <th scope="col">{translateLiteral('Badges')}</th>
+          <th scope="col">
+            <span className="context-help-heading">
+              {t('obedience.level')}
+              <ContextHelp label={t('obedience.level')}>{t('obedience.help')}</ContextHelp>
+            </span>
+          </th>
+          <th scope="col">{translateLiteral('Vanilla')}</th>
+        </tr></thead>
+        <tbody>
+          {desired.map((value, index) => (
+            <tr key={index}>
+              <th scope="row">{t('obedience.badges', { count: index })}</th>
+              <td><input type="text" inputMode="numeric" value={value} disabled={!canEdit}
+                aria-label={t('obedience.limitLabel', { count: index })} aria-describedby="obedience-help"
+                aria-invalid={!Number.isInteger(values[index]) || values[index] < 1 || values[index] > 100 || undefined}
+                onChange={event => {
+                  const next = [...desired];
+                  next[index] = event.target.value;
+                  setDraft(next);
+                  setFailed(false);
+                }} /></td>
+              <td>{defaultObedienceSelections[index]}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />
   </FocusedEditorWorkspace>;

@@ -1,7 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import { EditorRecordTable } from '../../components/EditorRecordTable';
+import { EditorDetailGroup, EditorDetailValue } from '../../components/EditorRecordDetails';
+import { EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { ContextHelp } from '../../components/ContextHelp';
-import { ArrowLeftRight, Layers3, ShieldCheck } from 'lucide-react';
+import { ArrowLeftRight, ShieldCheck } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { EditSession } from '../../bridge/contracts';
 import type {
@@ -40,7 +43,7 @@ export function TrainerPoolsSection({
   onStageSwap,
   workflow
 }: TrainerPoolsSectionProps) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const [source, setSource] = useState<PoolMemberSelection | null>(null);
   const [destination, setDestination] = useState<PoolMemberSelection | null>(null);
   const [actionFeedback, setActionFeedback] = useState<
@@ -172,20 +175,11 @@ export function TrainerPoolsSection({
           <span className="status-badge ready">{t('trainerPools.fixedCountBadge')}</span>
           <ContextHelp label={t('trainerPools.title')}>{t('trainerPools.description')}</ContextHelp>
         </div>
-        <FocusedEditorMetrics>
-          <Metric label={t('trainerPools.metrics.logicalPools')} value={String(workflow.stats.logicalPoolCount)} />
-          <Metric label={t('trainerPools.metrics.physicalMirrors')} value={String(workflow.stats.physicalMirrorCount)} />
-          <Metric label={t('trainerPools.metrics.members')} value={String(workflow.stats.memberReferenceCount)} />
-          <Metric label={t('trainerPools.metrics.dormantMirrors')} value={String(workflow.stats.dormantPhysicalMirrorCount)} />
-        </FocusedEditorMetrics>
-      </section>
-
-      <section aria-labelledby="trainer-pools-swap-heading" className="panel wide-panel">
-        <div className="panel-heading">
-          <Layers3 aria-hidden="true" size={18} />
-          <h2 id="trainer-pools-swap-heading">{t('trainerPools.swap.title')}</h2>
-          <ContextHelp label={t('trainerPools.swap.title')}>{t('trainerPools.swap.preservation')}</ContextHelp>
-        </div>
+        <RecordEditorWorkspace id="trainer-pools" className="trainer-pools-record-editor" initialSection="swap">
+          <EditorWorkspaceSection id="swap" label={t('trainerPools.swap.title')}>
+            <div className="editor-record-context">
+              <ContextHelp label={t('trainerPools.swap.title')}>{t('trainerPools.swap.preservation')}</ContextHelp>
+            </div>
         <div className="trainer-pools-selection-grid">
           <PoolSelection
             destination="source"
@@ -252,6 +246,29 @@ export function TrainerPoolsSection({
               : t('trainerPools.swap.stage')}
           </button>
         </div>
+          </EditorWorkspaceSection>
+          <EditorWorkspaceSection id="details" label={translateLiteral('Details')}>
+          <FocusedEditorMetrics>
+          <Metric label={t('trainerPools.metrics.logicalPools')} value={String(workflow.stats.logicalPoolCount)} />
+          <Metric label={t('trainerPools.metrics.physicalMirrors')} value={String(workflow.stats.physicalMirrorCount)} />
+          <Metric label={t('trainerPools.metrics.members')} value={String(workflow.stats.memberReferenceCount)} />
+          <Metric label={t('trainerPools.metrics.dormantMirrors')} value={String(workflow.stats.dormantPhysicalMirrorCount)} />
+          </FocusedEditorMetrics>
+            <div className="editor-task-groups">
+              {([{ pool: sourcePool, member: sourceMember, key: 'source' },
+                { pool: destinationPool, member: destinationMember, key: 'destination' }] as const).map(({ pool, member, key }) => pool && member ?
+                <EditorDetailGroup key={key} label={t(`trainerPools.swap.${key}`)}>
+                  <dl className="editor-detail-list">
+                    <EditorDetailValue label={t('trainerPools.swap.pool')}>{pool.displayLabel}</EditorDetailValue>
+                    <EditorDetailValue label={t('trainerPools.swap.trainer')}>{member.displayName}</EditorDetailValue>
+                    <EditorDetailValue label={translateLiteral('Trainer ID')} dataValue>{member.rawTrainerId}</EditorDetailValue>
+                    <EditorDetailValue label={translateLiteral('Roster ID')} dataValue>{member.rawRosterId}</EditorDetailValue>
+                    <EditorDetailValue label={translateLiteral('Physical tables')} dataValue path>{pool.physicalTableIds.join(', ')}</EditorDetailValue>
+                  </dl>
+                </EditorDetailGroup> : null)}
+            </div>
+          </EditorWorkspaceSection>
+        </RecordEditorWorkspace>
       </section>
 
       <DiagnosticsSection diagnostics={workflow.diagnostics} />
@@ -276,11 +293,10 @@ function PoolSelection({
   onChange: (selection: PoolMemberSelection | null) => void;
   selection: PoolMemberSelection | null;
 }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const pools = [...groups.story, ...groups.infinity];
   const pool = findPool(pools, selection?.logicalPoolId ?? null);
   const poolSelectId = `trainer-pools-${destination}-pool`;
-  const memberSelectId = `trainer-pools-${destination}-member`;
 
   return (
     <fieldset className="trainer-pools-selection-card" disabled={disabled}>
@@ -332,30 +348,18 @@ function PoolSelection({
         value={selection?.logicalPoolId ?? ''}
       />
 
-      <label htmlFor={memberSelectId}>{t('trainerPools.swap.trainer')}</label>
-      <SearchableOptionInput
-        ariaLabel={t('trainerPools.swap.trainer')}
-        data-km-source-site="trainer-pools-member"
-        disabled={disabled || !pool}
-        emptyOptionLabel={t('trainerPools.swap.chooseTrainer')}
-        id={memberSelectId}
-        isFiniteCatalog
-        localizeOptions={false}
-        onChange={(value) =>
-          onChange(
-            pool
-              ? { logicalPoolId: pool.logicalPoolId, rawTrainerId: value }
-              : null
-          )
-        }
-        options={(pool?.members ?? []).map((member) => ({
-          label: `${member.displayName} · ${t('trainerPools.swap.rank', {
-            rank: member.storedRank
-          })} · ${t('trainerPools.swap.teamSize', { count: member.teamSize })}`,
-          value: member.rawTrainerId
-        }))}
-        value={selection?.rawTrainerId ?? ''}
-      />
+      {pool ? <div className="editor-slot-browser">
+        <EditorRecordTable label={`${label} · ${t('trainerPools.swap.trainer')}`}
+          identityLabel={t('trainerPools.swap.trainer')} rows={pool.members}
+          identity={member => member.displayName} rowId={member => member.rawTrainerId}
+          selection={selection?.rawTrainerId} disabled={disabled}
+          onSelect={member => onChange({ logicalPoolId: pool.logicalPoolId, rawTrainerId: member.rawTrainerId })}
+          columns={[
+            { id: 'rank', label: translateLiteral('Rank'), numeric: true, value: member => member.storedRank },
+            { id: 'team', label: translateLiteral('Team'), numeric: true, value: member => member.teamSize },
+            { id: 'weight', label: translateLiteral('Weight'), numeric: true, value: member => member.weight },
+          ]} />
+      </div> : null}
       {pool ? (
         <p className="field-hint">
           {t('trainerPools.swap.poolDetails', {

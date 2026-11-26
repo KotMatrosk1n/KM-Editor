@@ -40,12 +40,21 @@ export function PlaWildWorkspace({ sessionKey, kind, page, selected, query, offs
   const status = (record: PlaRecord) => translateLiteral(hasDraft(record) ? 'Draft' : pendingIds.has(record.id) ? 'Pending changes'
     : record.readOnlyFields.length ? 'Read-only' : 'Editable');
   const groups = isSpawn ? records.map(record => ({ value: record.id, label: record.metadata.pokemon ?? '', area: record.metadata.area, table: record.metadata.table })) : page?.groups ?? [];
-  const fieldGroups = [
-    { key: 'pokemon', title: translateLiteral('Pokemon'), fields: fields.filter(field => ['species', 'form', 'wildMin', 'wildMax', 'wildWeight'].includes(field.key)) },
-    { key: 'traits', title: t('pla.wild.traits'), fields: fields.filter(field => field.key.startsWith('effort') || field.key === 'perfectIvs') },
-    { key: 'eligibility', title: t('pla.wild.eligibility'), fields: fields.filter(field => field.kind === 'decimal') },
-    { key: 'counts', title: t('pla.kind.spawns'), fields: fields.filter(field => field.key.startsWith('spawn')) }
+  const groupsFor = (record: PlaRecord) => [
+    { key: 'pokemon', title: translateLiteral('Pokemon'), help: t('pla.wild.levelHelp', { min: record.metadata.defaultMin, max: record.metadata.defaultMax }),
+      fields: fields.filter(field => ['species', 'form', 'wildMin', 'wildMax', 'wildWeight'].includes(field.key)) },
+    { key: 'traits', title: t('pla.wild.traits'), help: t('pla.wild.traitHelp'),
+      fields: fields.filter(field => field.key.startsWith('effort') || field.key === 'perfectIvs') },
+    { key: 'eligibility', title: t('pla.wild.eligibility'), help: t('pla.wild.multiplierHelp'), fields: fields.filter(field => field.kind === 'decimal') },
+    { key: 'counts', title: t('pla.kind.spawns'), help: t('pla.wild.spawnHelp'), fields: fields.filter(field => field.key.startsWith('spawn')) }
   ].filter(group => group.fields.length);
+  const levels = (record: PlaRecord) => {
+    const { wildMin, wildMax } = valuesFor(record);
+    const min = wildMin === '0' ? record.metadata.defaultMin : wildMin;
+    const max = wildMax === '0' ? record.metadata.defaultMax : wildMax;
+    if (!min || !max) return '—';
+    return min === max ? min : `${min}–${max}`;
+  };
   const tabs = ['encounters', 'spawns'] as const;
   return <section className="panel wide-panel pla-wild-editor" aria-labelledby="pla-wild-heading">
     <div className="panel-heading"><Trees size={18} aria-hidden="true" /><h2 id="pla-wild-heading">{title ?? translateLiteral('Wild Encounters')}</h2>{refresh}</div>
@@ -92,50 +101,58 @@ export function PlaWildWorkspace({ sessionKey, kind, page, selected, query, offs
       </EditorWorkspaceHeader>
       {selected ? <>
         <EditorWorkspaceHeader afterBrowser>
-          <EditorRecordHeading name={plaAreaLabel(t, selected.metadata.area)} id={selected.id} />
+          <EditorRecordHeading name={plaAreaLabel(t, selected.metadata.area)} id={selected.metadata.table ?? selected.id} />
         </EditorWorkspaceHeader>
         <EditorWorkspaceSection id="details" label={t('editorSections.details')}>
-          <div className="pla-wild-help"><ContextHelp label={translateLiteral('Encounter slots')}>{t('pla.wild.notice')}</ContextHelp></div>
+          <ContextHelp label={translateLiteral('Encounter slots')}>{t('pla.wild.notice')}</ContextHelp>
           <dl className="item-provenance-list">
             <div><dt>{translateLiteral('Location')}</dt><dd data-localization-ignore="true">{plaAreaLabel(t, selected.metadata.area)}</dd></div>
-            <div><dt>{translateLiteral('ID')}</dt><dd>{selected.metadata.table}</dd></div>
+            <div><dt>{translateLiteral('ID')}</dt><dd>{selected.id}</dd></div>
+            <div><dt>{translateLiteral('Table')}</dt><dd>{selected.metadata.table}</dd></div>
             {!isSpawn ? <><div><dt>{t('pla.wild.profile')}</dt><dd>{profile(selected)}</dd></div>
               <div><dt>{t('pla.wild.shared')}</dt><dd>{selected.metadata.consumers}</dd></div></> : null}
           </dl>
+          {selected.relatedRecords.length ? <details><summary>{t('pla.wild.references')} ({selected.relatedRecords.length})</summary>
+            <ul className="pla-wild-references">
+              {selected.relatedRecords.map(related => <li key={related.id} data-localization-ignore="true">{related.label}{related.label !== related.id ? ` (${related.id})` : ''}</li>)}
+            </ul>
+          </details> : null}
         </EditorWorkspaceSection>
         <EditorWorkspaceSection id="data" label={isSpawn ? t('pla.kind.spawns') : translateLiteral('Encounter slots')} modified={hasDraft(selected)}>
-          {!isSpawn ? <div className="encounter-edit-form">
-            {clipboard?.content}
-            <div className="pla-wild-slot-list" aria-label={translateLiteral('Encounter slots')}>
-              {records.map(record => <button type="button" key={record.id} className="pla-wild-slot" aria-pressed={selected.id === record.id} {...clipboard?.bind(record.id)}
-                aria-label={translateLiteral('Slot') + ' ' + record.metadata.slot + ': ' + name(record)} onClick={() => onSelect(record.id)}>
-                {renderPokemon?.(valuesFor(record), name(record), page?.pokemonSpriteNames[valuesFor(record).species], 'trainer-party-sprite')}
-                <span className="pla-wild-slot-index">{record.metadata.slot}</span>
-                <strong data-localization-ignore="true">{name(record)}</strong>
-                <span>{profile(record)}</span><span>{status(record)}</span>
-              </button>)}
-            </div>
-          </div> : null}
-          <div className="encounter-edit-form">
-            {selected.readOnlyFields.length ? <p className="field-note">{t('pla.wild.protected')}</p> : null}
-            {!isSpawn ? <>
-              <p className="field-note">{t('pla.wild.levelHelp', { min: selected.metadata.defaultMin, max: selected.metadata.defaultMax })}</p>
-              <p className="field-note">{t('pla.wild.traitHelp')}</p>
+          <div className={isSpawn ? undefined : 'raid-slot-workspace'}>
+            {!isSpawn ? <section className="pla-wild-slots">
+              <div className="editor-record-context"><strong>{translateLiteral('Encounter slots')} ({records.length})</strong>{clipboard?.content}</div>
+              <div className="editor-slot-browser"><table className="editor-record-table" aria-label={translateLiteral('Encounter slots')}>
+                <thead><tr><th scope="col">{translateLiteral('Slot')}</th><th scope="col">{translateLiteral('Level')}</th>
+                  <th scope="col" data-numeric="true">{t('pla.field.wildWeight')}</th><th scope="col">{translateLiteral('Status')}</th></tr></thead>
+                <tbody>{records.map(record => <tr key={record.id} data-selected={selected.id === record.id} onClick={() => onSelect(record.id)}>
+                  <th scope="row"><button type="button" className="editor-record-table-select" aria-pressed={selected.id === record.id} {...clipboard?.bind(record.id)}
+                    aria-label={translateLiteral('Slot') + ' ' + record.metadata.slot + ': ' + name(record)} onClick={event => { event.stopPropagation(); onSelect(record.id); }}>
+                    <span>{record.metadata.slot}</span>
+                    {renderPokemon?.(valuesFor(record), name(record), page?.pokemonSpriteNames[valuesFor(record).species], 'slot-tab-sprite')}
+                    <span data-localization-ignore="true">{name(record)}<small className="pla-wild-profile">{profile(record)}</small></span>
+                  </button></th>
+                  <td>{levels(record)}</td><td data-numeric="true">{valuesFor(record).wildWeight}</td><td>{status(record)}</td>
+                </tr>)}</tbody>
+              </table></div>
+            </section> : null}
+            <div className="pla-wild-inspector">
+              {!isSpawn ? <div className="editor-record-context">
+                <strong data-localization-ignore="true">{name(selected)}</strong><span className="muted">{translateLiteral('Slot')} {selected.metadata.slot}</span>
+              </div> : null}
+              {selected.readOnlyFields.length ? <p className="field-note">{t('pla.wild.protected')}</p> : null}
               {selected.metadata.condition === 'progression' ? <p className="field-note">{t('pla.wild.condition')}</p> : null}
-            </> : <p className="field-note">{t('pla.wild.spawnHelp')}</p>}
-            <div className="editable-field-groups">{fieldGroups.map(group =>
-              <fieldset className="editable-field-group" key={group.key}><legend>{group.title}</legend>
-                {group.key === 'eligibility' ? <p className="field-note">{t('pla.wild.multiplierHelp')}</p> : null}
-                <div className="editable-field-grid">{group.fields.map(field => <div className="editable-field" key={field.key}>
-                  <FieldLabel htmlFor={'pla-field-' + field.key} label={fieldLabel(field)} help={plaFieldHelp(t, kind, field, fieldLabel(field))} />
-                  <div className="editable-field-control">{renderInput(field)}</div>
-                  {field.kind === 'decimal' && values[field.key] === '-1' ? <span className="field-note">{values.species === selected.values.species && values.form === selected.values.form
-                    ? t('pla.wild.inherited', { value: selected.metadata['default.' + field.key] }) : t('pla.wild.inheritedPending')}</span> : null}
-                </div>)}</div>
-              </fieldset>)}</div>
-            {selected.relatedRecords.length ? <details><summary>{t('pla.wild.references')}</summary><ul className="pla-wild-references">
-              {selected.relatedRecords.map(related => <li key={related.id} data-localization-ignore="true">{related.label}{related.label !== related.id ? ` (${related.id})` : ''}</li>)}
-            </ul></details> : null}
+              <div className="editor-task-groups">{groupsFor(selected).map(group =>
+                <fieldset className="editable-field-group" key={group.key}>
+                  <legend><span className="editor-task-field-name">{group.title}<ContextHelp label={group.title}>{group.help}</ContextHelp></span></legend>
+                  <div className="pokemon-instance-field-list">{group.fields.map(field => <div className="editable-field-control" key={field.key}>
+                    <FieldLabel htmlFor={'pla-field-' + field.key} label={fieldLabel(field)} help={plaFieldHelp(t, kind, field, fieldLabel(field))} />
+                    {renderInput(field)}
+                    {field.kind === 'decimal' && values[field.key] === '-1' ? <small className="field-note">{values.species === selected.values.species && values.form === selected.values.form
+                      ? t('pla.wild.inherited', { value: selected.metadata['default.' + field.key] }) : t('pla.wild.inheritedPending')}</small> : null}
+                  </div>)}</div>
+                </fieldset>)}</div>
+            </div>
           </div>
         </EditorWorkspaceSection>
       </> : <p className="empty-copy">{translateLiteral('No results')}</p>}

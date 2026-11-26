@@ -8,6 +8,7 @@ import type { ProjectPaths } from '../../bridge/contracts';
 import { LoadingProgress } from '../../components/LoadingProgress';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditorDiagnostics';
+import { EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { ContextHelp } from '../../components/ContextHelp';
 import { useLocalization } from '../../localization';
 import { closeSoundCatalog, loadSoundCatalog, loadSoundMedia, soundRequest, type SoundEntry } from './soundStudioBridge';
@@ -20,7 +21,7 @@ const volumeKey = 'km-editor.sound-studio.volume';
 function readVolume() { try { const value = Number(localStorage.getItem(volumeKey) ?? '0.5'); return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0.5; } catch { return 0.5; } }
 function time(seconds: number) { return `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`; }
 export default function SoundStudioSection({ paths, catalogRevision = '' }: { paths: ProjectPaths; catalogRevision?: string }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const [catalog, setCatalog] = useState<SoundEntry[]>([]), [selected, setSelected] = useState<SoundEntry | null>(null);
   const [category, setCategory] = useState('all'), [query, setQuery] = useState(''), [everywhere, setEverywhere] = useState(false), [kind, setKind] = useState('sample');
   const [loading, setLoading] = useState(true), [progress, setProgress] = useState([0, 0]), [revision, setRevision] = useState(0);
@@ -78,12 +79,17 @@ export default function SoundStudioSection({ paths, catalogRevision = '' }: { pa
       <nav className="sound-studio__categories" aria-label={t('soundStudio.categories')}>
         {categories.map(value => <button className="editor-section-choice" type="button" key={value} aria-pressed={value === category && !everywhere} onClick={() => { setCategory(value); setEverywhere(false); }}><span>{t(`soundStudio.category.${value}`)}</span><span>{counts[value] ?? 0}</span></button>)}
       </nav>
-      <div className="sound-studio__browser">
+      <div className="sound-studio__toolbar">
         <input id="sound-search" type="search" aria-label={t('soundStudio.search')} value={query} onChange={event => setQuery(event.target.value)} placeholder={t('soundStudio.searchHint')} />
         <div className="sound-studio__filters">
           <SearchableOptionInput id="sound-entry-type" ariaLabel={t('soundStudio.entryType')} disabled={false} value={kind} onChange={setKind} options={['sample', 'event', 'all'].map(value => ({ value, label: t(`soundStudio.kind.${value}`) }))} />
           <label><input type="checkbox" checked={everywhere} onChange={event => setEverywhere(event.target.checked)} />{t('soundStudio.everywhere')}</label>
           <small>{t('soundStudio.results', { count: filtered.length })}</small>
+        </div>
+      </div>
+      <div className="sound-studio__browser">
+        <div className="sound-studio__catalog-heading" aria-hidden="true">
+          <span>{translateLiteral('Name')}</span><span>{t('soundStudio.format')}</span><span>{translateLiteral('Status')}</span>
         </div>
         <div ref={scroll} className="sound-studio__catalog" role="listbox" tabIndex={0} aria-label={t('soundStudio.catalog')}
           aria-activedescendant={selected && virtual.getVirtualItems().some(row => filtered[row.index]?.id === selected.id) ? `sound-entry-${selected.id}` : undefined}
@@ -92,14 +98,13 @@ export default function SoundStudioSection({ paths, catalogRevision = '' }: { pa
             setSelected(filtered[next]); virtual.scrollToIndex(next); }}>
           <div style={{ height: virtual.getTotalSize(), position: 'relative' }}>{virtual.getVirtualItems().map(row => { const entry = filtered[row.index]; return <div key={entry.id} id={`sound-entry-${entry.id}`} role="option" aria-selected={selected?.id === entry.id}
             className="sound-studio__entry" style={{ position: 'absolute', width: '100%', height: row.size, transform: `translateY(${row.start}px)` }} onClick={() => setSelected(entry)}>
-            <strong title={entry.name}>{entry.name}</strong><small>{entry.codec || t(`soundStudio.kind.${entry.kind === 'event' ? 'event' : 'all'}`)} · {t(`soundStudio.status.${entry.status}`)}</small></div>; })}</div>
+            <strong title={entry.name}>{entry.name}</strong><small>{entry.codec || t(`soundStudio.kind.${entry.kind === 'event' ? 'event' : 'all'}`)}</small>
+            <small>{t(`soundStudio.status.${entry.status}`)}</small></div>; })}</div>
           {!loading && filtered.length === 0 ? <p role="status">{t(catalog.length ? 'soundStudio.noResults' : 'soundStudio.empty')}</p> : null}
         </div>
       </div>
       <div className="sound-studio__player">
         <div className="sound-studio__now"><small>{selected ? t(`soundStudio.category.${selected.category}`) : t('soundStudio.title')}</small><h3>{selected?.name ?? t('soundStudio.select')}</h3></div>
-        <SoundAnalysis player={player} enabled={visualizer} muted={muted} />
-        <label className="sound-studio__visualizer-toggle"><input type="checkbox" checked={visualizer} onChange={event => setVisualizer(event.target.checked)} />{t('soundStudio.visualizer')}</label>
         {preparing ? <LoadingProgress operationKey={selected?.id} className="is-compact" label={t('soundStudio.preparing')} /> : null}
         {selected && selected.status !== 'sample' ? <p role="status">{t(`soundStudio.explain.${selected.status}`)}</p> : null}
         <div className="sound-studio__transport">
@@ -111,11 +116,30 @@ export default function SoundStudioSection({ paths, catalogRevision = '' }: { pa
           <div className="sound-studio__volume"><button type="button" aria-pressed={muted} aria-label={t('soundStudio.mute')} onClick={() => setMuted(value => !value)}>{muted ? <VolumeX aria-hidden="true" /> : <Volume2 aria-hidden="true" />}</button>
             <label htmlFor="sound-volume">{t('soundStudio.volume')} {Math.round(volume * 100)}%</label><input id="sound-volume" type="range" min={0} max={1} step={0.01} value={volume} onChange={event => setVolume(Number(event.target.value))} /></div>
         </div>
-        {selected ? <details className="sound-studio__details"><summary>{t('soundStudio.details')}</summary><dl>
-          <dt>{t('soundStudio.identifier')}</dt><dd>{selected.identifier}</dd><dt>{t('soundStudio.bank')}</dt><dd>{selected.bank}</dd>
-          <dt>{t('soundStudio.format')}</dt><dd>{selected.codec || t('soundStudio.unknown')} · {info?.rate ?? selected.sampleRate} Hz · {info?.channels ?? selected.channels} {t('soundStudio.channels')}</dd>
-          <dt>{t('soundStudio.loop')}</dt><dd>{info && info.loopEnd > info.loopStart ? `${time(info.loopStart / info.rate)} → ${time(info.loopEnd / info.rate)}` : t('soundStudio.noLoop')}</dd>
-        </dl><p>{t('soundStudio.meterHelp')}</p>{(info?.channels ?? 0) > 2 ? <p>{t('soundStudio.multichannel')}</p> : null}<p>{t('soundStudio.eventHelp')}</p><a href="https://github.com/KotMatrosk1n/KM-Editor/blob/master/apps/desktop/public/audio-decoder/NOTICE.txt" target="_blank" rel="noreferrer">{t('soundStudio.licenses')}</a></details> : null}
+        {selected ? (
+          <RecordEditorWorkspace id="sound-studio" className="sound-studio__inspector" initialSection="analysis">
+            <EditorWorkspaceSection id="analysis" label={t('soundStudio.visualizer')}>
+              <ContextHelp label={t('soundStudio.visualizer')}>{t('soundStudio.meterHelp')}</ContextHelp>
+        <SoundAnalysis player={player} enabled={visualizer} muted={muted} />
+        <label className="sound-studio__visualizer-toggle"><input type="checkbox" checked={visualizer} onChange={event => setVisualizer(event.target.checked)} />{t('soundStudio.visualizer')}</label>
+              {(info?.channels ?? 0) > 2 ? <p>{t('soundStudio.multichannel')}</p> : null}
+            </EditorWorkspaceSection>
+            <EditorWorkspaceSection id="source" label={t('soundStudio.details')}>
+              <div className="sound-studio__details"><dl>
+                <dt>{t('soundStudio.identifier')}</dt><dd>{selected.identifier}</dd>
+                <dt>{t('soundStudio.bank')}</dt><dd>{selected.bank}</dd>
+                <dt>{t('soundStudio.format')}</dt>
+                <dd>{selected.codec || t('soundStudio.unknown')} · {info?.rate ?? selected.sampleRate} Hz · {info?.channels ?? selected.channels} {t('soundStudio.channels')}</dd>
+                <dt>{t('soundStudio.loop')}</dt>
+                <dd>{info && info.loopEnd > info.loopStart ? `${time(info.loopStart / info.rate)} → ${time(info.loopEnd / info.rate)}` : t('soundStudio.noLoop')}</dd>
+              </dl>
+              <ContextHelp label={t('soundStudio.details')}>{t('soundStudio.eventHelp')}</ContextHelp>
+              <a href="https://github.com/KotMatrosk1n/KM-Editor/blob/master/apps/desktop/public/audio-decoder/NOTICE.txt"
+                target="_blank" rel="noreferrer">{t('soundStudio.licenses')}</a>
+              </div>
+            </EditorWorkspaceSection>
+          </RecordEditorWorkspace>
+        ) : null}
       </div>
     </div>
   </section>;

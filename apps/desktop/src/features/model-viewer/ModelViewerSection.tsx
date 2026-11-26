@@ -11,6 +11,7 @@ import { LoadingProgress } from '../../components/LoadingProgress';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useModalDialog } from '../../components/useModalDialog';
 import { ContextHelp } from '../../components/ContextHelp';
+import { EditorRecordTable } from '../../components/EditorRecordTable';
 import { useLocalization } from '../../localization';
 import { HeaderMemoryUsage } from '../settings/ProcessMemoryPanel';
 import { modelError, useModelViewport, type ModelBackground, type ModelViewOptions } from './useModelViewport';
@@ -29,6 +30,10 @@ const catalogSchema = z.array(z.object({
   category: z.enum(['pokemon', 'trainers', 'npcs', 'objects', 'environment', 'other']).default('pokemon'), shiny: z.boolean().default(false)
 })).max(8192);
 type Entry = z.infer<typeof catalogSchema>[number];
+function modelFamily(entry: Entry) {
+  return entry.species > 0 ? `${entry.category}:${entry.species}` : entry.id;
+}
+
 const backgroundKey = 'km-editor.model-viewer.background';
 const defaultBackgroundColor = '#343b44';
 const backgroundSchema = z.object({ color: z.string().regex(/^#[0-9a-f]{6}$/i), grid: z.boolean() });
@@ -43,7 +48,7 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
   onStageAsset: (model: string, change: AssetChange | null, restore?: boolean) => Promise<boolean>;
   onDirtyChange: (section: 'modelViewer', dirty: boolean) => void;
 }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const [catalog, setCatalog] = useState<Entry[]>([]);
   const [selected, setSelected] = useState('');
   const [animation, setAnimation] = useState<string | null>(null);
@@ -172,8 +177,10 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
     for (const entry of catalog) {
       if (category !== 'all' && entry.category !== category) continue;
       if (search && !`${entry.name} ${entry.species || ''} ${entry.id}`.toLocaleLowerCase().includes(search)) continue;
-      const key = entry.species > 0 ? `${entry.category}:${entry.species}` : entry.id;
-      const group = results.get(key) ?? []; group.push(entry); results.set(key, group);
+      const key = modelFamily(entry);
+      const group = results.get(key) ?? [];
+      group.push(entry);
+      results.set(key, group);
     }
     return [...results.values()];
   }, [catalog, category, query]);
@@ -181,7 +188,15 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
   const message = error === 'KM-MODEL-GPU-UNAVAILABLE' ? 'modelViewer.gpuError' : error === 'KM-MODEL-BUSY' ? 'modelViewer.busyError' : 'modelViewer.loadError';
   usePublishCommonEditorDiagnostics(restoreError ? [{ code: 'KM-MODEL-ASSET-EDIT-INVALID', domain: 'workflow.modelTextures', message: t('modelEditor.error'), severity: 'error' }] : error ? [{ code: error, domain: 'workflow.modelViewer', message: t(message), severity: 'error' }] :
     (viewer.info?.warnings ?? []).map(warning => ({ code: 'KM-MODEL-PARTIAL', domain: 'workflow.modelViewer', message: t(`modelViewer.warning.${warning}`), severity: 'warning' })));
-  const select = (id: string) => { setTextureChanges([]); setAssetChanges(null); setSelected(id); setAnimation(null); };
+  const select = (id: string) => {
+    if (id === selected) return;
+    setTextureChanges([]);
+    setAssetChanges(null);
+    setSelected(id);
+    setAnimation(null);
+  };
+  const family = entry ? modelFamily(entry) : undefined;
+  const variants = useMemo(() => family ? catalog.filter(item => modelFamily(item) === family) : [], [catalog, family]);
   const restore = async () => {
     if (history.locked) return;
     history.lock(true);
@@ -225,16 +240,13 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
             </div>
           </div>
           <div className="model-viewer__catalog" aria-busy={loading}>
-            <div className="model-viewer__catalog-content">
-            {loading ? <LoadingProgress label={t('modelViewer.loading')} /> : groups.length === 0 ? <p role="status">{t('modelViewer.empty')}</p> :
-              groups.map(group => <details key={group[0].id} open={group.some(item => item.id === selected) || undefined}>
-                <summary data-localization-ignore="true">{group[0].species > 0 ? `#${group[0].species} ` : ''}{group[0].name} <span>({group.length})</span></summary>
-                {group.map(item => <button key={item.id} type="button" disabled={dirty || disabled} aria-pressed={item.id === selected} onClick={() => select(item.id)} title={item.id}>
-                  {item.species > 0 ? t('modelViewer.variant', { form: item.form, gender: item.gender }) : item.name}
-                  {item.shiny ? ` · ${t('modelViewer.shiny')}` : ''}
-                </button>)}
-              </details>)}
-            </div>
+            {loading ? <LoadingProgress label={t('modelViewer.loading')} /> :
+              <EditorRecordTable label={t('modelViewer.models', { count: catalog.length })}
+                identityLabel={translateLiteral('Model')} rows={groups} rowId={group => modelFamily(group[0])}
+                identity={([model]) => <span data-localization-ignore="true">{model.species > 0 ? `#${model.species} ` : ''}{model.name}</span>}
+                columns={[{ id: 'variants', label: t('modelViewer.variantCount'), numeric: true, value: group => group.length }]}
+                selection={family} disabled={dirty || disabled} empty={t('modelViewer.empty')}
+                onSelect={group => select(group.find(item => item.id === selected)?.id ?? group[0].id)} />}
           </div>
         </aside>
         <div className="model-viewer__stage">
@@ -250,7 +262,17 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
             {!editing ? <button type="button" className="primary-button model-viewer__edit" disabled={!selected || disabled} onClick={() => setEditing(true)}>{t('modelEditor.edit')}</button> : null}
             <button type="button" disabled={!viewer.info} onClick={() => void viewer.camera('reset')}>{t('modelViewer.resetCamera')}</button>
           </div>
-          <div className="model-viewer__background">
+          {!editing && variants.length > 1 ? <div className="model-viewer__variant">
+            <label htmlFor="model-variant">{translateLiteral('Model variant')}</label>
+            <SearchableOptionInput id="model-variant" ariaLabel={translateLiteral('Model variant')} disabled={dirty || disabled} isFiniteCatalog localizeOptions={false}
+              value={selected} onChange={select} options={variants.map(item => ({
+                value: item.id,
+                label: [t('modelViewer.variant', { form: item.form, gender: item.gender }), item.shiny ? t('modelViewer.shiny') : ''].filter(Boolean).join(' · '),
+              }))} />
+          </div> : null}
+          <details className="model-viewer__appearance">
+            <summary>{t('modelViewer.backgroundStyle')}</summary>
+            <div className="model-viewer__background">
             <label htmlFor="model-background-style">{t('modelViewer.backgroundStyle')}</label>
             <SearchableOptionInput id="model-background-style" ariaLabel={t('modelViewer.backgroundStyle')} disabled={false} isFiniteCatalog localizeOptions={false}
               value={background.grid ? 'grid' : 'solid'} onChange={value => setBackground(current => ({ ...current, grid: value === 'grid' }))}
@@ -259,7 +281,8 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
             <ViewerColorPicker color={background.color} onChange={color => setBackground(current => ({ ...current, color }))} />
             <button type="button" disabled={background.color.toLowerCase() === defaultBackgroundColor}
               onClick={() => setBackground(current => ({ ...current, color: defaultBackgroundColor }))}>{t('modelViewer.resetBackground')}</button>
-          </div>
+            </div>
+          </details>
           {viewer.loading && !editing ? <LoadingProgress className="is-compact" operationKey={selected}
             label={t('modelViewer.opening')} onCancel={!editing && !dirty ? () => select('') : undefined}
             cancelLabel={t('modelViewer.cancel')} /> : null}

@@ -6,6 +6,8 @@ import { type EditSession } from '../../bridge/contracts';
 import { type TrainerWhiteoutChange, type TrainerWhiteoutWorkflow } from '../../bridge/trainerWhiteoutContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { EditorSessionBar, EditorSessionBarActions } from '../../components/EditorSessionBar';
+import { EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
+import { EditorRecordTable } from '../../components/EditorRecordTable';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { FocusedEditorWorkspace } from '../../components/FocusedEditorWorkspace';
 import { WorkflowPanelOutputSections, type WorkflowPanelOutput } from '../../components/workflowPanels';
@@ -88,31 +90,31 @@ export function TrainerWhiteoutSection({ workflow, session, isEditing, isEditSta
           <X size={16} aria-hidden="true" /><span>{translateLiteral('Cancel')}</span></button>
         <span className="draft-action-summary">{t('trainerWhiteout.drafts', { count: changes.length })}</span>
       </EditorSessionBarActions> : null}
-      <div className="trainer-whiteout-toolbar">
+      <p className="trainer-whiteout-coverage">{t('trainerWhiteout.coverage', { editable: editable.length, total: trainers.length })}</p>
+      <RecordEditorWorkspace id="trainer-whiteout" className="trainer-whiteout-layout" initialSection="whiteout"
+        browserControls={<div className="trainer-whiteout-toolbar">
         <label className="trainer-whiteout-search"><Search size={16} aria-hidden="true" /><span className="sr-only">{t('trainerWhiteout.search')}</span>
           <input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder={t('trainerWhiteout.search')} /></label>
         <div className="trainer-whiteout-bulk">
           <button type="button" className="secondary-button" disabled={!canEdit || editable.length === 0} onClick={() => setAll(true)}>{t('trainerWhiteout.enableAll')}</button>
           <button type="button" className="secondary-button" disabled={!canEdit || editable.length === 0} onClick={() => setAll(false)}>{t('trainerWhiteout.disableAll')}</button>
         </div>
-      </div>
-      <p className="trainer-whiteout-coverage">{t('trainerWhiteout.coverage', { editable: editable.length, total: trainers.length })}</p>
-      <div className="trainer-whiteout-columns">
-        <div className="trainer-whiteout-table-scroll" tabIndex={0} role="region" aria-label={t('trainerWhiteout.trainers')}>
-          <table className="data-table trainer-whiteout-table"><thead><tr><th scope="col">ID</th><th scope="col">{t('trainerWhiteout.trainer')}</th><th scope="col">{t('trainerWhiteout.enabled')}</th></tr></thead>
-            <tbody>{visible.map(row => <tr key={row.trainerId} className={selected?.trainerId === row.trainerId ? 'selected-row' : undefined}
-              onClick={() => setSelectedId(row.trainerId)}>
-              <td>{row.trainerId}</td><td><button type="button" className="trainer-whiteout-row-button" aria-pressed={selected?.trainerId === row.trainerId}
-                data-localization-ignore="true">{row.name}</button></td>
-              <td><span>{stateLabel(value(row))}</span>{row.mixed && !pending.has(row.trainerId) && !(row.trainerId in drafts) ? <span className="status-pill status-pill-info">{t('trainerWhiteout.mixed')}</span> : null}{changed(row) ? <span className="status-pill status-pill-info">{t('trainerWhiteout.draft')}</span> : pending.has(row.trainerId) ? <span className="status-pill status-pill-info">{t('trainerWhiteout.staged')}</span> : null}</td>
-            </tr>)}</tbody>
-          </table>
-          {visible.length === 0 ? <p className="empty-state">{t('trainerWhiteout.noMatches')}</p> : null}
-        </div>
-        <section className="trainer-whiteout-detail" aria-labelledby="trainer-whiteout-detail-title">
-          {selected ? <>
-            <div className="trainer-whiteout-detail-heading"><div><span className="eyebrow">{t('trainerWhiteout.trainer')} {selected.trainerId}</span>
-              <h3 id="trainer-whiteout-detail-title" data-localization-ignore="true">{selected.name}</h3></div>
+      </div>}
+        browser={<EditorRecordTable label={t('trainerWhiteout.trainers')} identityLabel={t('trainerWhiteout.trainer')}
+          rows={visible} rowId={row => String(row.trainerId)} identity={row => <span data-localization-ignore="true">{row.name}</span>}
+          selection={String(selected?.trainerId)} onSelect={row => setSelectedId(row.trainerId)}
+          empty={t('trainerWhiteout.noMatches')}
+          columns={[
+            { id: 'id', label: 'ID', value: row => row.trainerId },
+            { id: 'enabled', label: t('trainerWhiteout.enabled'), value: row => stateLabel(value(row)) },
+            { id: 'status', label: translateLiteral('Status'), value: row => changed(row) ? t('trainerWhiteout.draft')
+              : pending.has(row.trainerId) ? t('trainerWhiteout.staged') : row.mixed ? t('trainerWhiteout.mixed') : null }
+          ]} />}>
+        {selected ? <>
+          <EditorWorkspaceHeader afterBrowser><EditorRecordHeading id={selected.trainerId} name={selected.name} /></EditorWorkspaceHeader>
+          <EditorWorkspaceSection id="whiteout" label={t('trainerWhiteout.enabled')} summary={stateLabel(value(selected))}>
+            <div className="trainer-whiteout-detail">
+              <div className="editor-record-context">
               <button type="button" className="secondary-button" disabled={!canEdit}
                 onClick={() => setValue(selected.trainerId, null)}>
                 <RotateCcw size={16} aria-hidden="true" /><span>{t('trainerWhiteout.reset')}</span></button></div>
@@ -127,9 +129,10 @@ export function TrainerWhiteoutSection({ workflow, session, isEditing, isEditSta
             {selected.mixed ? <p className="trainer-whiteout-notice">{t('trainerWhiteout.mixedHelp')}</p> : null}
             <dl className="trainer-whiteout-values"><div><dt>{t('trainerWhiteout.current')}</dt><dd>{stateLabel(selected.enabled)}</dd></div>
               <div><dt>{t('trainerWhiteout.vanilla')}</dt><dd>{stateLabel(selected.vanillaEnabled)}</dd></div></dl>
-          </> : <p id="trainer-whiteout-detail-title">{t('trainerWhiteout.noTrainers')}</p>}
-        </section>
-      </div>
+            </div>
+          </EditorWorkspaceSection>
+        </> : <p>{t('trainerWhiteout.noTrainers')}</p>}
+      </RecordEditorWorkspace>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />
   </FocusedEditorWorkspace>;

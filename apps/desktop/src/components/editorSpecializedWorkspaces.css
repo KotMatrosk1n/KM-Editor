@@ -133,7 +133,7 @@
   background: var(--color-surface-strong);
   border-radius: .3rem;
 }
-.workspace-content[data-editor-workspace] :is(.y-comm-setting, .poke-jobs-setting, .summary-stats-setting) {
+.workspace-content[data-editor-workspace] .summary-stats-setting {
   max-inline-size: 58rem;
   align-items: center;
   padding: .45rem .65rem;
@@ -485,33 +485,6 @@
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
   align-items: start;
 }
-.workspace-content[data-editor-workspace] .pla-wild-slot-list {
-  display: grid;
-  max-block-size: 14rem;
-  overflow: auto;
-  border: 1px solid var(--color-border);
-  border-radius: var(--property-radius);
-}
-.workspace-content[data-editor-workspace] .pla-wild-slot {
-  display: grid;
-  grid-template-columns: 2rem 2rem minmax(6rem, 1fr) minmax(4rem, 1fr) minmax(4rem, auto);
-  align-items: center;
-  gap: .2rem .5rem;
-  text-align: start;
-  color: var(--color-text);
-  background: var(--color-surface-muted);
-  border: 0;
-  border-block-end: 1px solid var(--property-divider);
-  padding: .3rem .55rem;
-  overflow-wrap: anywhere;
-}
-.workspace-content[data-editor-workspace] .pla-wild-slot .trainer-party-sprite { grid-column: 2; grid-row: 1; inline-size: 2rem; block-size: 2rem; }
-.workspace-content[data-editor-workspace] .pla-wild-slot-index { grid-column: 1; grid-row: 1; }
-.workspace-content[data-editor-workspace] .pla-wild-slot strong { grid-column: 3; }
-.workspace-content[data-editor-workspace] .pla-wild-slot:hover { background: var(--color-control-hover); }
-.workspace-content[data-editor-workspace] .pla-wild-slot[aria-pressed='true'] { background: var(--property-selected); box-shadow: inset 3px 0 var(--color-accent); }
-.workspace-content[data-editor-workspace] .pla-wild-slot:focus-visible { outline-offset: -2px; }
-
 .workspace-content[data-editor-workspace] .restoration-browser-toolbar {
   display: flex;
   align-items: end;
@@ -550,13 +523,6 @@
 }
 .workspace-content[data-editor-workspace] .randomizer-recovery-panel .randomizer-action-row { margin: 0; }
 .workspace-content[data-editor-workspace] .camera-control__overview p { margin: .2rem 0; }
-
-@container workspace (max-width: 35rem) {
-  .workspace-content[data-editor-workspace] .pla-wild-slot {
-    grid-template-columns: 1.5rem 1.75rem minmax(0, 1fr) minmax(0, .8fr);
-  }
-  .workspace-content[data-editor-workspace] .pla-wild-slot > span:last-child { grid-column: 3 / -1; }
-}
 
 @container workspace (max-width: 26rem) {
   .workspace-content[data-editor-workspace] .pla-data-group .editable-field-control { grid-template-columns: minmax(0, 1fr); }

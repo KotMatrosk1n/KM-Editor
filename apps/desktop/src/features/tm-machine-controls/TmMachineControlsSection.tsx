@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import { EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import {
   Eye,
   EyeOff,
@@ -160,17 +161,18 @@ export function TmMachineControlsSection({
         ) : null}
 
         {workflow ? (
-          <div className="tm-machine-controls-grid">
+          <RecordEditorWorkspace id="tm-machine-controls" className="tm-machine-controls-layout" initialSection={controlCards[0].control}>
             {controlCards.map((card) => {
               const state = workflow[card.control];
               const source = getTmMachineControlSource(workflow, card.control);
               const effectivePolicy = getEffectiveTmMachineControlPolicy(state);
               const CardIcon = card.icon;
               return (
+                <EditorWorkspaceSection id={card.control} key={card.control} label={t(card.titleKey)}
+                  summary={t(`tmMachineControls.policy.${effectivePolicy}`)}>
                 <article
                   aria-labelledby={`tm-machine-control-${card.control}-heading`}
                   className={`tm-machine-control-card tm-machine-control-card-${state.status}`}
-                  key={card.control}
                 >
                   <header className="tm-machine-control-card-heading">
                     <span className="tm-machine-control-icon" aria-hidden="true">
@@ -274,9 +276,10 @@ export function TmMachineControlsSection({
                     </dl>
                   </details>
                 </article>
+                </EditorWorkspaceSection>
               );
             })}
-          </div>
+          </RecordEditorWorkspace>
         ) : (
           <p className="empty-copy">{t('tmMachineControls.empty')}</p>
         )}

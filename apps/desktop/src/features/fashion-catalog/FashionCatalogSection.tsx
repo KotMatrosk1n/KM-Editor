@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { ContextHelp } from '../../components/ContextHelp';
-import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
+import { EditorRecordTable } from '../../components/EditorRecordTable';
+import { EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { ChevronLeft, ChevronRight, Palette, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { EditSession } from '../../bridge/contracts';
@@ -140,6 +141,7 @@ export function FashionCatalogSection({
   const [search, setSearch] = useCoalescedTextInputState();
   const [page, setPage] = useState(0);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+  const [fieldSectionRequest, setFieldSectionRequest] = useState<{ sectionId: string }>();
   const [selectedField, setSelectedField] = useState('itemId');
   const [draftValues, setDraftValues] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<
@@ -432,6 +434,7 @@ export function FashionCatalogSection({
       (row) => row.physicalRowId === target.row.physicalRowId
     );
 
+    setFieldSectionRequest({ sectionId: 'edit' });
     reviewFocusPendingRef.current = true;
     setCatalogFile(target.catalogFile);
     if (targetVisibleIndex >= 0) {
@@ -514,6 +517,7 @@ export function FashionCatalogSection({
           tabIndex={0}
         >
           <RecordEditorWorkspace id="fashionCatalog" className="fashion-catalog-browser-workspace"
+            initialSection="edit" activeSectionRequest={fieldSectionRequest}
             browserControls={<>
               <label className="field-label" htmlFor="fashion-catalog-search">
               {t('fashionCatalog.search.label')}
@@ -532,25 +536,14 @@ export function FashionCatalogSection({
               {t('fashionCatalog.search.results', { count: filteredRows.length })}
             </p>
             </>}
-            browser={<div className="fashion-catalog-row-list">
-              {visibleRows.length === 0 ? (
-                <p className="empty-copy">{t('fashionCatalog.search.noResults')}</p>
-              ) : visibleRows.map((row) => {
-                const subtitle = getRowSubtitle(row, presentation, translateLiteral);
-                return (
-                  <button
-                    aria-pressed={selectedRowId === row.physicalRowId}
-                    className={selectedRowId === row.physicalRowId ? 'selected' : ''}
-                    key={row.physicalRowId}
-                    onClick={() => setSelectedRowId(row.physicalRowId)}
-                    type="button"
-                  >
-                    <strong>{getRowTitle(row, presentation, catalogFile)}</strong>
-                    {subtitle ? <span>{subtitle}</span> : null}
-                  </button>
-                );
-              })}
-            </div>}
+            browser={<EditorRecordTable label={t('fashionCatalog.tabs.' + catalogFile)}
+              identityLabel={translateLiteral('Name')} rows={visibleRows} rowId={row => row.physicalRowId}
+              selection={selectedRowId ?? undefined} onSelect={row => setSelectedRowId(row.physicalRowId)}
+              identity={row => getRowTitle(row, presentation, catalogFile)}
+              columns={[
+                { id: 'description', label: t('editorSections.details'), value: row => getRowSubtitle(row, presentation, translateLiteral) },
+                { id: 'index', label: translateLiteral('Row'), numeric: true, value: row => row.physicalIndex + 1 },
+              ]} empty={t('fashionCatalog.search.noResults')} />}
             browserFooter={<div className="fashion-catalog-pagination">
               <button
                 aria-label={t('fashionCatalog.pagination.previous')}
@@ -570,40 +563,28 @@ export function FashionCatalogSection({
                 <ChevronRight aria-hidden="true" size={16} />
               </button>
             </div>}>
-            <div className="fashion-catalog-field-editor">
-            {selectedRow && field ? (
-              <>
-                <div className="fashion-catalog-selection-heading">
-                  <strong>{getRowTitle(selectedRow, presentation, catalogFile)}</strong>
-                  <span>{t('fashionCatalog.editor.rowNumber', {
-                    row: selectedRow.physicalIndex + 1
-                  })}</span>
-                </div>
+            {selectedRow && field ? (<>
+                <EditorWorkspaceHeader afterBrowser>
+                  <EditorRecordHeading name={getRowTitle(selectedRow, presentation, catalogFile)}
+                    id={t('fashionCatalog.editor.rowNumber', { row: selectedRow.physicalIndex + 1 })} />
+                </EditorWorkspaceHeader>
+                <EditorWorkspaceSection id="edit" label={translateLiteral('Properties')}>
+                  <div className="fashion-catalog-field-editor">
                 <div className="fashion-catalog-properties">
                   <div className="fashion-catalog-property">
-                    <label className="field-label" htmlFor="fashion-catalog-field">
-                      {t('fashionCatalog.editor.field')}
-                    </label>
-                    <SearchableOptionInput
-                      ariaLabel={t('fashionCatalog.editor.field')}
-                      data-km-source-site="fashion-catalog-field"
-                      disabled={false}
-                      id="fashion-catalog-field"
-                      isFiniteCatalog
-                      localizeOptions={false}
-                      onChange={setSelectedField}
-                      options={fields.map((candidate) => ({
-                        label: `${candidate.label}${
-                          candidate.readOnly ? ` - ${translateLiteral('Read-only')}` : ''
-                        }`,
-                        value: candidate.field
-                      }))}
-                      value={field.field}
-                    />
-
-                    <p className="field-hint">{t(field.hintKey)}</p>
+                    <EditorRecordTable label={t('fashionCatalog.editor.field')} identityLabel={t('fashionCatalog.editor.field')}
+                      rows={fields} rowId={candidate => candidate.field} identity={candidate => candidate.label}
+                      selection={field.field} onSelect={candidate => setSelectedField(candidate.field)}
+                      columns={[{ id: 'access', label: translateLiteral('Status'), value: candidate => {
+                        const key = createFashionCatalogDraftKey(catalogFile, selectedRow.physicalRowId, candidate.field);
+                        if (key in draftValues) return translateLiteral('Draft');
+                        return translateLiteral(candidate.readOnly ? 'Read-only' : 'Editable');
+                      } }]} />
                   </div>
                   <div className="fashion-catalog-property">
+                    <div className="context-help-heading"><h4>{field.label}</h4>
+                      <ContextHelp label={field.label}>{t(field.hintKey)}</ContextHelp>
+                    </div>
                     {field.readOnly ? (
                       <>
                         <label className="field-label" htmlFor="fashion-catalog-value">
@@ -733,6 +714,15 @@ export function FashionCatalogSection({
                     </button>
                   ) : null}
                 </div>
+                  </div>
+                </EditorWorkspaceSection>
+                <EditorWorkspaceSection id="source" label={t('editorSections.details')}>
+                  <dl className="editor-detail-list">
+                    <div><dt>{translateLiteral('Catalog')}</dt><dd>{t('fashionCatalog.tabs.' + catalogFile)}</dd></div>
+                    <div><dt>{translateLiteral('Row')}</dt><dd>{selectedRow.physicalIndex + 1}</dd></div>
+                    <div><dt>{translateLiteral('ID')}</dt><dd data-localization-ignore="true"><code>{selectedRow.physicalRowId}</code></dd></div>
+                  </dl>
+                </EditorWorkspaceSection>
               </>
             ) : (
               <>
@@ -771,7 +761,6 @@ export function FashionCatalogSection({
                 ) : null}
               </>
             )}
-          </div>
           </RecordEditorWorkspace>
         </div>
 

@@ -15,8 +15,11 @@
 .model-viewer__filter label { font-size: .82em; color: var(--color-text-muted); }
 .model-viewer__filter :is(input, .searchable-option-input) { width: 100%; min-width: 0; }
 .model-viewer__catalog { overflow: auto; max-height: clamp(9rem, 43vh, 34rem); overscroll-behavior: contain; }
-.model-viewer__catalog-content { width: max-content; min-width: 100%; }
-.model-viewer__catalog summary { white-space: nowrap; }
+.model-viewer__variant { display: grid; grid-template-columns: auto minmax(0, 22rem); gap: .4rem .75rem; align-items: center; }
+.model-viewer__variant > label { color: var(--color-text-muted); }
+.model-viewer__variant .searchable-option-input { min-width: 0; }
+.model-viewer__appearance > summary { cursor: pointer; padding: .3rem 0; }
+.model-viewer__appearance[open] > summary { margin-bottom: .4rem; }
 .model-viewer__background { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem .8rem; }
 .model-viewer__background .searchable-option-input { width: 12rem; max-width: 100%; }
 .model-viewer__color-picker { position: relative; }
@@ -59,10 +62,6 @@
 .model-viewer__grays { display: flex; justify-content: center; }
 .model-viewer__selected-color { align-self: center; width: 2.5rem; aspect-ratio: .866; border: 3px solid #ffffff70; border-radius: .6rem; }
 @media (max-width: 580px) { .model-viewer__palette { grid-template-columns: minmax(0, 1fr); width: min(22rem, calc(100vw - 1.5rem)); } }
-.model-viewer__catalog details { padding: .4rem 0; border-bottom: 1px solid var(--border-color, #5555); }
-.model-viewer__catalog summary { cursor: pointer; padding: .45rem; }
-.model-viewer__catalog button { display: block; margin: .35rem 0 .35rem 1rem; width: calc(100% - 1.5rem); text-align: start; }
-.model-viewer__catalog button[aria-pressed="true"] { outline: 2px solid currentColor; }
 .model-viewer__viewport { position: relative; width: 100%; height: clamp(16rem, 46vh, 42rem); background: #343b44; overflow: hidden; touch-action: none; overscroll-behavior: contain; display: grid; place-items: center; }
 .model-viewer__viewport p { padding: 1rem; color: #fff; }
 .model-viewer__identifier { overflow-wrap: anywhere; opacity: .8; }
@@ -212,10 +211,8 @@
 .model-viewer__catalog {
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  padding: 0 .3rem;
   background: var(--color-control);
 }
-.model-viewer__catalog details { padding-block: .1rem; }
-.model-viewer__catalog summary { padding: .3rem; font-size: .88em; }
-.model-viewer__catalog button { min-height: 1.8rem; padding: .25rem .4rem; font-size: .86em; }
+.model-viewer__catalog .editor-record-table { --editor-row-height: 36px; table-layout: fixed; }
+.model-viewer__catalog .editor-record-table th:first-child { width: 70%; }
 .model-viewer__viewport { border-radius: .5rem; }

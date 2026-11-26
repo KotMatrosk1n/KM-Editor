@@ -5,6 +5,8 @@ import type { EditSession, ProjectPaths } from '../../bridge/contracts';
 import type { RestorationProjectBridgeApi } from '../../bridge/restorationProjectBridge';
 import type { RestorationPreparation, RestorationSelection, RestorationWorkflow } from '../../bridge/restorationContracts';
 import { ContextHelp } from '../../components/ContextHelp';
+import { EditorRecordTable } from '../../components/EditorRecordTable';
+import { EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { EditorSessionBar, EditorSessionBarActions } from '../../components/EditorSessionBar';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { WorkflowPanelOutputSections, type WorkflowPanelOutput } from '../../components/workflowPanels';
@@ -31,9 +33,10 @@ type RestorationDraft = { enabled: boolean; updateAssets?: boolean; adoptExterna
 
 export function RestoreMissingPokemonSection({ workflow, paths, bridge, session, isEditing, isEditStarting, isStaging, isLoading,
   onStartEditSession, onCancelEditSession, onStage, onDirtyStateChange, onRefresh, panelOutput, desktopServices = defaultDesktopServices }: Props) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const projectKey = JSON.stringify([paths.selectedGame, paths.baseRomFsPath, paths.outputRootPath]);
   const [search, setSearch] = useState('');
+  const [selectedKey, setSelectedKey] = useState<string>();
   const [sources, setSources] = useState(() => readRestorationSources(projectKey, paths.scarletVioletSupportFolderPath ?? ''));
   const [preparedHashes, setPreparedHashes] = useState(() => preparedByProject.get(projectKey) ?? {});
   const [drafts, setDrafts] = useState<Record<string, RestorationDraft>>({});
@@ -170,6 +173,65 @@ export function RestoreMissingPokemonSection({ workflow, paths, bridge, session,
     try { const response = await bridge.cancelRestorationPreparation({ paths, preparationId: preparation.id }); if (active.current) remember(response.preparation); }
     catch { if (active.current) setError(t('restoration.failed')); }
   };
+  const recordKey = (entry: RestorationWorkflow['entries'][number]) => `${entry.speciesId}:${entry.form}`;
+  const term = search.trim().toLocaleLowerCase();
+  const visibleEntries = entries.filter(entry => `${entry.speciesId} ${entryName(entry)}`.toLocaleLowerCase().includes(term));
+  const selected = visibleEntries.find(entry => recordKey(entry) === selectedKey) ?? visibleEntries[0];
+  const renderSelected = (entry: RestorationWorkflow['entries'][number]) => {
+    const id = entry.definitionId;
+    const label = entryName(entry);
+    const enabled = id && id in drafts ? drafts[id].enabled : entry.selected;
+    const external = entry.installation === 'External';
+    return <div className="editor-task-groups">
+      <div className="editor-detail-group">
+        <h3>{t('restoration.availability')}</h3>
+        <div className="restoration-record-status">
+          <div>{external ? t('restoration.installation.External') : t(`restoration.support.${entry.support}`)}
+            {external ? <small>{t(`restoration.support.${entry.support}`)}</small> : null}
+            {entry.donor ? <small>{t(`restoration.source.${entry.donor}`)}</small>
+            : entry.form > 0 ? <small>{t('restoration.sourceUnavailable')}</small> : null}
+            {id && hashes.has(id) ? <small>{t('restoration.status.prepared')}</small> : null}
+            {entry.removalStaged ? <small role="status">{t('restoration.removalStaged')}</small> : null}
+            {id && (drafts[id]?.updateAssets || drafts[id]?.adoptExternal) ? <small role="status">{t('restoration.updatePrepared')}</small> : null}
+            {!external ? <small>{t(`restoration.installation.${entry.installation}`)}{entry.staged ? ` · ${t('restoration.staged')}` : ''}</small> : null}
+            {external && entry.staged ? <small>{t('restoration.staged')}</small> : null}</div>
+          {entry.plannedPersonalId != null ?
+            <p>{t('restoration.plannedRow', { form: entry.form, row: entry.plannedPersonalId })}</p> : null}
+        </div>
+      </div>
+      <div className="editor-detail-group">
+        <h3>{t('restoration.actions')}</h3>
+        <div className="restoration-record-actions">
+          <div className="editor-task-field-name">{external ? <span
+          className={`restoration-installed-indicator ${entry.availableForAssignment ? 'is-complete' : 'needs-repair'}`}>
+          {entry.availableForAssignment ? <CheckCircle2 size={20} aria-hidden="true" /> : <TriangleAlert size={20} aria-hidden="true" />}
+          <strong>{t(entry.availableForAssignment ? 'restoration.alreadyInstalled' : 'restoration.installation.NeedsRepair')}</strong>
+        </span> : <label className="editor-task-field-name"><input type="checkbox" aria-label={`${t('restoration.enabled')}: ${label}`} checked={enabled}
+          disabled={!canEdit || removing === id || !id || !hashes.has(id) || entry.support === 'NotSupported' || entry.installation === 'External'}
+          title={id && !hashes.has(id) ? t('restoration.prepare') : undefined}
+          onChange={event => { if (!id) return; selectionVersions.current[id] = (selectionVersions.current[id] ?? 0) + 1; const checked = event.target.checked; setDrafts(current => {
+            const next = { ...current, [id]: { enabled: checked } }; if (checked === entry.selected && !isStaging) delete next[id]; return next;
+          }); }} />{t('restoration.enabled')}</label>}</div>
+          <div className="restoration-asset-actions">
+            {external ? <p className="restoration-external-help">
+              {t(entry.updateAvailable ? 'restoration.externalUpdateHelp'
+                : entry.availableForAssignment ? 'restoration.externalInstalledHelp' : 'restoration.externalRepairHelp')}
+            </p> : id ? (hashes.has(id) || entry.removalStaged ? <button className="danger-button" type="button"
+              disabled={!canEdit || entry.removalStaged || removing !== null || isStaging || isPreparing || preparation?.status === 'preparing'}
+              aria-busy={removing === id} onClick={() => void removeAssets(id)}>
+              <Trash2 size={16} aria-hidden="true" />{t('restoration.removeAssets')}</button>
+              : <button className="secondary-button" type="button" disabled={!canEdit || !donorPath(id) || removing !== null || isStaging || isPreparing || preparation?.status === 'preparing'}
+                onClick={() => void prepare(id)}>{t('restoration.prepare')}</button>) : null}
+            {id && entry.updateAvailable && (external || entry.preparedHash) && !entry.removalStaged ? <button className="secondary-button" type="button"
+              disabled={!canEdit || !donorPath(id) || entry.staged || id in drafts || removing !== null || isStaging || isPreparing || preparation?.status === 'preparing'}
+              onClick={() => void prepare(id, true)}><RefreshCw size={16} aria-hidden="true" />{t('restoration.updateAsset')}</button> : null}
+            {id && entry.installation === 'NeedsRepair' && !entry.removalStaged ? <button className="secondary-button" type="button" disabled={!canEdit || isStaging}
+              onClick={() => setDrafts(current => ({ ...current, [id]: { enabled: true } }))}>{t('restoration.repair')}</button> : null}
+          </div>
+        </div>
+      </div>
+    </div>;
+  };
   return <section className="workflow-panel wide-panel restoration-panel" aria-labelledby="restoration-title">
     <header className="workflow-panel-header"><div><h2 id="restoration-title"><Bird size={22} aria-hidden="true" /> {t('restoration.title')}</h2>
       <p>{t('restoration.subtitle')}</p></div>
@@ -203,59 +265,37 @@ export function RestoreMissingPokemonSection({ workflow, paths, bridge, session,
         </dd>
       </div>)}</dl>
     </div> : null}
-    <RestorationSourceFolders sources={sources} desktop={desktopServices} paths={paths} bridge={bridge} onChange={next => {
-      setSources(next); if (!rememberRestorationSources(projectKey, next)) setError(t('restoration.sourcesSaveFailed'));
-    }} />
     {preparationVisible ? <RestorationPreparationProgress preparation={preparation}
       name={preparationEntry ? entryName(preparationEntry) : t('restoration.title')}
       onCancel={() => void cancelPreparation()} /> : null}
-    <div className="restoration-browser-toolbar"><label className="restoration-search">{t('restoration.search')}<input type="search" value={search} onChange={e => setSearch(e.target.value)} /></label>
-      <strong>{t('restoration.pokemon')} <span>{entries.length}</span></strong>
-    </div>
-    <div className="restoration-list" tabIndex={0} role="region" aria-label={t('restoration.pokemon')}><table><thead><tr><th scope="col">{t('restoration.enabled')}</th><th scope="col">{t('restoration.pokemon')}</th>
-      <th scope="col">{t('restoration.availability')}</th><th scope="col">{t('restoration.actions')}</th></tr></thead><tbody>
-      {entries.filter(e => `${e.speciesId} ${entryName(e)}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())).map(entry => {
-        const id = entry.definitionId;
-        const label = entryName(entry);
-        const enabled = id && id in drafts ? drafts[id].enabled : entry.selected;
-        const external = entry.installation === 'External';
-        return <tr key={`${entry.speciesId}:${entry.form}`}><td>{external ? <span
-          className={`restoration-installed-indicator ${entry.availableForAssignment ? 'is-complete' : 'needs-repair'}`}>
-          {entry.availableForAssignment ? <CheckCircle2 size={20} aria-hidden="true" /> : <TriangleAlert size={20} aria-hidden="true" />}
-          <strong>{t(entry.availableForAssignment ? 'restoration.alreadyInstalled' : 'restoration.installation.NeedsRepair')}</strong>
-        </span> : <input type="checkbox" aria-label={`${t('restoration.enabled')}: ${label}`} checked={enabled}
-          disabled={!canEdit || removing === id || !id || !hashes.has(id) || entry.support === 'NotSupported' || entry.installation === 'External'}
-          title={id && !hashes.has(id) ? t('restoration.prepare') : undefined}
-          onChange={event => { if (!id) return; selectionVersions.current[id] = (selectionVersions.current[id] ?? 0) + 1; const checked = event.target.checked; setDrafts(current => {
-            const next = { ...current, [id]: { enabled: checked } }; if (checked === entry.selected && !isStaging) delete next[id]; return next;
-          }); }} />}</td><td data-localization-ignore="true"><strong>{label}</strong><small>#{entry.speciesId}</small>
-            {entry.plannedPersonalId != null ? <small>{t('restoration.plannedRow', { form: entry.form, row: entry.plannedPersonalId })}</small> : null}</td>
-          <td>{external ? t('restoration.installation.External') : t(`restoration.support.${entry.support}`)}
-            {external ? <small>{t(`restoration.support.${entry.support}`)}</small> : null}
-            {entry.donor ? <small>{t(`restoration.source.${entry.donor}`)}</small>
-            : entry.form > 0 ? <small>{t('restoration.sourceUnavailable')}</small> : null}
-            {id && hashes.has(id) ? <small>{t('restoration.status.prepared')}</small> : null}
-            {entry.removalStaged ? <small role="status">{t('restoration.removalStaged')}</small> : null}
-            {id && (drafts[id]?.updateAssets || drafts[id]?.adoptExternal) ? <small role="status">{t('restoration.updatePrepared')}</small> : null}
-            {!external ? <small>{t(`restoration.installation.${entry.installation}`)}{entry.staged ? ` · ${t('restoration.staged')}` : ''}</small> : null}
-            {external && entry.staged ? <small>{t('restoration.staged')}</small> : null}</td>
-          <td><div className="restoration-asset-actions">
-            {external ? <p className="restoration-external-help">
-              {t(entry.updateAvailable ? 'restoration.externalUpdateHelp'
-                : entry.availableForAssignment ? 'restoration.externalInstalledHelp' : 'restoration.externalRepairHelp')}
-            </p> : id ? (hashes.has(id) || entry.removalStaged ? <button className="danger-button" type="button"
-              disabled={!canEdit || entry.removalStaged || removing !== null || isStaging || isPreparing || preparation?.status === 'preparing'}
-              aria-busy={removing === id} onClick={() => void removeAssets(id)}>
-              <Trash2 size={16} aria-hidden="true" />{t('restoration.removeAssets')}</button>
-              : <button className="secondary-button" type="button" disabled={!canEdit || !donorPath(id) || removing !== null || isStaging || isPreparing || preparation?.status === 'preparing'}
-                onClick={() => void prepare(id)}>{t('restoration.prepare')}</button>) : null}
-            {id && entry.updateAvailable && (external || entry.preparedHash) && !entry.removalStaged ? <button className="secondary-button" type="button"
-              disabled={!canEdit || !donorPath(id) || entry.staged || id in drafts || removing !== null || isStaging || isPreparing || preparation?.status === 'preparing'}
-              onClick={() => void prepare(id, true)}><RefreshCw size={16} aria-hidden="true" />{t('restoration.updateAsset')}</button> : null}
-            {id && entry.installation === 'NeedsRepair' && !entry.removalStaged ? <button className="secondary-button" type="button" disabled={!canEdit || isStaging}
-              onClick={() => setDrafts(current => ({ ...current, [id]: { enabled: true } }))}>{t('restoration.repair')}</button> : null}
-          </div></td></tr>;
-      })}</tbody></table></div>
+    <RecordEditorWorkspace id="restoreMissingPokemon" className="restoration-workspace" initialSection="catalog"
+      browserControls={<div className="editor-record-context">
+        <label className="restoration-search">{t('restoration.search')}
+          <input type="search" value={search} onChange={event => setSearch(event.currentTarget.value)} />
+        </label>
+        <strong>{t('restoration.pokemon')} <span>{visibleEntries.length} / {entries.length}</span></strong>
+      </div>}
+      browser={<EditorRecordTable label={t('restoration.pokemon')} identityLabel={t('restoration.pokemon')}
+        rows={visibleEntries} rowId={recordKey} selection={selected ? recordKey(selected) : undefined}
+        onSelect={entry => setSelectedKey(recordKey(entry))}
+        identity={entry => <><span className="editor-record-id">#{entry.speciesId}</span>{entryName(entry)}</>}
+        columns={[
+          { id: 'status', label: t('restoration.availability'), value: entry => t(`restoration.installation.${entry.installation}`) },
+          { id: 'donor', label: translateLiteral('Source'), value: entry => entry.donor ? t(`restoration.source.${entry.donor}`) : '—' },
+          { id: 'enabled', label: t('restoration.enabled'), value: entry => {
+            const draft = entry.definitionId ? drafts[entry.definitionId] : undefined;
+            return (draft?.enabled ?? entry.selected) ? '✓' : '—';
+          } }
+        ]} />}>
+      {selected ? <EditorWorkspaceHeader afterBrowser><EditorRecordHeading name={entryName(selected)} id={selected.speciesId} /></EditorWorkspaceHeader> : null}
+      <EditorWorkspaceSection id="catalog" label={t('restoration.pokemon')}
+        modified={dirty}>{selected ? renderSelected(selected) : <p className="muted">{translateLiteral('No matching records.')}</p>}</EditorWorkspaceSection>
+      <EditorWorkspaceSection id="sources" label={translateLiteral('Source Folders')}>
+    <RestorationSourceFolders sources={sources} desktop={desktopServices} paths={paths} bridge={bridge} onChange={next => {
+      setSources(next); if (!rememberRestorationSources(projectKey, next)) setError(t('restoration.sourcesSaveFailed'));
+    }} />
+      </EditorWorkspaceSection>
+    </RecordEditorWorkspace>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />
   </section>;
 }

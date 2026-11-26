@@ -8,6 +8,7 @@ import { handleRowClipboardShortcut } from '../../authoring/rowClipboardShortcut
 import type { RowClipboardOwnedValue } from '../../authoring/rowClipboardTypes';
 import type { PlaField } from '../../bridge/plaProjectBridge';
 import { TrainerPartySlotContextMenu } from '../../components/TrainerPartySlotContextMenu';
+import { ContextHelp } from '../../components/ContextHelp';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { useLocalization } from '../../localization';
 import type { PlaEditorProps } from './PlaEditorSection';
@@ -96,7 +97,9 @@ export function usePlaRowClipboard(options: {
     }
   });
   return { bind, content: <>
-    <p className="field-note">{t('rowClipboard.discoveryHint')}</p>
+    {options.kind === 'learnsets'
+      ? <p className="field-note">{t('rowClipboard.discoveryHint')}</p>
+      : <ContextHelp label={t(options.kind === 'trainers' ? 'editorSections.party' : 'pla.kind.encounters')}>{t('rowClipboard.discoveryHint')}</ContextHelp>}
     {feedback ? <p role="status" className={feedback.error ? 'field-error' : 'field-note'}>{feedback.message}</p> : null}
     {menu ? <TrainerPartySlotContextMenu id={`pla-${options.kind}-clipboard-menu`} left={menu.left} top={menu.top} triggerElement={menu.trigger}
       targetLabel={options.getRow(menu.id)?.label ?? menu.id} menuLabel={t('rowClipboard.menu.label', { target: options.getRow(menu.id)?.label ?? menu.id })}

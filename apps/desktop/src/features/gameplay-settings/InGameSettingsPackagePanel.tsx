@@ -696,92 +696,143 @@ export function InGameSettingsPackagePanel({
       {busy ? <LoadingProgress className="is-compact" operationKey={busy}
         label={t(busy === 'load' ? 'gameplaySettings.inGamePackage.checking'
           : busy === 'preview' ? 'gameplaySettings.inGamePackage.reviewing' : 'gameplaySettings.inGamePackage.applying')} /> : null}
-      {purpose !== 'output' ? <section
-        aria-labelledby="in-game-settings-installation-title"
-        className="in-game-settings-package__installation"
-      >
-        <div className="in-game-settings-package__installation-heading">
-          <h4 id="in-game-settings-installation-title">
-            {t('gameplaySettings.inGamePackage.installationTitle')}
-          </h4>
+      <div className="in-game-settings-package__workspace">
+        {purpose !== 'output' ? <div className="in-game-settings-package__target">
+          <section
+            aria-labelledby="in-game-settings-installation-title"
+            className="in-game-settings-package__installation"
+          >
+            <div className="in-game-settings-package__installation-heading">
+              <h4 id="in-game-settings-installation-title">
+                {t('gameplaySettings.inGamePackage.installationTitle')}
+              </h4>
 
-        </div>
-        <div
-          aria-busy={installationTargetSelectionBusy || undefined}
-          aria-label={t('gameplaySettings.inGamePackage.installationTitle')}
-          className={`in-game-settings-package__target-options${purpose === 'hook' && !legacyInstallation ? ' in-game-settings-package__target-options--hook' : ''}`}
-          role="group"
-        >
-          {(purpose === 'hook' && !legacyInstallation ? ['ryujinx', 'eden'] as const : ['atmosphere', 'ryujinx', 'eden'] as const).map((target) => (
-            <button
-              aria-controls="in-game-settings-installation-detail"
-              aria-pressed={installationTarget === target}
-              className="in-game-settings-package__target-option"
-              disabled={installationTargetSelectionBusy}
-              key={target}
-              onClick={() => selectInstallationTarget(target)}
-              type="button"
-            >
-              <span>{t(useSharedOutput && target === 'atmosphere' ? 'gameplaySettings.shared.outputRoot' : `gameplaySettings.inGamePackage.target.${target}`)}</span>
-
-            </button>
-          ))}
-        </div>
-        <div
-          aria-label={t(`gameplaySettings.inGamePackage.target.${installationTarget}`)}
-          className="in-game-settings-package__installation-detail"
-          id="in-game-settings-installation-detail"
-          role="region"
-        >
-          {installationTarget === 'atmosphere' ? <p>{t(useSharedOutput ? 'gameplaySettings.shared.outputHelp' : 'gameplaySettings.destination.console')}</p> : <>
-            <div className="in-game-settings-package__destination">
-              <div><strong>{t('gameplaySettings.destination.title')}</strong>
-                <p><code>{installationRootPath ?? t('gameplaySettings.destination.choose')}</code></p></div>
-              <button type="button" className="secondary-button" disabled={installationTargetSelectionBusy || !onRememberDestination}
-                onClick={() => void findDestinations()}><Search size={18} aria-hidden="true" />{t('gameplaySettings.destination.find')}</button>
-              <button type="button" className="secondary-button" disabled={installationTargetSelectionBusy || !onRememberDestination}
-                onClick={() => void chooseDestination()}><FolderOpen size={18} aria-hidden="true" />{t('gameplaySettings.destination.browse')}</button>
             </div>
-            {destinationSearchMessage ? isPickingDestination
-              ? <LoadingProgress className="is-compact" label={t(destinationSearchMessage)} />
-              : <p role="status">{t(destinationSearchMessage)}</p> : null}
-            {foundDestinations.length > 1 ? <div className="in-game-settings-package__found-destinations">
-              {foundDestinations.map(path => <button type="button" className="secondary-button" key={path}
-                disabled={installationTargetSelectionBusy} onClick={() => void useFoundDestination(path)}><code>{path}</code></button>)}
-            </div> : null}
-            <p>{t(settingsOnly ? 'gameplaySettings.shared.settingsHelp' : 'gameplaySettings.destination.help')}</p>
-          </>}
-        </div>
-      </section> : null}
+            <div
+              aria-busy={installationTargetSelectionBusy || undefined}
+              aria-label={t('gameplaySettings.inGamePackage.installationTitle')}
+              className={`in-game-settings-package__target-options${purpose === 'hook' && !legacyInstallation ? ' in-game-settings-package__target-options--hook' : ''}`}
+              role="group"
+            >
+              {(purpose === 'hook' && !legacyInstallation ? ['ryujinx', 'eden'] as const : ['atmosphere', 'ryujinx', 'eden'] as const).map((target) => (
+                <button
+                  aria-controls="in-game-settings-installation-detail"
+                  aria-pressed={installationTarget === target}
+                  className="in-game-settings-package__target-option"
+                  disabled={installationTargetSelectionBusy}
+                  key={target}
+                  onClick={() => selectInstallationTarget(target)}
+                  type="button"
+                >
+                  <span>{t(useSharedOutput && target === 'atmosphere' ? 'gameplaySettings.shared.outputRoot' : `gameplaySettings.inGamePackage.target.${target}`)}</span>
 
-      {supportsSharedOutput && purpose !== 'output' ? <button type="button" className="secondary-button"
-        disabled={installationTargetSelectionBusy || preview !== null}
-        onClick={() => { setLegacyInstallation(value => !value); if (purpose === 'hook' && legacyInstallation) setInstallationTarget('ryujinx'); }}>
-        {t(legacyInstallation ? purpose === 'hook' ? 'cameraHook.return' : 'gameplaySettings.shared.return' : 'gameplaySettings.shared.legacy')}
-      </button> : null}
+                </button>
+              ))}
+            </div>
+            <div
+              aria-label={t(`gameplaySettings.inGamePackage.target.${installationTarget}`)}
+              className="in-game-settings-package__installation-detail"
+              id="in-game-settings-installation-detail"
+              role="region"
+            >
+              {installationTarget === 'atmosphere' ? <p>{t(useSharedOutput ? 'gameplaySettings.shared.outputHelp' : 'gameplaySettings.destination.console')}</p> : <>
+                <div className="in-game-settings-package__destination">
+                  <div><strong>{t('gameplaySettings.destination.title')}</strong>
+                    <p><code>{installationRootPath ?? t('gameplaySettings.destination.choose')}</code></p></div>
+                  <button type="button" className="secondary-button" disabled={installationTargetSelectionBusy || !onRememberDestination}
+                    onClick={() => void findDestinations()}><Search size={18} aria-hidden="true" />{t('gameplaySettings.destination.find')}</button>
+                  <button type="button" className="secondary-button" disabled={installationTargetSelectionBusy || !onRememberDestination}
+                    onClick={() => void chooseDestination()}><FolderOpen size={18} aria-hidden="true" />{t('gameplaySettings.destination.browse')}</button>
+                </div>
+                {destinationSearchMessage ? isPickingDestination
+                  ? <LoadingProgress className="is-compact" label={t(destinationSearchMessage)} />
+                  : <p role="status">{t(destinationSearchMessage)}</p> : null}
+                {foundDestinations.length > 1 ? <div className="in-game-settings-package__found-destinations">
+                  {foundDestinations.map(path => <button type="button" className="secondary-button" key={path}
+                    disabled={installationTargetSelectionBusy} onClick={() => void useFoundDestination(path)}><code>{path}</code></button>)}
+                </div> : null}
+                <p>{t(settingsOnly ? 'gameplaySettings.shared.settingsHelp' : 'gameplaySettings.destination.help')}</p>
+              </>}
+            </div>
+          </section>
 
-      {snapshot ? (
-        <div
-          className={`in-game-settings-package__state in-game-settings-package__state--${isPackageStateActionable(snapshot) ? 'ready' : 'blocked'}`}
-          role="status"
-        >
-          <PackageCheck aria-hidden="true" size={20} />
-          <div>
-            <strong>
-              {t(stateTitleKey!)}
-            </strong>
-            {!useSharedOutput ? <p>{t(stateDescriptionKey!)}</p> : null}
-            {snapshot.detail ? (
-              <p>{cameraConflict ? t('cameraControl.conflict') :
-                sourceLayoutConflict
-                  ? t('gameplaySettings.inGamePackage.executableInput.reason.sourceLayoutIncompatible')
-                  : useSharedOutput && snapshot.executableInput.reasonCode !== 'shared-output-ready'
-                    ? sharedOutputDetail
-                    : snapshot.detail}</p>
+          {supportsSharedOutput ? <button type="button" className="secondary-button"
+            disabled={installationTargetSelectionBusy || preview !== null}
+            onClick={() => { setLegacyInstallation(value => !value); if (purpose === 'hook' && legacyInstallation) setInstallationTarget('ryujinx'); }}>
+            {t(legacyInstallation ? purpose === 'hook' ? 'cameraHook.return' : 'gameplaySettings.shared.return' : 'gameplaySettings.shared.legacy')}
+          </button> : null}
+        </div> : null}
+        {snapshot ? <div className="in-game-settings-package__operation">
+          <div
+            className={`in-game-settings-package__state in-game-settings-package__state--${isPackageStateActionable(snapshot) ? 'ready' : 'blocked'}`}
+            role="status"
+          >
+            <PackageCheck aria-hidden="true" size={20} />
+            <div>
+              <strong>
+                {t(stateTitleKey!)}
+              </strong>
+              {!useSharedOutput ? <p>{t(stateDescriptionKey!)}</p> : null}
+              {snapshot.detail ? (
+                <p>{cameraConflict ? t('cameraControl.conflict') :
+                  sourceLayoutConflict
+                    ? t('gameplaySettings.inGamePackage.executableInput.reason.sourceLayoutIncompatible')
+                    : useSharedOutput && snapshot.executableInput.reasonCode !== 'shared-output-ready'
+                      ? sharedOutputDetail
+                      : snapshot.detail}</p>
+              ) : null}
+            </div>
+          </div>
+          {!preview ? (
+          <div className="in-game-settings-package__actions">
+            {snapshot.state === 'notInstalled' && !(supportsSharedOutput && legacyInstallation) ? (
+              <button
+                className="primary-button"
+                disabled={
+                  actionsDisabled || !canPrepare || !isExecutableInputCompatible(snapshot)
+                }
+                onClick={() => void reviewOperation('install')}
+                type="button"
+              >
+                {busy === 'preview'
+                  ? t('gameplaySettings.inGamePackage.reviewing')
+                  : t(useSharedOutput && !settingsOnly ? 'gameplaySettings.shared.reviewOutput' : 'gameplaySettings.inGamePackage.reviewInstall')}
+              </button>
+            ) : null}
+            {snapshot.state === 'upgradeAvailable' && !(supportsSharedOutput && legacyInstallation) ? (
+              <button
+                className="primary-button"
+                disabled={actionsDisabled || !canPrepare && !registrationRequired}
+                onClick={() => void reviewOperation('upgrade')}
+                type="button"
+              >
+                {busy === 'preview'
+                  ? t('gameplaySettings.inGamePackage.reviewing')
+                  : t(
+                      registrationRequired ? 'gameplaySettings.shared.reviewRegistration' : refreshRequired
+                        ? 'gameplaySettings.inGamePackage.reviewRefresh'
+                        : 'gameplaySettings.inGamePackage.reviewUpgrade'
+                    )}
+              </button>
+            ) : null}
+            {!registrationRequired && (snapshot.state === 'installed' ||
+            snapshot.state === 'upgradeAvailable' ||
+            snapshot.state === 'coexistenceConflict') ? (
+              <button
+                className="secondary-button"
+                disabled={actionsDisabled}
+                onClick={() => void reviewOperation('remove')}
+                type="button"
+              >
+                {busy === 'preview'
+                  ? t('gameplaySettings.inGamePackage.reviewing')
+                  : t('gameplaySettings.inGamePackage.reviewRemove')}
+              </button>
             ) : null}
           </div>
-        </div>
-      ) : null}
+          ) : null}
+        </div> : null}
+      </div>
 
       {snapshot ? <details className="in-game-settings-package__contents">
         <summary>{t('gameplaySettings.destination.details')}</summary>
@@ -884,55 +935,6 @@ export function InGameSettingsPackagePanel({
         <p className="in-game-settings-package__message" role="status">
           {t(messageKey)}
         </p>
-      ) : null}
-
-      {snapshot && !preview ? (
-        <div className="in-game-settings-package__actions">
-          {snapshot.state === 'notInstalled' && !(supportsSharedOutput && legacyInstallation) ? (
-            <button
-              className="primary-button"
-              disabled={
-                actionsDisabled || !canPrepare || !isExecutableInputCompatible(snapshot)
-              }
-              onClick={() => void reviewOperation('install')}
-              type="button"
-            >
-              {busy === 'preview'
-                ? t('gameplaySettings.inGamePackage.reviewing')
-                : t(useSharedOutput && !settingsOnly ? 'gameplaySettings.shared.reviewOutput' : 'gameplaySettings.inGamePackage.reviewInstall')}
-            </button>
-          ) : null}
-          {snapshot.state === 'upgradeAvailable' && !(supportsSharedOutput && legacyInstallation) ? (
-            <button
-              className="primary-button"
-              disabled={actionsDisabled || !canPrepare && !registrationRequired}
-              onClick={() => void reviewOperation('upgrade')}
-              type="button"
-            >
-              {busy === 'preview'
-                ? t('gameplaySettings.inGamePackage.reviewing')
-                : t(
-                    registrationRequired ? 'gameplaySettings.shared.reviewRegistration' : refreshRequired
-                      ? 'gameplaySettings.inGamePackage.reviewRefresh'
-                      : 'gameplaySettings.inGamePackage.reviewUpgrade'
-                  )}
-            </button>
-          ) : null}
-          {!registrationRequired && (snapshot.state === 'installed' ||
-          snapshot.state === 'upgradeAvailable' ||
-          snapshot.state === 'coexistenceConflict') ? (
-            <button
-              className="secondary-button"
-              disabled={actionsDisabled}
-              onClick={() => void reviewOperation('remove')}
-              type="button"
-            >
-              {busy === 'preview'
-                ? t('gameplaySettings.inGamePackage.reviewing')
-                : t('gameplaySettings.inGamePackage.reviewRemove')}
-            </button>
-          ) : null}
-        </div>
       ) : null}
 
       {preview ? (

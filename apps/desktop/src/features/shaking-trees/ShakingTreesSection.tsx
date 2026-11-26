@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 import { ContextHelp } from '../../components/ContextHelp';
-import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
+import { EditorRecordTable } from '../../components/EditorRecordTable';
+import { EditorWorkspaceHeader, EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, RotateCcw, Save, TreeDeciduous, X } from 'lucide-react';
 import { type EditSession } from '../../bridge/contracts';
@@ -106,9 +107,9 @@ export function ShakingTreesSection({ workflow, session, isEditing, isEditStarti
       setDrafts(current => Object.fromEntries(Object.entries(current).filter(([key, value]) => value !== submitted[key])));
     } catch { if (active.current) setFailed(true); }
   };
-  const numberInput = (id: string, field: string, label: string, max = 100, min = 0) => {
+  const numberInput = (id: string, field: string, label: string, max = 100, min = 0, showLabel = true) => {
     const value = get(id, field); const parsed = parseTreeNumber(value);
-    return <label className="tree-number-field"><span>{label}</span>
+    return <label className="tree-number-field"><span className={showLabel ? undefined : "sr-only"}>{label}</span>
       <input type="text" inputMode="numeric" value={value} disabled={!canEdit} aria-label={label}
         aria-invalid={parsed === null || parsed < min || parsed > max || undefined}
         onChange={event => change(id, field, event.target.value)} />
@@ -148,60 +149,82 @@ export function ShakingTreesSection({ workflow, session, isEditing, isEditStarti
           className={`secondary-button${tab === value ? ' tree-tab-active' : ''}`}>{t(`shakingTrees.tab.${value}`)}</button>)}
       </div>
       <div id="tree-panel" role="tabpanel" aria-labelledby={`tree-tab-${tab}`}>
-      {tab !== 'rules' ? <RecordEditorWorkspace id="shakingTrees" className="tree-layout" browserControls={
+      {tab !== 'rules' ? <RecordEditorWorkspace id="shakingTrees" className="tree-record-workspace" initialSection="slots" browserControls={
         <label className="editor-browser-filter"><span>{t('shakingTrees.search')}</span>
           <input type="search" value={search} onChange={event => setSearch(event.target.value)} />
         </label>
       } browser={
-        <div className="tree-list editor-record-ledger" role="group" aria-label={t('shakingTrees.selectTree')}>
-            {filtered.map(tree => <button type="button" key={tree.id} aria-pressed={selected?.id === tree.id}
-              className={selected?.id === tree.id ? 'tree-selected' : ''} onClick={() => setSelectedId(tree.id)}>
-              <span>{treeName(tree)}</span>{dirtyKeys.some(key => key.startsWith(tree.id + '|')) ? <span className="tree-draft-dot" aria-label={t('shakingTrees.changed')}>●</span> : null}
-            </button>)}
-            {filtered.length === 0 ? <p>{t('shakingTrees.noResults')}</p> : null}
-        </div>
+        <EditorRecordTable label={t('shakingTrees.selectTree')} identityLabel={translateLiteral('Tree')}
+          rows={filtered} rowId={tree => tree.id} selection={selected?.id} identity={treeName}
+          onSelect={tree => setSelectedId(tree.id)} empty={t('shakingTrees.noResults')}
+          columns={[
+            { id: 'slots', label: translateLiteral('Slots'), numeric: true, value: tree => tab === 'drops'
+              ? tree.drops.length : workflow?.areas.find(entry => entry.id === tree.areaId)?.slots.length },
+            { id: 'status', label: translateLiteral('Status'), value: tree => {
+              const owner = tab === 'drops' ? tree.id : tree.areaId;
+              return dirtyKeys.some(key => key.startsWith(owner + '|')) ? t('shakingTrees.changed') : '—';
+            } },
+          ]} />
       }>
-        <div className="tree-detail">
         {selected && area ? <>
-          <h3>{treeName(selected)}</h3>
-          {tab === 'drops' ? <>
-            <p>{t('shakingTrees.dropsHelp')}</p>
-            <div className="tree-total" role="status">{t('shakingTrees.total', { value: total(selected.id, selected.drops.length) ?? '…' })}</div>
-            <div className="tree-row-grid">
-            {selected.drops.map((_, slot) => {
-              const item = get(selected.id, `item.${slot}`);
-              const p = selected.drops.reduce((sum, _, index) => sum + (get(selected.id, `item.${index}`) === item
-                ? parseTreeNumber(get(selected.id, `percent.${index}`)) ?? 0 : 0), 0) / 100;
-              const atLeastOne = settings ? 1 - Array.from({ length: settings.dropMax - settings.dropMin + 1 }, (_, index) => Math.pow(1 - p, index + settings.dropMin))
-                .reduce((sum, value) => sum + value, 0) / (settings.dropMax - settings.dropMin + 1) : null;
-              return <article className="tree-drop-row" key={slot}>
-                <div className="tree-item-field"><label htmlFor={`tree-item-${slot}`}>{t('shakingTrees.itemSlot', { number: slot + 1 })}</label>
-                  <SearchableOptionInput id={`tree-item-${slot}`} ariaLabel={t('shakingTrees.itemSlot', { number: slot + 1 })} disabled={!canEdit}
-                    isFiniteCatalog localizeOptions={false} options={workflow?.items ?? []} value={get(selected.id, `item.${slot}`)}
-                    onChange={value => change(selected.id, `item.${slot}`, value)} /></div>
-                {numberInput(selected.id, `percent.${slot}`, t('shakingTrees.chanceSlot', { number: slot + 1 }))}
-                <p className="tree-drop-metric">{t('shakingTrees.atLeastOne', { value: atLeastOne === null || p > 1 ? '…' : formatPercent(atLeastOne) })}</p>
-              </article>;
-            })}
-            </div><p className="tree-note">{t('shakingTrees.slotCountHelp')}</p>
-          </> : <>
-            <p>{t('shakingTrees.areaHelp', { count: areaCounts.get(area.id) ?? 0 })}</p>
-            <div className="tree-levels">{numberInput(area.id, 'levelMin', t('shakingTrees.levelMin'), 100, 1)}
-              {numberInput(area.id, 'levelMax', t('shakingTrees.levelMax'), 100, 1)}</div>
-            <p className="tree-note">{t('shakingTrees.levelHelp')}</p>
-            <div className="tree-total" role="status">{t('shakingTrees.total', { value: total(area.id, area.slots.length) ?? '…' })}</div>
-            <div className="tree-row-grid">{area.slots.map((_, slot) => <article className="tree-drop-row" key={slot}>
-              <div className="tree-item-field"><label htmlFor={`tree-pokemon-${slot}`}>{t('shakingTrees.pokemonSlot', { number: slot + 1 })}</label>
-                <SearchableOptionInput id={`tree-pokemon-${slot}`} ariaLabel={t('shakingTrees.pokemonSlot', { number: slot + 1 })}
-                  disabled={!canEdit} isFiniteCatalog localizeOptions={false} value={`${get(area.id, `species.${slot}`)}:${get(area.id, `form.${slot}`)}`}
-                  options={[{ value: '0:0', label: translateLiteral('None') }, ...(workflow?.pokemon ?? []).map(row => ({ value: `${row.species}:${row.form}`,
-                    label: row.form === 0 ? row.label : `${row.label} (${t('shakingTrees.form', { number: row.form })})` }))]}
-                  onChange={value => changePokemon(slot, value)} /></div>
-              {numberInput(area.id, `percent.${slot}`, t('shakingTrees.chanceSlot', { number: slot + 1 }))}
-            </article>)}</div>
-          </>}
+          <EditorWorkspaceHeader afterBrowser>
+            <div className="editor-record-context"><h3>{treeName(selected)}</h3>
+              <span role="status">{t('shakingTrees.total', {
+                value: (tab === 'drops' ? total(selected.id, selected.drops.length) : total(area.id, area.slots.length)) ?? '…',
+              })}</span>
+            </div>
+          </EditorWorkspaceHeader>
+          <EditorWorkspaceSection id="slots" label={t(tab === 'drops' ? 'shakingTrees.tab.drops' : 'shakingTrees.tab.encounters')}>
+            {tab === 'drops' ? <>
+              <div className="context-help-heading"><h3>{t('shakingTrees.tab.drops')}</h3>
+                <ContextHelp label={t('shakingTrees.tab.drops')}>
+                  <p>{t('shakingTrees.dropsHelp')}</p><p>{t('shakingTrees.slotCountHelp')}</p>
+                </ContextHelp>
+              </div>
+              <table className="editor-data-matrix tree-slot-table">
+                <thead><tr><th scope="col">{translateLiteral('Slot')}</th><th scope="col">{translateLiteral('Item')}</th>
+                  <th scope="col">{translateLiteral('Chance')}</th><th scope="col">{translateLiteral('At least one')}</th></tr></thead>
+                <tbody>{selected.drops.map((_, slot) => {
+                  const item = get(selected.id, `item.${slot}`);
+                  const probability = selected.drops.reduce((sum, _, index) => sum + (get(selected.id, `item.${index}`) === item
+                    ? parseTreeNumber(get(selected.id, `percent.${index}`)) ?? 0 : 0), 0) / 100;
+                  const atLeastOne = settings ? 1 - Array.from({ length: settings.dropMax - settings.dropMin + 1 },
+                    (_, index) => Math.pow(1 - probability, index + settings.dropMin))
+                    .reduce((sum, value) => sum + value, 0) / (settings.dropMax - settings.dropMin + 1) : null;
+                  return <tr key={slot}>
+                    <th scope="row">{slot + 1}</th>
+                    <td><SearchableOptionInput id={`tree-item-${slot}`} ariaLabel={t('shakingTrees.itemSlot', { number: slot + 1 })}
+                      disabled={!canEdit} isFiniteCatalog localizeOptions={false} options={workflow?.items ?? []} value={item}
+                      onChange={value => change(selected.id, `item.${slot}`, value)} /></td>
+                    <td>{numberInput(selected.id, `percent.${slot}`, t('shakingTrees.chanceSlot', { number: slot + 1 }), 100, 0, false)}</td>
+                    <td>{atLeastOne === null || probability > 1 ? '…' : formatPercent(atLeastOne)}</td>
+                  </tr>;
+                })}</tbody>
+              </table>
+            </> : <>
+              <div className="context-help-heading"><h3>{t('shakingTrees.tab.encounters')}</h3>
+                <ContextHelp label={t('shakingTrees.tab.encounters')}>{t('shakingTrees.levelHelp')}</ContextHelp>
+              </div>
+              <p className="field-hint">{t('shakingTrees.areaHelp', { count: areaCounts.get(area.id) ?? 0 })}</p>
+              <div className="tree-levels">{numberInput(area.id, 'levelMin', t('shakingTrees.levelMin'), 100, 1)}
+                {numberInput(area.id, 'levelMax', t('shakingTrees.levelMax'), 100, 1)}</div>
+              <table className="editor-data-matrix tree-slot-table">
+                <thead><tr><th scope="col">{translateLiteral('Slot')}</th><th scope="col">{translateLiteral('Pokémon')}</th>
+                  <th scope="col">{translateLiteral('Chance')}</th></tr></thead>
+                <tbody>{area.slots.map((_, slot) => <tr key={slot}>
+                  <th scope="row">{slot + 1}</th>
+                  <td><SearchableOptionInput id={`tree-pokemon-${slot}`} ariaLabel={t('shakingTrees.pokemonSlot', { number: slot + 1 })}
+                    disabled={!canEdit} isFiniteCatalog localizeOptions={false} value={`${get(area.id, `species.${slot}`)}:${get(area.id, `form.${slot}`)}`}
+                    options={[{ value: '0:0', label: translateLiteral('None') }, ...(workflow?.pokemon ?? []).map(row => ({
+                      value: `${row.species}:${row.form}`,
+                      label: row.form === 0 ? row.label : `${row.label} (${t('shakingTrees.form', { number: row.form })})`,
+                    }))]} onChange={value => changePokemon(slot, value)} /></td>
+                  <td>{numberInput(area.id, `percent.${slot}`, t('shakingTrees.chanceSlot', { number: slot + 1 }), 100, 0, false)}</td>
+                </tr>)}</tbody>
+              </table>
+            </>}
+          </EditorWorkspaceSection>
         </> : <p>{t('shakingTrees.empty')}</p>}
-        </div>
       </RecordEditorWorkspace> : <div className="tree-rules">
         <div className="tree-rules-controls">
           <div className="context-help-heading"><h3>{t('shakingTrees.globalRules')}</h3><ContextHelp label={t('shakingTrees.globalRules')}>{t('shakingTrees.riskHelp')}</ContextHelp></div>

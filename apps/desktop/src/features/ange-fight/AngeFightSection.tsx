@@ -21,6 +21,7 @@ import {
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
 import { ContextHelp } from '../../components/ContextHelp';
+import { EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { FieldLabel } from '../../components/FieldLabel';
 import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
 import { useLocalization } from '../../localization';
@@ -266,73 +267,6 @@ export function AngeFightSection({
               </div>
             ) : null}
 
-            <section aria-labelledby="ange-flower-hp-heading" className="ange-fight-group">
-              <div className="ange-fight-group-heading">
-                <div>
-                  <h3 id="ange-flower-hp-heading">Flower HP</h3>
-                  <ContextHelp label="Flower HP">
-                    {translateLiteral('Each flower has its own independent HP value.')}
-                  </ContextHelp>
-                </div>
-              </div>
-              <div className="ange-fight-flower-grid">
-                {workflow.flowers.map((flower) => {
-                  const value =
-                    flower.flowerId === 'blue'
-                      ? draft.blueFlowerHp
-                      : draft.redFlowerHp;
-                  return (
-                    <NumberField
-                      disabled={!canEdit}
-                      invalid={parseInt32(value, 1) === null}
-                      inputId={`ange-fight-${flower.flowerId}-flower-hp`}
-                      key={flower.flowerId}
-                      label={translateLiteral(flower.label)}
-                      help="Each flower has its own independent HP value."
-                      minimum={1}
-                      onChange={(nextValue) =>
-                        updateFlowerHp(flower.flowerId, nextValue)
-                      }
-                      value={value}
-                      vanillaValue={flower.vanillaHp}
-                    />
-                  );
-                })}
-              </div>
-            </section>
-
-            <section aria-labelledby="ange-damage-heading" className="ange-fight-group">
-              <div className="ange-fight-group-heading">
-                <div>
-                  <h3 id="ange-damage-heading">Attack Damage</h3>
-                  <ContextHelp label="Attack Damage">
-                    {translateLiteral(
-                      'Pokémon damage and player damage are stored separately.'
-                    )}
-                  </ContextHelp>
-                </div>
-                <span className="ange-fight-count-pill">
-                  <strong data-localization-ignore="true">
-                    {workflow.attacks.length.toLocaleString()}
-                  </strong>
-                  <span>Mapped attacks</span>
-                </span>
-              </div>
-
-              <div className="ange-fight-attack-grid">
-                {workflow.attacks.map((attack, index) => (
-                  <AngeFightAttackCard
-                    attack={attack}
-                    disabled={!canEdit}
-                    draft={draft.attacks[index]}
-                    key={attack.attackId}
-                    onChange={updateAttackDamage}
-                    translateLiteral={translateLiteral}
-                  />
-                ))}
-              </div>
-            </section>
-
             {parsedDraft === null && isDirty ? (
               <div className="ange-fight-blocker" role="alert">
                 <TriangleAlert aria-hidden="true" size={17} />
@@ -343,6 +277,8 @@ export function AngeFightSection({
               </div>
             ) : null}
 
+            <RecordEditorWorkspace id="ange-fight" className="ange-fight-workspace" initialSection="attacks"
+              sessionBar={
             <div className="type-chart-actions ange-fight-actions">
               <button
                 className="danger-button"
@@ -388,10 +324,58 @@ export function AngeFightSection({
                 <span>{isStaging ? 'Staging' : 'Stage Uninstall'}</span>
               </button>
             </div>
+              }>
+              <EditorWorkspaceSection id="attacks" label={translateLiteral('Attack Damage')}
+                summary={workflow.attacks.length} invalid={parsedDraft === null && isDirty}>
+                <table className="editor-data-matrix ange-fight-matrix" aria-label={translateLiteral('Attack Damage')}>
+                  <thead><tr>
+                    <th scope="col">{translateLiteral('Attack')}</th>
+                    <th scope="col">{translateLiteral('Damage to Pokémon')}</th>
+                    <th scope="col">{translateLiteral('Damage to player')}</th>
+                  </tr></thead>
+                  <tbody>{workflow.attacks.map((attack, index) => (
+                    <AngeFightAttackRow attack={attack} disabled={!canEdit} draft={draft.attacks[index]}
+                      key={attack.attackId} onChange={updateAttackDamage} translateLiteral={translateLiteral} />
+                  ))}</tbody>
+                </table>
+              </EditorWorkspaceSection>
+            <EditorWorkspaceSection id="flowers" label={translateLiteral("Flower HP")}>
+              <div className="ange-fight-group-heading">
+                <div>
+                  <h3 id="ange-flower-hp-heading">Flower HP</h3>
+                  <ContextHelp label="Flower HP">
+                    {translateLiteral('Each flower has its own independent HP value.')}
+                  </ContextHelp>
+                </div>
+              </div>
+              <div className="ange-fight-flower-grid">
+                {workflow.flowers.map((flower) => {
+                  const value =
+                    flower.flowerId === 'blue'
+                      ? draft.blueFlowerHp
+                      : draft.redFlowerHp;
+                  return (
+                    <NumberField
+                      disabled={!canEdit}
+                      invalid={parseInt32(value, 1) === null}
+                      inputId={`ange-fight-${flower.flowerId}-flower-hp`}
+                      key={flower.flowerId}
+                      label={translateLiteral(flower.label)}
+                      help="Each flower has its own independent HP value."
+                      minimum={1}
+                      onChange={(nextValue) =>
+                        updateFlowerHp(flower.flowerId, nextValue)
+                      }
+                      value={value}
+                      vanillaValue={flower.vanillaHp}
+                    />
+                  );
+                })}
+              </div>
+            </EditorWorkspaceSection>
 
-            <details className="advanced-editor-details">
-              <summary>{translateLiteral('Source')}</summary>
-              <div className="advanced-editor-details-content ange-fight-source-grid">
+            <EditorWorkspaceSection id="source" label={translateLiteral("Source")}>
+              <div className="ange-fight-source-grid">
                 {workflow.sources.map((source) => (
                   <dl className="ange-fight-source-card" key={source.id}>
                     <div className="ange-fight-source-path">
@@ -409,7 +393,8 @@ export function AngeFightSection({
                 </dl>
               ))}
               </div>
-            </details>
+            </EditorWorkspaceSection>
+            </RecordEditorWorkspace>
           </div>
         ) : workflow ? (
           <p className="empty-copy">
@@ -432,7 +417,7 @@ export function AngeFightSection({
   );
 }
 
-function AngeFightAttackCard({
+function AngeFightAttackRow({
   attack,
   disabled,
   draft,
@@ -453,7 +438,8 @@ function AngeFightAttackCard({
   const playerDamage = draft?.damageToPlayer ?? attack.damageToPlayer.toString();
 
   return (
-    <article className="ange-fight-attack-card">
+    <tr>
+      <th scope="row">
       <div className="ange-fight-attack-heading">
         <div>
           <h4>{translateLiteral(attack.label)}</h4>
@@ -485,31 +471,6 @@ function AngeFightAttackCard({
         </div>
       ) : null}
 
-      <div className="ange-fight-damage-grid">
-        <NumberField
-          disabled={disabled}
-          help="Pokémon damage and player damage are stored separately."
-          inputId={`ange-fight-${attack.attackId}-pokemon-damage`}
-          invalid={parseInt32(pokemonDamage, 0) === null}
-          label="Damage to Pokémon"
-          minimum={0}
-          onChange={(value) => onChange(attack.attackId, 'damageToPokemon', value)}
-          value={pokemonDamage}
-          vanillaValue={attack.vanillaDamageToPokemon}
-        />
-        <NumberField
-          disabled={disabled}
-          help="Pokémon damage and player damage are stored separately."
-          inputId={`ange-fight-${attack.attackId}-player-damage`}
-          invalid={parseInt32(playerDamage, 0) === null}
-          label="Damage to player"
-          minimum={0}
-          onChange={(value) => onChange(attack.attackId, 'damageToPlayer', value)}
-          value={playerDamage}
-          vanillaValue={attack.vanillaDamageToPlayer}
-        />
-      </div>
-
       <details className="advanced-editor-details ange-fight-technical">
         <summary>{translateLiteral('Technical')}</summary>
         <dl className="ange-fight-technical-map">
@@ -529,7 +490,35 @@ function AngeFightAttackCard({
           </div>
         </dl>
       </details>
-    </article>
+      </th>
+      <td>
+        <NumberField
+          disabled={disabled}
+          help="Pokémon damage and player damage are stored separately."
+          inputId={`ange-fight-${attack.attackId}-pokemon-damage`}
+          invalid={parseInt32(pokemonDamage, 0) === null}
+          label="Damage to Pokémon"
+          minimum={0}
+          onChange={(value) => onChange(attack.attackId, 'damageToPokemon', value)}
+          value={pokemonDamage}
+          vanillaValue={attack.vanillaDamageToPokemon}
+        />
+      </td>
+      <td>
+        <NumberField
+          disabled={disabled}
+          help="Pokémon damage and player damage are stored separately."
+          inputId={`ange-fight-${attack.attackId}-player-damage`}
+          invalid={parseInt32(playerDamage, 0) === null}
+          label="Damage to player"
+          minimum={0}
+          onChange={(value) => onChange(attack.attackId, 'damageToPlayer', value)}
+          value={playerDamage}
+          vanillaValue={attack.vanillaDamageToPlayer}
+        />
+      </td>
+
+    </tr>
   );
 }
 

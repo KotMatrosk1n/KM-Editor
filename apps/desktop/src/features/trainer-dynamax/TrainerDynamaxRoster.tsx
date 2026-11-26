@@ -1,12 +1,16 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
-import { useState } from 'react';
+import { EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
+import { useState, type ReactNode } from 'react';
+import { ContextHelp } from '../../components/ContextHelp';
+import { EditorRecordTable } from '../../components/EditorRecordTable';
+import { EditorDetailGroup } from '../../components/EditorRecordDetails';
 import { RotateCcw, Search } from 'lucide-react';
 import type { TrainerDynamaxSettings, TrainerDynamaxStatus } from '../../bridge/trainerDynamaxContracts';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useLocalization } from '../../localization';
 
-type Props = { status: TrainerDynamaxStatus; settings: TrainerDynamaxSettings; disabled: boolean;
+type Props = { status: TrainerDynamaxStatus | null; settings: TrainerDynamaxSettings; disabled: boolean;
+  children: ReactNode; activeSectionRequest?: { sectionId: string; focus?: boolean };
   onChange: (settings: TrainerDynamaxSettings) => void };
 export const dynamaxSettingsKey = (settings: TrainerDynamaxSettings) => JSON.stringify({
   disablePlayer: settings.disablePlayer, disableOpponents: settings.disableOpponents,
@@ -32,14 +36,14 @@ export function dynamaxAll(settings: TrainerDynamaxSettings, trainers: Trainer[]
     trainers: trainers.map(row => ({ trainerId: row.trainerId, player: 0, opponent: 0, ...rows.get(row.trainerId), [side]: enabled ? 3 : 2 })) };
 }
 
-export function TrainerDynamaxRoster({ status, settings, disabled, onChange }: Props) {
+export function TrainerDynamaxRoster({ status, settings, disabled, onChange, children, activeSectionRequest }: Props) {
   const { t, translateLiteral } = useLocalization();
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const trainers = status.trainers ?? [];
+  const trainers = status?.trainers ?? [];
   const selected = trainers.find(row => row.trainerId === selectedId) ?? trainers[0];
   const rows = new Map((settings.trainers ?? []).map(row => [row.trainerId, row]));
-  const applied = new Map((status.settings.trainers ?? []).map(row => [row.trainerId, row]));
+  const applied = new Map((status?.settings.trainers ?? []).map(row => [row.trainerId, row]));
   const value = (id: number) => rows.get(id) ?? { trainerId: id, player: 0, opponent: 0 };
   const label = (state: boolean | null) => t(state === null ? 'trainerDynamax.unknownVanilla' : state ? 'trainerDynamax.enabled' : 'trainerDynamax.disabled');
   const visible = trainers.filter(row => `${row.trainerId} ${row.name}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
@@ -56,50 +60,68 @@ export function TrainerDynamaxRoster({ status, settings, disabled, onChange }: P
   };
   const setAll = (state: number) => onChange(state === 0 ? { disablePlayer: false, disableOpponents: false, trainers: [] }
     : dynamaxAll(dynamaxAll(settings, trainers, 'player', state === 3), trainers, 'opponent', state === 3));
-  return <section className="trainer-dynamax-roster" aria-labelledby="dynamax-roster-title">
-    <div className="trainer-dynamax-heading"><div><h3 id="dynamax-roster-title">{t('trainerDynamax.roster')}</h3><p>{t('trainerDynamax.rosterHelp')}</p></div>
-      <span className="status-pill status-pill-info">{t('trainerDynamax.overrideCount', { count: rows.size })}</span></div>
-    <p className="trainer-dynamax-scope">{t('trainerDynamax.rowScope')}</p>
-    <div className="trainer-dynamax-actions">
-      <button type="button" className="secondary-button" disabled={disabled || trainers.length === 0} onClick={() => setAll(3)}>{t('trainerDynamax.normalAll')}</button>
-      <button type="button" className="secondary-button" disabled={disabled || trainers.length === 0} onClick={() => setAll(2)}>{t('trainerDynamax.disableAll')}</button>
-      <button type="button" className="secondary-button" disabled={disabled} onClick={() => setAll(0)}>{t('trainerDynamax.clearAll')}</button>
-    </div>
-    <RecordEditorWorkspace id="trainerDynamax" className="trainer-dynamax-roster-layout" browser={
-      <div className="trainer-dynamax-list">
-        <label className="trainer-dynamax-search"><Search size={17} aria-hidden="true" /><span className="sr-only">{t('trainerDynamax.search')}</span>
-          <input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder={t('trainerDynamax.search')} /></label>
-        <div className="trainer-dynamax-table-scroll">
-          <table className="trainer-dynamax-table"><thead><tr><th>{translateLiteral('ID')}</th><th>{translateLiteral('Trainer')}</th><th>{t('trainerDynamax.player')}</th><th>{t('trainerDynamax.opponents')}</th></tr></thead>
-            <tbody>{visible.map(row => {
-              const draft = value(row.trainerId); const saved = applied.get(row.trainerId);
-              const changed = draft.player !== (saved?.player ?? 0) || draft.opponent !== (saved?.opponent ?? 0);
-              return <tr key={row.trainerId} tabIndex={0} aria-selected={selected?.trainerId === row.trainerId}
-                onClick={() => setSelectedId(row.trainerId)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedId(row.trainerId); } }}>
-                <td>{row.trainerId}</td><td><span>{row.name}</span>{changed ? <span className="status-pill status-pill-info">{t('trainerDynamax.draft')}</span> : null}</td>
-                <td>{label(dynamaxPermission(settings, row, 'player'))}</td><td>{label(dynamaxPermission(settings, row, 'opponent'))}</td></tr>;
-            })}</tbody></table>
-          {visible.length === 0 ? <p className="trainer-dynamax-empty">{t('trainerDynamax.noResults')}</p> : null}
-        </div>
-      </div>
-    }>
-      {selected ? <section className="trainer-dynamax-card trainer-dynamax-selected" aria-labelledby="dynamax-selected-title">
-        <div className="trainer-dynamax-heading"><h3 id="dynamax-selected-title">{selected.name}</h3><span className="status-pill">#{selected.trainerId}</span></div>
-        {(['player', 'opponent'] as const).map((field, index) => <div className="trainer-dynamax-field" key={field}>
-          <span>{t(index === 0 ? 'trainerDynamax.player' : 'trainerDynamax.opponents')}</span>
-          <SearchableOptionInput ariaLabel={t(index === 0 ? 'trainerDynamax.rowPlayer' : 'trainerDynamax.rowOpponent')}
-            value={dynamaxPermission(settings, selected, field) === null ? t('trainerDynamax.unknownVanilla') : dynamaxPermission(settings, selected, field) ? '3' : '2'} disabled={disabled} isFiniteCatalog localizeOptions={false}
-            options={[{ value: '3', label: label(true) }, { value: '2', label: label(false) }]}
-            onChange={raw => setSide(selected.trainerId, field, raw)} onReselect={raw => setSide(selected.trainerId, field, raw)} />
-          <span className="trainer-dynamax-effective">{t('trainerDynamax.vanilla', { value: label((index === 0 ? selected.vanillaPlayer : selected.vanillaOpponent) ?? null) })}</span>
-        </div>)}
+  const rowChanged = (row: Trainer) => {
+    const draft = value(row.trainerId);
+    const saved = applied.get(row.trainerId);
+    return draft.player !== (saved?.player ?? 0) || draft.opponent !== (saved?.opponent ?? 0);
+  };
+  const sides = [{ key: 'player', title: 'player', field: 'rowPlayer' },
+    { key: 'opponent', title: 'opponents', field: 'rowOpponent' }] as const;
+  return <RecordEditorWorkspace id="trainerDynamax" className="trainer-dynamax-roster-layout" initialSection="trainer"
+    activeSectionRequest={activeSectionRequest}
+    browserControls={<div className="editor-record-context">
+      <label className="search-box"><Search size={17} aria-hidden="true" /><span className="sr-only">{t('trainerDynamax.search')}</span>
+        <input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder={t('trainerDynamax.search')} />
+      </label>
+      <span className="muted">{visible.length} / {trainers.length} {t('trainerDynamax.roster')} · {t('trainerDynamax.overrideCount', { count: rows.size })}</span>
+    </div>}
+    browser={<EditorRecordTable label={t('trainerDynamax.roster')} identityLabel={translateLiteral('Trainer')}
+      rows={visible} rowId={row => String(row.trainerId)} identity={row => row.name} selection={selected ? String(selected.trainerId) : undefined}
+      onSelect={row => setSelectedId(row.trainerId)} empty={t('trainerDynamax.noResults')}
+      columns={[
+        { id: 'id', label: translateLiteral('ID'), value: row => row.trainerId, numeric: true },
+        ...sides.map(side => ({ id: side.key, label: t(`trainerDynamax.${side.title}`), value: (row: Trainer) => label(dynamaxPermission(settings, row, side.key)) })),
+        { id: 'state', label: translateLiteral('State'), value: row => rowChanged(row) ? t('trainerDynamax.draft') : '' }
+      ]} />}>
+    {selected ? <EditorWorkspaceHeader afterBrowser>
+      <EditorRecordHeading name={selected.name} id={selected.trainerId} />
+    </EditorWorkspaceHeader> : null}
+    <EditorWorkspaceSection id="trainer" label={translateLiteral('Trainer Permissions')} modified={!!selected && rowChanged(selected)}>
+      {selected ? <EditorDetailGroup label={translateLiteral('Dynamax permissions')}
+        headingValue={<ContextHelp label={t('trainerDynamax.roster')}>
+          <p>{t('trainerDynamax.rosterHelp')}</p><p>{t('trainerDynamax.resetTrainerHelp')}</p>
+        </ContextHelp>}>
+        <table className="editor-data-matrix"><thead><tr>
+          <th scope="col">{t('trainerDynamax.permission')}</th><th scope="col">{t('trainerDynamax.current')}</th>
+          <th scope="col">{translateLiteral('Vanilla')}</th>
+        </tr></thead><tbody>
+          {sides.map(side => {
+            const permission = dynamaxPermission(settings, selected, side.key);
+            return <tr key={side.key}><th scope="row">{t(`trainerDynamax.${side.title}`)}</th>
+              <td><SearchableOptionInput ariaLabel={t(`trainerDynamax.${side.field}`)}
+                value={permission === null ? t('trainerDynamax.unknownVanilla') : permission ? '3' : '2'} disabled={disabled}
+                isFiniteCatalog localizeOptions={false} options={[{ value: '3', label: label(true) }, { value: '2', label: label(false) }]}
+                onChange={raw => setSide(selected.trainerId, side.key, raw)} onReselect={raw => setSide(selected.trainerId, side.key, raw)} /></td>
+              <td>{label((side.key === 'player' ? selected.vanillaPlayer : selected.vanillaOpponent) ?? null)}</td>
+            </tr>;
+          })}
+        </tbody></table>
         <p>{t('trainerDynamax.pairedRule')}</p>
-        <button type="button" className="secondary-button" disabled={disabled} onClick={() => setRow(selected.trainerId, 1, 1)}>
-          <RotateCcw size={16} aria-hidden="true" />{t('trainerDynamax.resetTrainer')}</button>
-        <p>{t('trainerDynamax.resetTrainerHelp')}</p>
-      </section> : null}
-    </RecordEditorWorkspace>
-  </section>;
+        <button type="button" className="secondary-button compact-button" disabled={disabled} onClick={() => setRow(selected.trainerId, 1, 1)}>
+          <RotateCcw size={16} aria-hidden="true" />{t('trainerDynamax.resetTrainer')}
+        </button>
+      </EditorDetailGroup> : <p>{t('trainerDynamax.noResults')}</p>}
+    </EditorWorkspaceSection>
+    <EditorWorkspaceSection id="all" label={t('trainerDynamax.global')}>
+      <p className="trainer-dynamax-scope">{t('trainerDynamax.rowScope')}</p>
+      {children}
+      <div className="trainer-dynamax-actions">
+        <button type="button" className="secondary-button" disabled={disabled || !trainers.length} onClick={() => setAll(3)}>{t('trainerDynamax.normalAll')}</button>
+        <button type="button" className="secondary-button" disabled={disabled || !trainers.length} onClick={() => setAll(2)}>{t('trainerDynamax.disableAll')}</button>
+        <button type="button" className="secondary-button" disabled={disabled || !trainers.length} onClick={() => setAll(0)}>{t('trainerDynamax.clearAll')}</button>
+      </div>
+    </EditorWorkspaceSection>
+  </RecordEditorWorkspace>;
 }
 
 export function TrainerDynamaxRowReview({ before, settings, trainers }: { before: TrainerDynamaxSettings;

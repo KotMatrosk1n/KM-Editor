@@ -2,6 +2,5 @@
 .y-comm-editor { min-width: 0; }
 .y-comm-editor .panel-heading { flex-wrap: wrap; }
 .y-comm-editor p, .y-comm-setting { overflow-wrap: anywhere; }
-.y-comm-setting { display: flex; align-items: flex-start; gap: 16px; padding: 24px; border: 1px solid var(--border-color, #394453); border-radius: 10px; }
-.y-comm-setting input { flex-shrink: 0; margin-top: 4px; }
-.y-comm-setting > span { display: grid; gap: 8px; min-width: 0; }
+.y-comm-setting { display: inline-flex; align-items: center; gap: 8px; }
+.y-comm-setting input { flex-shrink: 0; margin: 0; }

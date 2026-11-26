@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
+import { EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
+import { EditorDetailGroup } from '../../components/EditorRecordDetails';
+import { EditorRecordTable } from '../../components/EditorRecordTable';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Crown, KeyRound, Plus, RefreshCw, Save, Trash2, X } from 'lucide-react';
 import type { EditSession, GiftPokemonEditableField } from '../../bridge/contracts';
@@ -9,7 +11,6 @@ import { customGiftCatalogSchema, getCustomGiftPendingCatalog, maximumRoyalGiftP
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { EditorSessionBar, EditorSessionBarActions } from '../../components/EditorSessionBar';
 import { ContextHelp } from '../../components/ContextHelp';
-import { EditorRecordHeading } from '../../components/SectionedEditorWorkspace';
 import { FocusedEditorWorkspace } from '../../components/FocusedEditorWorkspace';
 import { WorkflowPanelOutputSections, type WorkflowPanelOutput } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization';
@@ -18,7 +19,7 @@ import './CustomGiftSection.css';
 
 export type CustomGiftFieldRenderProps = {
   pokemon: CustomGiftPokemon; fields: GiftPokemonEditableField[]; drafts: Record<string, string>;
-  disabled: boolean; idPrefix: string; onChange: (field: string, value: string) => void;
+  disabled: boolean; idPrefix: string; section: string; onChange: (field: string, value: string) => void;
 };
 type Props = {
   mode: 'mystery' | 'royal'; workflow: CustomGiftWorkflow | null; session: EditSession | null;
@@ -153,11 +154,14 @@ export function CustomGiftSection({ mode, workflow, session, isEditing, isEditSt
         <ContextHelp label={title}>
           <p>{t(mode === 'royal' ? 'customGifts.royalHelp' : 'customGifts.mysteryHelp')}</p>
           <p>{t('customGifts.saveHelp')}</p>
+          <p>{t('customGifts.exclusive')}</p>
           {mode === 'royal' ? <p>{t('customGifts.oddsHelp')}</p> : null}
         </ContextHelp>
         <button className="secondary-button compact-button" type="button" onClick={onRefresh} disabled={isLoading || isStaging}>
           <RefreshCw size={16} aria-hidden="true" /><span>{translateLiteral('Refresh')}</span></button>
       </div>
+      <RecordEditorWorkspace id={`customGifts:${mode}`} className="custom-gifts-layout" initialSection="pokemon"
+        sessionBar={<>
       <EditorSessionBar canEdit={workflow?.canEdit === true} isEditing={isEditing} isStarting={isEditStarting}
         label={title} onStart={onStartEditSession} readOnlyReason={t('customGifts.readOnly')} />
       {isEditing ? <EditorSessionBarActions>
@@ -168,70 +172,94 @@ export function CustomGiftSection({ mode, workflow, session, isEditing, isEditSt
         })}><X size={16} aria-hidden="true" /><span>{translateLiteral('Cancel')}</span></button>
         <span className="draft-action-summary">{t(dirty ? 'customGifts.draft' : pending ? 'customGifts.staged' : 'customGifts.clean')}</span>
       </EditorSessionBarActions> : null}
+        </>}
+        browserControls={<>
+          <div className="custom-gifts-controls">
       <div className="custom-gifts-installation">
         <label className="custom-gifts-install"><input type="checkbox" checked={desired?.mode === mode} disabled={!canEdit}
           onChange={event => edit(catalog => ({ ...catalog, mode: event.target.checked ? mode : 'none' }))} />
           <strong>{t('customGifts.install', { editor: title })}</strong>
         </label>
-        <p>{t('customGifts.exclusive')}</p>
+
         <p role="status">{t('customGifts.current', { editor: t(workflow?.installedMode === 'royal' ? 'customGifts.royalTitle'
           : workflow?.installedMode === 'mystery' ? 'customGifts.mysteryTitle' : 'customGifts.none') })}</p>
         {needsRepair ? <p className="field-warning" role="status">{t('customGifts.repair')}</p> : null}
       </div>
-      {mode === 'royal' ? <div className="custom-gifts-badges" role="group" aria-label={t('customGifts.badges')}>
+
+            <button type="button" className="secondary-button compact-button" disabled={addDisabled} onClick={add}>
+              <Plus size={16} aria-hidden="true" />{t('customGifts.add')}
+            </button>
+          </div>
+            {mode === 'royal' ? <div className="custom-gifts-badges" role="group" aria-label={t('customGifts.badges')}>
         {Array.from({ length: 9 }, (_, count) => <button type="button" key={count} aria-pressed={count === badges}
           className={count === badges ? 'primary-button' : 'secondary-button'} onClick={() => { setBadges(count); setSelection(null); }}>
           {t('customGifts.badgeCount', { count })}</button>)}
       </div> : null}
-      {mode === 'royal' ? <div className="custom-gifts-pool-summary">
+            {mode === 'royal' ? <div className="custom-gifts-pool-summary">
         <p role="status">{t('customGifts.poolSummary', { count: entries.length, total: poolTotal })}</p>
         {invalidPools.length > 0 ? <p role="status">{t('customGifts.invalidPools', { badges: invalidPools.join(', ') })}</p> : null}
       </div> : null}
-      <RecordEditorWorkspace id={`customGifts:${mode}`} className="custom-gifts-layout"
-        browserControls={<button type="button" className="secondary-button compact-button" disabled={addDisabled} onClick={add}><Plus size={16} aria-hidden="true" />{t('customGifts.add')}</button>}
-        browser={
-        <div className="custom-gifts-list">
-          {entries.length === 0 ? <p>{t('customGifts.empty')}</p> : entries.map(entry => <button type="button" key={entry.key}
-            aria-pressed={selected?.key === entry.key} className={selected?.key === entry.key ? 'custom-gifts-row selected' : 'custom-gifts-row'} onClick={() => setSelection(entry.key)}>
-            <strong>{giftName(entry)}</strong>
-            <span>{t('customGifts.level', { level: entry.pokemon.level })}</span>
-            {mode === 'royal' ? <span>{t('customGifts.slotChance', { chance: selectedPool?.chances[entry.key] ?? 0 })}</span> : null}
-          </button>)}
-        </div>
-      }>
-        <div className="custom-gifts-detail">
-          {selected ? <>
-            <div className="panel-heading">
-              <EditorRecordHeading name={giftName(selected)} id={selectedCode?.claimId} />
-              <button type="button" className="danger-button" disabled={!canEdit} onClick={remove}>
+
+          {isEditing && invalid ? <p className="editable-field-error" role="status">{t('customGifts.invalid')}</p> : null}
+        </>}
+        browser={<EditorRecordTable label={title} identityLabel={translateLiteral('Gift')} rows={entries}
+          rowId={entry => String(entry.key)} identity={giftName} selection={selected ? String(selected.key) : undefined}
+          onSelect={entry => setSelection(entry.key)} empty={t('customGifts.empty')}
+          columns={[
+            { id: 'level', label: translateLiteral('Level'), value: entry => entry.pokemon.level, numeric: true },
+            mode === 'royal' ? { id: 'chance', label: t('customGifts.chance'), numeric: true,
+              value: entry => `${selectedPool?.chances[entry.key] ?? 0}%` } :
+              { id: 'code', label: t('customGifts.code'),
+                value: entry => desired?.codeGifts.find(gift => gift.claimId === entry.key)?.code }
+          ]}
+        />}>
+        {selected ? <>
+          <EditorWorkspaceHeader afterBrowser>
+            <div className="editor-record-context">
+              <EditorRecordHeading name={giftName(selected)} id={selectedCode?.claimId ?? selected.key + 1} />
+              <button type="button" className="danger-button compact-button" disabled={!canEdit} onClick={remove}>
                 <Trash2 size={16} aria-hidden="true" />{translateLiteral('Remove')}
               </button>
             </div>
+          </EditorWorkspaceHeader>
+          <EditorWorkspaceSection id="pokemon" label={translateLiteral('Pokemon')}>
+            <label className="custom-gifts-install"><input type="checkbox" checked={selected.pokemon.isEgg} disabled={!canEdit}
+              onChange={event => editPokemon(pokemon => ({ ...pokemon, isEgg: event.target.checked }))} />{t('customGifts.egg')}</label>
+
+            {renderPokemonFields({ pokemon: selected.pokemon, fields, drafts: numericDrafts[recordKey] ?? {}, disabled: !canEdit,
+              idPrefix: `custom-gift-${recordKey}`, onChange: changeNumber, section: 'pokemon' })}
+          </EditorWorkspaceSection>
+          {(['moves', 'stats'] as const).map(section => (
+            <EditorWorkspaceSection key={section} id={section} label={translateLiteral(section === 'moves' ? 'Moves' : 'Stats')}>
+              {renderPokemonFields({ pokemon: selected.pokemon, fields, drafts: numericDrafts[recordKey] ?? {}, disabled: !canEdit,
+                idPrefix: `custom-gift-${recordKey}`, onChange: changeNumber, section })}
+            </EditorWorkspaceSection>
+          ))}
+          <EditorWorkspaceSection id="distribution" label={translateLiteral('Distribution')}
+            invalid={mode === 'royal' ? invalidPools.includes(badges) : parsed?.success === false}>
+            <EditorDetailGroup label={translateLiteral(mode === 'royal' ? 'Pool odds' : 'Claim settings')}
+              headingValue={selectedCode ? <ContextHelp label={t('customGifts.code')}><p>{t('customGifts.codeHelp')}</p></ContextHelp> : null}>
             {selectedCode ? <div className="editable-field-grid">
               <label className="path-field"><span>{t('customGifts.name')}</span><input value={selectedCode.name} disabled={!canEdit} maxLength={80}
                 onChange={event => edit(catalog => ({ ...catalog, codeGifts: catalog.codeGifts.map(gift => gift.claimId === selectedCode.claimId
                   ? { ...gift, name: event.target.value } : gift) }))} /></label>
               <label className="path-field"><span>{t('customGifts.code')}</span><input value={selectedCode.code} disabled={!canEdit} maxLength={16}
-                aria-describedby="custom-gifts-code-help" onChange={event => edit(catalog => ({ ...catalog, codeGifts: catalog.codeGifts.map(gift =>
+                onChange={event => edit(catalog => ({ ...catalog, codeGifts: catalog.codeGifts.map(gift =>
                   gift.claimId === selectedCode.claimId ? { ...gift, code: event.target.value.toUpperCase() } : gift) }))} /></label>
               <label className="custom-gifts-install"><input type="checkbox" checked={selectedCode.oncePerSave} disabled={!canEdit}
                 onChange={event => edit(catalog => ({ ...catalog, codeGifts: catalog.codeGifts.map(gift => gift.claimId === selectedCode.claimId
                   ? { ...gift, oncePerSave: event.target.checked } : gift) }))} />{t('customGifts.once')}</label>
-              <p>{t('customGifts.identity', { id: selectedCode.claimId })}</p>
             </div> : null}
-            {selectedCode ? <p id="custom-gifts-code-help">{t('customGifts.codeHelp')}</p> : null}
             {mode === 'royal' ? <label className="path-field custom-gifts-chance"><span>{t('customGifts.chance')}</span>
               <input type="text" inputMode="decimal" disabled={!canEdit}
                 value={numericDrafts[recordKey]?.chance ?? String(selectedPool?.chances[selected.key] ?? 0)}
                 aria-invalid={parseRoyalGiftChance(numericDrafts[recordKey]?.chance ?? String(selectedPool?.chances[selected.key] ?? 0)) === null}
                 onChange={event => changeChance(event.target.value)} />
             </label> : null}
-            <label className="custom-gifts-install"><input type="checkbox" checked={selected.pokemon.isEgg} disabled={!canEdit}
-              onChange={event => editPokemon(pokemon => ({ ...pokemon, isEgg: event.target.checked }))} />{t('customGifts.egg')}</label>
-            {renderPokemonFields({ pokemon: selected.pokemon, fields, drafts: numericDrafts[recordKey] ?? {}, disabled: !canEdit,
-              idPrefix: `custom-gift-${recordKey}`, onChange: changeNumber })}
-          </> : <p>{t('customGifts.select')}</p>}
-        </div>
+
+            </EditorDetailGroup>
+          </EditorWorkspaceSection>
+        </> : <p>{t('customGifts.select')}</p>}
       </RecordEditorWorkspace>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />

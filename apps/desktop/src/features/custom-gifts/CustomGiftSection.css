@@ -1,13 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-.custom-gifts-install { display: flex; align-items: center; gap: 12px; margin-block: 12px; }
-.custom-gifts-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 16px; }
-.custom-gifts-layout { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(0, 3fr); gap: 16px; }
-.custom-gifts-list, .custom-gifts-detail { min-width: 0; }
-.custom-gifts-row { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 4px;
-  padding: 12px; margin-block: 8px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-surface); color: inherit; }
-.custom-gifts-row.selected { border-color: var(--color-accent); background: var(--color-control-hover); }
-.custom-gifts-detail .editable-field-grid { margin-block: 12px; }
-.custom-gifts-pool-summary { margin-block: 16px; }
-.custom-gifts-pool-summary p { margin-block: 8px; }
-.custom-gifts-chance { max-width: 240px; margin-block: 12px; }
-@container (max-width: 760px) { .custom-gifts-layout { grid-template-columns: minmax(0, 1fr); } }
+.custom-gifts-controls,
+.custom-gifts-installation,
+.custom-gifts-badges,
+.custom-gifts-pool-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.custom-gifts-controls, .custom-gifts-pool-summary { justify-content: space-between; }
+.custom-gifts-install { display: flex; align-items: center; gap: 8px; }
+.custom-gifts-installation p, .custom-gifts-pool-summary p { margin: 0; }
+.custom-gifts-installation p { font-size: .875rem; }
+.custom-gifts-badges button { min-height: 32px; padding-block: 4px; }
+.custom-gifts-layout .editor-detail-group > :is(.editable-field-grid, .custom-gifts-chance) { margin: 10px; }
+.custom-gifts-chance { max-width: 240px; }

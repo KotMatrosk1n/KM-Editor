@@ -987,6 +987,7 @@
     "modelViewer.category.objects": "Объекты и предметы",
     "modelViewer.category.environment": "Окружение",
     "modelViewer.category.other": "Прочее или без категории",
+    "modelViewer.variantCount": "Варианты",
     "modelViewer.variant": "Форма {form}, вариант {gender}",
     "modelViewer.shiny": "Блестящий",
     "modelViewer.selectModel": "Выберите модель",

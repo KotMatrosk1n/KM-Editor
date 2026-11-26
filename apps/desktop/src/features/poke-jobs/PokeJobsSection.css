@@ -2,6 +2,5 @@
 .poke-jobs-editor { min-width: 0; }
 .poke-jobs-editor .panel-heading { flex-wrap: wrap; }
 .poke-jobs-editor p, .poke-jobs-setting { overflow-wrap: anywhere; }
-.poke-jobs-setting { display: flex; align-items: flex-start; gap: 16px; padding: 24px; border: 1px solid var(--border-color, #394453); border-radius: 10px; }
-.poke-jobs-setting input { flex-shrink: 0; margin-top: 4px; }
-.poke-jobs-setting > span { display: grid; gap: 8px; min-width: 0; }
+.poke-jobs-setting { display: inline-flex; align-items: center; gap: 8px; }
+.poke-jobs-setting input { flex-shrink: 0; margin: 0; }

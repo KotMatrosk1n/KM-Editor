@@ -1,9 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-import { ChevronDown, Dna, MapPin, Package, ShieldCheck, Users } from 'lucide-react';
+import { Dna, MapPin, Package, ShieldCheck, Users } from 'lucide-react';
 import { useState } from 'react';
 import type { RandomizerOptions, TrainerRandomizerOptions } from '../../bridge/contracts';
 import { useLocalization } from '../../localization/LocalizationProvider';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
+import { ContextHelp } from '../../components/ContextHelp';
+import { EditorRecordTable } from '../../components/EditorRecordTable';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { defaultTrainerOptions, randomizerCategoryDefinitions, randomizerEncounterOptions,
   randomizerTypeChartOptions, type RandomizerOptionKey } from './randomizerOptions';
@@ -11,8 +13,8 @@ import { defaultTrainerOptions, randomizerCategoryDefinitions, randomizerEncount
 type Props = {
   options: RandomizerOptions;
   locked: boolean;
-  expandedCategoryIds: Set<string>;
-  onToggleCategory: (id: string) => void;
+  categoryId: string;
+  onSelectCategory: (id: string) => void;
   onToggle: (key: RandomizerOptionKey) => void;
   onTrainerChange: (patch: Partial<TrainerRandomizerOptions>) => void;
   levelDraft: string;
@@ -31,6 +33,7 @@ export function RandomizerSettings(props: Props) {
   const { t, translateLiteral } = useLocalization();
   const [group, setGroup] = useState<Group>('pokemon');
   const { options, locked, onToggle } = props;
+  const category = randomizerCategoryDefinitions.find(row => row.id === props.categoryId) ?? randomizerCategoryDefinitions[0];
   const trainers = options.trainers ?? defaultTrainerOptions;
   const counts: Record<Group, number> = {
     pokemon: randomizerCategoryDefinitions.filter(row => options[row.enabledKey]).length,
@@ -44,9 +47,9 @@ export function RandomizerSettings(props: Props) {
 
   const check = (id: string, label: string, help: string, checked: boolean, change: () => void, disabled = locked) => (
     <div className={`randomizer-setting ${checked ? 'randomizer-setting-enabled' : ''}`} key={id}>
-      <input aria-describedby={`${id}-help`} aria-label={label} checked={checked} className="km-choice-control"
+      <input aria-label={label} checked={checked} className="km-choice-control"
         disabled={disabled} id={id} onChange={change} type="checkbox" />
-      <div><label htmlFor={id}>{label}</label><p id={`${id}-help`}>{help}</p></div>
+      <label htmlFor={id}>{label}</label><ContextHelp label={label}>{help}</ContextHelp>
     </div>
   );
   const option = (row: { key: RandomizerOptionKey; label: string; help: string }, disabled = locked) =>
@@ -67,32 +70,36 @@ export function RandomizerSettings(props: Props) {
         })}
       </nav>
       <div className="panel randomizer-settings-content" id="randomizer-settings-content">
-        <div className="randomizer-settings-heading"><h2>{t(`randomizer.groups.${group}`)}</h2>
-          <p>{t(`randomizer.groups.${group}Help`)}</p></div>
+        <div className="randomizer-settings-heading">
+          <h2>{t(`randomizer.groups.${group}`)}</h2>
+          <ContextHelp label={t(`randomizer.groups.${group}`)}>{t(`randomizer.groups.${group}Help`)}</ContextHelp>
+        </div>
 
-        {group === 'pokemon' && <div className="randomizer-accordion-list">{randomizerCategoryDefinitions.map(category => (
-          <details className="randomizer-category-card" key={category.id} open={props.expandedCategoryIds.has(category.id)}>
-            <summary onClick={event => { event.preventDefault(); props.onToggleCategory(category.id); }}>
-              <category.icon aria-hidden="true" size={18} /><span>{translateLiteral(category.label)}</span>
-              <span className="randomizer-category-state">{t(options[category.enabledKey] ? 'randomizer.settings.on' : 'randomizer.settings.off')}</span>
-              <ChevronDown aria-hidden="true" size={16} />
-            </summary>
-            <div className="randomizer-category-fields">
-              {check(`randomizer-${category.id}-enabled`, translateLiteral(category.enabledLabel), translateLiteral(category.help),
-                options[category.enabledKey], () => onToggle(category.enabledKey))}
-              {category.fields.length > 0 && <fieldset disabled={!options[category.enabledKey] || locked} className="randomizer-child-fields">
-                <legend className="sr-only">{translateLiteral(category.label)}</legend>
-                {category.fields.map(field => check(`randomizer-${category.id}-${field.key}`, translateLiteral(field.label),
-                  translateLiteral(field.help), options[field.key], () => onToggle(field.key), !options[category.enabledKey] || locked))}
-              </fieldset>}
-            </div>
-          </details>
-        ))}</div>}
+        {group === 'pokemon' && <div className="randomizer-pokemon-workspace">
+          <div className="editor-slot-browser">
+            <EditorRecordTable label={t('randomizer.groups.pokemon')} identityLabel={translateLiteral('Category')}
+              rows={randomizerCategoryDefinitions} rowId={row => row.id} selection={category.id}
+              onSelect={row => props.onSelectCategory(row.id)} disabled={locked}
+              identity={row => <><row.icon aria-hidden="true" size={16} />{translateLiteral(row.label)}</>}
+              columns={[{ id: 'status', label: translateLiteral('Status'), value: row =>
+                t(options[row.enabledKey] ? 'randomizer.settings.on' : 'randomizer.settings.off') }]} />
+          </div>
+          <div className="editor-detail-group randomizer-category-fields">
+            <h3>{translateLiteral(category.label)}</h3>
+            {check(`randomizer-${category.id}-enabled`, translateLiteral(category.enabledLabel), translateLiteral(category.help),
+              options[category.enabledKey], () => onToggle(category.enabledKey))}
+            {category.fields.length > 0 && <fieldset className="randomizer-child-fields">
+              <legend className="sr-only">{translateLiteral(category.label)}</legend>
+              {category.fields.map(field => check(`randomizer-${category.id}-${field.key}`, translateLiteral(field.label),
+                translateLiteral(field.help), options[field.key], () => onToggle(field.key), !options[category.enabledKey] || locked))}
+            </fieldset>}
+          </div>
+        </div>}
 
         {group === 'trainers' && <>
           {check('randomizer-trainers-enabled', t('randomizer.trainers.enable'), t('randomizer.trainers.enableHelp'),
             options.randomizeTrainers, () => onToggle('randomizeTrainers'))}
-          <fieldset className="randomizer-trainer-fields" disabled={!options.randomizeTrainers || locked}>
+          <fieldset className="randomizer-trainer-fields">
             <legend className="sr-only">{t('randomizer.groups.trainers')}</legend>
             <div className="randomizer-settings-grid randomizer-trainer-main">
               {trainerChecks.slice(0, 3).map(key => check(`randomizer-trainer-${key}`, t(`randomizer.trainers.${key}`),
@@ -101,7 +108,7 @@ export function RandomizerSettings(props: Props) {
               <div className="randomizer-number-setting">
                 <label htmlFor="randomizer-trainer-level">{t('randomizer.trainers.level')}</label>
                 <div className="randomizer-percent-input"><input aria-describedby="randomizer-trainer-level-help" aria-invalid={!props.levelValid || undefined}
-                  id="randomizer-trainer-level" inputMode="numeric" maxLength={4} onChange={event => props.onLevelChange(event.currentTarget.value)}
+                  disabled={!options.randomizeTrainers || locked} id="randomizer-trainer-level" inputMode="numeric" maxLength={4} onChange={event => props.onLevelChange(event.currentTarget.value)}
                   type="text" value={props.levelDraft} /><span>%</span></div>
                 <p id="randomizer-trainer-level-help">{t(props.levelValid ? 'randomizer.trainers.levelHelp' : 'randomizer.trainers.levelError')}</p>
               </div>
@@ -135,7 +142,7 @@ export function RandomizerSettings(props: Props) {
         {group === 'typeChart' && <>
           {check('randomizer-type-chart-enabled', translateLiteral('Randomize Type Chart'), t('randomizer.groups.typeChartHelp'),
             options.randomizeTypeChart, () => onToggle('randomizeTypeChart'))}
-          <fieldset className="randomizer-child-fields" disabled={!options.randomizeTypeChart || locked}>
+          <fieldset className="randomizer-child-fields">
             <legend className="sr-only">{t('randomizer.groups.typeChart')}</legend>
             {randomizerTypeChartOptions.map(row => option(row, !options.randomizeTypeChart || locked))}
           </fieldset>

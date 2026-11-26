@@ -22,6 +22,8 @@ import {
   EditorSessionBar,
   EditorSessionBarActions
 } from '../../components/EditorSessionBar';
+import { EditorRecordTable } from '../../components/EditorRecordTable';
+import { EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { ContextHelp } from '../../components/ContextHelp';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { FieldLabel } from '../../components/FieldLabel';
@@ -593,20 +595,9 @@ export function ZaDexLayoutSection({
             />
           </label>
 
-          <div className="za-dex-layout-workspace">
-            <div className="za-dex-layout-dexes">
+          <RecordEditorWorkspace id="zaDexLayout" className="za-dex-task-workspace" initialSection="move"
+            browserControls={<div className="za-dex-layout-dexes">
               <div className="za-dex-layout-dex-column">
-                <DexSizeControl
-                  dexKind="regular"
-                  disabled={
-                    !hasActiveEditSession ||
-                    !dexEditor.canEditAdvanced ||
-                    moveDraftIsDirty
-                  }
-                  isValid={proposedRegularCount !== null}
-                  onChange={(value) => updateSizeDraft('regular', value)}
-                  value={regularSizeDraft}
-                />
                 <DexPlacementList
                   dexKind="regular"
                   placements={regularPlacements}
@@ -617,17 +608,6 @@ export function ZaDexLayoutSection({
                 />
               </div>
               <div className="za-dex-layout-dex-column">
-                <DexSizeControl
-                  dexKind="hyperspace"
-                  disabled={
-                    !hasActiveEditSession ||
-                    !dexEditor.canEditAdvanced ||
-                    moveDraftIsDirty
-                  }
-                  isValid={proposedHyperspaceCount !== null}
-                  onChange={(value) => updateSizeDraft('hyperspace', value)}
-                  value={hyperspaceSizeDraft}
-                />
                 <DexPlacementList
                   dexKind="hyperspace"
                   placements={hyperspacePlacements}
@@ -637,65 +617,12 @@ export function ZaDexLayoutSection({
                   onSelect={setSelectedSpeciesId}
                 />
               </div>
-            </div>
+            </div>}>
+              {selectedPlacement ? <EditorWorkspaceHeader afterBrowser>
+                <EditorRecordHeading name={selectedPlacement.label} id={selectedPlacement.speciesId} />
+              </EditorWorkspaceHeader> : null}
 
-            <div className="za-dex-layout-inspectors">
-              <section
-                aria-labelledby="za-dex-layout-resize-heading"
-                className="za-dex-layout-inspector za-dex-layout-resize-inspector"
-              >
-                <div className="za-dex-layout-inspector-heading">
-                  <div>
-                    <div className="editable-field-label-row">
-                      <h3 id="za-dex-layout-resize-heading">
-                        {translateLiteral('Resize Pokédexes')}
-                      </h3>
-                      <ContextHelp label={translateLiteral('Resize Pokédexes')}>
-                        {translateLiteral(
-                          'Both sizes are linked and must total 364. Each Pokédex can contain 1 to 363 entries.'
-                        )}
-                      </ContextHelp>
-                    </div>
-                  </div>
-                </div>
-
-                {resizePreview ? (
-                  <DexResizePreviewPanel preview={resizePreview} />
-                ) : (
-                  <p className="za-dex-layout-validation" role="alert">
-                    {translateLiteral(
-                      'Enter a whole number from 1 to 363. The linked size is calculated automatically.'
-                    )}
-                  </p>
-                )}
-
-                {resizeIsNoOp ? (
-                  <p className="za-dex-layout-validation">
-                    {translateLiteral('These sizes match the current Pokédex layout.')}
-                  </p>
-                ) : null}
-                {!dexEditor.canEditAdvanced ? (
-                  <p className="za-dex-layout-validation" role="alert">
-                    {translateLiteral(
-                      dexEditor.advancedBlockedReason ??
-                        'Pokédex resizing is unavailable for the loaded game data.'
-                    )}
-                  </p>
-                ) : null}
-
-                {editSession === null && dexEditor.canEditAdvanced ? (
-                  <div className="za-dex-layout-actions">
-                    <span className="draft-action-summary">
-                      {translateLiteral('Start editing to stage a Pokédex resize.')}
-                    </span>
-                  </div>
-                ) : null}
-              </section>
-
-              <aside
-                aria-labelledby="za-dex-layout-move-heading"
-                className="za-dex-layout-inspector"
-              >
+              <EditorWorkspaceSection id="move" label={translateLiteral('Move selected entry')} modified={moveDraftIsDirty}>
               <div className="za-dex-layout-inspector-heading">
                 <div>
                   <div className="editable-field-label-row">
@@ -862,9 +789,81 @@ export function ZaDexLayoutSection({
                   {translateLiteral('Select a Pokédex entry to move.')}
                 </p>
               )}
-              </aside>
-            </div>
-          </div>
+              </EditorWorkspaceSection>
+              <EditorWorkspaceSection id="resize" label={translateLiteral('Resize Pokédexes')} modified={resizeDraftIsDirty}>
+                <div className="editor-task-groups">
+                <DexSizeControl
+                  dexKind="regular"
+                  disabled={
+                    !hasActiveEditSession ||
+                    !dexEditor.canEditAdvanced ||
+                    moveDraftIsDirty
+                  }
+                  isValid={proposedRegularCount !== null}
+                  onChange={(value) => updateSizeDraft('regular', value)}
+                  value={regularSizeDraft}
+                />
+                <DexSizeControl
+                  dexKind="hyperspace"
+                  disabled={
+                    !hasActiveEditSession ||
+                    !dexEditor.canEditAdvanced ||
+                    moveDraftIsDirty
+                  }
+                  isValid={proposedHyperspaceCount !== null}
+                  onChange={(value) => updateSizeDraft('hyperspace', value)}
+                  value={hyperspaceSizeDraft}
+                />
+                </div>
+                <div className="za-dex-layout-inspector-heading">
+                  <div>
+                    <div className="editable-field-label-row">
+                      <h3 id="za-dex-layout-resize-heading">
+                        {translateLiteral('Resize Pokédexes')}
+                      </h3>
+                      <ContextHelp label={translateLiteral('Resize Pokédexes')}>
+                        {translateLiteral(
+                          'Both sizes are linked and must total 364. Each Pokédex can contain 1 to 363 entries.'
+                        )}
+                      </ContextHelp>
+                    </div>
+                  </div>
+                </div>
+
+                {resizePreview ? (
+                  <DexResizePreviewPanel preview={resizePreview} />
+                ) : (
+                  <p className="za-dex-layout-validation" role="alert">
+                    {translateLiteral(
+                      'Enter a whole number from 1 to 363. The linked size is calculated automatically.'
+                    )}
+                  </p>
+                )}
+
+                {resizeIsNoOp ? (
+                  <p className="za-dex-layout-validation">
+                    {translateLiteral('These sizes match the current Pokédex layout.')}
+                  </p>
+                ) : null}
+                {!dexEditor.canEditAdvanced ? (
+                  <p className="za-dex-layout-validation" role="alert">
+                    {translateLiteral(
+                      dexEditor.advancedBlockedReason ??
+                        'Pokédex resizing is unavailable for the loaded game data.'
+                    )}
+                  </p>
+                ) : null}
+
+                {editSession === null && dexEditor.canEditAdvanced ? (
+                  <div className="za-dex-layout-actions">
+                    <span className="draft-action-summary">
+                      {translateLiteral('Start editing to stage a Pokédex resize.')}
+                    </span>
+                  </div>
+                ) : null}
+              </EditorWorkspaceSection>
+
+          </RecordEditorWorkspace>
         </>
         )}
 
@@ -1047,36 +1046,17 @@ function DexPlacementList({
         </span>
       </div>
       <div className="za-dex-layout-list">
-        {placements.length > 0 ? (
-          placements.map((placement) => {
-            const isSelected = placement.speciesId === selectedSpeciesId;
-            return (
-              <button
-                aria-pressed={isSelected}
-                className={`za-dex-layout-row${isSelected ? ' is-selected' : ''}`}
-                disabled={selectionLocked && !isSelected}
-                key={placement.speciesId}
-                onClick={() => onSelect(placement.speciesId)}
-                type="button"
-              >
-                <span className="za-dex-layout-number" data-localization-ignore="true">
-                  #{formatDexNumber(placement.displayedNumber)}
-                </span>
-                <span className="za-dex-layout-name" data-localization-ignore="true">
-                  {placement.label}
-                </span>
-                <span className="za-dex-layout-species">
-                  {translateLiteral('Species ID')}{' '}
-                  <span data-localization-ignore="true">{placement.speciesId}</span>
-                </span>
-              </button>
-            );
-          })
-        ) : (
-          <p className="za-dex-layout-empty">
-            {translateLiteral('No Pokédex entries match this search.')}
-          </p>
-        )}
+        <EditorRecordTable label={translateLiteral(formatDexKind(dexKind))} identityLabel={translateLiteral('Pokémon')}
+          rows={placements} rowId={placement => String(placement.speciesId)}
+          selection={selectedSpeciesId == null ? undefined : String(selectedSpeciesId)}
+          disabled={selectionLocked}
+          onSelect={placement => onSelect(placement.speciesId)}
+          identity={placement => <span data-localization-ignore="true">{placement.label}</span>}
+          columns={[
+            { id: 'number', label: translateLiteral('Number'), numeric: true, value: placement => formatDexNumber(placement.displayedNumber) },
+            { id: 'species', label: translateLiteral('Species ID'), numeric: true, value: placement => placement.speciesId },
+          ]}
+          empty={translateLiteral('No Pokédex entries match this search.')} />
       </div>
     </section>
   );

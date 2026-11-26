@@ -1,9 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { Swords } from 'lucide-react';
 import type { PlaPage } from '../../bridge/plaProjectBridge';
-import { Metric } from '../../components/workflowPanels';
-import { FocusedEditorMetrics } from '../../components/FocusedEditorWorkspace';
+import { ContextHelp } from '../../components/ContextHelp';
+import { EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
+import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useLocalization } from '../../localization';
 import { TypeChartCellControl, TypeChartTypeBadge } from '../type-chart/TypeChartSection';
 
@@ -15,6 +16,7 @@ export function PlaTypeChartWorkspace({ page, rows, enabled, onChange, sessionBa
   sessionBar: ReactNode; actions: ReactNode; refresh: ReactNode; loading: boolean;
 }) {
   const { t, translateLiteral } = useLocalization();
+  const [attackingType, setAttackingType] = useState('');
   const metadata = page?.records[0]?.metadata;
   const names: string[] = metadata?.typeNames ? JSON.parse(metadata.typeNames) : [];
   const types = names.slice(0, 18).map((label, typeIndex) => ({ typeIndex, label, shortLabel: label.slice(0, 3).toLocaleUpperCase(), color: colors[typeIndex] }));
@@ -22,14 +24,20 @@ export function PlaTypeChartWorkspace({ page, rows, enabled, onChange, sessionBa
   return <section aria-labelledby="pla-editor-title" className="panel wide-panel pla-editor">
     <div className="panel-heading"><Swords aria-hidden="true" size={18} /><h2 id="pla-editor-title">{translateLiteral('Type Chart')}</h2>{refresh}</div>
     {sessionBar}{actions}
-    <FocusedEditorMetrics>
-      <Metric label={translateLiteral('Game')} value="Pokemon Legends Arceus" />
-      <Metric label={translateLiteral('Offset')} value={metadata?.offset ?? translateLiteral('Unknown')} />
-      <Metric label={translateLiteral('Build')} value={metadata?.buildId ?? translateLiteral('Unknown')} />
-    </FocusedEditorMetrics>
-    <p className="field-note" id="pla-type-chart-help">{t('pla.notice.typeChart')}</p>
     {loading ? <p role="status">{translateLiteral('Loading')}</p> : null}
-    {available ? <div className="type-chart-editor" aria-describedby="pla-type-chart-help">
+    <RecordEditorWorkspace id="pla-type-chart" className="type-chart-layout" initialSection="matchups">
+      {available ? <EditorWorkspaceSection id="matchups" label={translateLiteral('Matchups')}>
+        <div className="editor-record-context type-chart-filter">
+          <label htmlFor="pla-type-chart-attacking">{translateLiteral('Attacking')}</label>
+          <SearchableOptionInput id="pla-type-chart-attacking" ariaLabel={translateLiteral('Attacking')}
+            value={attackingType} onChange={setAttackingType} disabled={loading} isFiniteCatalog
+            options={[
+              { value: '', label: translateLiteral('All types') },
+              ...types.map(type => ({ value: String(type.typeIndex), label: type.label }))
+            ]} />
+          <ContextHelp label={translateLiteral('Type Chart')}>{t('pla.notice.typeChart')}</ContextHelp>
+        </div>
+        <div className="type-chart-editor">
       <div className="type-chart-scroll" aria-label={translateLiteral('Type effectiveness chart')}>
         <div className="type-chart-grid">
           <div className="type-chart-axis-label">
@@ -37,7 +45,7 @@ export function PlaTypeChartWorkspace({ page, rows, enabled, onChange, sessionBa
             <span className="type-chart-axis-line"><span>{translateLiteral('Attacking')}</span><span aria-hidden="true">↓</span></span>
           </div>
           {types.map(type => <TypeChartTypeBadge key={`defense-${type.typeIndex}`} type={type} />)}
-          {types.map(attack => <Fragment key={`attack-${attack.typeIndex}`}>
+          {types.filter(type => attackingType === '' || String(type.typeIndex) === attackingType).map(attack => <Fragment key={`attack-${attack.typeIndex}`}>
             <TypeChartTypeBadge isRowHeader type={attack} />
             {types.map(defense => {
               const value = Number(rows[attack.typeIndex][defense.typeIndex]);
@@ -49,6 +57,15 @@ export function PlaTypeChartWorkspace({ page, rows, enabled, onChange, sessionBa
           </Fragment>)}
         </div>
       </div>
-    </div> : null}
+        </div>
+      </EditorWorkspaceSection> : null}
+      {metadata ? <EditorWorkspaceSection id="source" label={translateLiteral('Source')}>
+        <dl className="item-provenance-list">
+          <div><dt>{translateLiteral('Game')}</dt><dd>Pokémon Legends: Arceus</dd></div>
+          <div><dt>{translateLiteral('Offset')}</dt><dd>{metadata.offset ?? translateLiteral('Unknown')}</dd></div>
+          <div><dt>{translateLiteral('Build')}</dt><dd>{metadata.buildId ?? translateLiteral('Unknown')}</dd></div>
+        </dl>
+      </EditorWorkspaceSection> : null}
+    </RecordEditorWorkspace>
   </section>;
 }

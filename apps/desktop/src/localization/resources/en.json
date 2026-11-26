@@ -987,6 +987,7 @@
     "modelViewer.category.objects": "Objects and props",
     "modelViewer.category.environment": "Environment",
     "modelViewer.category.other": "Other or unclassified",
+    "modelViewer.variantCount": "Variants",
     "modelViewer.variant": "Form {form}, variant {gender}",
     "modelViewer.shiny": "Shiny",
     "modelViewer.selectModel": "Select a model",

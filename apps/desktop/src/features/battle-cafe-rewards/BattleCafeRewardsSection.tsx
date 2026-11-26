@@ -22,6 +22,8 @@ import { parseBoundedWholeNumberDraft } from '../gameplayInputDrafts';
 import { useLocalization } from '../../localization';
 import { formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 
+import { EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
+
 const battleCafeRewardsDomain = 'workflow.battleCafeRewards';
 const battleCafeRewardsRecordId = 'battle-cafe-rewards';
 const battleCafeRewardsField = 'rows';
@@ -231,6 +233,34 @@ export function BattleCafeRewardsSection({
     }
   };
 
+  const summary = (
+    <div className="battle-cafe-rewards-summary" aria-label={t('battleCafeRewards.totals.heading')}>
+      {ownerKeys.map((owner) => {
+        const isExact = totals[owner] === 100;
+        return (
+          <div className={`battle-cafe-total ${isExact ? 'is-valid' : 'is-invalid'}`} key={owner}>
+            {isExact ? <CheckCircle2 aria-hidden="true" size={18} /> : <TriangleAlert aria-hidden="true" size={18} />}
+            <span>{t(`battleCafeRewards.owner.${owner}`)}</span>
+            <strong>{t('battleCafeRewards.totals.value', { total: totals[owner] ?? '-' })}</strong>
+          </div>
+        );
+      })}
+      <div className="battle-cafe-stage-status" role="status">
+        <span>{t('battleCafeRewards.status.label')}</span>
+        <strong>{hasDirtyDraft && hasStagedChange
+          ? t('battleCafeRewards.status.stagedWithDraft', {
+            count: dirtyRowIndexes.size,
+            staged: decodedStagedRows?.length ?? 0
+          })
+          : hasDirtyDraft
+            ? t('battleCafeRewards.status.draft', { count: dirtyRowIndexes.size })
+            : hasStagedChange
+              ? t('battleCafeRewards.status.staged', { count: decodedStagedRows?.length ?? 0 })
+              : t('battleCafeRewards.status.clean')}</strong>
+      </div>
+    </div>
+  );
+
   return (
     <>
       <section aria-labelledby="battle-cafe-rewards-heading" className="panel wide-panel battle-cafe-rewards-panel">
@@ -266,32 +296,6 @@ export function BattleCafeRewardsSection({
 
         {workflow ? (
           <div className="battle-cafe-rewards-editor">
-            <div className="battle-cafe-rewards-summary" aria-label={t('battleCafeRewards.totals.heading')}>
-              {ownerKeys.map((owner) => {
-                const isExact = totals[owner] === 100;
-                return (
-                  <div className={`battle-cafe-total ${isExact ? 'is-valid' : 'is-invalid'}`} key={owner}>
-                    {isExact ? <CheckCircle2 aria-hidden="true" size={18} /> : <TriangleAlert aria-hidden="true" size={18} />}
-                    <span>{t(`battleCafeRewards.owner.${owner}`)}</span>
-                    <strong>{t('battleCafeRewards.totals.value', { total: totals[owner] ?? '-' })}</strong>
-                  </div>
-                );
-              })}
-              <div className="battle-cafe-stage-status" role="status">
-                <span>{t('battleCafeRewards.status.label')}</span>
-                <strong>{hasDirtyDraft && hasStagedChange
-                  ? t('battleCafeRewards.status.stagedWithDraft', {
-                    count: dirtyRowIndexes.size,
-                    staged: decodedStagedRows?.length ?? 0
-                  })
-                  : hasDirtyDraft
-                    ? t('battleCafeRewards.status.draft', { count: dirtyRowIndexes.size })
-                    : hasStagedChange
-                      ? t('battleCafeRewards.status.staged', { count: decodedStagedRows?.length ?? 0 })
-                      : t('battleCafeRewards.status.clean')}</strong>
-              </div>
-            </div>
-
             {!totalsAreExact ? (
               <div className="battle-cafe-notice" role="status">
                 <TriangleAlert aria-hidden="true" size={18} />
@@ -317,6 +321,8 @@ export function BattleCafeRewardsSection({
               </div>
             ) : null}
 
+            <RecordEditorWorkspace id="battle-cafe-rewards" className="battle-cafe-layout" initialSection="rewards"
+              browserVisibleRows={6} browser={
             <div className="battle-cafe-reward-grid" role="table" aria-label={t('battleCafeRewards.title')}>
               <div className="battle-cafe-reward-row battle-cafe-reward-heading" role="row">
                 <span role="columnheader">{translateLiteral('Slot')}</span>
@@ -337,8 +343,13 @@ export function BattleCafeRewardsSection({
               ))}
             </div>
 
+              }>
+              <EditorWorkspaceSection id="rewards" label={translateLiteral('Totals')}>
+                {summary}
+              </EditorWorkspaceSection>
             {workflow.provenance ? (
-              <dl className="battle-cafe-provenance">
+              <EditorWorkspaceSection id="source" label={translateLiteral('Source')}>
+              <dl className="item-provenance-list">
                 <div>
                   <dt>{t('battleCafeRewards.source.file')}</dt>
                   <dd data-localization-ignore="true">{workflow.provenance.sourceFile}</dd>
@@ -352,7 +363,9 @@ export function BattleCafeRewardsSection({
                   <dd>{translateLiteral(formatFileState(workflow.provenance.fileState))}</dd>
                 </div>
               </dl>
+              </EditorWorkspaceSection>
             ) : null}
+            </RecordEditorWorkspace>
           </div>
         ) : (
           <p className="empty-copy">{t('battleCafeRewards.empty')}</p>

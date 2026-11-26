@@ -1,0 +1,160 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+.editor-record-table {
+  --editor-row-height: 40px;
+  width: 100%;
+  table-layout: auto;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: .875rem;
+  text-align: start;
+}
+.editor-record-table thead { position: sticky; top: 0; z-index: 1; background: var(--color-surface, var(--color-canvas)); }
+.editor-record-table th,
+.editor-record-table td {
+  height: var(--editor-row-height);
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+.editor-record-table th:first-child { width: 45%; }
+.editor-record-table thead th { color: var(--color-text-muted); font-size: .8125rem; }
+.editor-record-table tbody th { padding: 0; border-inline-start: 3px solid transparent; }
+.editor-record-table tbody tr { cursor: pointer; }
+.editor-record-table tbody tr:hover { background: color-mix(in srgb, var(--color-text) 4%, transparent); }
+.editor-record-table tbody tr[data-selected='true'] { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+.editor-record-table tbody tr[data-selected='true'] th { border-inline-start-color: var(--color-accent); }
+.editor-record-table [data-numeric='true'] { text-align: end; font-variant-numeric: tabular-nums; }
+.editor-record-table-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--editor-row-height);
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.editor-record-table-select:focus-visible { outline-offset: -2px; }
+.editor-record-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.editor-record-context > :first-child,
+.editor-task-groups > * { min-width: 0; }
+.editor-record-action-rail {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.exefs-segment-hash { overflow-wrap: anywhere; user-select: text; }
+.editor-task-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 328px), 1fr));
+  align-items: start;
+  gap: 12px;
+}
+.editor-task-list { display: grid; margin: 0; list-style: none; padding: 0; }
+.editor-task-list > * {
+  display: grid;
+  grid-template-columns: var(--editor-task-columns, minmax(0, 1fr) minmax(0, 1.35fr));
+  align-items: center;
+  min-height: 38px;
+  gap: 8px;
+  padding: 4px 10px;
+  border-top: 1px solid var(--color-border);
+}
+.editor-task-list > :first-child { border-top: 0; }
+.editor-task-list > * > * { min-width: 0; overflow-wrap: anywhere; }
+.editor-task-list :is(input:not([type='checkbox']), select) { width: 100%; min-width: 0; }
+.editor-task-column-head { color: var(--color-text-muted); font-size: .8125rem; font-weight: 700; }
+.editor-task-field-name { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.editor-task-status { margin: 0; }
+.pokemon-instance-field-list > .editable-field-control,
+.pokemon-instance-profile-extra {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  align-items: center;
+  gap: 4px 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+.pokemon-instance-field-list > :last-child { border-bottom: 0; }
+.pokemon-instance-field-list > .editable-field-control > small,
+.pokemon-instance-profile-extra > label { grid-column: 1 / -1; }
+.pokemon-instance-field-list :is(.editable-field-label-row, .editable-field-control, input),
+.pokemon-instance-stats .editable-field-control { min-width: 0; }
+.pokemon-instance-field-list input:not([type='checkbox']),
+.pokemon-instance-stats input { width: 100%; }
+.pokemon-instance-stats { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.pokemon-instance-stats :is(th, td) {
+  padding: 4px 10px;
+  text-align: start;
+  border-bottom: 1px solid var(--color-border);
+  overflow-wrap: break-word;
+}
+.pokemon-instance-stats tbody tr:last-child > * { border-bottom: 0; }
+.pokemon-instance-stats thead { color: var(--color-text-muted); font-size: .8125rem; }
+.raid-slot-workspace,
+.shop-task-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+.raid-slot-workspace > *,
+.shop-task-layout > * { min-width: 0; }
+.editor-slot-browser {
+  max-height: 326px;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  scrollbar-gutter: stable;
+}
+.editor-slot-browser .slot-tab-sprite { flex: 0 0 30px; width: 30px; height: 30px; }
+.editor-slot-browser .editor-record-table th:first-child { width: auto; }
+.shop-task-layout .shop-inventory-header { padding: 6px 10px; }
+.shop-workspace .shop-edit-form { padding: 0; }
+@container (min-width: 950px) {
+  .raid-slot-workspace { grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); }
+  .shop-task-layout:has(.editor-detail-group) { grid-template-columns: minmax(0, 2fr) minmax(250px, 1fr); }
+}
+
+.editor-data-matrix { border-collapse: collapse; table-layout: fixed; width: 100%; }
+.editor-data-matrix :is(th, td) {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: start;
+  overflow-wrap: break-word;
+}
+.editor-data-matrix thead th { color: var(--color-text-muted); font-size: .8125rem; }
+.editor-data-matrix td { font-variant-numeric: tabular-nums; }
+.editor-data-matrix input { width: 100%; }
+.pokemon-instance-iv-lock { padding-inline: 10px; }
+
+.starting-items-workspace .editor-record-table th:first-child { width: 12%; }
+.starting-item-fields .table-cell-control { display: grid; gap: 6px; }
+.starting-item-fields .table-cell-control input { min-width: 0; width: 100%; }
+.ange-fight-matrix th:first-child { width: 44%; }
+.ange-fight-matrix th, .ange-fight-matrix td { vertical-align: top; }
+.ange-fight-matrix th > :is(p, div, details) { margin-block: 4px; font-size: .8rem; }
+.ange-fight-matrix .ange-fight-attack-heading { flex-wrap: wrap; }
+.ange-fight-matrix .ange-fight-number-field { position: relative; }
+.ange-fight-matrix .ange-fight-number-field label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.ange-fight-matrix .ange-fight-number-field input { min-width: 0; }

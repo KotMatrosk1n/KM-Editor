@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import { EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { ClipboardCheck, Save, Sparkle } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { type EditSession } from '../../bridge/contracts';
@@ -268,91 +269,6 @@ export function ShinyRateSection({
                 <strong>{workflow.rateRule.runtimeSummary}</strong>
               </div>
             </div>
-
-            <div
-              aria-label="Shiny rate presets"
-              className="shiny-rate-presets"
-              role="group"
-            >
-              {workflow.presets.map((preset) => {
-                const isActive = isPresetActive(preset, draftSelection);
-                return (
-                  <button
-                    aria-pressed={isActive}
-                    className={`shiny-rate-preset ${isActive ? 'selected' : ''}`}
-                    disabled={!preset.isEnabled || !canEdit}
-                    key={preset.presetId}
-                    onClick={() => applyPreset(preset)}
-                    title={preset.description}
-                    type="button"
-                  >
-                    <span>{preset.label}</span>
-                    <strong>{preset.oddsLabel}</strong>
-                    <small>{preset.percentLabel}</small>
-                    {!preset.isEnabled ? (
-                      <small className="shiny-rate-preset-description">
-                        {preset.description}
-                      </small>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="shiny-rate-custom">
-              <div>
-                <FieldLabel
-                  help={
-                    <>
-                      {t('workflowHelp.shinyRate.customOdds')}
-                      {customCalculation ? (
-                        <>
-                          <br />
-                          <br />
-                          {customCalculation.summary}
-                        </>
-                      ) : null}
-                    </>
-                  }
-                  htmlFor="shiny-rate-custom-denominator"
-                  label={translateLiteral('Custom shiny odds denominator')}
-                />
-                <span className="shiny-rate-fraction">
-                  1/
-                  <input
-                    aria-label="Custom shiny odds denominator"
-                    aria-invalid={customCalculation === null ? 'true' : undefined}
-                    disabled={!canEdit}
-                    id="shiny-rate-custom-denominator"
-                    inputMode="numeric"
-                    max={workflow.rateRule.maximumCustomDenominator}
-                    min={workflow.rateRule.minimumCustomDenominator}
-                    onBlur={() => {
-                      setCustomDenominator(
-                        customCalculation?.targetDenominator.toString() ??
-                          customDenominatorBaseline.toString()
-                      );
-                    }}
-                    onChange={(event) => setCustomDenominator(event.target.value)}
-                    step={1}
-                    type="number"
-                    value={customDenominator}
-                  />
-                </span>
-              </div>
-              <div className="shiny-rate-custom-result">
-                <span>{customCalculation?.summary ?? 'Enter odds from 1/2 to 1/4096.'}</span>
-                <button
-                  className="secondary-button"
-                  disabled={!canEdit || customCalculation === null}
-                  onClick={applyCustom}
-                  type="button"
-                >
-                  Use Custom
-                </button>
-              </div>
-            </div>
-
             <div className="type-chart-actions">
               <button
                 aria-busy={isStaging || undefined}
@@ -394,39 +310,128 @@ export function ShinyRateSection({
                 <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
               </button>
             </div>
+            <RecordEditorWorkspace id="shiny-rate" className="shiny-rate-layout" initialSection="presets">
+              <EditorWorkspaceSection id="presets" label={translateLiteral('Presets')}>
+                <div
+                  aria-label="Shiny rate presets"
+                  className="shiny-rate-presets"
+                  role="group"
+                >
+                  {workflow.presets.map((preset) => {
+                    const isActive = isPresetActive(preset, draftSelection);
+                    return (
+                      <button
+                        aria-pressed={isActive}
+                        className={`shiny-rate-preset ${isActive ? 'selected' : ''}`}
+                        disabled={!preset.isEnabled || !canEdit}
+                        key={preset.presetId}
+                        onClick={() => applyPreset(preset)}
+                        title={preset.description}
+                        type="button"
+                      >
+                        <span>{preset.label}</span>
+                        <strong>{preset.oddsLabel}</strong>
+                        <small>{preset.percentLabel}</small>
+                        {!preset.isEnabled ? (
+                          <small className="shiny-rate-preset-description">
+                            {preset.description}
+                          </small>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </EditorWorkspaceSection>
+              <EditorWorkspaceSection id="custom" label={translateLiteral('Custom Odds')}>
+                <div className="shiny-rate-custom">
+                  <div>
+                    <FieldLabel
+                      help={
+                        <>
+                          {t('workflowHelp.shinyRate.customOdds')}
+                          {customCalculation ? (
+                            <>
+                              <br />
+                              <br />
+                              {customCalculation.summary}
+                            </>
+                          ) : null}
+                        </>
+                      }
+                      htmlFor="shiny-rate-custom-denominator"
+                      label={translateLiteral('Custom shiny odds denominator')}
+                    />
+                    <span className="shiny-rate-fraction">
+                      1/
+                      <input
+                        aria-label="Custom shiny odds denominator"
+                        aria-invalid={customCalculation === null ? 'true' : undefined}
+                        disabled={!canEdit}
+                        id="shiny-rate-custom-denominator"
+                        inputMode="numeric"
+                        max={workflow.rateRule.maximumCustomDenominator}
+                        min={workflow.rateRule.minimumCustomDenominator}
+                        onBlur={() => {
+                          setCustomDenominator(
+                            customCalculation?.targetDenominator.toString() ??
+                              customDenominatorBaseline.toString()
+                          );
+                        }}
+                        onChange={(event) => setCustomDenominator(event.target.value)}
+                        step={1}
+                        type="number"
+                        value={customDenominator}
+                      />
+                    </span>
+                  </div>
+                  <div className="shiny-rate-custom-result">
+                    <span>{customCalculation?.summary ?? 'Enter odds from 1/2 to 1/4096.'}</span>
+                    <button
+                      className="secondary-button"
+                      disabled={!canEdit || customCalculation === null}
+                      onClick={applyCustom}
+                      type="button"
+                    >
+                      Use Custom
+                    </button>
+                  </div>
+                </div>
+              </EditorWorkspaceSection>
+              <EditorWorkspaceSection id="source" label={translateLiteral('Source')}>
+                <dl className="encounter-slot-detail">
+                  <div>
+                    <dt>Detected game</dt>
+                    <dd>{formatShinyRateGame(workflow.detectedGame)}</dd>
+                  </div>
+                  <div>
+                    <dt>Build ID</dt>
+                    <dd>{formatShinyRateBuildId(workflow.buildId)}</dd>
+                  </div>
+                  <div>
+                    <dt>Function offset</dt>
+                    <dd>{formatShinyRateOffset(workflow.functionOffsetHex)}</dd>
+                  </div>
+                  <div>
+                    <dt>Compare offset</dt>
+                    <dd>{formatShinyRateOffset(workflow.compareOffsetHex)}</dd>
+                  </div>
+                  <div>
+                    <dt>Break offset</dt>
+                    <dd>{formatShinyRateOffset(workflow.breakOffsetHex)}</dd>
+                  </div>
+                  <div>
+                    <dt>Install message</dt>
+                    <dd>{workflow.installMessage}</dd>
+                  </div>
+                  <div>
+                    <dt>Staged rate</dt>
+                    <dd>{stagedSelection ? formatSelectionLabel(stagedSelection) : 'None'}</dd>
+                  </div>
+                </dl>
 
-            <dl className="encounter-slot-detail">
-              <div>
-                <dt>Detected game</dt>
-                <dd>{formatShinyRateGame(workflow.detectedGame)}</dd>
-              </div>
-              <div>
-                <dt>Build ID</dt>
-                <dd>{formatShinyRateBuildId(workflow.buildId)}</dd>
-              </div>
-              <div>
-                <dt>Function offset</dt>
-                <dd>{formatShinyRateOffset(workflow.functionOffsetHex)}</dd>
-              </div>
-              <div>
-                <dt>Compare offset</dt>
-                <dd>{formatShinyRateOffset(workflow.compareOffsetHex)}</dd>
-              </div>
-              <div>
-                <dt>Break offset</dt>
-                <dd>{formatShinyRateOffset(workflow.breakOffsetHex)}</dd>
-              </div>
-              <div>
-                <dt>Install message</dt>
-                <dd>{workflow.installMessage}</dd>
-              </div>
-              <div>
-                <dt>Staged rate</dt>
-                <dd>{stagedSelection ? formatSelectionLabel(stagedSelection) : 'None'}</dd>
-              </div>
-            </dl>
-
-            <ShinyRateSourceSummary source={workflow.source} />
+                <ShinyRateSourceSummary source={workflow.source} />
+              </EditorWorkspaceSection>
+            </RecordEditorWorkspace>
           </div>
         ) : (
           <p className="empty-copy">Open Shiny Rate from Advanced Editors to inspect the reroll loop.</p>

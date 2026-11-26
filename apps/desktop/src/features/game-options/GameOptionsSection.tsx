@@ -8,6 +8,8 @@ import { ContextHelp } from '../../components/ContextHelp';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { EditorSessionBar, EditorSessionBarActions } from '../../components/EditorSessionBar';
 import { FocusedEditorWorkspace } from '../../components/FocusedEditorWorkspace';
+import { EditorRecordTable } from '../../components/EditorRecordTable';
+import { EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { WorkflowPanelOutputSections, type WorkflowPanelOutput } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization';
@@ -29,6 +31,7 @@ export function GameOptionsSection({ workflow, session, isEditing, isEditStartin
   const [draft, setDraft] = useState<number[] | null>(null);
   const draftRef = useRef(draft); draftRef.current = draft;
   const [failed, setFailed] = useState(false);
+  const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const desired = draft ?? clean;
   const normalized = normalizeGameOptionsSelections(desired);
   const dirty = draft !== null && encodeGameOptionsSelections(draft) !== encodeGameOptionsSelections(clean);
@@ -47,6 +50,25 @@ export function GameOptionsSection({ workflow, session, isEditing, isEditStartin
     } catch { setFailed(true); }
   };
   let offset = 0;
+  const choiceLabel = (choice: string) => /^\d+$/.test(choice) ? choice : t('gameOptions.choice.'+choice);
+  const options = gameOptionsCatalog.flatMap(option => {
+    const start = offset;
+    offset += option.choices.length;
+    if (option.id === 'unlockedCamera' && ((workflow?.installedFeatures ?? 0) & 1) === 0
+      || option.id === 'battleItems' && ((workflow?.installedFeatures ?? 0) & 4) === 0) return [];
+
+    const values = desired.slice(start, offset);
+    const explicit = values.indexOf(1);
+    const starting = explicit >= 0 ? explicit : values[option.retail] === 0 ? option.retail : values.indexOf(0);
+    const label = t('gameOptions.option.'+option.id);
+    const invalid = values.length === option.choices.length && starting < 0;
+    const current = invalid ? t('gameOptions.invalid')
+      : starting < 0 ? t('gameOptions.unavailable')
+      : option.id === 'characters' && values.every(value => value === 0) ? t('gameOptions.languageDefault')
+      : t('gameOptions.startValue', { value: choiceLabel(option.choices[starting]) });
+    return [{ option, start, values, label, invalid, current }];
+  });
+  const active = options.find(({ option }) => option.id === selectedOption) ?? options[0];
   return <FocusedEditorWorkspace>
     <section className="panel wide-panel game-options" aria-labelledby="game-options-heading">
       <div className="panel-heading"><Settings2 size={18} aria-hidden="true" />
@@ -80,26 +102,31 @@ export function GameOptionsSection({ workflow, session, isEditing, isEditStartin
         </button>
         <span className="draft-action-summary">{t(dirty ? 'gameOptions.draft' : pending ? 'gameOptions.staged' : 'gameOptions.clean')}</span>
       </EditorSessionBarActions> : null}
-      <div className="game-options-grid">
-        {gameOptionsCatalog.map(option => {
-          const start = offset; offset += option.choices.length;
-          if (option.id === 'unlockedCamera' && ((workflow?.installedFeatures ?? 0) & 1) === 0
-            || option.id === 'battleItems' && ((workflow?.installedFeatures ?? 0) & 4) === 0) return null;
-          const values = desired.slice(start, offset);
-          const starting = values.indexOf(1) >= 0 ? values.indexOf(1)
-            : values[option.retail] === 0 ? option.retail : values.indexOf(0);
-          const label = t(`gameOptions.option.${option.id}`);
-          const choiceLabel = (choice: string) => /^\d+$/.test(choice) ? choice : t(`gameOptions.choice.${choice}`);
-          const invalid = values.length === option.choices.length && starting < 0;
-          return <details className="game-option-card" key={option.id}>
-            <summary>
-              <strong>{label}</strong>
-              <span aria-live="polite" className={invalid ? 'editable-field-error' : 'game-option-start'}>{invalid ? t('gameOptions.invalid') :
-                starting < 0 ? t('gameOptions.unavailable') : option.id === 'characters' && values.every(value => value === 0)
-                  ? t('gameOptions.languageDefault') : t('gameOptions.startValue', { value: choiceLabel(option.choices[starting]) })}</span>
-            </summary>
-            {option.id === 'characters' ? <p>{t('gameOptions.charactersHelp')}</p> : null}
-            {['music', 'soundEffects', 'cries'].includes(option.id) ? <p>{t('gameOptions.audioHelp')}</p> : null}
+      <RecordEditorWorkspace id="gameOptions" className="game-options-layout" initialSection="values"
+        browser={<EditorRecordTable label={t('gameOptions.title')} identityLabel={translateLiteral('Option')}
+          rows={options} rowId={({ option }) => option.id} identity={({ label }) => label}
+          selection={active?.option.id} onSelect={({ option }) => setSelectedOption(option.id)}
+          columns={[
+            { id: 'starting', label: translateLiteral('Current value'), value: ({ current, invalid }) => (
+              <span className={invalid ? 'editable-field-error' : undefined}>{current}</span>
+            ) },
+            { id: 'choices', label: translateLiteral('Choices'), numeric: true, value: ({ option }) => option.choices.length }
+          ]} />}>
+        {active ? <EditorWorkspaceHeader afterBrowser>
+          <EditorRecordHeading name={active.label} />
+        </EditorWorkspaceHeader> : null}
+        <EditorWorkspaceSection id="values" label={translateLiteral('Choices')} invalid={active?.invalid}>
+          {active ? (() => {
+            const { option, start, values, label, invalid } = active;
+            return <>
+            {option.id === 'characters' || ['music', 'soundEffects', 'cries'].includes(option.id) ? (
+              <div className="context-help-heading">
+                <strong>{label}</strong>
+                <ContextHelp label={label}>
+                  {t(option.id === 'characters' ? 'gameOptions.charactersHelp' : 'gameOptions.audioHelp')}
+                </ContextHelp>
+              </div>
+            ) : null}
             <div className="game-option-choices">
               {option.choices.map((choice, index) => {
                 const value = values[index] ?? 0;
@@ -127,9 +154,10 @@ export function GameOptionsSection({ workflow, session, isEditing, isEditStartin
                 </div>;
               })}
             </div>
-          </details>;
-        })}
-      </div>
+            </>;
+          })() : null}
+        </EditorWorkspaceSection>
+      </RecordEditorWorkspace>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />
   </FocusedEditorWorkspace>;

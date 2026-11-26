@@ -59,9 +59,9 @@
 }
 .randomizer-group-count { padding: 2px 7px; border-radius: 12px; background: var(--color-popover); font-size: 0.75rem; }
 .randomizer-settings-content { min-width: 0; display: grid; gap: .65rem; }
-.randomizer-settings-heading { display: grid; gap: 6px; }
+.randomizer-settings-heading { display: flex; align-items: center; gap: 6px; }
 .randomizer-settings-heading h2 { margin: 0; font-size: 1.15rem; }
-.randomizer-settings-heading p, .randomizer-number-setting p, .randomizer-setting p {
+.randomizer-number-setting p {
   margin: 0;
   color: var(--color-text-soft);
   font-size: 0.78rem;
@@ -70,26 +70,20 @@
 }
 .randomizer-settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: .4rem; }
 .randomizer-trainer-main { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.randomizer-accordion-list { display: grid; gap: .35rem; }
-.randomizer-category-card { min-width: 0; border: 1px solid var(--color-border); border-radius: 10px; overflow: clip; }
-.randomizer-category-card summary {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-  padding: .4rem .6rem;
-  font-weight: 750;
-  list-style: none;
-  background: var(--color-surface-muted);
+.randomizer-pokemon-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr);
+  align-items: start;
+  gap: 12px;
 }
-.randomizer-category-card summary::-webkit-details-marker { display: none; }
-.randomizer-category-card[open] summary > svg:last-child { transform: rotate(180deg); }
-.randomizer-category-card summary > svg { flex-shrink: 0; }
-.randomizer-category-state { margin-inline-start: auto; font-size: 0.75rem; color: var(--color-text-soft); }
-.randomizer-category-fields { display: grid; gap: .4rem; padding: .4rem; }
-.randomizer-setting { display: flex; align-items: start; gap: .5rem; padding: .4rem .6rem; border: 1px solid var(--color-border); border-radius: .4rem; min-width: 0; }
-.randomizer-setting input { flex: 0 0 auto; margin-top: 3px; width: 18px; height: 18px; }
-.randomizer-setting > div { min-width: 0; display: grid; gap: .15rem; }
+.randomizer-category-fields { display: grid; gap: .4rem; min-width: 0; }
+.randomizer-category-fields h3 { margin: 0; }
+.randomizer-pokemon-workspace .editor-record-table th:first-child { width: 75%; }
+@container randomizer-workspace (max-width: 740px) {
+  .randomizer-pokemon-workspace { grid-template-columns: minmax(0, 1fr); }
+}
+.randomizer-setting { display: flex; align-items: center; gap: .5rem; padding: .25rem .45rem; border-bottom: 1px solid var(--color-border); min-width: 0; }
+.randomizer-setting input { flex: 0 0 auto; margin: 0; width: 18px; height: 18px; }
 .randomizer-setting label, .randomizer-number-setting label { font-weight: 750; font-size: 0.85rem; cursor: pointer; }
 .randomizer-setting-enabled { background: rgb(var(--color-gold-rgb) / 5%); }
 .randomizer-child-fields, .randomizer-trainer-fields { min-width: 0; margin: 0; padding: 0; border: 0; display: grid; gap: .4rem; }
@@ -107,5 +101,4 @@
   .randomizer-group-button > svg { display: none; }
   .randomizer-panel .randomizer-metrics { grid-template-columns: minmax(0, 1fr); }
   .randomizer-seed-row, .randomizer-shared-seed-row { grid-template-columns: minmax(0, 1fr); }
-  .randomizer-category-card summary { flex-wrap: wrap; }
 }

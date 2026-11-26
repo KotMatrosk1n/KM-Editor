@@ -1,32 +1,4 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-.held-item-chance, .held-item-rate-groups, .held-item-rate-group {
-  min-width: 0;
-  width: 100%;
-  box-sizing: border-box;
-}
-.held-item-rate-groups {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 25rem), 1fr));
-  gap: 1rem;
-  margin-block: 1rem;
-}
-.held-item-rate-group {
-  margin: 0;
-  padding: 1rem;
-  border: 1px solid var(--color-border);
-  border-radius: .75rem;
-}
-.held-item-rate-group legend { font-weight: 600; padding-inline: .4rem; }
-.held-item-slot-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
-  gap: .8rem;
-}
-.held-item-rate-field { display: grid; min-width: 0; gap: .4rem; }
-.held-item-rate-input { display: flex; align-items: center; gap: .4rem; min-width: 0; }
-.held-item-rate-input input { width: 100%; min-width: 0; }
-.held-item-total { font-weight: 600; }
-.held-item-notes p, .held-item-rate-group p { overflow-wrap: anywhere; }
 .wild-held-items-note {
   margin: 0;
   overflow-wrap: anywhere;
@@ -36,10 +8,9 @@
   margin-top: .5rem;
 }
 
-.held-item-pokemon-details { min-width: 0; order: 2; }
-.held-item-chance.swsh-pokemon-section .pokemon-toolbar { margin-block-start: 1rem; grid-template-columns: minmax(0, 1fr); }
-.held-item-choices { margin-block: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
-.held-item-custom { display: flex; align-items: center; gap: .5rem; overflow-wrap: anywhere; }
-.held-item-global { min-width: 0; margin-block: 1rem; padding: 1rem; border: 1px solid var(--color-border); border-radius: .75rem; }
-.held-item-global summary { cursor: pointer; font-weight: 600; }
-.held-item-global p { overflow-wrap: anywhere; }
+.held-item-rate-input { display: flex; align-items: center; gap: .4rem; min-width: 0; }
+.held-item-rate-input input { width: 100%; min-width: 0; }
+.held-item-custom { display: flex; align-items: center; gap: .5rem; margin-bottom: 8px; }
+.held-item-rate-matrix :is(th, td):first-child { width: 12%; }
+.held-item-rate-matrix :is(th, td):nth-last-child(-n+2) { width: 26%; }
+.held-item-rate-matrix tfoot { font-size: .8125rem; }
