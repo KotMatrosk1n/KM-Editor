@@ -87,14 +87,18 @@ internal sealed partial class SvEncountersEditSessionService
     public SvEncountersEditResult UpdateSlotFields(
         ProjectPaths paths,
         EditSession? session,
-        IReadOnlyList<SvEncounterSlotFieldUpdate> updates)
+        IReadOnlyList<SvEncounterSlotFieldUpdate> updates,
+        string? tableIdToLoad = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(updates);
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = LoadForSession(project, currentSession, updates.Select(update => update.TableId));
+        var tableIds = updates.Select(update => update.TableId);
+        if (tableIdToLoad is not null)
+            tableIds = tableIds.Append(tableIdToLoad);
+        var loadedWorkflow = LoadForSession(project, currentSession, tableIds);
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -505,6 +509,8 @@ internal sealed partial class SvEncountersEditSessionService
             SvEncountersWorkflowService.ProbabilityField => slot with { Weight = value },
             SvEncountersWorkflowService.LevelMinField => slot with { LevelMin = value },
             SvEncountersWorkflowService.LevelMaxField => slot with { LevelMax = value },
+            SvEncountersWorkflowService.HeldItemIdField => slot with { HeldItemId = value },
+            SvEncountersWorkflowService.HeldItemChancePercentField => slot with { HeldItemChancePercent = value },
             _ => slot,
         };
     }
@@ -578,6 +584,14 @@ internal sealed partial class SvEncountersEditSessionService
             case SvEncountersWorkflowService.LevelMaxField:
                 row.Maxlevel = checked((short)value);
                 break;
+            case SvEncountersWorkflowService.HeldItemIdField:
+                row.BringItem = new BringItemRow((global::ItemID)value, row.BringItem?.BringRate ?? 0);
+                break;
+            case SvEncountersWorkflowService.HeldItemChancePercentField:
+                row.BringItem = new BringItemRow(
+                    row.BringItem?.ItemID ?? global::ItemID.ITEMID_NONE,
+                    checked((sbyte)value));
+                break;
         }
     }
 
@@ -635,7 +649,7 @@ internal sealed partial class SvEncountersEditSessionService
             $"Encounter field '{field}' is not supported by Scarlet/Violet Wild Encounters yet.",
             SvEditSessionSupport.EncountersDomain,
             field: "field",
-            expected: "speciesId, form, probability, levelMin, or levelMax");
+            expected: "speciesId, form, probability, levelMin, levelMax, heldItemId, or heldItemChancePercent");
     }
 
     private static string CreateSummary(SvEncounterTableRecord table, SvEncounterSlotRecord slot, string field, int value)
@@ -655,6 +669,10 @@ internal sealed partial class SvEncountersEditSessionService
                 $"Set {context} slot {slot.Slot} minimum level to {value}.",
             SvEncountersWorkflowService.LevelMaxField =>
                 $"Set {context} slot {slot.Slot} maximum level to {value}.",
+            SvEncountersWorkflowService.HeldItemIdField =>
+                $"Set {context} slot {slot.Slot} held item ID to {value}.",
+            SvEncountersWorkflowService.HeldItemChancePercentField =>
+                $"Set {context} slot {slot.Slot} held item chance to {value}%.",
             _ => $"Set {table.Location} encounter {field} to {value}.",
         };
     }
@@ -690,7 +708,7 @@ internal sealed partial class SvEncountersEditSessionService
         public sbyte OutbreakLotvalue { get; init; }
         public string? PokeVoiceClassification { get; init; }
         public VersionTableRow? Versiontable { get; init; }
-        public BringItemRow? BringItem { get; init; }
+        public BringItemRow? BringItem { get; set; }
         public string GroupKey { get; init; } = string.Empty;
 
         public static EncounterRow From(global::EncountPokeData row, SvEncounterRegion? region = null)

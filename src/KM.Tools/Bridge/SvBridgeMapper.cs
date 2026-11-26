@@ -1529,7 +1529,11 @@ public static class SvBridgeMapper
             slot.LevelMax,
             slot.Weight,
             slot.TimeOfDay,
-            slot.Weather);
+            slot.Weather)
+        {
+            HeldItemId = slot.HeldItemId,
+            HeldItemChancePercent = slot.HeldItemChancePercent,
+        };
     }
 
     private static EncounterEditableFieldDto ToDto(SvEncounterEditableField field)

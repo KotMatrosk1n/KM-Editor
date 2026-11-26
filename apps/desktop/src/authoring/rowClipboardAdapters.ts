@@ -122,7 +122,7 @@ const basicEncounterRegistrations = [
     ['scarlet', 'violet'],
     rowClipboardProfileIds.scarletViolet,
     ['replace'],
-    ['form', 'levelMax', 'levelMin', 'probability', 'speciesId'].map(signedField)
+    ['form', 'heldItemId', 'heldItemChancePercent', 'levelMax', 'levelMin', 'probability', 'speciesId'].map(signedField)
   ),
   registration(
     rowClipboardEditorSchemas.encounterSlot,
@@ -244,13 +244,18 @@ export function createEncounterClipboardRow(
       ? `data:${slot.encounterDataId}`
       : `${tableId}#${slot.slot}`;
   if (game !== 'za') {
-    return logicalRow(rowClipboardEditorSchemas.encounterSlot.rowKind, sourceKey, [
+    const values = [
       signed('speciesId', slot.speciesId),
       signed('form', slot.form),
       signed('levelMin', slot.levelMin),
       signed('levelMax', slot.levelMax),
       signed('probability', slot.weight)
-    ]);
+    ];
+    if (game === 'scarlet' || game === 'violet') {
+      addOptional(values, 'heldItemId', slot.heldItemId);
+      addOptional(values, 'heldItemChancePercent', slot.heldItemChancePercent);
+    }
+    return logicalRow(rowClipboardEditorSchemas.encounterSlot.rowKind, sourceKey, values);
   }
 
   const values: RowClipboardOwnedValue[] = [
@@ -338,6 +343,7 @@ export function applyEncounterClipboardOwnedValues(
     flawlessIvCount: integer('flawlessIvCount', slot.flawlessIvCount),
     form: integer('form', slot.form)!,
     gender: integer('gender', slot.gender),
+    heldItemChancePercent: integer('heldItemChancePercent', slot.heldItemChancePercent),
     heldItemId: integer('heldItemId', slot.heldItemId),
     ivAttack: integer('ivAttack', slot.ivAttack),
     ivDefense: integer('ivDefense', slot.ivDefense),

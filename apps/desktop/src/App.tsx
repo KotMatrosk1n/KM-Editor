@@ -1923,6 +1923,7 @@ const encounterFormFieldName = 'form';
 const encounterProbabilityFieldName = 'probability';
 const encounterLevelMinFieldName = 'levelMin';
 const encounterLevelMaxFieldName = 'levelMax';
+const svEncounterHeldItemChanceFieldName = 'heldItemChancePercent';
 const zaEncounterWeightFieldName = 'weight';
 const zaEncounterSlotMaxCountFieldName = 'slotMaxCount';
 const zaEncounterAppearanceMinCountFieldName = 'appearanceMinCount';
@@ -37721,7 +37722,14 @@ function orderMoveEditableFieldGroups<TField extends NumericEditableField>(
   return [...ordinaryGroups, ...advancedGroups];
 }
 
-function getEncounterEditableFieldGroup(field: NumericEditableField) {
+function getEncounterEditableFieldGroup(field: NumericEditableField, isSvEncounter = false) {
+  if (
+    isSvEncounter &&
+    (field.field === heldItemIdFieldName || field.field === svEncounterHeldItemChanceFieldName)
+  ) {
+    return 'Held Items';
+  }
+
   if (
     field.field === raidBattleSpeciesFieldName ||
     field.field === encounterSpeciesFieldName ||
@@ -45295,6 +45303,7 @@ function SelectedEncounterPanel({
       encounterSlot?.flawlessIvCount,
       encounterSlot?.gender,
       encounterSlot?.heldItemId,
+      encounterSlot?.heldItemChancePercent,
       encounterSlot?.isAlpha,
       encounterSlot?.ivAttack,
       encounterSlot?.ivDefense,
@@ -45580,8 +45589,10 @@ function SelectedEncounterPanel({
     ]
   );
   const encounterFieldGroups = useMemo(
-    () => groupNumericEditableFields(encounterFields, getEncounterEditableFieldGroup),
-    [encounterFields]
+    () => groupNumericEditableFields(encounterFields, (field) =>
+      getEncounterEditableFieldGroup(field, isSvEncounterTable)
+    ),
+    [encounterFields, isSvEncounterTable]
   );
   const encounterFieldSections = isZaEncounterTable
     ? [
@@ -47323,6 +47334,13 @@ function SelectedEncounterPanel({
                                             ...slotDrafts,
                                             [field.field]: value
                                           };
+                                          if (
+                                            isSvEncounterTable &&
+                                            field.field === heldItemIdFieldName &&
+                                            parseEditableIntegerDraft(value, field.options) === 0
+                                          ) {
+                                            nextSlotDrafts[svEncounterHeldItemChanceFieldName] = '0';
+                                          }
                                           if (field.field === encounterSpeciesFieldName) {
                                             const speciesField = defaultEncounterFields.find(
                                               (candidate) =>
@@ -62782,6 +62800,8 @@ function getEditableEncounterFieldValue(encounterSlot: EncounterSlotRecord, fiel
       return encounterSlot.alphaLevelBonus ?? null;
     case heldItemIdFieldName:
       return encounterSlot.heldItemId ?? null;
+    case svEncounterHeldItemChanceFieldName:
+      return encounterSlot.heldItemChancePercent ?? null;
     case abilityFieldName:
       return encounterSlot.ability ?? null;
     case natureFieldName:

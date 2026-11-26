@@ -56,7 +56,7 @@ public static class RowClipboardAdapterCatalog
         CreateEncounterSlot(
             [ProjectGame.Scarlet, ProjectGame.Violet],
             ScarletVioletProfileId,
-            BasicEncounterFields());
+            BasicEncounterFields().Concat([Signed("heldItemId"), Signed("heldItemChancePercent")]));
     public static readonly RowClipboardAdapterSchema EncounterSlotZa =
         CreateEncounterSlot(
             [ProjectGame.ZA],
