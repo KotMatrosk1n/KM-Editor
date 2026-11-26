@@ -455,6 +455,10 @@ export function ZaDexLayoutSection({
         <h2 id="za-dex-layout-heading">
           {translateLiteral('Dex Layout')}
         </h2>
+        <ContextHelp label={translateLiteral('Dex Layout')}>
+          <p>{translateLiteral('Move one species to an exact number and shift the entries between. The occupied-slot Swap control remains available in the Pokemon editor.')}</p>
+          <p>{translateLiteral('Dex Layout changes are staged here. Review and output them from Changes.')}</p>
+        </ContextHelp>
       </div>
 
       <EditorSessionBar
@@ -498,16 +502,6 @@ export function ZaDexLayoutSection({
         </EditorSessionBarActions>
       ) : null}
 
-      <p className="za-dex-layout-intro">
-        {translateLiteral(
-          'Move one species to an exact number and shift the entries between. The occupied-slot Swap control remains available in the Pokemon editor.'
-        )}
-      </p>
-      <p className="za-dex-layout-intro">
-        {translateLiteral(
-          'Dex Layout changes are staged here. Review and output them from Changes.'
-        )}
-      </p>
 
       <div className="za-dex-layout-metrics">
         <Metric

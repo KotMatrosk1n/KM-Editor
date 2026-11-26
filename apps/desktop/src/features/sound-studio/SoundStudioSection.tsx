@@ -8,6 +8,7 @@ import type { ProjectPaths } from '../../bridge/contracts';
 import { LoadingProgress } from '../../components/LoadingProgress';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditorDiagnostics';
+import { ContextHelp } from '../../components/ContextHelp';
 import { useLocalization } from '../../localization';
 import { closeSoundCatalog, loadSoundCatalog, loadSoundMedia, soundRequest, type SoundEntry } from './soundStudioBridge';
 import { SoundPlayer, type SoundInfo } from './SoundPlayer';
@@ -68,15 +69,15 @@ export default function SoundStudioSection({ paths, catalogRevision = '' }: { pa
   const control = (action: () => Promise<void>) => { const active = player; void action().catch(() => { if (latestPlayer.current === active) setError('KM-AUDIO-PLAYBACK-FAILED'); }); };
   const stopCatalog = () => { catalogAbort.current?.abort(); setLoading(false); void closeSoundCatalog(paths, token.current).catch(() => {}); };
   return <section className="panel wide-panel sound-studio" aria-labelledby="sound-studio-title">
-    <header className="sound-studio__header"><Music size={24} aria-hidden="true" /><div><h2 id="sound-studio-title">{t('soundStudio.title')}</h2><p>{t('soundStudio.description')}</p></div>
+    <header className="sound-studio__header"><Music size={24} aria-hidden="true" /><div><h2 id="sound-studio-title">{t('soundStudio.title')}</h2></div><ContextHelp label={t('soundStudio.title')}>{t('soundStudio.description')}</ContextHelp>
       <button type="button" onClick={() => { player?.stop(); setSelected(null); setRevision(value => value + 1); }}>{t('soundStudio.reload')}</button></header>
     {paths.selectedGame === 'pla' ? <p>{t('soundStudio.plaScope')}</p> : null}
     {!isTauri() ? <p>{t('soundStudio.desktopRequired')}</p> : null}
     {loading ? <div className="sound-studio__loading"><LoadingProgress operationKey={revision} label={t('soundStudio.loading')} completed={progress[0]} total={progress[1] || undefined} onCancel={stopCatalog} cancelLabel={t('soundStudio.cancel')} /></div> : null}
     <div className="sound-studio__workspace">
-      <aside className="sound-studio__categories" aria-label={t('soundStudio.categories')}>
+      <nav className="sound-studio__categories" aria-label={t('soundStudio.categories')}>
         {categories.map(value => <button className="editor-section-choice" type="button" key={value} aria-pressed={value === category && !everywhere} onClick={() => { setCategory(value); setEverywhere(false); }}><span>{t(`soundStudio.category.${value}`)}</span><span>{counts[value] ?? 0}</span></button>)}
-      </aside>
+      </nav>
       <div className="sound-studio__browser">
         <input id="sound-search" type="search" aria-label={t('soundStudio.search')} value={query} onChange={event => setQuery(event.target.value)} placeholder={t('soundStudio.searchHint')} />
         <div className="sound-studio__filters">

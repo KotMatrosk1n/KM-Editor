@@ -196,7 +196,7 @@ export function StarmobilesSection({ workflow, isStaging, isEditing, isEditStart
       </div>
       <div className="starmobiles-stats-heading">
         <h4>{t('starmobiles.stats')}</h4>
-        <p className="muted">{t('starmobiles.statsHelp')}</p>
+        <ContextHelp label={t('starmobiles.stats')}>{t('starmobiles.statsHelp')}</ContextHelp>
       </div>
       <div className="starmobiles-edit-layout">
         <div className="starmobiles-level-fields">

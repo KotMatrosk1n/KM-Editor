@@ -575,7 +575,6 @@ export function GameDumpSection({
       ) : (
         <>
           <div className="game-dump-step-heading">
-            <span aria-hidden="true">1</span>
             <h3>{translateLiteral('Destination')}</h3>
           </div>
           <div className="game-dump-destination-panel">
@@ -636,7 +635,6 @@ export function GameDumpSection({
           </div>
 
           <div className="game-dump-step-heading">
-            <span aria-hidden="true">2</span>
             <h3>{translateLiteral('Categories')}</h3>
           </div>
           <div className="metrics-grid game-dump-metrics">
@@ -739,7 +737,7 @@ export function GameDumpSection({
             <GameDumpProgressPanel progress={progress} translateLiteral={translateLiteral} />
           ) : null}
 
-          <div className="game-dump-category-list">
+          <div className="game-dump-category-list" role="region" tabIndex={0} aria-label={translateLiteral('Categories')}>
             {filteredCategories.map((category) => {
               const state = selectionState[category.id] ?? {
                 format: category.defaultFormat,
@@ -904,7 +902,6 @@ export function GameDumpSection({
           ) : null}
 
           <div className="game-dump-step-heading">
-            <span aria-hidden="true">3</span>
             <h3>{translateLiteral('Review')}</h3>
           </div>
           <div className="game-dump-review-bar">

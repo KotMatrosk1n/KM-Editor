@@ -7,6 +7,7 @@ import { usePublishCommonEditorError } from '../../components/CommonEditorDiagno
 import { EditorSessionBar, EditorSessionBarActions } from '../../components/EditorSessionBar';
 import { FocusedEditorWorkspace } from '../../components/FocusedEditorWorkspace';
 import { WorkflowPanelOutputSections, type WorkflowPanelOutput } from '../../components/workflowPanels';
+import { ContextHelp } from '../../components/ContextHelp';
 import { useLocalization } from '../../localization';
 import './PokeJobsSection.css';
 
@@ -45,12 +46,12 @@ export function PokeJobsSection({ workflow, session, isEditing, isEditStarting, 
     <section className="panel wide-panel poke-jobs-editor" aria-labelledby="poke-jobs-heading">
       <div className="panel-heading"><BriefcaseBusiness size={20} aria-hidden="true" />
         <h2 id="poke-jobs-heading">{t('pokeJobs.title')}</h2>
+        <ContextHelp label={t('pokeJobs.title')}><p>{t('pokeJobs.subtitle')}</p><p>{t('pokeJobs.saveHelp')}</p></ContextHelp>
         <button className="secondary-button compact-button" type="button" onClick={onRefresh}
           disabled={isLoading || isStaging} aria-busy={isLoading || undefined}>
           <RefreshCw size={16} aria-hidden="true" /><span>{translateLiteral('Refresh')}</span>
         </button>
       </div>
-      <p>{t('pokeJobs.subtitle')}</p>
       <EditorSessionBar canEdit={workflow?.canEdit === true} isEditing={isEditing} isStarting={isEditStarting}
         label={t('pokeJobs.title')} onStart={onStartEditSession} readOnlyReason={t('pokeJobs.readOnly')} />
       {isEditing ? <EditorSessionBarActions>
@@ -68,14 +69,15 @@ export function PokeJobsSection({ workflow, session, isEditing, isEditStarting, 
         </button>
         <span className="draft-action-summary">{t(dirty ? 'pokeJobs.draft' : pending !== null ? 'pokeJobs.staged' : 'pokeJobs.clean')}</span>
       </EditorSessionBarActions> : null}
-      <label className="poke-jobs-setting">
+      <div className="editor-setting-row">
+        <label className="poke-jobs-setting">
         <input type="checkbox" checked={desired} disabled={!canEdit} aria-describedby="poke-jobs-help"
           onChange={event => { setDraft(event.target.checked); setFailed(false); }} />
         <span><strong>{t('pokeJobs.title')}</strong><span id="poke-jobs-help">{t('pokeJobs.help')}</span></span>
       </label>
-      <p role="status">{t('pokeJobs.current', { value: t(workflow?.disabled == null ? 'pokeJobs.unavailable'
+        <p role="status">{t('pokeJobs.current', { value: t(workflow?.disabled == null ? 'pokeJobs.unavailable'
         : workflow.disabled ? 'pokeJobs.disabled' : 'pokeJobs.enabled') })}</p>
-      <p>{t('pokeJobs.saveHelp')}</p>
+      </div>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />
   </FocusedEditorWorkspace>;

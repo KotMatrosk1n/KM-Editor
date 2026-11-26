@@ -4,6 +4,7 @@ import { RefreshCw, RotateCcw, Save, Settings2, X } from 'lucide-react';
 import { type EditSession } from '../../bridge/contracts';
 import { defaultGameOptionsSelections, encodeGameOptionsSelections, gameOptionsCatalog, getGameOptionsPendingSelections,
   normalizeGameOptionsSelections, type GameOptionsWorkflow } from '../../bridge/gameOptionsContracts';
+import { ContextHelp } from '../../components/ContextHelp';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { EditorSessionBar, EditorSessionBarActions } from '../../components/EditorSessionBar';
 import { FocusedEditorWorkspace } from '../../components/FocusedEditorWorkspace';
@@ -50,13 +51,18 @@ export function GameOptionsSection({ workflow, session, isEditing, isEditStartin
     <section className="panel wide-panel game-options" aria-labelledby="game-options-heading">
       <div className="panel-heading"><Settings2 size={18} aria-hidden="true" />
         <h2 id="game-options-heading">{t('gameOptions.title')}</h2>
+        <ContextHelp label={t('gameOptions.title')}>
+          <p>{t('gameOptions.subtitle')}</p>
+          <p>{t('gameOptions.help')}</p>
+          <p>{t('gameOptions.saveHelp')}</p>
+          {((workflow?.installedFeatures ?? 0) & 5) !== 0 ? <p>{t('gameOptions.nativeSaveHelp')}</p> : null}
+          <p>{t('gameOptions.packageHelp')}</p>
+        </ContextHelp>
         <button className="secondary-button compact-button" type="button" onClick={onRefresh}
           disabled={isLoading || isStaging} aria-busy={isLoading || undefined}>
           <RefreshCw size={16} aria-hidden="true" /><span>{translateLiteral('Refresh')}</span>
         </button>
       </div>
-      <p>{t('gameOptions.subtitle')}</p>
-      <p id="game-options-help">{t('gameOptions.help')}</p>
       <EditorSessionBar canEdit={workflow?.canEdit === true} isEditing={isEditing} isStarting={isEditStarting}
         label={t('gameOptions.title')} onStart={onStartEditSession} readOnlyReason={t('gameOptions.readOnly')} />
       {isEditing ? <EditorSessionBarActions>
@@ -85,8 +91,13 @@ export function GameOptionsSection({ workflow, session, isEditing, isEditStartin
           const label = t(`gameOptions.option.${option.id}`);
           const choiceLabel = (choice: string) => /^\d+$/.test(choice) ? choice : t(`gameOptions.choice.${choice}`);
           const invalid = values.length === option.choices.length && starting < 0;
-          return <fieldset className="game-option-card" key={option.id} aria-describedby="game-options-help">
-            <legend>{label}</legend>
+          return <details className="game-option-card" key={option.id}>
+            <summary>
+              <strong>{label}</strong>
+              <span aria-live="polite" className={invalid ? 'editable-field-error' : 'game-option-start'}>{invalid ? t('gameOptions.invalid') :
+                starting < 0 ? t('gameOptions.unavailable') : option.id === 'characters' && values.every(value => value === 0)
+                  ? t('gameOptions.languageDefault') : t('gameOptions.startValue', { value: choiceLabel(option.choices[starting]) })}</span>
+            </summary>
             {option.id === 'characters' ? <p>{t('gameOptions.charactersHelp')}</p> : null}
             {['music', 'soundEffects', 'cries'].includes(option.id) ? <p>{t('gameOptions.audioHelp')}</p> : null}
             <div className="game-option-choices">
@@ -116,15 +127,9 @@ export function GameOptionsSection({ workflow, session, isEditing, isEditStartin
                 </div>;
               })}
             </div>
-            <p className="game-option-start" aria-live="polite">{invalid ? t('gameOptions.invalid') :
-              starting < 0 ? t('gameOptions.unavailable') : option.id === 'characters' && values.every(value => value === 0)
-                ? t('gameOptions.languageDefault') : t('gameOptions.startValue', { value: choiceLabel(option.choices[starting]) })}</p>
-          </fieldset>;
+          </details>;
         })}
       </div>
-      <p>{t('gameOptions.saveHelp')}</p>
-      {((workflow?.installedFeatures ?? 0) & 5) !== 0 ? <p>{t('gameOptions.nativeSaveHelp')}</p> : null}
-      <p>{t('gameOptions.packageHelp')}</p>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />
   </FocusedEditorWorkspace>;

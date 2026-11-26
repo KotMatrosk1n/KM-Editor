@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { ContextHelp } from '../../components/ContextHelp';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, RotateCcw, Save, Search, Skull, X } from 'lucide-react';
 import { type EditSession } from '../../bridge/contracts';
@@ -74,7 +75,7 @@ export function TrainerWhiteoutSection({ workflow, session, isEditing, isEditSta
       <div className="panel-heading trainer-whiteout-heading">
         <div className="trainer-whiteout-title"><Skull size={22} aria-hidden="true" /><div>
           <h2 id="trainer-whiteout-title">{t('trainerWhiteout.title')} <span className="status-pill status-pill-info">Beta</span></h2>
-          <p>{t('trainerWhiteout.subtitle')}</p></div></div>
+          </div><ContextHelp label={t('trainerWhiteout.title')}>{t('trainerWhiteout.subtitle')}</ContextHelp></div>
         <button type="button" className="secondary-button compact-button" onClick={onRefresh} disabled={isLoading || isStaging}>
           <RefreshCw size={16} aria-hidden="true" /><span>{translateLiteral('Refresh')}</span></button>
       </div>

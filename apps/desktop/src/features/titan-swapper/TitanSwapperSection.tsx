@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { ContextHelp } from '../../components/ContextHelp';
 import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowRightLeft, FlaskConical, LockKeyhole, RotateCcw, Save, X } from 'lucide-react';
+import { ArrowRightLeft, LockKeyhole, RotateCcw, Save, X } from 'lucide-react';
 import { type TitanSwapperUpdate, type TitanSwapperWorkflow } from '../../bridge/titanSwapperContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { FocusedEditorWorkspace } from '../../components/FocusedEditorWorkspace';
@@ -96,12 +97,13 @@ export function TitanSwapperSection({ workflow, isStaging, isEditing, isEditStar
 
   return <FocusedEditorWorkspace className="titan-swapper-editor">
     <section className="panel wide-panel titan-swapper-panel" aria-labelledby="titan-swapper-heading">
-      <div className="panel-heading"><ArrowRightLeft size={20} aria-hidden="true" /><h2 id="titan-swapper-heading">{t('titanSwapper.title')}</h2></div>
-      <p className="muted">{t('titanSwapper.intro')}</p>
-      <details className="titan-swapper-beta">
-        <summary><FlaskConical size={16} aria-hidden="true" />{t('titanSwapper.beta')}</summary>
-        <p>{t('titanSwapper.betaHelp')}</p><p>{t('titanSwapper.limits')}</p><p>{t('titanSwapper.compatibility')}</p><p>{t('titanSwapper.fallback')}</p>
-      </details>
+      <div className="panel-heading"><ArrowRightLeft size={20} aria-hidden="true" /><h2 id="titan-swapper-heading">{t('titanSwapper.title')}</h2>
+        <span className="status-pill status-pill-info">{t('titanSwapper.beta')}</span>
+        <ContextHelp label={t('titanSwapper.title')}>
+          <p>{t('titanSwapper.intro')}</p><p>{t('titanSwapper.betaHelp')}</p><p>{t('titanSwapper.limits')}</p>
+          <p>{t('titanSwapper.compatibility')}</p><p>{t('titanSwapper.fallback')}</p>
+        </ContextHelp>
+      </div>
       <EditorSessionBar canEdit={!!available && !!workflow?.rows.length} isEditing={isEditing} isStarting={isEditStarting}
         label={t('titanSwapper.title')} onStart={onStartEditSession} />
       {isEditing ? <EditorSessionBarActions>

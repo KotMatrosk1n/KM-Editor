@@ -7,6 +7,7 @@ import { usePublishCommonEditorError } from '../../components/CommonEditorDiagno
 import { EditorSessionBar, EditorSessionBarActions } from '../../components/EditorSessionBar';
 import { FocusedEditorWorkspace } from '../../components/FocusedEditorWorkspace';
 import { WorkflowPanelOutputSections, type WorkflowPanelOutput } from '../../components/workflowPanels';
+import { ContextHelp } from '../../components/ContextHelp';
 import { useLocalization } from '../../localization';
 import './YCommSection.css';
 
@@ -46,12 +47,12 @@ export function YCommSection({ workflow, session, isEditing, isEditStarting, isS
     <section className="panel wide-panel y-comm-editor" aria-labelledby="y-comm-heading">
       <div className="panel-heading"><WifiOff size={20} aria-hidden="true" />
         <h2 id="y-comm-heading">{t('yComm.title')}</h2>
+        <ContextHelp label={t('yComm.title')}><p>{t('yComm.subtitle')}</p><p>{t('yComm.saveHelp')}</p></ContextHelp>
         <button className="secondary-button compact-button" type="button" onClick={onRefresh}
           disabled={isLoading || isStaging} aria-busy={isLoading || undefined}>
           <RefreshCw size={16} aria-hidden="true" /><span>{translateLiteral('Refresh')}</span>
         </button>
       </div>
-      <p>{t('yComm.subtitle')}</p>
       <EditorSessionBar canEdit={workflow?.canEdit === true} isEditing={isEditing} isStarting={isEditStarting}
         label={t('yComm.title')} onStart={onStartEditSession} readOnlyReason={t('yComm.readOnly')} />
       {isEditing ? <EditorSessionBarActions>
@@ -69,15 +70,16 @@ export function YCommSection({ workflow, session, isEditing, isEditStarting, isS
         </button>
         <span className="draft-action-summary">{t(dirty ? 'yComm.draft' : pending !== null ? 'yComm.staged' : 'yComm.clean')}</span>
       </EditorSessionBarActions> : null}
-      <label className="y-comm-setting">
+      <div className="editor-setting-row">
+        <label className="y-comm-setting">
         <input type="checkbox" checked={desired} disabled={!canEdit} aria-describedby="y-comm-help"
           onChange={event => { setDraft(event.target.checked); setFailed(false); }} />
         <span><strong>{t('yComm.title')}</strong><span id="y-comm-help">{t('yComm.help')}</span></span>
       </label>
-      <p role="status">{t('yComm.current', { value: t(workflow?.disabled == null ? 'yComm.unavailable'
+        <p role="status">{t('yComm.current', { value: t(workflow?.disabled == null ? 'yComm.unavailable'
         : workflow.disabled ? 'yComm.disabled' : 'yComm.enabled') })}</p>
       {needsRepair ? <p>{t('yComm.repair')}</p> : null}
-      <p>{t('yComm.saveHelp')}</p>
+      </div>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />
   </FocusedEditorWorkspace>;

@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import { ContextHelp } from '../../components/ContextHelp';
 import { useEffect, useRef, useState } from 'react';
-import { Gem, HandCoins, Mountain, RefreshCw, Save, X } from 'lucide-react';
+import { Mountain, RefreshCw, Save, X } from 'lucide-react';
 import { type EditSession } from '../../bridge/contracts';
 import { type RaidDensWorkflow } from '../../bridge/raidDensContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
@@ -61,7 +62,7 @@ export function RaidDensSection({ workflow, session, isEditing, isEditStarting, 
     <section className="panel wide-panel raid-dens-panel" aria-labelledby="raid-dens-heading">
       <div className="panel-heading raid-dens-heading">
         <div className="raid-dens-title"><Mountain size={22} aria-hidden="true" />
-          <div><h2 id="raid-dens-heading">{t('raidDens.title')}</h2><p>{t('raidDens.subtitle')}</p></div>
+          <div className="context-help-heading"><h2 id="raid-dens-heading">{t('raidDens.title')}</h2><ContextHelp label={t('raidDens.title')}>{t('raidDens.subtitle')}</ContextHelp></div>
         </div>
         <button className="secondary-button compact-button" type="button" onClick={onRefresh}
           disabled={isLoading || isStaging} aria-busy={isLoading || undefined}>
@@ -98,16 +99,15 @@ export function RaidDensSection({ workflow, session, isEditing, isEditStarting, 
           </div>
         </div>
 
-        <div className="raid-dens-effects-region">
-          <h3>{t('raidDens.effects')}</h3>
-          <div className="raid-dens-effects">
-          <article><Mountain size={24} aria-hidden="true" /><h3>{t('raidDens.raids')}</h3><p>{t('raidDens.raidsHelp')}</p></article>
-          <article><HandCoins size={24} aria-hidden="true" /><h3>{t('raidDens.watts')}</h3><p>{t('raidDens.wattsHelp')}</p></article>
-          <article><Gem size={24} aria-hidden="true" /><h3>{t('raidDens.pieces')}</h3><p>{t('raidDens.piecesHelp')}</p></article>
-          </div>
-        </div>
-        <div className="raid-dens-scope"><h3>{t('raidDens.scope')}</h3><p>{t('raidDens.scopeHelp')}</p>
-          <p>{t('raidDens.restoreHelp')}</p></div>
+        <details className="raid-dens-effects-region editor-technical-disclosure">
+          <summary>{t('raidDens.effects')}</summary>
+          <dl className="editor-detail-list">
+            <div><dt>{t('raidDens.raids')}</dt><dd>{t('raidDens.raidsHelp')}</dd></div>
+            <div><dt>{t('raidDens.watts')}</dt><dd>{t('raidDens.wattsHelp')}</dd></div>
+            <div><dt>{t('raidDens.pieces')}</dt><dd>{t('raidDens.piecesHelp')}</dd></div>
+            <div><dt>{t('raidDens.scope')}</dt><dd>{t('raidDens.scopeHelp')} {t('raidDens.restoreHelp')}</dd></div>
+          </dl>
+        </details>
       </div>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />

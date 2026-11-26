@@ -10,6 +10,7 @@ import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditor
 import { LoadingProgress } from '../../components/LoadingProgress';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { useModalDialog } from '../../components/useModalDialog';
+import { ContextHelp } from '../../components/ContextHelp';
 import { useLocalization } from '../../localization';
 import { HeaderMemoryUsage } from '../settings/ProcessMemoryPanel';
 import { modelError, useModelViewport, type ModelBackground, type ModelViewOptions } from './useModelViewport';
@@ -194,12 +195,18 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
     <div data-editor-portal-host className="editor-portal-host" />
     <header className="model-viewer__header">
       <div className="model-viewer__header-status"><Box aria-hidden="true" size={22} />{editing ? <HeaderMemoryUsage /> : null}</div>
-      <div className="model-viewer__heading"><h2 id="model-viewer-title">{t(editing ? 'modelEditor.title' : 'modelViewer.title')}</h2><p>{editing ? entry?.name : t('modelViewer.description')}</p></div>
+      <div className="model-viewer__heading">
+        <h2 id="model-viewer-title">{t(editing ? 'modelEditor.title' : 'modelViewer.title')}</h2>
+        {editing && entry ? <p>{entry.name}</p> : null}
+      </div>
       {editing ? <button type="button" onClick={requestClose}>{t('modelEditor.close')}</button> : null}
       {editing ? <div className="model-workspace__actions" ref={setActionsTarget} /> : null}
+      <ContextHelp label={t('modelViewer.title')}>
+        <p>{t('modelViewer.description')}</p>
+        <p>{t('modelViewer.scope')}</p>
+        {paths.selectedGame === 'pla' ? <p>{t('modelViewer.plaScope')}</p> : null}
+      </ContextHelp>
     </header>
-    <p className="model-viewer__note">{t('modelViewer.scope')}</p>
-    {paths.selectedGame === 'pla' ? <p className="model-viewer__note">{t('modelViewer.plaScope')}</p> : null}
     {!supported ? <p role="status">{t('modelViewer.unsupportedGame')}</p> : !isTauri() ? <p role="status">{t('modelViewer.desktopRequired')}</p> :
       <div className="model-viewer__workspace">
         <aside className="model-viewer__browser" aria-label={t('modelViewer.models', { count: catalog.length })}>
@@ -263,7 +270,7 @@ export default function ModelViewerSection({ paths, session, disabled, onStage, 
             onFocus={() => { if (viewer.info) void viewer.camera('focus'); }} onContextMenu={event => event.preventDefault()}>
             <p role="status">{!selected ? t('modelViewer.selectModel') : error ? t(message) : ''}</p>
           </div>
-          <p className="model-viewer__controls">{t('modelViewer.controls')}</p>
+          <div className="model-viewer__controls"><ContextHelp label={t('modelViewer.viewport')}>{t('modelViewer.controls')}</ContextHelp></div>
           {editing && statistics && viewer.info ? <div className="model-workspace__statistics">
             <span>{viewer.stats.fps.toFixed(0)} FPS</span>
             <span>{t('modelWorkspace.triangles', { count: viewer.info.parts.reduce((sum, part) => sum + part.triangles, 0) })}</span>

@@ -308,3 +308,324 @@
 }
 .workspace-content[data-editor-workspace] .za-behavior-detail > .za-behavior-field { max-inline-size: 36rem; }
 .workspace-content[data-editor-workspace] .za-behavior-field small { color: var(--color-text-muted); opacity: 1; }
+
+/* Browser and editor groups that stay useful when the window is narrow. */
+.workspace-content[data-editor-workspace] :is(.flagwork-toolbar, .exefs-toolbar, .tm-machine-controls-metrics) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .35rem;
+}
+.workspace-content[data-editor-workspace] :is(.flagwork-toolbar, .exefs-toolbar, .tm-machine-controls-metrics) > .metric {
+  flex: 1 0 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  min-block-size: 0;
+  gap: .4rem .7rem;
+  padding: .35rem .55rem;
+}
+.workspace-content[data-editor-workspace] :is(.flagwork-toolbar, .exefs-toolbar) > .search-box { flex: 3 1 16rem; }
+.workspace-content[data-editor-workspace] :is(.flagwork-toolbar, .exefs-toolbar, .tm-machine-controls-metrics) .metric-value {
+  font-size: .95rem;
+  overflow-wrap: anywhere;
+}
+.workspace-content[data-editor-workspace] :is(.flagwork-table, .exefs-table) :is(.exefs-row-selected, .flagwork-row-selected) {
+  background: var(--property-selected);
+  box-shadow: inset 3px 0 var(--color-accent);
+}
+.workspace-content[data-editor-workspace] :is(.flagwork-layout, .royal-candy-layout) {
+  gap: var(--property-gap);
+}
+.workspace-content[data-editor-workspace] .advanced-editor-workspace .flagwork-layout.editor-record-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+.workspace-content[data-editor-workspace] .advanced-editor-workspace .royal-candy-workflow-choice {
+  gap: .3rem;
+  padding: .55rem .7rem;
+}
+.workspace-content[data-editor-workspace] .advanced-editor-workspace .royal-candy-workflow-table { gap: .4rem; }
+.workspace-content[data-editor-workspace] .advanced-editor-details :is(dd, code) {
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.workspace-content[data-editor-workspace] .editor-setting-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .35rem .65rem;
+  margin-block: .35rem;
+}
+.workspace-content[data-editor-workspace] .editor-setting-row > :is(label, p) { margin: 0; }
+
+.workspace-content[data-editor-workspace] .shiny-rate-current {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+  gap: .35rem;
+}
+.workspace-content[data-editor-workspace] .shiny-rate-current > div { padding: .35rem .55rem; }
+.workspace-content[data-editor-workspace] .shiny-rate-preset {
+  min-height: 0;
+  padding: .55rem .7rem;
+}
+.workspace-content[data-editor-workspace] .shiny-rate-preset small { overflow-wrap: anywhere; }
+.workspace-content[data-editor-workspace] .shiny-rate-custom { padding: .55rem .7rem; border-radius: var(--property-radius); }
+
+.workspace-content[data-editor-workspace] .fairy-gym-trainer-tabs,
+.workspace-content[data-editor-workspace] .npc-item-gift-tabs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+  gap: .35rem;
+}
+.workspace-content[data-editor-workspace] :is(.fairy-gym-trainer-tab, .npc-item-gift-tab) {
+  min-height: 2.4rem;
+  min-width: 0;
+  padding: .3rem .55rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.workspace-content[data-editor-workspace] :is(.fairy-gym-boost-card, .npc-item-gift-card, .ange-fight-group, .ange-fight-attack-card) {
+  align-content: start;
+  padding: .55rem .65rem;
+  gap: .5rem;
+  border-radius: var(--property-radius);
+}
+.workspace-content[data-editor-workspace] .npc-item-gift-tab-groups {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  align-items: start;
+  gap: .65rem;
+}
+.workspace-content[data-editor-workspace] .ange-fight-number-field {
+  gap: .25rem;
+  padding: .4rem .55rem;
+}
+.workspace-content[data-editor-workspace] .ange-fight-technical-map { padding-inline: .6rem; }
+
+.workspace-content[data-editor-workspace] .tm-machine-control-status { white-space: normal; }
+.workspace-content[data-editor-workspace] .tm-machine-control-source dd { user-select: text; }
+
+.workspace-content[data-editor-workspace] :is(.custom-gifts-installation, .game-option-card, .editor-setting-row, .tm-machine-controls-grid > *, .raid-dens-setting) {
+  min-width: 0;
+  padding: .45rem .6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--property-radius);
+  background: var(--color-surface-muted);
+}
+.workspace-content[data-editor-workspace] .custom-gifts-installation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .25rem .75rem;
+}
+.workspace-content[data-editor-workspace] .custom-gifts-installation > p,
+.workspace-content[data-editor-workspace] .custom-gifts-installation .custom-gifts-install { margin: 0; }
+.workspace-content[data-editor-workspace] .custom-gifts-badges { margin-block: .45rem; }
+.workspace-content[data-editor-workspace] .custom-gifts-badges > button { min-height: 2.15rem; padding: .3rem .6rem; }
+.workspace-content[data-editor-workspace] .custom-gifts-list .custom-gifts-row {
+  display: flex;
+  flex-flow: row wrap;
+  align-items: baseline;
+  gap: .15rem .65rem;
+  margin: 0;
+  min-height: 2.1rem;
+  padding: .32rem .6rem;
+  border: 0;
+  border-radius: 0;
+  border-block-end: 1px solid var(--property-divider);
+  background: transparent;
+  overflow-wrap: anywhere;
+}
+.workspace-content[data-editor-workspace] .custom-gifts-list .custom-gifts-row[aria-pressed='true'] {
+  background: var(--property-selected);
+  box-shadow: inset 3px 0 var(--color-accent);
+}
+.workspace-content[data-editor-workspace] .custom-gifts-list .custom-gifts-row:hover { background: var(--color-control-hover); }
+.workspace-content[data-editor-workspace] .custom-gifts-detail .panel-heading { justify-content: space-between; }
+.workspace-content[data-editor-workspace] .game-options-grid { align-items: start; }
+.workspace-content[data-editor-workspace] .game-option-card summary { cursor: pointer; padding: .35rem .15rem; }
+.workspace-content[data-editor-workspace] .game-option-card summary > span { margin-inline-start: .5rem; overflow-wrap: anywhere; }
+
+.workspace-content[data-editor-workspace] .pla-data-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  align-items: start;
+  gap: var(--property-gap);
+}
+.workspace-content[data-editor-workspace] .pla-economy-crafting .pla-data-groups {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 25rem), 1fr));
+}
+.workspace-content[data-editor-workspace] .pla-data-group {
+  min-width: 0;
+  margin: 0;
+  padding: .25rem .6rem .5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--property-radius);
+  background: var(--color-surface-muted);
+}
+.workspace-content[data-editor-workspace] .pla-data-group legend { padding-inline: .25rem; font-weight: 700; }
+.workspace-content[data-editor-workspace] .pla-data-group .editable-field-control {
+  display: grid;
+  grid-template-columns: minmax(6.5rem, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: .15rem .4rem;
+  padding: .25rem;
+}
+.workspace-content[data-editor-workspace] .pla-data-group .editable-field-control + .editable-field-control { border-block-start: 1px solid var(--property-divider); }
+.workspace-content[data-editor-workspace] .pla-data-pairs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: .6rem;
+}
+.workspace-content[data-editor-workspace] .pla-data-pairs > .editable-field-control {
+  align-content: start;
+  grid-template-columns: minmax(0, 1fr);
+  border-block-start: 1px solid var(--property-divider);
+}
+.workspace-content[data-editor-workspace] .pla-data-pairs > .editable-field-control:nth-child(-n + 2) { border-block-start: 0; }
+.workspace-content[data-editor-workspace] .pla-rule-groups {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+  align-items: start;
+}
+.workspace-content[data-editor-workspace] .pla-wild-slot-list {
+  display: grid;
+  max-block-size: 14rem;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--property-radius);
+}
+.workspace-content[data-editor-workspace] .pla-wild-slot {
+  display: grid;
+  grid-template-columns: 2rem 2rem minmax(6rem, 1fr) minmax(4rem, 1fr) minmax(4rem, auto);
+  align-items: center;
+  gap: .2rem .5rem;
+  text-align: start;
+  color: var(--color-text);
+  background: var(--color-surface-muted);
+  border: 0;
+  border-block-end: 1px solid var(--property-divider);
+  padding: .3rem .55rem;
+  overflow-wrap: anywhere;
+}
+.workspace-content[data-editor-workspace] .pla-wild-slot .trainer-party-sprite { grid-column: 2; grid-row: 1; inline-size: 2rem; block-size: 2rem; }
+.workspace-content[data-editor-workspace] .pla-wild-slot-index { grid-column: 1; grid-row: 1; }
+.workspace-content[data-editor-workspace] .pla-wild-slot strong { grid-column: 3; }
+.workspace-content[data-editor-workspace] .pla-wild-slot:hover { background: var(--color-control-hover); }
+.workspace-content[data-editor-workspace] .pla-wild-slot[aria-pressed='true'] { background: var(--property-selected); box-shadow: inset 3px 0 var(--color-accent); }
+.workspace-content[data-editor-workspace] .pla-wild-slot:focus-visible { outline-offset: -2px; }
+
+.workspace-content[data-editor-workspace] .restoration-browser-toolbar {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: .35rem .65rem;
+}
+.workspace-content[data-editor-workspace] .restoration-browser-toolbar .restoration-search { flex: 1 1 16rem; }
+.workspace-content[data-editor-workspace] .restoration-browser-toolbar > strong { padding: .45rem .65rem; }
+.workspace-content[data-editor-workspace] .restoration-list { border-color: var(--color-border); background: var(--color-surface-muted); }
+.workspace-content[data-editor-workspace] .restoration-list :is(th, td) { padding: .35rem .55rem; border-color: var(--property-divider); }
+.workspace-content[data-editor-workspace] .game-dump-category-list {
+  max-block-size: min(55vh, 28rem);
+  overflow: auto;
+}
+.workspace-content[data-editor-workspace] .game-dump-category-list:focus-visible { outline-offset: 2px; }
+.workspace-content[data-editor-workspace] .game-dump-step-heading {
+  border-block-end: 1px solid var(--property-divider);
+  padding-block-end: .25rem;
+}
+.workspace-content[data-editor-workspace] .game-dump-review-bar { position: sticky; inset-block-end: .3rem; z-index: 1; }
+.workspace-content[data-editor-workspace] :is(.spreadsheet-import-toolbar, .randomizer-metrics, .changes-summary, .za-dex-layout-metrics) .metric {
+  min-block-size: 0;
+  padding: .35rem .55rem;
+}
+.workspace-content[data-editor-workspace] .randomizer-panel .randomizer-metrics,
+.workspace-content[data-editor-workspace] .za-dex-layout-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  gap: .35rem;
+}
+.workspace-content[data-editor-workspace] .randomizer-settings-nav { gap: .35rem; }
+.workspace-content[data-editor-workspace] .randomizer-settings-nav button {
+  min-height: 2.15rem;
+  padding-block: .35rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.workspace-content[data-editor-workspace] .randomizer-recovery-panel .randomizer-action-row { margin: 0; }
+.workspace-content[data-editor-workspace] .camera-control__overview p { margin: .2rem 0; }
+
+@container workspace (max-width: 35rem) {
+  .workspace-content[data-editor-workspace] .pla-wild-slot {
+    grid-template-columns: 1.5rem 1.75rem minmax(0, 1fr) minmax(0, .8fr);
+  }
+  .workspace-content[data-editor-workspace] .pla-wild-slot > span:last-child { grid-column: 3 / -1; }
+}
+
+@container workspace (max-width: 26rem) {
+  .workspace-content[data-editor-workspace] .pla-data-group .editable-field-control { grid-template-columns: minmax(0, 1fr); }
+}
+
+.workspace-content[data-editor-workspace] .editor-technical-disclosure {
+  min-width: 0;
+  padding: .35rem .6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--property-radius);
+  background: var(--color-surface-muted);
+}
+.workspace-content[data-editor-workspace] .editor-technical-disclosure > summary {
+  padding: .2rem 0;
+  cursor: pointer;
+  font-weight: 700;
+}
+.workspace-content[data-editor-workspace] .editor-technical-disclosure[open] > summary {
+  margin-block-end: .35rem;
+  border-block-end: 1px solid var(--property-divider);
+}
+.workspace-content[data-editor-workspace] .technical-tool-reference { display: grid; gap: .5rem; }
+.workspace-content[data-editor-workspace] .raid-dens-content { gap: .55rem; }
+.workspace-content[data-editor-workspace] .raid-dens-effects-region .editor-detail-list dd { text-align: start; }
+.workspace-content[data-editor-workspace] .raid-dens-effects-region .editor-detail-list > div {
+  grid-template-columns: minmax(7rem, .5fr) minmax(0, 2fr);
+}
+
+.workspace-content[data-editor-workspace] :is(.fix-ai-flags-detail, .trainer-whiteout-detail, .titan-swapper-detail, .blueberry-detail, .held-item-pokemon-details) {
+  min-width: 0;
+  padding: .55rem .7rem;
+  border-radius: var(--property-radius);
+}
+.workspace-content[data-editor-workspace] :is(.fix-ai-flags-detail, .trainer-whiteout-detail, .titan-swapper-detail, .blueberry-detail, .held-item-record-heading) h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.workspace-content[data-editor-workspace] .trainer-dynamax-controls {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  align-items: start;
+  gap: .55rem;
+}
+.workspace-content[data-editor-workspace] .trainer-dynamax-card {
+  padding: .5rem .65rem;
+  gap: .4rem;
+  border-radius: var(--property-radius);
+}
+.workspace-content[data-editor-workspace] .trainer-dynamax-current { border-block-start: 1px solid var(--property-divider); }
+.workspace-content[data-editor-workspace] .titan-swapper-card { padding: .5rem .65rem; }
+.workspace-content[data-editor-workspace] :is(.habitat-coordinate-card-heading, .fashion-catalog-selection-heading) {
+  border-block-end: 1px solid var(--property-divider);
+  padding-block-end: .35rem;
+}
+.workspace-content[data-editor-workspace] .tree-rules-controls,
+.workspace-content[data-editor-workspace] .tree-probability { align-content: start; gap: .45rem; }
+.workspace-content[data-editor-workspace] .held-item-record-heading { border-block-end: 1px solid var(--property-divider); padding-block-end: .35rem; }
+.workspace-content[data-editor-workspace] .randomizer-configuration {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  align-items: end;
+  gap: .5rem;
+}
+.workspace-content[data-editor-workspace] .randomizer-configuration > * { margin: 0; min-width: 0; }
+.workspace-content[data-editor-workspace] .output-history-transaction {
+  border-radius: var(--property-radius);
+  padding: .55rem .7rem;
+}
+.workspace-content[data-editor-workspace] .output-history-changes { padding-inline-start: 1.25rem; }
+.workspace-content[data-editor-workspace] .output-history-changes > li {
+  border-block-start: 1px solid var(--property-divider);
+  padding-block: .3rem;
+}

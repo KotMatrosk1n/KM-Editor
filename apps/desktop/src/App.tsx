@@ -40818,7 +40818,7 @@ function DynamaxAdventuresSection({
   selectedEntryIndex: number | null;
   workflow: DynamaxAdventuresWorkflow | null;
 }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const encounters = workflow?.encounters ?? [];
   const editableEncounters = useMemo(() => encounters.filter((encounter) => encounter.isEditable), [encounters]);
   const pendingEntryIndexes = useMemo(
@@ -41032,22 +41032,12 @@ function DynamaxAdventuresSection({
                 </p>
               </div>
             ) : null}
-            <DynamaxAdventureSeedPlanner
-              armCriticalWriteGuard={armCriticalWriteGuard}
-              encounters={encounters}
-              hasConfiguredSave={hasConfiguredSave}
-              onPlanSeed={onPlanSeed}
-              onSaveBusyChange={onSaveBusyChange}
-              onSearchSeeds={onSearchSeeds}
-              onWriteSaveSeed={onWriteSaveSeed}
-              selectedEntryIndex={selectedEncounter?.entryIndex ?? null}
-            />
-            <RecordEditorWorkspace id="dynamaxAdventures" className="trainers-layout dynamax-adventures-layout" browser={
+            <RecordEditorWorkspace id="dynamaxAdventures" className="trainers-layout" browser={
               <div
               aria-colcount={6}
               aria-label="Dynamax Adventure encounters"
               aria-rowcount={filteredEncounters.length + 1}
-              className="trainers-table dynamax-adventures-table"
+              className="trainers-table"
               role="table"
             >
               <div className="trainers-row dynamax-adventures-row trainers-row-heading" role="row">
@@ -41122,6 +41112,19 @@ function DynamaxAdventuresSection({
               safeNormalSpeciesOptions={workflow.safeNormalSpeciesOptions}
             />
             </RecordEditorWorkspace>
+            <details className="editor-technical-disclosure">
+              <summary id="dynamax-adventure-route-planner-heading">{t('routePlanner.title')}</summary>
+              <DynamaxAdventureSeedPlanner
+                armCriticalWriteGuard={armCriticalWriteGuard}
+                encounters={encounters}
+                hasConfiguredSave={hasConfiguredSave}
+                onPlanSeed={onPlanSeed}
+                onSaveBusyChange={onSaveBusyChange}
+                onSearchSeeds={onSearchSeeds}
+                onWriteSaveSeed={onWriteSaveSeed}
+                selectedEntryIndex={selectedEncounter?.entryIndex ?? null}
+              />
+            </details>
           </>
         ) : (
           <p className="empty-copy">
@@ -41553,18 +41556,13 @@ function SelectedDynamaxAdventurePanel({
         issues={adventureDraftSummary.invalidFields}
       />
       <aside
-        aria-label="Selected Dynamax Adventure provenance"
+        aria-label="Selected Dynamax Adventure"
         className="trainer-inspector dynamax-adventure-summary"
       >
-        <div className="panel-heading">
-          <ShieldCheck aria-hidden="true" size={18} />
-          <h3 id="selected-dynamax-adventure-heading">Selected Adventure</h3>
-        </div>
-
         {encounter ? (
           <>
+            <EditorRecordHeading name={encounter.label} id={encounter.entryIndex} />
             <div
-              className="dynamax-adventure-selection-summary"
               data-localization-ignore="true"
             >
               <PokemonSummaryCard
@@ -41585,80 +41583,83 @@ function SelectedDynamaxAdventurePanel({
               />
             </div>
 
-            <dl className="item-provenance-list dynamax-adventure-provenance">
-              <div>
-                <dt>Encounter</dt>
-                <dd data-localization-ignore="true">{encounter.label}</dd>
-              </div>
-              <div>
-                <dt>Index</dt>
-                <dd data-localization-ignore="true">{encounter.entryIndex}</dd>
-              </div>
-              <div>
-                <dt>Adventure</dt>
-                <dd data-localization-ignore="true">{encounter.adventureIndex}</dd>
-              </div>
-              <div>
-                <dt>Data file</dt>
-                <dd data-localization-ignore="true">{encounter.provenance.sourceFile}</dd>
-              </div>
-              <div>
-                <dt>Layer</dt>
-                <dd>{formatSourceLayer(encounter.provenance.sourceLayer)}</dd>
-              </div>
-              <div>
-                <dt>File state</dt>
-                <dd>{formatFileState(encounter.provenance.fileState)}</dd>
-              </div>
-              <div>
-                <dt>Pokemon</dt>
-                <dd data-localization-ignore="true">{`${formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)} Lv. ${encounter.level}`}</dd>
-              </div>
-              <div>
-                <dt>Ability</dt>
-                <dd data-localization-ignore="true">{encounter.abilityLabel}</dd>
-              </div>
-              <div>
-                <dt>Gigantamax</dt>
-                <dd>{encounter.gigantamaxLabel}</dd>
-              </div>
-              <div>
-                <dt>Moves</dt>
-                <dd data-localization-ignore="true">
-                  {formatDynamaxAdventureMoves(encounter)}
-                </dd>
-              </div>
-              <div>
-                <dt>IV detail</dt>
-                <dd data-localization-ignore="true">
-                  {formatDynamaxAdventureIvs(encounter)}
-                </dd>
-              </div>
-              <div>
-                <dt>Ball item</dt>
-                <dd data-localization-ignore="true">{encounter.ballItem}</dd>
-              </div>
-              <div>
-                <dt>Game version</dt>
-                <dd>{encounter.versionLabel}</dd>
-              </div>
-              <div>
-                <dt>Shiny roll</dt>
-                <dd>{encounter.shinyRollLabel}</dd>
-              </div>
-              <div>
-                <dt>OT gender</dt>
-                <dd>{encounter.otGenderLabel}</dd>
-              </div>
-              <div>
-                <dt>Single-capture Pokemon</dt>
-                <dd>{encounter.isSingleCapture ? 'Yes' : 'No'}</dd>
-              </div>
-              <div>
-                <dt>Requires story progress</dt>
-                <dd>{encounter.isStoryProgressGated ? 'Yes' : 'No'}</dd>
-              </div>
-            </dl>
+            <details className="pokemon-instance-source">
+              <summary>{translateLiteral('Details')}</summary>
+              <dl className="item-provenance-list dynamax-adventure-provenance">
+                <div>
+                  <dt>Encounter</dt>
+                  <dd data-localization-ignore="true">{encounter.label}</dd>
+                </div>
+                <div>
+                  <dt>Index</dt>
+                  <dd data-localization-ignore="true">{encounter.entryIndex}</dd>
+                </div>
+                <div>
+                  <dt>Adventure</dt>
+                  <dd data-localization-ignore="true">{encounter.adventureIndex}</dd>
+                </div>
+                <div>
+                  <dt>Data file</dt>
+                  <dd data-localization-ignore="true">{encounter.provenance.sourceFile}</dd>
+                </div>
+                <div>
+                  <dt>Layer</dt>
+                  <dd>{formatSourceLayer(encounter.provenance.sourceLayer)}</dd>
+                </div>
+                <div>
+                  <dt>File state</dt>
+                  <dd>{formatFileState(encounter.provenance.fileState)}</dd>
+                </div>
+                <div>
+                  <dt>Pokemon</dt>
+                  <dd data-localization-ignore="true">{`${formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)} Lv. ${encounter.level}`}</dd>
+                </div>
+                <div>
+                  <dt>Ability</dt>
+                  <dd data-localization-ignore="true">{encounter.abilityLabel}</dd>
+                </div>
+                <div>
+                  <dt>Gigantamax</dt>
+                  <dd>{encounter.gigantamaxLabel}</dd>
+                </div>
+                <div>
+                  <dt>Moves</dt>
+                  <dd data-localization-ignore="true">
+                    {formatDynamaxAdventureMoves(encounter)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>IV detail</dt>
+                  <dd data-localization-ignore="true">
+                    {formatDynamaxAdventureIvs(encounter)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Ball item</dt>
+                  <dd data-localization-ignore="true">{encounter.ballItem}</dd>
+                </div>
+                <div>
+                  <dt>Game version</dt>
+                  <dd>{encounter.versionLabel}</dd>
+                </div>
+                <div>
+                  <dt>Shiny roll</dt>
+                  <dd>{encounter.shinyRollLabel}</dd>
+                </div>
+                <div>
+                  <dt>OT gender</dt>
+                  <dd>{encounter.otGenderLabel}</dd>
+                </div>
+                <div>
+                  <dt>Single-capture Pokemon</dt>
+                  <dd>{encounter.isSingleCapture ? 'Yes' : 'No'}</dd>
+                </div>
+                <div>
+                  <dt>Requires story progress</dt>
+                  <dd>{encounter.isStoryProgressGated ? 'Yes' : 'No'}</dd>
+                </div>
+              </dl>
+            </details>
           </>
         ) : (
           <p className="empty-copy">No Adventure encounter selected.</p>
@@ -41667,7 +41668,7 @@ function SelectedDynamaxAdventurePanel({
 
       {encounter ? (
         <section
-          aria-labelledby="selected-dynamax-adventure-heading"
+          aria-label={translateLiteral('Encounter')}
           className="trainer-inspector dynamax-adventure-editor"
         >
           <div className="trainer-edit-form dynamax-adventure-edit-form">
@@ -43342,47 +43343,46 @@ function SelectedShopPanel({
           summary="No shop selected."
         />
       ) : null}
-      <div className="panel-heading">
-        <ShieldCheck aria-hidden="true" size={18} />
-        <h3>{translateLiteral('Selected Shop')}</h3>
-      </div>
-
       {shop ? (
         <>
-          <dl className="item-provenance-list">
-            <div>
-              <dt>{translateLiteral('Name')}</dt>
-              <dd>{translateLiteral(shop.name)}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Inventory')}</dt>
-              <dd>{translateLiteral(shop.inventoryLabel)}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Type')}</dt>
-              <dd>{translateLiteral(shop.kind)}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Hash')}</dt>
-              <dd>{shop.sourceHash}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Summary')}</dt>
-              <dd>{translateLiteral(shop.inventorySummary)}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Source file')}</dt>
-              <dd>{shop.provenance.sourceFile}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Layer')}</dt>
-              <dd>{translateLiteral(formatSourceLayer(shop.provenance.sourceLayer))}</dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('File state')}</dt>
-              <dd>{translateLiteral(formatFileState(shop.provenance.fileState))}</dd>
-            </div>
-          </dl>
+          <EditorRecordHeading name={translateLiteral(shop.name)} />
+          <details className="pokemon-instance-source">
+            <summary>{translateLiteral('Source')}</summary>
+            <dl className="item-provenance-list">
+              <div>
+                <dt>{translateLiteral('Name')}</dt>
+                <dd>{translateLiteral(shop.name)}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Inventory')}</dt>
+                <dd>{translateLiteral(shop.inventoryLabel)}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Type')}</dt>
+                <dd>{translateLiteral(shop.kind)}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Hash')}</dt>
+                <dd>{shop.sourceHash}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Summary')}</dt>
+                <dd>{translateLiteral(shop.inventorySummary)}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Source file')}</dt>
+                <dd>{shop.provenance.sourceFile}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Layer')}</dt>
+                <dd>{translateLiteral(formatSourceLayer(shop.provenance.sourceLayer))}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('File state')}</dt>
+                <dd>{translateLiteral(formatFileState(shop.provenance.fileState))}</dd>
+              </div>
+            </dl>
+          </details>
 
           <div className="shop-edit-form">
             <div className="shop-inventory-header">
@@ -49254,49 +49254,51 @@ function TeraRaidsSection({
               aria-label={translateLiteral('Selected Tera raid')}
               className="encounter-inspector"
             >
-              <div className="panel-heading">
-                <Gem aria-hidden="true" size={18} />
-                <h3>{translateLiteral('Selected Raid')}</h3>
-              </div>
-
               {selectedRaid ? (
                 <>
-                  <dl className="item-provenance-list">
-                    <div>
-                      <dt>{translateLiteral('Pokemon')}</dt>
-                      <dd data-localization-ignore="true">
-                        {formatSpeciesFormLabel(
-                          selectedRaid.species,
-                          selectedRaid.form,
-                          selectedRaid.speciesId
-                        )}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('Region')}</dt>
-                      <dd>{translateLiteral(selectedRaid.region)}</dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('Stars')}</dt>
-                      <dd>{translateLiteral(selectedRaid.starLabel)}</dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('Game')}</dt>
-                      <dd>{translateLiteral(selectedRaid.versionLabel)}</dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('Source file')}</dt>
-                      <dd data-localization-ignore="true">{selectedRaid.provenance.sourceFile}</dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('Layer')}</dt>
-                      <dd>{translateLiteral(formatSourceLayer(selectedRaid.provenance.sourceLayer))}</dd>
-                    </div>
-                    <div>
-                      <dt>{translateLiteral('File state')}</dt>
-                      <dd>{translateLiteral(formatFileState(selectedRaid.provenance.fileState))}</dd>
-                    </div>
-                  </dl>
+                  <EditorRecordHeading
+                    name={formatSpeciesFormLabel(selectedRaid.species, selectedRaid.form, selectedRaid.speciesId)}
+                    id={selectedRaid.starLabel}
+                  />
+                  <details className="pokemon-instance-source">
+                    <summary>{translateLiteral('Source')}</summary>
+                    <dl className="item-provenance-list">
+                      <div>
+                        <dt>{translateLiteral('Pokemon')}</dt>
+                        <dd data-localization-ignore="true">
+                          {formatSpeciesFormLabel(
+                            selectedRaid.species,
+                            selectedRaid.form,
+                            selectedRaid.speciesId
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Region')}</dt>
+                        <dd>{translateLiteral(selectedRaid.region)}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Stars')}</dt>
+                        <dd>{translateLiteral(selectedRaid.starLabel)}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Game')}</dt>
+                        <dd>{translateLiteral(selectedRaid.versionLabel)}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Source file')}</dt>
+                        <dd data-localization-ignore="true">{selectedRaid.provenance.sourceFile}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Layer')}</dt>
+                        <dd>{translateLiteral(formatSourceLayer(selectedRaid.provenance.sourceLayer))}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('File state')}</dt>
+                        <dd>{translateLiteral(formatFileState(selectedRaid.provenance.fileState))}</dd>
+                      </div>
+                    </dl>
+                  </details>
 
                   <div className="encounter-edit-form">
                     <div
@@ -50057,7 +50059,7 @@ function SelectedRaidBattlePanel({
   table: RaidBattleTableRecord | null;
   tables: RaidBattleTableRecord[];
 }) {
-  const { t } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const [draftsBySlotKey, setDraftsBySlotKey] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -50245,39 +50247,38 @@ function SelectedRaidBattlePanel({
           {t('editorDrafts.discardUnavailable')}
         </button>
       ) : null}
-      <div className="panel-heading">
-        <ShieldCheck aria-hidden="true" size={18} />
-        <h3>Selected Battle</h3>
-      </div>
-
       {table ? (
         <>
-          <dl className="item-provenance-list">
-            <div>
-              <dt>Table</dt>
-              <dd>{table.displayName}</dd>
-            </div>
-            <div>
-              <dt>Hash</dt>
-              <dd>{table.sourceTableHash}</dd>
-            </div>
-            <div>
-              <dt>Game</dt>
-              <dd>{table.gameVersion}</dd>
-            </div>
-            <div>
-              <dt>Source file</dt>
-              <dd>{table.provenance.sourceFile}</dd>
-            </div>
-            <div>
-              <dt>Layer</dt>
-              <dd>{formatSourceLayer(table.provenance.sourceLayer)}</dd>
-            </div>
-            <div>
-              <dt>File state</dt>
-              <dd>{formatFileState(table.provenance.fileState)}</dd>
-            </div>
-          </dl>
+          <EditorRecordHeading name={table.displayName} id={table.gameVersion} />
+          <details className="pokemon-instance-source">
+            <summary>{translateLiteral('Source')}</summary>
+            <dl className="item-provenance-list">
+              <div>
+                <dt>Table</dt>
+                <dd>{table.displayName}</dd>
+              </div>
+              <div>
+                <dt>Hash</dt>
+                <dd>{table.sourceTableHash}</dd>
+              </div>
+              <div>
+                <dt>Game</dt>
+                <dd>{table.gameVersion}</dd>
+              </div>
+              <div>
+                <dt>Source file</dt>
+                <dd>{table.provenance.sourceFile}</dd>
+              </div>
+              <div>
+                <dt>Layer</dt>
+                <dd>{formatSourceLayer(table.provenance.sourceLayer)}</dd>
+              </div>
+              <div>
+                <dt>File state</dt>
+                <dd>{formatFileState(table.provenance.fileState)}</dd>
+              </div>
+            </dl>
+          </details>
 
           <div className="encounter-edit-form">
             <div className="encounter-slot-header">
@@ -50328,58 +50329,61 @@ function SelectedRaidBattlePanel({
                   })}
                 </div>
 
-                <dl className="encounter-slot-detail">
-                  <div>
-                    <dt>Pokemon</dt>
-                    <dd>
-                      {formatSpeciesFormLabel(
-                        battleSlot.species,
-                        battleSlot.form,
-                        battleSlot.speciesId
-                      )} ({battleSlot.speciesId})
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Ability</dt>
-                    <dd>{battleSlot.abilityLabel}</dd>
-                  </div>
-                  <div>
-                    <dt>Gender</dt>
-                    <dd>{battleSlot.genderLabel}</dd>
-                  </div>
-                  <div>
-                    <dt>G-Max</dt>
-                    <dd>{battleSlot.isGigantamax ? 'Yes' : 'No'}</dd>
-                  </div>
-                  <div>
-                    <dt>Perfect IVs</dt>
-                    <dd>{battleSlot.flawlessIvs}</dd>
-                  </div>
-                  <div>
-                    <dt>Star odds</dt>
-                    <dd>{battleSlot.probabilitySummary}</dd>
-                  </div>
-                  <div>
-                    <dt>Level table</dt>
-                    <dd>{battleSlot.levelTableHash}</dd>
-                  </div>
-                  <div>
-                    <dt>Drop table</dt>
-                    <dd>{battleSlot.dropTableHash}</dd>
-                  </div>
-                  <div>
-                    <dt>Drop rewards</dt>
-                    <dd>{formatRaidBattleRewardLink(battleSlot.dropRewardLink)}</dd>
-                  </div>
-                  <div>
-                    <dt>Bonus table</dt>
-                    <dd>{battleSlot.bonusTableHash}</dd>
-                  </div>
-                  <div>
-                    <dt>Bonus rewards</dt>
-                    <dd>{formatRaidBattleRewardLink(battleSlot.bonusRewardLink)}</dd>
-                  </div>
-                </dl>
+                <details className="pokemon-instance-source">
+                  <summary>{translateLiteral('Details')}</summary>
+                  <dl className="encounter-slot-detail">
+                    <div>
+                      <dt>Pokemon</dt>
+                      <dd>
+                        {formatSpeciesFormLabel(
+                          battleSlot.species,
+                          battleSlot.form,
+                          battleSlot.speciesId
+                        )} ({battleSlot.speciesId})
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Ability</dt>
+                      <dd>{battleSlot.abilityLabel}</dd>
+                    </div>
+                    <div>
+                      <dt>Gender</dt>
+                      <dd>{battleSlot.genderLabel}</dd>
+                    </div>
+                    <div>
+                      <dt>G-Max</dt>
+                      <dd>{battleSlot.isGigantamax ? 'Yes' : 'No'}</dd>
+                    </div>
+                    <div>
+                      <dt>Perfect IVs</dt>
+                      <dd>{battleSlot.flawlessIvs}</dd>
+                    </div>
+                    <div>
+                      <dt>Star odds</dt>
+                      <dd>{battleSlot.probabilitySummary}</dd>
+                    </div>
+                    <div>
+                      <dt>Level table</dt>
+                      <dd>{battleSlot.levelTableHash}</dd>
+                    </div>
+                    <div>
+                      <dt>Drop table</dt>
+                      <dd>{battleSlot.dropTableHash}</dd>
+                    </div>
+                    <div>
+                      <dt>Drop rewards</dt>
+                      <dd>{formatRaidBattleRewardLink(battleSlot.dropRewardLink)}</dd>
+                    </div>
+                    <div>
+                      <dt>Bonus table</dt>
+                      <dd>{battleSlot.bonusTableHash}</dd>
+                    </div>
+                    <div>
+                      <dt>Bonus rewards</dt>
+                      <dd>{formatRaidBattleRewardLink(battleSlot.bonusRewardLink)}</dd>
+                    </div>
+                  </dl>
+                </details>
 
                 <div className="editable-field-groups">
                   {raidBattleFieldGroups.map((group) => (
@@ -53026,7 +53030,7 @@ function FlagworkSaveSection({
 
   return (
     <>
-      <section aria-labelledby="flagwork-save-heading" className="panel wide-panel">
+      <section aria-labelledby="flagwork-save-heading" className="panel wide-panel advanced-editor-workspace">
         <div className="panel-heading">
           <Save aria-hidden="true" size={18} />
           <h2 id="flagwork-save-heading">Flagwork and Save Inspectors</h2>
@@ -53414,7 +53418,7 @@ function BagHookSection({
             <aside aria-label="Selected Bag Hook slot" className="encounter-inspector">
               <div className="panel-heading">
                 <Wrench aria-hidden="true" size={18} />
-                <h3>Selected Slot</h3>
+                <h3>{selectedRecord ? `${translateLiteral('Slot')} ${selectedRecord.slot}` : translateLiteral('Selected Slot')}</h3>
               </div>
 
               {selectedRecord ? (
@@ -54886,7 +54890,7 @@ function ExeFsPatchSection({
 
   return (
     <>
-      <section aria-labelledby="exefs-patches-heading" className="panel wide-panel">
+      <section aria-labelledby="exefs-patches-heading" className="panel wide-panel advanced-editor-workspace">
         <div className="panel-heading">
           <Wrench aria-hidden="true" size={18} />
           <h2 id="exefs-patches-heading">{translateLiteral('ExeFS Patch Manager')}</h2>
@@ -56674,18 +56678,13 @@ function FpsPatchSection({
       >
         <div className="panel-heading technical-tool-heading">
           <Zap aria-hidden="true" size={18} />
-          <div>
-            <h2 id="fps-patch-heading">{translateLiteral('60FPS Patch')}</h2>
+          <h2 id="fps-patch-heading">{translateLiteral('60FPS Patch')}</h2>
+          <ContextHelp label={translateLiteral('60FPS Patch')}>
             <p>{t('fpsPatch.subtitle')}</p>
-          </div>
+            <p>{t('fpsPatch.description')}</p>
+            <p>{t('fpsPatch.compatibility')}</p>
+          </ContextHelp>
         </div>
-
-        <p className="workflow-description technical-tool-description">
-          {t('fpsPatch.description')}
-        </p>
-        <p className="workflow-description technical-tool-description">
-          {t('fpsPatch.compatibility')}
-        </p>
 
         <div className="technical-tool-status-panel" aria-live="polite">
           <div className="technical-tool-status-group">
@@ -57359,54 +57358,60 @@ function ProfanityFilterSection({
           </article>
         </div>
 
-        <section className="technical-tool-component-section" aria-labelledby="profanity-filter-details-heading">
-          <div>
-            <h3 id="profanity-filter-details-heading">{t('profanityFilter.details.title')}</h3>
-            <p>{t('profanityFilter.details.description')}</p>
-          </div>
-          <dl className="technical-tool-contract-grid">
-            <div>
-              <dt>{translateLiteral('File')}</dt>
-              <dd><code data-localization-ignore="true">exefs/main</code></dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Patch site')}</dt>
-              <dd><code data-localization-ignore="true">{status?.patchOffsetHex ?? '--'}</code></dd>
-            </div>
-            <div>
-              <dt>{translateLiteral('Owned bytes')}</dt>
-              <dd>{t('profanityFilter.details.ownedBytes')}</dd>
-            </div>
-            <div>
-              <dt>{t('profanityFilter.details.observedState')}</dt>
-              <dd>{patchShapeValue}</dd>
-            </div>
-          </dl>
-        </section>
+        <details className="editor-technical-disclosure">
+          <summary>{t('profanityFilter.details.title')}</summary>
+          <div className="technical-tool-reference">
+            <section className="technical-tool-component-section" aria-labelledby="profanity-filter-details-heading">
+              <div>
+                <h3 id="profanity-filter-details-heading">{t('profanityFilter.details.title')}</h3>
+                <p>{t('profanityFilter.details.description')}</p>
+              </div>
+              <dl className="technical-tool-contract-grid">
+                <div>
+                  <dt>{translateLiteral('File')}</dt>
+                  <dd><code data-localization-ignore="true">exefs/main</code></dd>
+                </div>
+                <div>
+                  <dt>{translateLiteral('Patch site')}</dt>
+                  <dd><code data-localization-ignore="true">{status?.patchOffsetHex ?? '--'}</code></dd>
+                </div>
+                <div>
+                  <dt>{translateLiteral('Owned bytes')}</dt>
+                  <dd>{t('profanityFilter.details.ownedBytes')}</dd>
+                </div>
+                <div>
+                  <dt>{t('profanityFilter.details.observedState')}</dt>
+                  <dd>{patchShapeValue}</dd>
+                </div>
+              </dl>
+            </section>
 
-        <section className="technical-tool-component-section" aria-labelledby="profanity-filter-behavior-heading">
-          <div>
-            <h3 id="profanity-filter-behavior-heading">{t('profanityFilter.instructionTable.title')}</h3>
-            <p>{t('profanityFilter.instructionTable.description')}</p>
+            <section className="technical-tool-component-section" aria-labelledby="profanity-filter-behavior-heading">
+              <div>
+                <h3 id="profanity-filter-behavior-heading">{t('profanityFilter.instructionTable.title')}</h3>
+                <p>{t('profanityFilter.instructionTable.description')}</p>
+              </div>
+              <div className="technical-tool-instruction-table">
+                <div>
+                  <strong>{t('profanityFilter.instructionTable.vanilla')}</strong>
+                  <code data-localization-ignore="true">Sword 0x97E37E86 / Shield 0x97E37E7A</code>
+                  <span>{t('profanityFilter.instructionTable.vanillaBehavior')}</span>
+                </div>
+                <div>
+                  <strong>{t('profanityFilter.instructionTable.km')}</strong>
+                  <code data-localization-ignore="true">0x2A1F03E0 · mov w0, wzr</code>
+                  <span>{t('profanityFilter.instructionTable.kmBehavior')}</span>
+                </div>
+                <div>
+                  <strong>{t('profanityFilter.instructionTable.compatible')}</strong>
+                  <code data-localization-ignore="true">0x52800000 · mov w0, #0</code>
+                  <span>{t('profanityFilter.instructionTable.compatibleBehavior')}</span>
+                </div>
+              </div>
+            </section>
+
           </div>
-          <div className="technical-tool-instruction-table">
-            <div>
-              <strong>{t('profanityFilter.instructionTable.vanilla')}</strong>
-              <code data-localization-ignore="true">Sword 0x97E37E86 / Shield 0x97E37E7A</code>
-              <span>{t('profanityFilter.instructionTable.vanillaBehavior')}</span>
-            </div>
-            <div>
-              <strong>{t('profanityFilter.instructionTable.km')}</strong>
-              <code data-localization-ignore="true">0x2A1F03E0 · mov w0, wzr</code>
-              <span>{t('profanityFilter.instructionTable.kmBehavior')}</span>
-            </div>
-            <div>
-              <strong>{t('profanityFilter.instructionTable.compatible')}</strong>
-              <code data-localization-ignore="true">0x52800000 · mov w0, #0</code>
-              <span>{t('profanityFilter.instructionTable.compatibleBehavior')}</span>
-            </div>
-          </div>
-        </section>
+        </details>
 
         <section className="technical-tool-notice technical-tool-notice-info" aria-labelledby="profanity-filter-restore-heading">
           <div className="technical-tool-notice-heading">

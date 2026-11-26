@@ -8,6 +8,8 @@ import { customGiftCatalogSchema, getCustomGiftPendingCatalog, maximumRoyalGiftP
   type CustomGiftWorkflow } from '../../bridge/customGiftContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { EditorSessionBar, EditorSessionBarActions } from '../../components/EditorSessionBar';
+import { ContextHelp } from '../../components/ContextHelp';
+import { EditorRecordHeading } from '../../components/SectionedEditorWorkspace';
 import { FocusedEditorWorkspace } from '../../components/FocusedEditorWorkspace';
 import { WorkflowPanelOutputSections, type WorkflowPanelOutput } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization';
@@ -141,13 +143,21 @@ export function CustomGiftSection({ mode, workflow, session, isEditing, isEditSt
     : (desired?.codeGifts.length ?? 0) >= 128 || (desired?.nextClaimId ?? 2000) >= 2000);
   const title = t(mode === 'royal' ? 'customGifts.royalTitle' : 'customGifts.mysteryTitle');
   const Icon = mode === 'royal' ? Crown : KeyRound;
+  const speciesOptions = fields.find(field => field.field === 'species')?.options;
+  const giftName = (entry: typeof entries[number]) => entry.name ||
+    speciesOptions?.find(option => option.value === entry.pokemon.speciesId)?.label ||
+    String(entry.pokemon.speciesId);
   return <FocusedEditorWorkspace>
     <section className="panel wide-panel custom-gifts-editor" aria-labelledby={`custom-gifts-${mode}-heading`}>
       <div className="panel-heading"><Icon size={20} aria-hidden="true" /><h2 id={`custom-gifts-${mode}-heading`}>{title}</h2>
+        <ContextHelp label={title}>
+          <p>{t(mode === 'royal' ? 'customGifts.royalHelp' : 'customGifts.mysteryHelp')}</p>
+          <p>{t('customGifts.saveHelp')}</p>
+          {mode === 'royal' ? <p>{t('customGifts.oddsHelp')}</p> : null}
+        </ContextHelp>
         <button className="secondary-button compact-button" type="button" onClick={onRefresh} disabled={isLoading || isStaging}>
           <RefreshCw size={16} aria-hidden="true" /><span>{translateLiteral('Refresh')}</span></button>
       </div>
-      <p>{t(mode === 'royal' ? 'customGifts.royalHelp' : 'customGifts.mysteryHelp')}</p>
       <EditorSessionBar canEdit={workflow?.canEdit === true} isEditing={isEditing} isStarting={isEditStarting}
         label={title} onStart={onStartEditSession} readOnlyReason={t('customGifts.readOnly')} />
       {isEditing ? <EditorSessionBarActions>
@@ -158,13 +168,16 @@ export function CustomGiftSection({ mode, workflow, session, isEditing, isEditSt
         })}><X size={16} aria-hidden="true" /><span>{translateLiteral('Cancel')}</span></button>
         <span className="draft-action-summary">{t(dirty ? 'customGifts.draft' : pending ? 'customGifts.staged' : 'customGifts.clean')}</span>
       </EditorSessionBarActions> : null}
-      <label className="custom-gifts-install"><input type="checkbox" checked={desired?.mode === mode} disabled={!canEdit}
-        onChange={event => edit(catalog => ({ ...catalog, mode: event.target.checked ? mode : 'none' }))} />
-        <strong>{t('customGifts.install', { editor: title })}</strong></label>
-      <p>{t('customGifts.exclusive')}</p>
-      <p role="status">{t('customGifts.current', { editor: t(workflow?.installedMode === 'royal' ? 'customGifts.royalTitle'
-        : workflow?.installedMode === 'mystery' ? 'customGifts.mysteryTitle' : 'customGifts.none') })}</p>
-      {needsRepair ? <p>{t('customGifts.repair')}</p> : null}
+      <div className="custom-gifts-installation">
+        <label className="custom-gifts-install"><input type="checkbox" checked={desired?.mode === mode} disabled={!canEdit}
+          onChange={event => edit(catalog => ({ ...catalog, mode: event.target.checked ? mode : 'none' }))} />
+          <strong>{t('customGifts.install', { editor: title })}</strong>
+        </label>
+        <p>{t('customGifts.exclusive')}</p>
+        <p role="status">{t('customGifts.current', { editor: t(workflow?.installedMode === 'royal' ? 'customGifts.royalTitle'
+          : workflow?.installedMode === 'mystery' ? 'customGifts.mysteryTitle' : 'customGifts.none') })}</p>
+        {needsRepair ? <p className="field-warning" role="status">{t('customGifts.repair')}</p> : null}
+      </div>
       {mode === 'royal' ? <div className="custom-gifts-badges" role="group" aria-label={t('customGifts.badges')}>
         {Array.from({ length: 9 }, (_, count) => <button type="button" key={count} aria-pressed={count === badges}
           className={count === badges ? 'primary-button' : 'secondary-button'} onClick={() => { setBadges(count); setSelection(null); }}>
@@ -172,15 +185,15 @@ export function CustomGiftSection({ mode, workflow, session, isEditing, isEditSt
       </div> : null}
       {mode === 'royal' ? <div className="custom-gifts-pool-summary">
         <p role="status">{t('customGifts.poolSummary', { count: entries.length, total: poolTotal })}</p>
-        <p>{t('customGifts.oddsHelp')}</p>
         {invalidPools.length > 0 ? <p role="status">{t('customGifts.invalidPools', { badges: invalidPools.join(', ') })}</p> : null}
       </div> : null}
-      <RecordEditorWorkspace id="customGifts" className="custom-gifts-layout" browser={
+      <RecordEditorWorkspace id={`customGifts:${mode}`} className="custom-gifts-layout"
+        browserControls={<button type="button" className="secondary-button compact-button" disabled={addDisabled} onClick={add}><Plus size={16} aria-hidden="true" />{t('customGifts.add')}</button>}
+        browser={
         <div className="custom-gifts-list">
-          <button type="button" className="secondary-button" disabled={addDisabled} onClick={add}><Plus size={16} aria-hidden="true" />{t('customGifts.add')}</button>
           {entries.length === 0 ? <p>{t('customGifts.empty')}</p> : entries.map(entry => <button type="button" key={entry.key}
-            className={selected?.key === entry.key ? 'custom-gifts-row selected' : 'custom-gifts-row'} onClick={() => setSelection(entry.key)}>
-            <strong>{entry.name || fields.find(field => field.field === 'species')?.options.find(option => option.value === entry.pokemon.speciesId)?.label || entry.pokemon.speciesId}</strong>
+            aria-pressed={selected?.key === entry.key} className={selected?.key === entry.key ? 'custom-gifts-row selected' : 'custom-gifts-row'} onClick={() => setSelection(entry.key)}>
+            <strong>{giftName(entry)}</strong>
             <span>{t('customGifts.level', { level: entry.pokemon.level })}</span>
             {mode === 'royal' ? <span>{t('customGifts.slotChance', { chance: selectedPool?.chances[entry.key] ?? 0 })}</span> : null}
           </button>)}
@@ -188,8 +201,12 @@ export function CustomGiftSection({ mode, workflow, session, isEditing, isEditSt
       }>
         <div className="custom-gifts-detail">
           {selected ? <>
-            <div className="panel-heading"><h3>{t('customGifts.pokemon')}</h3><button type="button" className="danger-button" disabled={!canEdit} onClick={remove}>
-              <Trash2 size={16} aria-hidden="true" />{translateLiteral('Remove')}</button></div>
+            <div className="panel-heading">
+              <EditorRecordHeading name={giftName(selected)} id={selectedCode?.claimId} />
+              <button type="button" className="danger-button" disabled={!canEdit} onClick={remove}>
+                <Trash2 size={16} aria-hidden="true" />{translateLiteral('Remove')}
+              </button>
+            </div>
             {selectedCode ? <div className="editable-field-grid">
               <label className="path-field"><span>{t('customGifts.name')}</span><input value={selectedCode.name} disabled={!canEdit} maxLength={80}
                 onChange={event => edit(catalog => ({ ...catalog, codeGifts: catalog.codeGifts.map(gift => gift.claimId === selectedCode.claimId
@@ -216,7 +233,6 @@ export function CustomGiftSection({ mode, workflow, session, isEditing, isEditSt
           </> : <p>{t('customGifts.select')}</p>}
         </div>
       </RecordEditorWorkspace>
-      <p>{t('customGifts.saveHelp')}</p>
     </section>
     <WorkflowPanelOutputSections output={panelOutput} workflowDiagnostics={workflow?.diagnostics ?? []} />
   </FocusedEditorWorkspace>;
