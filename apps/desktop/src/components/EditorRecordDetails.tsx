@@ -1,15 +1,29 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-import { useId, type ReactNode } from 'react';
+import { useId, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import './editorRecordDetails.css';
 
-export function EditorDetailGroup({ label, headingValue, children }: {
-  label: string; headingValue?: ReactNode; children: ReactNode;
-}) {
+type EditorGroupHeading = { label: ReactNode; headingValue?: ReactNode };
+
+function EditorGroupHeader({ id, label, headingValue }: EditorGroupHeading & { id: string }) {
+  return <header><h4 id={id}>{label}</h4>{headingValue}</header>;
+}
+
+export function EditorDetailGroup({ label, headingValue, className, children, ...props }:
+  EditorGroupHeading & ComponentPropsWithoutRef<'section'>) {
   const id = useId();
-  return <section className="editor-detail-group" aria-labelledby={id}>
-    <header><h4 id={id}>{label}</h4>{headingValue}</header>
+  return <section {...props} className={['editor-detail-group', className].filter(Boolean).join(' ')} aria-labelledby={id}>
+    <EditorGroupHeader id={id} label={label} headingValue={headingValue} />
     {children}
   </section>;
+}
+
+export function EditorFieldGroup({ label, headingValue, className, children, ...props }:
+  EditorGroupHeading & ComponentPropsWithoutRef<'fieldset'>) {
+  const id = useId();
+  return <fieldset {...props} className={['editor-detail-group', className].filter(Boolean).join(' ')} aria-labelledby={id}>
+    <EditorGroupHeader id={id} label={label} headingValue={headingValue} />
+    {children}
+  </fieldset>;
 }
 
 export function EditorDetailValue({ label, children, dataValue, path }: {

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import { EditorFieldGroup } from '../../components/EditorRecordDetails';
 import { useId, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useModalDialog } from '../../components/useModalDialog';
@@ -64,8 +65,7 @@ export function MergePackageDialog({ catalog, initial, changed, onCancel, onConf
       <div className="merge-package-toolbar"><input aria-label={label('search')} placeholder={label('search')} value={query} onChange={event => setQuery(event.target.value)} />
         {catalog.packages.some(item => item.recommended) && <button type="button" onClick={() => { setSelected(defaultPackageSelection(catalog)); setSelectionError(false); setAdjustments({ added: [], removed: [] }); }}>{label('useRecommended')}</button>}</div>
       {catalog.packages.filter(item => !item.group).map(row)}
-      {catalog.groups.map(group => <fieldset key={group.id} hidden={!catalog.packages.some(item => item.group === group.id && visible(item))}>
-        <legend><span data-localization-ignore>{group.name}</span> · {group.required ? label('chooseOneRequired') : label('chooseOne')}</legend>
+      {catalog.groups.map(group => <EditorFieldGroup key={group.id} hidden={!catalog.packages.some(item => item.group === group.id && visible(item))} label={<><span data-localization-ignore>{group.name}</span> · {group.required ? label('chooseOneRequired') : label('chooseOne')}</>}>
         {!group.required && <label className="merge-package-none"><input type="radio" name={`${titleId}-${group.id}`}
           checked={!catalog.packages.some(item => item.group === group.id && selected.includes(item.id))}
           disabled={catalog.packages.some(item => item.group === group.id && requiredIds.has(item.id))}
@@ -74,7 +74,7 @@ export function MergePackageDialog({ catalog, initial, changed, onCancel, onConf
             if (current) change(current.id, false);
           }} />{label('none')}</label>}
         {catalog.packages.filter(item => item.group === group.id).map(row)}
-      </fieldset>)}
+      </EditorFieldGroup>)}
       {!catalog.packages.some(visible) && <p>{label('noMatches')}</p>}
       {catalog.documents.length > 0 && <details className="merge-package-documents"><summary>{label('documentation')}</summary>
         <p className="field-note">{label('documentationHelp')}</p>

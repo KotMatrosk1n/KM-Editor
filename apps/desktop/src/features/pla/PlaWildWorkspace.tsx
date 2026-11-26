@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { EditorFieldGroup } from '../../components/EditorRecordDetails';
 import { plaFieldHelp } from './plaFieldHelp';
 import { plaAreaLabel, plaPokemonLabel } from './plaLabels';
 import type { ReactNode } from 'react';
@@ -143,15 +144,14 @@ export function PlaWildWorkspace({ sessionKey, kind, page, selected, query, offs
               {selected.readOnlyFields.length ? <p className="field-note">{t('pla.wild.protected')}</p> : null}
               {selected.metadata.condition === 'progression' ? <p className="field-note">{t('pla.wild.condition')}</p> : null}
               <div className="editor-task-groups">{groupsFor(selected).map(group =>
-                <fieldset className="editable-field-group" key={group.key}>
-                  <legend><span className="editor-task-field-name">{group.title}<ContextHelp label={group.title}>{group.help}</ContextHelp></span></legend>
+                <EditorFieldGroup className="editable-field-group" key={group.key} label={group.title} headingValue={<ContextHelp label={group.title}>{group.help}</ContextHelp>}>
                   <div className="pokemon-instance-field-list">{group.fields.map(field => <div className="editable-field-control" key={field.key}>
                     <FieldLabel htmlFor={'pla-field-' + field.key} label={fieldLabel(field)} help={plaFieldHelp(t, kind, field, fieldLabel(field))} />
                     {renderInput(field)}
                     {field.kind === 'decimal' && values[field.key] === '-1' ? <small className="field-note">{values.species === selected.values.species && values.form === selected.values.form
                       ? t('pla.wild.inherited', { value: selected.metadata['default.' + field.key] }) : t('pla.wild.inheritedPending')}</small> : null}
                   </div>)}</div>
-                </fieldset>)}</div>
+                </EditorFieldGroup>)}</div>
             </div>
           </div>
         </EditorWorkspaceSection>

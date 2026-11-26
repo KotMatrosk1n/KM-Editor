@@ -30,13 +30,17 @@
   grid-template-columns: minmax(8rem, 1fr) minmax(6rem, .75fr) minmax(0, 6fr);
   align-items: baseline;
   gap: 4px 12px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--color-border);
+  padding: .26rem .65rem;
+  font-size: .8125rem;
+}
+
+.trainer-source-row + .trainer-source-row {
+  border-block-start: 1px solid var(--color-border);
 }
 
 .trainer-source-row dt {
-  color: var(--color-text);
-  font-weight: 700;
+  color: var(--color-text-muted);
+  font-weight: 400;
 }
 
 .trainer-source-row dd {
@@ -80,26 +84,11 @@
   font-variant-numeric: tabular-nums;
 }
 
-.sectioned-editor-workspace .trainer-ai-flags-panel {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 8px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-
-.trainer-ai-flags-panel > .editable-field-label-row {
-  grid-column: 2;
-  grid-row: 1;
-}
-
 .trainer-ai-groups {
-  grid-column: 1;
-  grid-row: 1;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11.5rem), 1fr));
+  align-items: start;
+  gap: .65rem;
   min-width: 0;
 }
 
@@ -110,11 +99,15 @@
 
 .sectioned-editor-workspace .trainer-ai-flag {
   align-items: center;
-  padding: 5px 0;
+  padding: .26rem .65rem;
   border: 0;
   border-bottom: 1px solid var(--color-border);
   border-radius: 0;
   background: transparent;
+}
+
+.sectioned-editor-workspace .trainer-ai-flag input {
+  margin: 0;
 }
 
 .sectioned-editor-workspace .trainer-ai-flag:focus-within {
@@ -191,7 +184,8 @@
 }
 
 .trainer-stat-totals:not(:empty) {
-  padding-block-start: 6px;
+  border-block-start: 1px solid var(--color-border);
+  padding: .26rem .65rem;
 }
 
 .trainer-stat-table {
@@ -208,6 +202,16 @@
   border-bottom: 1px solid var(--color-border);
   text-align: start;
   overflow-wrap: anywhere;
+}
+
+.trainer-member-stat-actions:not(:empty) {
+  padding: .26rem .65rem;
+}
+
+.trainer-stat-table :is(thead th, tbody th) {
+  color: var(--color-text-muted);
+  font-weight: 400;
+  overflow-wrap: normal;
 }
 
 .trainer-stat-table th:first-child {

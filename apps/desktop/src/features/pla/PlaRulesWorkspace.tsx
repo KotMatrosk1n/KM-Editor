@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { EditorFieldGroup } from '../../components/EditorRecordDetails';
 import { plaFieldHelp } from './plaFieldHelp';
 import type { ReactNode } from 'react';
 import { SlidersVertical } from 'lucide-react';
@@ -94,10 +95,9 @@ export function PlaRulesWorkspace({ sessionKey, kind, page, controls, sessionBar
         {groups.some(group => group.fields.length > 0) ? (
           <div className="editor-task-groups pla-rule-groups">
             {groups.filter(group => group.fields.length > 0).map(group => (
-              <fieldset className="editable-field-group" key={group.title}>
-                <legend>{group.title}</legend>
+              <EditorFieldGroup className="editable-field-group" key={group.title} label={group.title}>
                 <div className="pokemon-instance-field-list">{group.fields.map(field => renderRule(field))}</div>
-              </fieldset>
+              </EditorFieldGroup>
             ))}
           </div>
         ) : null}

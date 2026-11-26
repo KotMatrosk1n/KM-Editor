@@ -62,9 +62,8 @@
 .merge-package-row p { margin: 10px 0; }
 .merge-package-row details { margin-top: 12px; }
 .merge-package-dialog summary { cursor: pointer; overflow-wrap: anywhere; }
-.merge-package-dialog fieldset { min-inline-size: 0; margin: 16px 0 0; border: 1px solid var(--color-border); border-radius: 8px; }
-.merge-package-dialog legend { max-width: 100%; overflow-wrap: anywhere; }
-.merge-package-none { display: flex; align-items: start; gap: 12px; }
+.merge-package-dialog fieldset.editor-detail-group { margin-block-start: 1rem; }
+.merge-package-none { display: flex; align-items: start; gap: 12px; margin: .45rem .65rem; }
 .merge-package-files { padding-left: 22px; max-height: 240px; overflow: auto; }
 .merge-package-files code { white-space: pre-wrap; overflow-wrap: anywhere; }
 .merge-package-documents { margin-top: 20px; }

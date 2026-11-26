@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { EditorFieldGroup } from '../../components/EditorRecordDetails';
 import { MoveDetails, MoveEditorWorkspace, MoveFlagCount, type MoveFieldGroup } from '../moves/MoveEditorWorkspace';
 import { formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 import { isPlaFieldValueValid } from './plaDraftValidation';
@@ -174,9 +175,7 @@ export function PlaDataWorkspace({ sessionKey, kind, page, selected, query, offs
                 <li key={field.key}><label className="compatibility-toggle">{renderInput(field)}<span data-localization-ignore="true">{fieldLabel(field)}</span>
                   <small>{field.key.slice('tutor.'.length)}</small></label></li>)}</ul>
             </div> : kind === 'text' ? fields.map(renderField) : <div className="editable-field-groups">
-              {groups.map(group => <fieldset className="editable-field-group" key={group.title}><legend>{group.title}
-                {kind === 'personal' && group.fields.some(field => field.key === 'hp') ? <span className="pokemon-stat-total">{translateLiteral('Total')}: {statTotal}</span> : null}
-              </legend><div className="editable-field-grid">{group.fields.map(renderField)}</div></fieldset>)}
+              {groups.map(group => <EditorFieldGroup className="editable-field-group" key={group.title} label={group.title} headingValue={kind === 'personal' && group.fields.some(field => field.key === 'hp') ? <span className="pokemon-stat-total">{translateLiteral('Total')}: {statTotal}</span> : null}><div className="editable-field-grid">{group.fields.map(renderField)}</div></EditorFieldGroup>)}
             </div>}
           </div>
         </EditorWorkspaceSection>

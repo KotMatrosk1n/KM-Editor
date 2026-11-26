@@ -3,7 +3,7 @@ import { plaFieldHelp } from './plaFieldHelp';
 import { plaAreaLabel } from './plaLabels';
 import { useState, type ReactNode } from 'react';
 import { ContextHelp } from '../../components/ContextHelp';
-import { EditorDetailGroup, EditorDetailValue } from '../../components/EditorRecordDetails';
+import { EditorDetailGroup, EditorDetailValue, EditorFieldGroup } from '../../components/EditorRecordDetails';
 import { ItemBehavior, ItemDataLayout } from '../items/ItemEditorWorkspace';
 import { formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 import { isPlaFieldValueValid, resolvePlaField } from './plaDraftValidation';
@@ -228,8 +228,7 @@ export function PlaEconomyWorkspace({ sessionKey, kind, page, selected, query, o
                 const isIngredients = kind === 'crafting' && group.title === t('pla.kind.crafting') && ingredientSlots.length > 0;
                 const groupFields = isIngredients ? group.fields.filter(field => !ingredientSlots.some(slot => slot.item === field || slot.quantity === field)) : group.fields;
                 if (!isIngredients && groupFields.length === 0) return null;
-                return <fieldset className="editable-field-group" key={group.title}>
-                  <legend>{group.title}</legend>
+                return <EditorFieldGroup className="editable-field-group" key={group.title} label={group.title}>
                   {isIngredients ? <table className="editor-data-matrix pla-recipe-matrix" aria-label={group.title}>
                     <thead><tr><th scope="col">{translateLiteral('Slot')}</th><th scope="col">{translateLiteral('Ingredient')}</th>
                       <th scope="col">{translateLiteral('Quantity')}</th></tr></thead>
@@ -239,7 +238,7 @@ export function PlaEconomyWorkspace({ sessionKey, kind, page, selected, query, o
                     </tr>)}</tbody>
                   </table> : null}
                   <div className="pokemon-instance-field-list">{groupFields.map(field => renderEconomyField(field))}</div>
-                </fieldset>;
+                </EditorFieldGroup>;
               })}
             </div>
           ) : null}

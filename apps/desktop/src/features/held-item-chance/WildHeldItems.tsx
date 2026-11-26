@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { EditorFieldGroup } from '../../components/EditorRecordDetails';
 import { createContext, useContext, useEffect, useState } from 'react';
 import { type EditSession, type PokemonRecord, type PokemonWorkflow } from '../../bridge/contracts';
 import { getHeldItemPendingRates, getHeldItemPokemonState, type HeldItemChanceWorkflow } from '../../bridge/heldItemChanceContracts';
@@ -84,18 +85,12 @@ export function WildHeldItems({ workflow, chances, session, speciesId, form, rec
   const second = desired[1] === undefined ? null : parse(desired[1]);
   const title = t('heldItemChance.wildTitle');
 
-  return <fieldset className="editable-field-group wild-held-items" aria-label={title}>
-    <legend>
-      <span className="editable-field-group-legend-content">
-        {title}
-        {row ? (
-          <ContextHelp label={title}>
-            <p>{t('heldItemChance.wildDraftScope')}</p>
-            <p>{t('heldItemChance.boostedHelp')}</p>
-          </ContextHelp>
-        ) : null}
-      </span>
-    </legend>
+  return <EditorFieldGroup className="editable-field-group wild-held-items" label={title} headingValue={row ? (
+      <ContextHelp label={title}>
+        <p>{t('heldItemChance.wildDraftScope')}</p>
+        <p>{t('heldItemChance.boostedHelp')}</p>
+      </ContextHelp>
+    ) : null}>
     {row ? <>
       <p className="editable-field-status wild-held-items-note">
         {t('heldItemChance.wildShared', {
@@ -132,5 +127,5 @@ export function WildHeldItems({ workflow, chances, session, speciesId, form, rec
         onClick={() => { setDrafts({}); setFailed(false); }}>{t('heldItemChance.wildDiscard')}</button>
       <span className="editable-field-status">{t(dirty ? 'heldItemChance.draft' : 'heldItemChance.clean')}</span>
     </div> : null}
-  </fieldset>;
+  </EditorFieldGroup>;
 }

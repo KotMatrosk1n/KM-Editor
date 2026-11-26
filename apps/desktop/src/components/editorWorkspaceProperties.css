@@ -35,24 +35,7 @@
   min-width: 0;
   grid-column: 1 / -1;
 }
-.workspace-content[data-editor-workspace] .editable-field-group {
-  padding: 0 var(--property-padding) .3rem;
-  margin: 0;
-  background: var(--color-surface-muted);
-  border: 1px solid var(--color-border);
-  border-radius: var(--property-radius);
-}
-.workspace-content[data-editor-workspace] .editable-field-group > legend {
-  padding: .25rem .45rem;
-  color: var(--color-text);
-  background: var(--color-surface-strong);
-  border: 1px solid var(--property-divider);
-  border-radius: .3rem;
-  font-size: .8125rem;
-  font-weight: 700;
-  text-transform: none;
-}
-.workspace-content[data-editor-workspace] .editable-field-group .editable-field-grid {
+.workspace-content[data-editor-workspace] .editable-field-group > .editable-field-grid {
   grid-template-columns: minmax(0, 1fr);
   gap: 0;
 }
@@ -62,28 +45,44 @@
 }
 .workspace-content[data-editor-workspace] :is(.editable-field-group, .fashion-catalog-field-editor) .editable-field-control {
   display: grid;
-  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+  grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr);
   align-items: center;
   gap: .15rem .6rem;
   min-width: 0;
-  padding: .24rem 0;
+  padding: .26rem var(--property-padding);
   border: 0;
 }
-.workspace-content[data-editor-workspace] .editable-field-group .editable-field-control + .editable-field-control {
-  border-block-start: 1px solid var(--property-divider);
+.workspace-content[data-editor-workspace] .editable-field-group .editable-field-grid > .editable-field-control + .editable-field-control {
+  border-block-start: 1px solid var(--color-border);
+}
+.workspace-content[data-editor-workspace]:not([data-editor-workspace='pokemon']) :is(
+  .editable-field-label-row > label,
+  .editable-field-control > label,
+  .editor-task-field-name,
+  .editor-task-list > label > span:first-child,
+  label.path-field,
+  .tree-number-field > span,
+  label.editor-setting-row > span:first-child
+) {
+  color: var(--color-text-muted);
+  font-size: .8125rem;
+  font-weight: 400;
+  overflow-wrap: anywhere;
 }
 .workspace-content[data-editor-workspace] .editable-field-control .editable-field-label-row {
-  font-size: .8rem;
   min-width: 0;
   gap: .25rem;
-  overflow-wrap: anywhere;
+}
+.workspace-content[data-editor-workspace] .editable-field-group > :is(p, .field-group-action-row, .static-encounter-readout) {
+  margin-inline: 0;
+  padding-inline: var(--property-padding);
 }
 .workspace-content[data-editor-workspace] .editable-field-label-row > .context-help-trigger {
   min-height: 24px;
 }
 .workspace-content[data-editor-workspace] .editable-field-control :is(.editable-field-status, .editable-field-error, .field-note, textarea) { grid-column: 1 / -1; }
 .workspace-content[data-editor-workspace] .editable-field-control :is(input, select, .searchable-option-input) { min-width: 0; }
-.workspace-content[data-editor-workspace] .editable-field-control > :is(select, input:not([type='checkbox']), .searchable-option-input) { width: 100%; }
+.workspace-content[data-editor-workspace] .editable-field-control > :is(select, input:not([type='checkbox'], [type='radio']), .searchable-option-input) { width: 100%; }
 .workspace-content[data-editor-workspace] :is(.item-edit-form, .encounter-edit-form, .text-edit-form, .trainer-edit-form) {
   min-width: 0;
   gap: .55rem;

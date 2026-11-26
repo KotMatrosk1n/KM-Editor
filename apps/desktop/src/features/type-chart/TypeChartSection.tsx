@@ -17,6 +17,7 @@ import { ContextHelp } from '../../components/ContextHelp';
 import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
 import { RecordEditorWorkspace, EditorWorkspaceSection } from '../../components/SectionedEditorWorkspace';
+import { EditorDetailGroup, EditorDetailValue } from '../../components/EditorRecordDetails';
 import { useLocalization } from '../../localization';
 import { formatBagHookStatus, formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 import {
@@ -467,32 +468,18 @@ function TypeChartSourceSummary({ source }: { source: TypeChartSourceRecord | nu
   }
 
   return (
-    <dl className="type-chart-source-summary">
-      <div>
-        <dt>Source</dt>
-        <dd data-localization-ignore="true">{source.relativePath}</dd>
-      </div>
-      <div>
-        <dt>Status</dt>
-        <dd>{formatTypeChartSourceStatus(source.status)}</dd>
-      </div>
-      <div>
-        <dt>Layer</dt>
-        <dd>
-          {source.status === 'available'
-            ? formatSourceLayer(source.provenance.sourceLayer)
-            : 'Unavailable'}
-        </dd>
-      </div>
-      <div>
-        <dt>File state</dt>
-        <dd>
-          {source.status === 'available'
-            ? formatFileState(source.provenance.fileState)
-            : 'Unavailable'}
-        </dd>
-      </div>
-    </dl>
+    <EditorDetailGroup label="Source">
+      <dl className="editor-detail-list">
+        <EditorDetailValue label="Source file" path dataValue>{source.relativePath}</EditorDetailValue>
+        <EditorDetailValue label="Status">{formatTypeChartSourceStatus(source.status)}</EditorDetailValue>
+        <EditorDetailValue label="Layer">
+          {source.status === 'available' ? formatSourceLayer(source.provenance.sourceLayer) : 'Unavailable'}
+        </EditorDetailValue>
+        <EditorDetailValue label="File state">
+          {source.status === 'available' ? formatFileState(source.provenance.fileState) : 'Unavailable'}
+        </EditorDetailValue>
+      </dl>
+    </EditorDetailGroup>
   );
 }
 

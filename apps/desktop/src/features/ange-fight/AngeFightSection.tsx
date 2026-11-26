@@ -21,6 +21,7 @@ import {
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
 import { ContextHelp } from '../../components/ContextHelp';
+import { EditorDetailGroup, EditorDetailValue, EditorFieldGroup } from '../../components/EditorRecordDetails';
 import { EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { FieldLabel } from '../../components/FieldLabel';
 import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
@@ -340,58 +341,48 @@ export function AngeFightSection({
                 </table>
               </EditorWorkspaceSection>
             <EditorWorkspaceSection id="flowers" label={translateLiteral("Flower HP")}>
-              <div className="ange-fight-group-heading">
-                <div>
-                  <h3 id="ange-flower-hp-heading">Flower HP</h3>
-                  <ContextHelp label="Flower HP">
-                    {translateLiteral('Each flower has its own independent HP value.')}
-                  </ContextHelp>
+              <EditorFieldGroup className="editable-field-group" label={translateLiteral('Flower HP')}
+                headingValue={<ContextHelp label={translateLiteral('Flower HP')}>
+                  {translateLiteral('Each flower has its own independent HP value.')}
+                </ContextHelp>}>
+                <div className="editable-field-grid">
+                  {workflow.flowers.map((flower) => {
+                    const value =
+                      flower.flowerId === 'blue'
+                        ? draft.blueFlowerHp
+                        : draft.redFlowerHp;
+                    return (
+                      <NumberField
+                        disabled={!canEdit}
+                        invalid={parseInt32(value, 1) === null}
+                        inputId={`ange-fight-${flower.flowerId}-flower-hp`}
+                        key={flower.flowerId}
+                        label={translateLiteral(flower.label)}
+                        help="Each flower has its own independent HP value."
+                        minimum={1}
+                        onChange={(nextValue) =>
+                          updateFlowerHp(flower.flowerId, nextValue)
+                        }
+                        value={value}
+                        vanillaValue={flower.vanillaHp}
+                      />
+                    );
+                  })}
                 </div>
-              </div>
-              <div className="ange-fight-flower-grid">
-                {workflow.flowers.map((flower) => {
-                  const value =
-                    flower.flowerId === 'blue'
-                      ? draft.blueFlowerHp
-                      : draft.redFlowerHp;
-                  return (
-                    <NumberField
-                      disabled={!canEdit}
-                      invalid={parseInt32(value, 1) === null}
-                      inputId={`ange-fight-${flower.flowerId}-flower-hp`}
-                      key={flower.flowerId}
-                      label={translateLiteral(flower.label)}
-                      help="Each flower has its own independent HP value."
-                      minimum={1}
-                      onChange={(nextValue) =>
-                        updateFlowerHp(flower.flowerId, nextValue)
-                      }
-                      value={value}
-                      vanillaValue={flower.vanillaHp}
-                    />
-                  );
-                })}
-              </div>
+              </EditorFieldGroup>
             </EditorWorkspaceSection>
 
             <EditorWorkspaceSection id="source" label={translateLiteral("Source")}>
-              <div className="ange-fight-source-grid">
+              <div className="editor-detail-columns">
                 {workflow.sources.map((source) => (
-                  <dl className="ange-fight-source-card" key={source.id}>
-                    <div className="ange-fight-source-path">
-                      <dt>{translateLiteral(source.label)}</dt>
-                      <dd data-localization-ignore="true">{source.relativePath}</dd>
-                  </div>
-                  <div>
-                    <dt>Layer</dt>
-                    <dd>{formatSourceLayer(source.provenance.sourceLayer)}</dd>
-                  </div>
-                  <div>
-                    <dt>File state</dt>
-                    <dd>{formatFileState(source.provenance.state)}</dd>
-                  </div>
-                </dl>
-              ))}
+                  <EditorDetailGroup key={source.id} label={translateLiteral(source.label)}>
+                    <dl className="editor-detail-list">
+                      <EditorDetailValue label="Source file" path dataValue>{source.relativePath}</EditorDetailValue>
+                      <EditorDetailValue label="Layer">{formatSourceLayer(source.provenance.sourceLayer)}</EditorDetailValue>
+                      <EditorDetailValue label="File state">{formatFileState(source.provenance.state)}</EditorDetailValue>
+                    </dl>
+                  </EditorDetailGroup>
+                ))}
               </div>
             </EditorWorkspaceSection>
             </RecordEditorWorkspace>
@@ -547,7 +538,7 @@ function NumberField({
   const localizedLabel = translateLiteral(label);
 
   return (
-    <div className="ange-fight-number-field">
+    <div className="editable-field-control">
       <FieldLabel
         help={translateLiteral(help)}
         htmlFor={inputId}

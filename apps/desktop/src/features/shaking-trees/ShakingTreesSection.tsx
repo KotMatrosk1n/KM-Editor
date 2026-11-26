@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { EditorDetailGroup } from '../../components/EditorRecordDetails';
 import { ContextHelp } from '../../components/ContextHelp';
 import { EditorRecordTable } from '../../components/EditorRecordTable';
 import { EditorWorkspaceHeader, EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
@@ -227,22 +228,32 @@ export function ShakingTreesSection({ workflow, session, isEditing, isEditStarti
         </> : <p>{t('shakingTrees.empty')}</p>}
       </RecordEditorWorkspace> : <div className="tree-rules">
         <div className="tree-rules-controls">
-          <div className="context-help-heading"><h3>{t('shakingTrees.globalRules')}</h3><ContextHelp label={t('shakingTrees.globalRules')}>{t('shakingTrees.riskHelp')}</ContextHelp></div>
-          <div className="tree-rules-grid">
-            {numberInput('settings', 'initialRiskMin', t('shakingTrees.initialRiskMin'), 99)}
-            {numberInput('settings', 'initialRiskMax', t('shakingTrees.initialRiskMax'), 99)}
-            {numberInput('settings', 'riskStepMin', t('shakingTrees.riskStepMin'), 99, 1)}
-            {numberInput('settings', 'riskStepMax', t('shakingTrees.riskStepMax'), 99, 1)}
-          </div>
-          <div className="context-help-heading"><h3>{t('shakingTrees.quantity')}</h3><ContextHelp label={t('shakingTrees.quantity')}>{t('shakingTrees.quantityHelp')}</ContextHelp></div>
-          <div className="tree-rules-grid">{numberInput('settings', 'dropMin', t('shakingTrees.dropMin'), 3, 1)}
-            {numberInput('settings', 'dropMax', t('shakingTrees.dropMax'), 3, 1)}</div>
-          <h3>{t('shakingTrees.loss')}</h3>
-          {numberInput('settings', 'loseAllRolls', t('shakingTrees.loseAllRolls'), 101)}
-          <p>{t('shakingTrees.lossHelp', { value: settings ? formatPercent(settings.loseAllRolls / 101) : '…' })}</p>
+          <EditorDetailGroup label={t('shakingTrees.globalRules')}
+            headingValue={<ContextHelp label={t('shakingTrees.globalRules')}>{t('shakingTrees.riskHelp')}</ContextHelp>}>
+            <div className="tree-rules-fields">
+              {numberInput('settings', 'initialRiskMin', t('shakingTrees.initialRiskMin'), 99)}
+              {numberInput('settings', 'initialRiskMax', t('shakingTrees.initialRiskMax'), 99)}
+              {numberInput('settings', 'riskStepMin', t('shakingTrees.riskStepMin'), 99, 1)}
+              {numberInput('settings', 'riskStepMax', t('shakingTrees.riskStepMax'), 99, 1)}
+            </div>
+          </EditorDetailGroup>
+          <EditorDetailGroup label={t('shakingTrees.quantity')}
+            headingValue={<ContextHelp label={t('shakingTrees.quantity')}>{t('shakingTrees.quantityHelp')}</ContextHelp>}>
+            <div className="tree-rules-fields">
+              {numberInput('settings', 'dropMin', t('shakingTrees.dropMin'), 3, 1)}
+              {numberInput('settings', 'dropMax', t('shakingTrees.dropMax'), 3, 1)}
+            </div>
+          </EditorDetailGroup>
+          <EditorDetailGroup label={t('shakingTrees.loss')}>
+            <div className="tree-rules-fields">
+              {numberInput('settings', 'loseAllRolls', t('shakingTrees.loseAllRolls'), 101)}
+              <p>{t('shakingTrees.lossHelp', { value: settings ? formatPercent(settings.loseAllRolls / 101) : '…' })}</p>
+            </div>
+          </EditorDetailGroup>
           <button className="secondary-button" type="button" disabled={!canEdit} onClick={restoreRules}><RotateCcw size={16} aria-hidden="true" /><span>{t('shakingTrees.restoreRules')}</span></button>
         </div>
-        <div className="tree-probability"><div className="context-help-heading"><h3>{t('shakingTrees.odds')}</h3><ContextHelp label={t('shakingTrees.odds')}>{t('shakingTrees.oddsHelp')}</ContextHelp></div>
+        <EditorDetailGroup label={t('shakingTrees.odds')}
+          headingValue={<ContextHelp label={t('shakingTrees.odds')}>{t('shakingTrees.oddsHelp')}</ContextHelp>}>
           <div className="tree-odds-scroll"><table><thead><tr><th scope="col">{t('shakingTrees.shake')}</th>
             <th scope="col">{t('shakingTrees.encounterChance')}</th><th scope="col">{t('shakingTrees.survival')}</th></tr></thead>
             <tbody>{odds.map(row => <tr key={row.shake}><th scope="row">{row.shake}</th><td>{formatPercent(row.encounter)}</td><td>{formatPercent(row.survival)}</td></tr>)}</tbody></table></div>
@@ -254,7 +265,7 @@ export function ShakingTreesSection({ workflow, session, isEditing, isEditStarti
               </div>)}
             </dl>
           </details>
-        </div>
+        </EditorDetailGroup>
       </div>}
       </div>
     </section>

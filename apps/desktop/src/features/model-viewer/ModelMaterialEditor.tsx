@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { EditorFieldGroup } from '../../components/EditorRecordDetails';
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { EditSession, ProjectPaths } from '../../bridge/contracts';
@@ -116,26 +117,27 @@ export function ModelMaterialEditor({ paths, model, session, disabled, onDirtyCh
             const selectedRestore = staged.some(a => a.asset === asset?.id && a.restore);
             const original = { values: field.values.map(String), text: field.text };
             const changed = JSON.stringify(value) !== JSON.stringify(original);
-            return <fieldset key={field.key} className={`model-materials__field${changed ? ' model-materials__field--changed' : ''}`} disabled={!field.editable || selectedRestore}>
-              <legend data-localization-ignore="true">{field.name}</legend>
-              {field.options.length ? <SearchableOptionInput id={`model-property-${field.key}`} ariaLabel={field.name}
-                disabled={!field.editable || selectedRestore || locked} isFiniteCatalog localizeOptions={false}
-                value={field.kind === 'int' ? value.values[0] : value.text ?? ''}
-                onChange={text => edit(field, field.kind === 'int' ? { values: [text], text: null } : { values: [], text })}
-                options={field.options.map(option => ({ value: option, label: option }))} />
-                : field.kind === 'text' ? <span data-localization-ignore="true">{field.text}</span> : <>
-                {field.kind === 'vector' && field.name.toLowerCase().includes('color') ? <ViewerColorPicker id={`material-color-${field.key}`} label={field.name}
-                  color={'#' + value.values.slice(0, 3).map(v => Math.round(Math.max(0, Math.min(1, Number(v) || 0)) * 255).toString(16).padStart(2, '0')).join('')}
-                  onChange={color => edit(field, { values: [...[1, 3, 5].map(i => String(parseInt(color.slice(i, i + 2), 16) / 255)), ...value.values.slice(3)], text: null })} /> : null}
-                <div className="model-materials__vector">{value.values.map((v, index) => <label key={index} data-localization-ignore="true">{value.values.length > 1 ? (field.name.toLowerCase().includes('color') ? 'RGBA' : 'XYZW')[index] : null}
-                  <input type="number" step={field.kind === 'int' ? '1' : 'any'} aria-label={`${field.name} ${index + 1}`} value={v} onChange={event => edit(field,
-                    { values: value.values.map((old, at) => at === index ? event.target.value : old), text: null })} />
-                </label>)}</div>
-              </>}
-              {field.editable ? <div className="model-materials__reset"><small>{t('modelWorkspace.originalValue')} <span data-localization-ignore="true">{field.text ?? field.values.join(', ')}</span></small>
-                <button type="button" disabled={!changed} onClick={() => edit(field, original)}>{t('modelWorkspace.resetProperty')}</button></div> : null}
-              {!field.editable ? <small>{t('modelEditor.readOnly')}</small> : !field.previewed ? <small>{t('modelEditor.gameOnly')}</small> : null}
-            </fieldset>;
+            return <EditorFieldGroup key={field.key} className={`model-materials__field${changed ? ' model-materials__field--changed' : ''}`} disabled={!field.editable || selectedRestore} label={<span data-localization-ignore="true">{field.name}</span>}>
+              <div className="model-materials__body">
+                {field.options.length ? <SearchableOptionInput id={`model-property-${field.key}`} ariaLabel={field.name}
+                  disabled={!field.editable || selectedRestore || locked} isFiniteCatalog localizeOptions={false}
+                  value={field.kind === 'int' ? value.values[0] : value.text ?? ''}
+                  onChange={text => edit(field, field.kind === 'int' ? { values: [text], text: null } : { values: [], text })}
+                  options={field.options.map(option => ({ value: option, label: option }))} />
+                  : field.kind === 'text' ? <span data-localization-ignore="true">{field.text}</span> : <>
+                  {field.kind === 'vector' && field.name.toLowerCase().includes('color') ? <ViewerColorPicker id={`material-color-${field.key}`} label={field.name}
+                    color={'#' + value.values.slice(0, 3).map(v => Math.round(Math.max(0, Math.min(1, Number(v) || 0)) * 255).toString(16).padStart(2, '0')).join('')}
+                    onChange={color => edit(field, { values: [...[1, 3, 5].map(i => String(parseInt(color.slice(i, i + 2), 16) / 255)), ...value.values.slice(3)], text: null })} /> : null}
+                  <div className="model-materials__vector">{value.values.map((v, index) => <label key={index} data-localization-ignore="true">{value.values.length > 1 ? (field.name.toLowerCase().includes('color') ? 'RGBA' : 'XYZW')[index] : null}
+                    <input type="number" step={field.kind === 'int' ? '1' : 'any'} aria-label={`${field.name} ${index + 1}`} value={v} onChange={event => edit(field,
+                      { values: value.values.map((old, at) => at === index ? event.target.value : old), text: null })} />
+                  </label>)}</div>
+                </>}
+                {field.editable ? <div className="model-materials__reset"><small>{t('modelWorkspace.originalValue')} <span data-localization-ignore="true">{field.text ?? field.values.join(', ')}</span></small>
+                  <button type="button" disabled={!changed} onClick={() => edit(field, original)}>{t('modelWorkspace.resetProperty')}</button></div> : null}
+                {!field.editable ? <small>{t('modelEditor.readOnly')}</small> : !field.previewed ? <small>{t('modelEditor.gameOnly')}</small> : null}
+              </div>
+            </EditorFieldGroup>;
           })}
         </details>)}
       </fieldset>

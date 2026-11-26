@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import { EditorFieldGroup } from '../../components/EditorRecordDetails';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { ProjectGame, ProjectPaths } from '../../bridge/contracts';
@@ -228,17 +229,17 @@ function MergeWorkspaceEditor({ paths, active, onExportingChange, armWriteGuard 
         <div className="merge-workspace-path"><input id="merge-output" value={outputRoot} onChange={event => setOutputRoot(event.target.value)} />
           <button type="button" onClick={() => void browse(true, setOutputRoot)}>{label('browse')}</button></div></div>
     </div>
-    {mode === 'advanced' && <fieldset className="editable-field-group"><legend>{label('originalFiles')}</legend>
+    {mode === 'advanced' && <EditorFieldGroup className="editable-field-group" label={label('originalFiles')}>
       <div className="merge-workspace-settings">{([
         ['romfs', baseRomFs, setBaseRomFs], ['exefs', baseExeFs, setBaseExeFs], ['support', supportFolder, setSupportFolder]
       ] as const).map(([key, value, setter]) => <div className="path-field" key={key}><label htmlFor={`merge-${key}`}>{label(key)}</label>
         <div className="merge-workspace-path"><input id={`merge-${key}`} value={value} onChange={event => setter(event.target.value)} />
           <button type="button" onClick={() => void browse(true, setter)}>{label('browse')}</button></div></div>)}</div>
-    </fieldset>}
+    </EditorFieldGroup>}
     {mode === 'basic' && <details><summary>{label('support')}</summary><div className="merge-workspace-path">
       <input aria-label={label('support')} value={supportFolder} onChange={event => setSupportFolder(event.target.value)} />
       <button type="button" onClick={() => void browse(true, setSupportFolder)}>{label('browse')}</button></div></details>}
-    <fieldset className="editable-field-group"><legend>{label('sources')}</legend>
+    <EditorFieldGroup className="editable-field-group" label={label('sources')}>
       <div className="merge-workspace-source-actions"><button type="button" onClick={() => void browse(false)}>{label('addArchives')}</button>
         <button type="button" onClick={() => void browse(true)}>{label('addFolder')}</button>
         <form className="merge-workspace-path" onSubmit={event => { event.preventDefault(); if (sourcePath.trim()) addPaths([sourcePath.trim()]); }}>
@@ -269,7 +270,7 @@ function MergeWorkspaceEditor({ paths, active, onExportingChange, armWriteGuard 
           }}>{label('remove')}</button>
         </article>;
       })}</div>
-    </fieldset>
+    </EditorFieldGroup>
     {busy ? <LoadingProgress operationKey={busy} label={label(busy === 'analyze' ? 'analyzing' : 'exporting')} /> : null}
     <div className="merge-workspace-review-bar" role="group" aria-label={label('review')}>
       <button type="button" className="primary-button" disabled={safetyBusy || busy !== null || blockedPackages || sources.length === 0 || !outputRoot.trim()}

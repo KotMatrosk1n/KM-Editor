@@ -149,12 +149,12 @@
 .ange-fight-matrix th, .ange-fight-matrix td { vertical-align: top; }
 .ange-fight-matrix th > :is(p, div, details) { margin-block: 4px; font-size: .8rem; }
 .ange-fight-matrix .ange-fight-attack-heading { flex-wrap: wrap; }
-.ange-fight-matrix .ange-fight-number-field { position: relative; }
-.ange-fight-matrix .ange-fight-number-field label {
+.ange-fight-matrix .editable-field-control { position: relative; }
+.ange-fight-matrix .editable-field-control label {
   position: absolute;
   width: 1px;
   height: 1px;
   overflow: hidden;
   clip-path: inset(50%);
 }
-.ange-fight-matrix .ange-fight-number-field input { min-width: 0; }
+.ange-fight-matrix .editable-field-control input { min-width: 0; }
