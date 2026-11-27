@@ -59,7 +59,7 @@
   gap: var(--property-gap);
 }
 .workspace-content[data-editor-workspace] :is(.titan-swapper-panel, .titan-swapper-detail, .blueberry-panel, .blueberry-detail) { gap: .55rem; }
-.workspace-content[data-editor-workspace] :is(.titan-swapper-card, .blueberry-detail, .trainer-whiteout-detail, .trainer-dynamax-card) {
+.workspace-content[data-editor-workspace] :is(.titan-swapper-card, .blueberry-detail, .trainer-whiteout-detail) {
   align-content: start;
   gap: .45rem;
   min-width: 0;
@@ -165,10 +165,6 @@
   align-items: center;
   min-width: 0;
 }
-.workspace-content[data-editor-workspace] :is(.tree-rules-controls, .tree-probability) > h3 {
-  padding-block: .28rem;
-  border-block-end: 1px solid var(--property-divider);
-}
 .workspace-content[data-editor-workspace] :is(.habitat-coordinate-editor, .fashion-catalog-field-editor) {
   align-content: start;
   align-items: start;
@@ -242,8 +238,6 @@
 }
 .workspace-content[data-editor-workspace] .spreadsheet-source-panel { gap: .55rem; }
 .workspace-content[data-editor-workspace] .spreadsheet-import-progress-heading { margin: 0; }
-.workspace-content[data-editor-workspace] .type-chart-source-summary { gap: .35rem; }
-.workspace-content[data-editor-workspace] .type-chart-source-summary > div { padding: .3rem .5rem; }
 
 @container workspace (max-width: 41rem) {
   .workspace-content[data-editor-workspace] :is(.tree-drop-row, .titan-swapper-fields > .field, .blueberry-amount) {
@@ -293,21 +287,9 @@
 }
 .workspace-content[data-editor-workspace] .za-behavior-entry:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 .workspace-content[data-editor-workspace] .za-behavior-detail { display: grid; gap: .55rem; }
-.workspace-content[data-editor-workspace] .za-behavior-detail > :is(p, h3, details, .za-behavior-fields, .za-behavior-actions) { margin: 0; }
-.workspace-content[data-editor-workspace] :is(.za-behavior-profiles, .za-behavior-fields) {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
-  gap: .55rem;
-  align-items: stretch;
-}
-.workspace-content[data-editor-workspace] :is(.za-behavior-profiles, .za-behavior-fields) > .za-behavior-field {
-  padding: .42rem .58rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--property-radius);
-  background: var(--color-surface-muted);
-}
+.workspace-content[data-editor-workspace] .za-behavior-detail > :is(p, h3, details, .za-behavior-actions) { margin: 0; }
 .workspace-content[data-editor-workspace] .za-behavior-detail > .za-behavior-field { max-inline-size: 36rem; }
-.workspace-content[data-editor-workspace] .za-behavior-field small { color: var(--color-text-muted); opacity: 1; }
+.workspace-content[data-editor-workspace] .za-behavior-field small:not(.warning-copy) { color: var(--color-text-muted); }
 
 /* Browser and editor groups that stay useful when the window is narrow. */
 .workspace-content[data-editor-workspace] :is(.flagwork-toolbar, .exefs-toolbar, .tm-machine-controls-metrics) {
@@ -383,7 +365,7 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
-.workspace-content[data-editor-workspace] :is(.fairy-gym-boost-card, .npc-item-gift-card, .ange-fight-group, .ange-fight-attack-card) {
+.workspace-content[data-editor-workspace] .ange-fight-attack-card {
   align-content: start;
   padding: .55rem .65rem;
   gap: .5rem;
@@ -393,10 +375,6 @@
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
   align-items: start;
   gap: .65rem;
-}
-.workspace-content[data-editor-workspace] .ange-fight-number-field {
-  gap: .25rem;
-  padding: .4rem .55rem;
 }
 .workspace-content[data-editor-workspace] .ange-fight-technical-map { padding-inline: .6rem; }
 
@@ -450,24 +428,35 @@
   align-items: start;
   gap: var(--property-gap);
 }
-.workspace-content[data-editor-workspace] .pla-economy-crafting .pla-data-groups {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 25rem), 1fr));
-}
-.workspace-content[data-editor-workspace] .pla-data-group {
-  min-width: 0;
-  margin: 0;
-  padding: .25rem .6rem .5rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--property-radius);
-  background: var(--color-surface-muted);
-}
-.workspace-content[data-editor-workspace] .pla-data-group legend { padding-inline: .25rem; font-weight: 700; }
 .workspace-content[data-editor-workspace] .pla-data-group .editable-field-control {
   display: grid;
   grid-template-columns: minmax(6.5rem, 1fr) minmax(0, 1fr);
   align-items: center;
   gap: .15rem .4rem;
-  padding: .25rem;
+  padding: .26rem .65rem;
+}
+.workspace-content[data-editor-workspace] .pla-economy-crafting .pla-data-groups {
+  grid-template-columns: minmax(0, 1fr);
+}
+@container editorWorkspace (min-width: 49rem) {
+  .workspace-content[data-editor-workspace] .pla-economy-crafting .pla-data-groups:has(> :nth-child(2)) {
+    grid-template-columns: minmax(17rem, .8fr) minmax(0, 1.2fr);
+  }
+}
+.workspace-content[data-editor-workspace] :is(.pla-recipe-matrix, .pla-rule-matrix) .editable-field-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .15rem .4rem;
+  padding: 0;
+}
+.workspace-content[data-editor-workspace] :is(.pla-recipe-matrix, .pla-rule-matrix) .editable-field-control > .pla-matrix-field-label {
+  grid-column: 2;
+  grid-row: 1;
+}
+.workspace-content[data-editor-workspace] :is(.pla-recipe-matrix, .pla-rule-matrix) .editable-field-control > :is(input, .searchable-option-input) {
+  grid-column: 1;
+  grid-row: 1;
 }
 .workspace-content[data-editor-workspace] .pla-data-group .editable-field-control + .editable-field-control { border-block-start: 1px solid var(--property-divider); }
 .workspace-content[data-editor-workspace] .pla-data-pairs {
@@ -565,19 +554,11 @@
   align-items: start;
   gap: .55rem;
 }
-.workspace-content[data-editor-workspace] .trainer-dynamax-card {
-  padding: .5rem .65rem;
-  gap: .4rem;
-  border-radius: var(--property-radius);
-}
-.workspace-content[data-editor-workspace] .trainer-dynamax-current { border-block-start: 1px solid var(--property-divider); }
 .workspace-content[data-editor-workspace] .titan-swapper-card { padding: .5rem .65rem; }
 .workspace-content[data-editor-workspace] :is(.habitat-coordinate-card-heading, .fashion-catalog-selection-heading) {
   border-block-end: 1px solid var(--property-divider);
   padding-block-end: .35rem;
 }
-.workspace-content[data-editor-workspace] .tree-rules-controls,
-.workspace-content[data-editor-workspace] .tree-probability { align-content: start; gap: .45rem; }
 .workspace-content[data-editor-workspace] .held-item-record-heading { border-block-end: 1px solid var(--property-divider); padding-block-end: .35rem; }
 .workspace-content[data-editor-workspace] .randomizer-configuration {
   display: grid;

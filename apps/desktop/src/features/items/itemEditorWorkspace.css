@@ -14,43 +14,33 @@
   min-width: 0;
 }
 
-.item-data-group,
 .item-disclosure {
   min-inline-size: 0;
   margin: 0;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-surface);
-}
-
-.item-data-group {
-  padding: 4px 10px 8px;
-}
-
-.item-data-group > legend,
-.item-disclosure > summary {
-  color: var(--color-text);
-  font-size: .875rem;
-  font-weight: 700;
-}
-
-.item-data-group > legend {
-  padding-inline: .35rem;
-}
-
-.item-data-group > legend button {
-  margin-inline-start: .35rem;
+  border-radius: .5rem;
+  background: var(--color-surface-muted);
 }
 
 .item-data-prices .item-data-rows {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
-  gap: 4px 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  column-gap: .4rem;
 }
 
 .item-disclosure > summary {
-  padding: 7px 10px;
+  padding: .36rem .65rem;
+  border-radius: .45rem;
+  background: var(--color-surface-strong);
+  color: var(--color-text);
+  font-size: .875rem;
+  font-weight: 700;
   cursor: pointer;
+}
+
+.item-disclosure[open] > summary {
+  border-radius: .45rem .45rem 0 0;
+  border-block-end: 1px solid var(--color-border);
 }
 
 .item-disclosure > summary .editable-field-error {
@@ -61,7 +51,6 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
   column-gap: 14px;
-  padding: 0 10px 8px;
 }
 
 .item-data-rows > div + div {
@@ -90,7 +79,7 @@
   grid-template-columns: minmax(0, 1fr) minmax(4.5rem, 42%);
   align-items: center;
   gap: 3px 8px;
-  padding: 3px 0;
+  padding: .26rem .65rem;
 }
 
 .item-field :is(.field-label, .editable-field-status, .editable-field-error) {

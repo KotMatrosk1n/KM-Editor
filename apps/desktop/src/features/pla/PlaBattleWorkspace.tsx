@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { EditorFieldGroup } from '../../components/EditorRecordDetails';
 import { plaFieldHelp } from './plaFieldHelp';
 import { plaPokemonLabel } from './plaLabels';
 import type { ReactNode } from 'react';
@@ -69,21 +70,18 @@ export function PlaBattleWorkspace({ sessionKey, kind, page, selected, query, of
       {readOnly || changed ? <small className="editable-field-status">{translateLiteral(readOnly ? 'Read-only' : 'Changed')}</small> : null}
     </div>;
   };
-  const pokemonFields = <fieldset className="editable-field-group">
-    <legend>{translateLiteral('Pokemon')}</legend>
+  const pokemonFields = <EditorFieldGroup className="editable-field-group" label={translateLiteral('Pokemon')}>
     <div className="pokemon-instance-field-list">{identity.map(renderField)}</div>
-  </fieldset>;
+  </EditorFieldGroup>;
   const battleFields = <>
-    {moves.length ? <fieldset className="editable-field-group pla-battle-moves">
-      <legend>{translateLiteral('Moves')}</legend>
+    {moves.length ? <EditorFieldGroup className="editable-field-group pla-battle-moves" label={translateLiteral('Moves')}>
       <div className="pla-move-slots">{[1, 2, 3, 4].map(slot => <div className="pla-move-slot" key={slot}>
         {moves.filter(field => field.key.endsWith(String(slot))).map(renderField)}
       </div>)}</div>
-    </fieldset> : null}
-    {effort.length ? <fieldset className="editable-field-group">
-      <legend>{t('pla.group.effort')}</legend>
+    </EditorFieldGroup> : null}
+    {effort.length ? <EditorFieldGroup className="editable-field-group" label={t('pla.group.effort')}>
       <div className="pokemon-instance-field-list">{effort.map(renderField)}</div>
-    </fieldset> : null}
+    </EditorFieldGroup> : null}
   </>;
   return <section className="panel wide-panel pla-battle-editor" aria-labelledby="pla-battle-heading">
     <div className="panel-heading"><Icon size={18} aria-hidden="true" /><h2 id="pla-battle-heading">{title}</h2>{refresh}</div>

@@ -40,24 +40,13 @@
 
 .move-groups {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
   gap: .65rem;
   align-items: start;
 }
 
-.move-group {
-  min-inline-size: 0;
-  margin: 0;
-  padding: .3rem .65rem .55rem;
-  border: 1px solid var(--color-border);
-  border-radius: .65rem;
-}
-
-.move-group legend {
-  max-inline-size: 100%;
-  color: var(--color-text);
-  font-weight: 700;
-  overflow-wrap: anywhere;
+.move-flag-groups {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11.5rem), 1fr));
 }
 
 .move-control {
@@ -66,12 +55,11 @@
 
 .move-control .path-field.editable-field-control {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(7rem, 1.15fr);
+  grid-template-columns: minmax(0, .85fr) minmax(6rem, 1.15fr);
   align-items: center;
   gap: .3rem .55rem;
   min-inline-size: 0;
-  padding: .28rem .2rem;
-  border-radius: .28rem;
+  padding: .26rem .65rem;
 }
 
 .move-control + .move-control,
@@ -106,15 +94,18 @@
   padding-block: .3rem;
 }
 
-.move-control .editable-field-control:has(input[type="checkbox"]) {
-  grid-template-columns: minmax(0, 1fr) auto;
+.move-control .editable-field-control:has(> input[type="checkbox"]) {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.move-control .editable-field-control:has(> input[type="checkbox"]) > .editable-field-label-row {
+  grid-column: 2;
+  grid-row: 1;
 }
 
 .move-control input[type="checkbox"] {
-  inline-size: 1.05rem;
-  block-size: 1.05rem;
-  margin: .2rem;
-  accent-color: var(--color-accent-bright);
+  grid-column: 1;
+  grid-row: 1;
 }
 
 .move-hit-bounds {
@@ -127,6 +118,8 @@
 .move-hit-bounds .path-field.editable-field-control {
   grid-template-columns: minmax(0, 1fr);
 }
+
+.move-stat-grid { padding-inline: .4rem; }
 
 .move-stat-grid [role="row"] {
   display: grid;
@@ -147,6 +140,7 @@
 
 .move-stat-grid .path-field.editable-field-control {
   grid-template-columns: minmax(0, 1fr) auto;
+  padding-inline: .2rem;
 }
 
 .move-stat-grid .editable-field-label-row {
@@ -205,9 +199,6 @@
     min-inline-size: 32rem;
   }
 
-  .move-group {
-    padding-inline: .4rem;
-  }
 }
 
 @container (max-width: 25rem) {
@@ -217,7 +208,7 @@
   }
 
   .move-stat-grid .editable-field-label-row {
-    grid-row: auto;
+    grid-row: 2;
     grid-column: 1;
   }
 }

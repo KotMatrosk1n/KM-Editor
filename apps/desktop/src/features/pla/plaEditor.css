@@ -11,7 +11,6 @@
 .pla-wild-inspector { display: grid; align-content: start; gap: 8px; }
 .pla-wild-slots .editor-record-context > p { flex-basis: 100%; margin: 0; }
 .pla-wild-profile { display: block; color: var(--color-text-muted); font-weight: 400; }
-.pla-wild-inspector .editable-field-group legend { max-width: 100%; }
 .pla-wild-inspector .field-note { margin: 0; }
 .pla-control { display: flex; flex: 1 1 16rem; flex-direction: column; gap: .35rem; min-width: 0; }
 .pla-economy-editor .pla-economy-row { grid-template-columns: minmax(60px, .7fr) minmax(120px, 1.5fr) minmax(100px, 1fr) minmax(85px, .7fr); }
@@ -89,12 +88,6 @@
   height: 1px;
   overflow: hidden;
   clip-path: inset(50%);
-}
-.pla-rule-matrix .editable-field-control {
-  display: grid;
-  gap: 4px;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
 }
 .pla-rule-matrix .editable-field-control > small { grid-column: 1 / -1; }
 .pla-rule-matrix input,

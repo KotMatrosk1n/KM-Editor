@@ -20,6 +20,7 @@ import { EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/
 import './fairyGymBoostTable.css';
 import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
 import { useLocalization } from '../../localization';
+import { EditorDetailGroup, EditorDetailValue } from '../../components/EditorRecordDetails';
 import { formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 import {
   getCanonicalFairyGymBoostPendingSelections,
@@ -471,34 +472,18 @@ function FairyGymSourceSummary({
   translateLiteral: (literal: string) => string;
 }) {
   return (
-    <div className="fairy-gym-source-grid">
+    <div className="editor-detail-columns">
       {sources.map((source) => (
-        <dl className="fairy-gym-source-summary" key={source.sourceId}>
-          <div>
-            <dt>{source.label}</dt>
-            <dd data-localization-ignore="true">{source.relativePath}</dd>
-          </div>
-          <div>
-            <dt>Status</dt>
-            <dd>{translateLiteral(formatFairyGymSourceStatus(source.status))}</dd>
-          </div>
-          <div>
-            <dt>Layer</dt>
-            <dd>{formatSourceLayer(source.provenance.sourceLayer)}</dd>
-          </div>
-          <div>
-            <dt>File state</dt>
-            <dd>{formatFileState(source.provenance.fileState)}</dd>
-          </div>
-          <div>
-            <dt>Payload offset</dt>
-            <dd data-localization-ignore="true">{formatMappedOffset(source.payloadOffsetHex)}</dd>
-          </div>
-          <div>
-            <dt>Owned range</dt>
-            <dd data-localization-ignore="true">{formatMappedOffset(source.ownedRangeHex)}</dd>
-          </div>
-        </dl>
+        <EditorDetailGroup key={source.sourceId} label={translateLiteral(source.label)}>
+          <dl className="editor-detail-list">
+            <EditorDetailValue label="Source file" path dataValue>{source.relativePath}</EditorDetailValue>
+            <EditorDetailValue label="Status">{translateLiteral(formatFairyGymSourceStatus(source.status))}</EditorDetailValue>
+            <EditorDetailValue label="Layer">{formatSourceLayer(source.provenance.sourceLayer)}</EditorDetailValue>
+            <EditorDetailValue label="File state">{formatFileState(source.provenance.fileState)}</EditorDetailValue>
+            <EditorDetailValue label="Payload offset" dataValue>{formatMappedOffset(source.payloadOffsetHex)}</EditorDetailValue>
+            <EditorDetailValue label="Owned range" dataValue>{formatMappedOffset(source.ownedRangeHex)}</EditorDetailValue>
+          </dl>
+        </EditorDetailGroup>
       ))}
     </div>
   );

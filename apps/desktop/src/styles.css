@@ -2235,7 +2235,7 @@ h2 {
   min-width: 0;
 }
 
-.path-field input,
+.path-field input:not(:where([type='checkbox'], [type='radio'])),
 .path-field select {
   min-width: 0;
   min-height: var(--km-control-min-height);
@@ -3582,9 +3582,8 @@ h2 {
 
 .technical-tool-details dt {
   color: var(--color-text-muted);
-  font-size: 0.7rem;
-  font-weight: 900;
-  text-transform: uppercase;
+  font-size: .8125rem;
+  overflow-wrap: anywhere;
 }
 
 .technical-tool-details dd {
@@ -5317,30 +5316,6 @@ h2 {
   gap: 12px;
 }
 
-.editable-field-group {
-  min-width: 0;
-  margin: 0;
-  padding: 12px;
-  background: rgb(13 20 36 / 72%);
-  border: 1px solid rgb(var(--color-gold-rgb) / 38%);
-  border-radius: 8px;
-}
-
-.editable-field-group legend {
-  padding: 0 6px;
-  color: var(--color-gold);
-  font-size: 0.75rem;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.editable-field-group-legend-content {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 7px;
-}
-
 .pokemon-stat-total {
   display: inline-flex;
   align-items: center;
@@ -5747,7 +5722,7 @@ h2 {
   color: #60a5fa;
 }
 
-.editable-field-control input,
+.editable-field-control input:not(:where([type='checkbox'], [type='radio'])),
 .editable-field-control select {
   width: 100%;
 }
@@ -7733,15 +7708,6 @@ h2 {
   align-items: end;
 }
 
-.trainer-ai-flags-panel {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-}
-
 .trainer-ai-flags-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -7771,9 +7737,9 @@ h2 {
 }
 
 .trainer-ai-flag-copy .editable-field-label-row > label {
-  color: var(--color-text);
+  color: var(--color-text-muted);
   font-size: 0.8125rem;
-  font-weight: 800;
+  font-weight: 400;
 }
 
 .trainer-party-header {
@@ -9461,48 +9427,13 @@ h2 {
   width: 100%;
 }
 
-.type-chart-source-summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 10px;
-  width: 100%;
-  margin: 0;
-}
-
-.type-chart-source-summary div {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-  padding: 12px;
-  background: var(--color-control-hover);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-}
-
-.type-chart-source-summary dt {
-  color: var(--color-text-subtle);
-  font-size: 0.6875rem;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.type-chart-source-summary dd {
-  min-width: 0;
-  margin: 0;
-  color: var(--color-text);
-  font-size: 0.8125rem;
-  font-weight: 800;
-  overflow-wrap: anywhere;
-}
-
 .ange-fight-editor {
   display: grid;
   gap: 18px;
   margin-top: 18px;
 }
 
-.ange-fight-intro,
-.ange-fight-group {
+.ange-fight-intro {
   display: grid;
   gap: 14px;
   padding: 16px;
@@ -9522,8 +9453,7 @@ h2 {
   font-weight: 900;
 }
 
-.ange-fight-intro p,
-.ange-fight-group-heading p {
+.ange-fight-intro p {
   margin: 5px 0 0;
   color: var(--color-text-subtle);
   font-size: 0.8125rem;
@@ -9570,21 +9500,6 @@ h2 {
   border-color: rgb(85 192 255 / 30%);
 }
 
-.ange-fight-group-heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.ange-fight-group-heading h3 {
-  margin: 0;
-  color: var(--color-text);
-  font-size: 1rem;
-  font-weight: 900;
-}
-
 .ange-fight-count-pill,
 .ange-fight-attack-badges span {
   display: inline-flex;
@@ -9598,12 +9513,6 @@ h2 {
   border-radius: 999px;
   font-size: 0.6875rem;
   font-weight: 900;
-}
-
-.ange-fight-flower-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(180px, 1fr));
-  gap: 12px;
 }
 
 .ange-fight-attack-grid {
@@ -9695,61 +9604,19 @@ h2 {
   gap: 10px;
 }
 
-.ange-fight-number-field {
-  display: grid;
-  align-content: start;
-  gap: 6px;
-  min-width: 0;
-  padding: 12px;
-  background: #0d1525;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-}
-
-.ange-fight-number-field > span {
-  color: #dbe5f4;
-  font-size: 0.75rem;
-  font-weight: 900;
-  line-height: 1.3;
-}
-
-.ange-fight-number-field input {
-  width: 100%;
-  min-width: 0;
-  height: 38px;
-  padding: 0 10px;
-  color: var(--color-text);
-  background-color: var(--color-control);
-  border: 1px solid var(--color-control-border);
-  border-radius: 6px;
-  font-size: 0.875rem;
-  font-weight: 850;
-}
-
-.ange-fight-number-field input:focus {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 1px;
-}
-
-.ange-fight-number-field input[aria-invalid='true'] {
+.ange-fight-workspace .editable-field-control input[aria-invalid='true'] {
   border-color: var(--color-danger);
   box-shadow: 0 0 0 2px rgb(var(--color-danger-rgb) / 18%);
 }
 
-.ange-fight-number-field input:disabled {
+.ange-fight-workspace .editable-field-control small {
   color: var(--color-text-muted);
-  cursor: not-allowed;
-  opacity: 0.72;
-}
-
-.ange-fight-number-field small {
-  color: #8998ad;
   font-size: 0.6875rem;
   font-weight: 750;
   line-height: 1.35;
 }
 
-.ange-fight-number-field input[aria-invalid='true'] + small {
+.ange-fight-workspace .editable-field-control input[aria-invalid='true'] + small {
   color: var(--color-danger);
 }
 
@@ -9770,16 +9637,13 @@ h2 {
   border-radius: 6px;
 }
 
-.ange-fight-technical-map dt,
-.ange-fight-source-card dt {
-  color: #8f9eb2;
-  font-size: 0.625rem;
-  font-weight: 900;
-  text-transform: uppercase;
+.ange-fight-technical-map dt {
+  color: var(--color-text-muted);
+  font-size: .8125rem;
+  font-weight: 400;
 }
 
-.ange-fight-technical-map dd,
-.ange-fight-source-card dd {
+.ange-fight-technical-map dd {
   min-width: 0;
   margin: 0;
   color: #e9eff8;
@@ -9792,34 +9656,6 @@ h2 {
   justify-content: flex-end;
 }
 
-.ange-fight-source-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(180px, 1fr));
-  gap: 10px;
-}
-
-.ange-fight-source-card {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin: 0;
-  padding: 12px;
-  background: var(--color-control-hover);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-}
-
-.ange-fight-source-card div {
-  display: grid;
-  align-content: start;
-  gap: 4px;
-  min-width: 0;
-}
-
-.ange-fight-source-card .ange-fight-source-path {
-  grid-column: 1 / -1;
-}
-
 @container workspace (max-width: 1100px) {
   .ange-fight-attack-grid {
     grid-template-columns: 1fr;
@@ -9828,14 +9664,8 @@ h2 {
 
 @container workspace (max-width: 760px) {
   .ange-fight-intro,
-  .ange-fight-flower-grid,
   .ange-fight-damage-grid,
-  .ange-fight-source-grid,
   .ange-fight-technical-map {
-    grid-template-columns: 1fr;
-  }
-
-  .ange-fight-source-card {
     grid-template-columns: 1fr;
   }
 
@@ -9882,41 +9712,6 @@ h2 {
 .fairy-gym-boost-stack {
   display: grid;
   gap: 14px;
-}
-
-.fairy-gym-boost-card {
-  display: grid;
-  gap: 14px;
-  padding: 16px;
-  background: #0f1729;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-}
-
-.fairy-gym-boost-card-heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.fairy-gym-boost-card-heading > div {
-  min-width: 0;
-}
-
-.fairy-gym-boost-card-heading h3 {
-  margin: 0;
-  color: var(--color-text);
-  font-size: 1rem;
-  line-height: 1.3;
-}
-
-.fairy-gym-boost-card-heading p {
-  margin: 4px 0 0;
-  color: var(--color-text-muted);
-  font-size: 0.8125rem;
-  font-weight: 700;
 }
 
 .fairy-gym-answer-row {
@@ -10009,43 +9804,6 @@ h2 {
 
 .fairy-gym-actions {
   margin-top: 0;
-}
-
-.fairy-gym-source-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.fairy-gym-source-summary {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  padding: 12px;
-  background: #0f1729;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-}
-
-.fairy-gym-source-summary div {
-  display: grid;
-  gap: 3px;
-}
-
-.fairy-gym-source-summary dt {
-  color: var(--color-text-muted);
-  font-size: 0.6875rem;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.fairy-gym-source-summary dd {
-  min-width: 0;
-  margin: 0;
-  color: var(--color-text);
-  font-size: 0.75rem;
-  font-weight: 800;
-  overflow-wrap: anywhere;
 }
 
 .npc-item-gift-editor {
@@ -10199,36 +9957,17 @@ h2 {
   gap: 14px;
 }
 
-.npc-item-gift-card {
-  display: grid;
-  gap: 14px;
-  padding: 16px;
-  background: #0f1729;
-  border: 1px solid var(--color-gold-dark);
-  border-radius: 8px;
-  box-shadow: inset 4px 0 0 var(--color-gold);
+.npc-item-gift-card > header {
+  flex-wrap: wrap;
+  align-items: center;
 }
 
-.npc-item-gift-card-heading {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 12px;
+.npc-item-gift-card > :is(.npc-item-gift-fields, .npc-item-gift-defaults) {
+  border-block-start: 1px solid var(--color-border);
 }
 
-.npc-item-gift-card-heading h3 {
-  margin: 0;
-  color: var(--color-text);
-  font-size: 1rem;
-  line-height: 1.3;
-}
-
-.npc-item-gift-card-heading p {
-  margin: 4px 0 0;
-  color: var(--color-text-muted);
-  font-size: 0.75rem;
-  font-weight: 800;
-  overflow-wrap: anywhere;
+.npc-item-gift-card > .npc-item-gift-card-blocker {
+  margin: .45rem .65rem;
 }
 
 .npc-item-gift-card-badges {
@@ -10291,45 +10030,10 @@ h2 {
   color: #ff8a97;
 }
 
-.npc-item-gift-fields {
-  display: grid;
-  gap: 12px;
-  align-items: end;
-}
-
-.npc-item-gift-fields.has-1-items {
-  grid-template-columns: minmax(220px, 1fr) minmax(112px, 140px);
-}
-
-.npc-item-gift-fields.has-2-items {
-  grid-template-columns: repeat(2, minmax(220px, 1fr)) minmax(112px, 140px);
-}
-
-.npc-item-gift-fields.has-3-items {
-  grid-template-columns: repeat(3, minmax(180px, 1fr));
-}
-
-.npc-item-gift-fields.has-3-items .is-amount {
-  grid-column: 1 / -1;
-}
-
-.npc-item-gift-field {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-
-.npc-item-gift-field > span {
-  color: var(--color-text-muted);
-  font-size: 0.75rem;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
 .npc-item-gift-field > small {
+  grid-column: 2;
   color: var(--color-text-muted);
-  font-size: 0.6875rem;
-  font-weight: 800;
+  font-size: .75rem;
 }
 
 .npc-item-gift-field .field-error {
@@ -10361,11 +10065,8 @@ h2 {
   opacity: 0.72;
 }
 
-.npc-item-gift-field.is-amount {
-  max-width: 140px;
-}
-
 .npc-item-gift-defaults {
+  padding: .35rem .65rem;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -10435,12 +10136,6 @@ h2 {
 
 .npc-item-gift-source-table td:nth-child(2) {
   overflow-wrap: anywhere;
-}
-
-@container workspace (max-width: 1100px) {
-  .npc-item-gift-fields.has-3-items {
-    grid-template-columns: repeat(2, minmax(180px, 1fr));
-  }
 }
 
 .starting-items-row {
@@ -14261,7 +13956,7 @@ input {
   box-shadow: var(--shadow-inset);
 }
 
-.path-field input,
+.path-field input:not(:where([type='checkbox'], [type='radio'])),
 .path-field select,
 .path-field textarea,
 .checkbox-field,
@@ -14561,9 +14256,7 @@ input {
   .flagwork-layout,
   .royal-candy-layout,
   .fairy-gym-trainer-tabs,
-  .fairy-gym-source-grid,
   .npc-item-gift-tabs,
-  .npc-item-gift-fields,
   .shiny-rate-current,
   .shiny-rate-custom,
   .change-plan-list li,
@@ -14587,29 +14280,6 @@ input {
 
   .workflow-actions {
     justify-content: flex-start;
-  }
-
-  .npc-item-gift-fields.has-1-items,
-  .npc-item-gift-fields.has-2-items,
-  .npc-item-gift-fields.has-3-items {
-    grid-template-columns: 1fr;
-  }
-
-  .npc-item-gift-fields.has-3-items .is-amount {
-    grid-column: auto;
-  }
-
-  .npc-item-gift-card-heading {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .npc-item-gift-card-badges {
-    justify-content: flex-start;
-  }
-
-  .npc-item-gift-field.is-amount {
-    max-width: none;
   }
 
   .item-price-editor-row,
@@ -15338,60 +15008,30 @@ input {
   margin-top: 1rem;
 }
 
-.tm-machine-control-card {
+.tm-machine-control-body {
   display: grid;
-  align-content: start;
-  gap: 1rem;
-  min-width: 0;
-  padding: 1rem;
-  background: linear-gradient(160deg, var(--color-surface-strong), var(--color-surface-muted));
-  border: 1px solid var(--color-border);
-  border-radius: 0.75rem;
-  box-shadow: var(--shadow-inset);
+  gap: .6rem;
+  padding: .45rem .65rem;
 }
 
-.tm-machine-control-card-installed {
+.editor-detail-group.tm-machine-control-card-installed {
   border-color: rgb(var(--color-success-rgb) / 58%);
 }
 
-.tm-machine-control-card-customized {
+.editor-detail-group.tm-machine-control-card-customized {
   border-color: rgb(var(--color-warning-rgb) / 66%);
 }
 
-.tm-machine-control-card-blocked {
+.editor-detail-group.tm-machine-control-card-blocked {
   border-color: var(--color-danger-border);
 }
 
-.tm-machine-control-card-heading {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 0.75rem;
-  align-items: start;
-}
-
-.tm-machine-control-card-heading h3 {
-  margin: 0;
-  color: var(--color-text);
-  font-size: 1rem;
-  line-height: 1.3;
-}
-
-.tm-machine-control-card-heading p {
-  margin: 0.3rem 0 0;
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
-  line-height: 1.45;
-}
-
-.tm-machine-control-icon {
-  display: inline-grid;
-  width: 2.25rem;
-  height: 2.25rem;
-  color: var(--color-warning-soft);
-  background: rgb(var(--color-gold-rgb) / 13%);
-  border: 1px solid rgb(var(--color-gold-rgb) / 36%);
-  border-radius: 0.6rem;
-  place-items: center;
+.tm-machine-control-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: end;
+  gap: .35rem;
+  flex-wrap: wrap;
 }
 
 .tm-machine-control-status,
@@ -15586,15 +15226,6 @@ input {
   .tm-machine-control-source,
   .tm-machine-control-options {
     grid-template-columns: 1fr;
-  }
-
-  .tm-machine-control-card-heading {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .tm-machine-control-status {
-    grid-column: 1 / -1;
-    justify-self: start;
   }
 
 }
@@ -16241,7 +15872,6 @@ select.km-select-control:dir(rtl) {
   align-items: center;
 }
 
-.trainer-pools-selection-card,
 .trainer-identity-action-card,
 .trainer-class-pair-editor {
   min-width: 0;
@@ -16251,17 +15881,20 @@ select.km-select-control:dir(rtl) {
   border-radius: 0.55rem;
 }
 
-.trainer-pools-selection-card,
+.trainer-pools-selection-fields,
 .trainer-identity-action-card,
 .trainer-class-pair-editor {
   display: grid;
   gap: 0.65rem;
 }
 
-.trainer-pools-selection-card legend,
-.trainer-class-pair-editor > label {
-  color: var(--color-gold);
-  font-weight: 800;
+.trainer-pools-selection-fields {
+  padding: .45rem .65rem;
+}
+
+:is(.trainer-pools-selection-fields, .trainer-class-pair-editor) > label {
+  color: var(--color-text-muted);
+  font-size: .8125rem;
 }
 
 .trainer-pools-selection-card select,
@@ -17251,12 +16884,7 @@ select.km-select-control:dir(rtl) {
     .type-chart-cell,
     .type-chart-cell-normal,
     .ange-fight-intro,
-    .ange-fight-group,
-    .ange-fight-number-field,
     .ange-fight-technical-map div,
-    .fairy-gym-boost-card,
-    .fairy-gym-source-summary,
-    .npc-item-gift-card,
     .npc-item-gift-source-table-wrap,
     .sv-encounter-browser,
     .za-encounter-group-browser,
@@ -17351,7 +16979,6 @@ select.km-select-control:dir(rtl) {
     .za-dex-layout-selection div,
     .za-dex-layout-preview dl div,
     .za-dex-layout-membership-preview ul,
-    .editable-field-group,
     .move-player-damage-control,
     .move-player-damage-invocation,
     .move-player-damage-scope-flow,
@@ -17412,12 +17039,6 @@ select.km-select-control:dir(rtl) {
     color-mix(in srgb, var(--color-accent) 7%, var(--color-surface-muted)),
     var(--color-control)
   );
-}
-
-/* Fieldset legends and frames use the same theme accent. */
-:root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic'], [data-km-visual-theme='sword-shield'], [data-km-visual-theme='scarlet-violet'], [data-km-visual-theme='legends-za']):not([data-km-theme='highContrast'])
-  .editable-field-group {
-  border-color: rgb(var(--color-accent-bright-rgb) / 38%);
 }
 
 :root:is([data-km-visual-theme='renegade'], [data-km-visual-theme='sovereign'], [data-km-visual-theme='arcane'], [data-km-visual-theme='relic'], [data-km-visual-theme='sword-shield'], [data-km-visual-theme='scarlet-violet'], [data-km-visual-theme='legends-za']):not([data-km-theme='highContrast'])
@@ -17900,12 +17521,7 @@ select.km-select-control:dir(rtl) {
     .type-chart-cell,
     .type-chart-cell-normal,
     .ange-fight-intro,
-    .ange-fight-group,
-    .ange-fight-number-field,
     .ange-fight-technical-map div,
-    .fairy-gym-boost-card,
-    .fairy-gym-source-summary,
-    .npc-item-gift-card,
     .npc-item-gift-source-table-wrap,
     .sv-encounter-browser,
     .za-encounter-group-browser,
@@ -18036,7 +17652,6 @@ select.km-select-control:dir(rtl) {
     .pla-pokemon-summary-card,
     .za-pokemon-summary-card,
     .za-dex-layout-membership-preview ul,
-    .editable-field-group,
     .move-player-damage-control,
     .move-player-damage-invocation,
     .move-player-damage-timeline-group,
@@ -18114,12 +17729,8 @@ select.km-select-control:dir(rtl) {
     .ange-fight-count-pill,
     .ange-fight-attack-badges span,
     .ange-fight-shared-note,
-    .ange-fight-number-field > span,
-    .ange-fight-number-field small,
     .ange-fight-technical-map dt,
-    .ange-fight-source-card dt,
     .ange-fight-technical-map dd,
-    .ange-fight-source-card dd,
     .fairy-gym-trainer-tab,
     .fairy-gym-answer-role.is-none,
     .fairy-gym-answer-choice,

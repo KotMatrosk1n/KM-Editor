@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import { EditorFieldGroup } from '../../components/EditorRecordDetails';
 import {
   Archive,
   ArchiveRestore,
@@ -830,8 +831,7 @@ function ChangeSetDetail({
               rows={4}
               value={notes}
             />
-            <fieldset className="change-set-dependencies">
-              <legend>{t('changeSets.dependencies')}</legend>
+            <EditorFieldGroup className="change-set-dependencies" label={t('changeSets.dependencies')}>
               <p>{t('changeSets.dependenciesDescription')}</p>
               {dependencyCandidates.length > 0 ? (
                 <ul>
@@ -865,7 +865,7 @@ function ChangeSetDetail({
               ) : (
                 <p>{t('changeSets.dependenciesEmpty')}</p>
               )}
-            </fieldset>
+            </EditorFieldGroup>
             <button
               className="secondary-button compact-button"
               disabled={isBusy || changeSet.isArchived || !parsedTags}
@@ -1108,8 +1108,7 @@ function BuildVariants({
             value={outputProfileId}
           />
           {enabledChangeSets.length > 0 ? (
-            <fieldset className="change-set-dependencies">
-              <legend>{t('changeSets.collectionLabel')}</legend>
+            <EditorFieldGroup className="change-set-dependencies" label={t('changeSets.collectionLabel')}>
               <ul>
                 {enabledChangeSets.map((candidate) => (
                   <li key={candidate.id}>
@@ -1133,7 +1132,7 @@ function BuildVariants({
                   </li>
                 ))}
               </ul>
-            </fieldset>
+            </EditorFieldGroup>
           ) : null}
           <p>{t('changeSets.variants.boundTarget')}</p>
         </form>

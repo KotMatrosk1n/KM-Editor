@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
+import { EditorDetailGroup, EditorDetailValue } from '../../components/EditorRecordDetails';
 import { ClipboardCheck, Save, Sparkle } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { type EditSession } from '../../bridge/contracts';
@@ -483,32 +484,18 @@ function ShinyRateSourceSummary({ source }: { source: ShinyRateSourceRecord | nu
   }
 
   return (
-    <dl className="type-chart-source-summary">
-      <div>
-        <dt>Source</dt>
-        <dd>{source.relativePath}</dd>
-      </div>
-      <div>
-        <dt>Status</dt>
-        <dd>{formatShinyRateSourceStatus(source.status)}</dd>
-      </div>
-      <div>
-        <dt>Layer</dt>
-        <dd>
-          {source.status === 'available'
-            ? formatSourceLayer(source.provenance.sourceLayer)
-            : 'Unavailable'}
-        </dd>
-      </div>
-      <div>
-        <dt>File state</dt>
-        <dd>
-          {source.status === 'available'
-            ? formatFileState(source.provenance.fileState)
-            : 'Unavailable'}
-        </dd>
-      </div>
-    </dl>
+    <EditorDetailGroup label="Source">
+      <dl className="editor-detail-list">
+        <EditorDetailValue label="Source file" path dataValue>{source.relativePath}</EditorDetailValue>
+        <EditorDetailValue label="Status">{formatShinyRateSourceStatus(source.status)}</EditorDetailValue>
+        <EditorDetailValue label="Layer">
+          {source.status === 'available' ? formatSourceLayer(source.provenance.sourceLayer) : 'Unavailable'}
+        </EditorDetailValue>
+        <EditorDetailValue label="File state">
+          {source.status === 'available' ? formatFileState(source.provenance.fileState) : 'Unavailable'}
+        </EditorDetailValue>
+      </dl>
+    </EditorDetailGroup>
   );
 }
 

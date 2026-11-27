@@ -26,6 +26,7 @@ import { EditorRecordTable } from '../../components/EditorRecordTable';
 import { EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { reconcileSourceBackedDraft } from '../../components/localEditorDraftState';
 import { useLocalization } from '../../localization';
+import { EditorDetailValue, EditorFieldGroup } from '../../components/EditorRecordDetails';
 import { formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 
 type NpcGiftDrafts = Record<string, NpcItemGiftSelection>;
@@ -657,19 +658,16 @@ function NpcItemGiftCard({
   );
 
   return (
-    <article className="npc-item-gift-card">
-      <div className="npc-item-gift-card-heading">
-        <div>
-          <h3>{giftLabel}</h3>
-          <p data-localization-ignore="true">{gift.relativePath}</p>
-        </div>
-        <div className="npc-item-gift-card-badges">
-          <span className={`npc-item-gift-status is-${gift.status}`}>
-            {formatNpcItemGiftStatus(gift.status)}
-          </span>
-          <span className="npc-item-gift-location">{location}</span>
-        </div>
-      </div>
+    <EditorFieldGroup className="npc-item-gift-card editable-field-group" label={giftLabel}
+      headingValue={<div className="npc-item-gift-card-badges">
+        <span className={`npc-item-gift-status is-${gift.status}`}>
+          {formatNpcItemGiftStatus(gift.status)}
+        </span>
+        <span className="npc-item-gift-location">{location}</span>
+      </div>}>
+      <dl className="editor-detail-list">
+        <EditorDetailValue label="Source file" path dataValue>{gift.relativePath}</EditorDetailValue>
+      </dl>
 
       {blockers.length > 0 ? (
         <div className="npc-item-gift-card-blocker" role="note">
@@ -678,16 +676,14 @@ function NpcItemGiftCard({
         </div>
       ) : null}
 
-      <div
-        className={`npc-item-gift-fields has-${Math.min(gift.items.length, 3)}-items`}
-      >
+      <div className="editable-field-grid npc-item-gift-fields">
         {gift.items.map((item) => {
           const selectedItem = selection.items.find((entry) => entry.slotId === item.slotId);
           const selectedItemId = selectedItem?.itemId ?? item.itemId;
           const itemInputId = `npc-item-gift-${gift.giftId}-${item.slotId}`;
           const itemLabel = translateLiteral(gift.items.length > 1 ? item.label : 'Item');
           return (
-            <div className="npc-item-gift-field" key={`${gift.giftId}:${item.slotId}`}>
+            <div className="editable-field-control npc-item-gift-field" key={`${gift.giftId}:${item.slotId}`}>
               <FieldLabel
                 help={t('workflowHelp.npcItemGift.item')}
                 htmlFor={itemInputId}
@@ -705,7 +701,7 @@ function NpcItemGiftCard({
           );
         })}
 
-        <div className="npc-item-gift-field is-amount">
+        <div className="editable-field-control npc-item-gift-field">
           <FieldLabel
             help={t(gift.isMoney ? 'workflowHelp.npcItemGift.moneyAmount' : 'workflowHelp.npcItemGift.amount')}
             htmlFor={`npc-item-gift-${gift.giftId}-amount`}
@@ -755,7 +751,7 @@ function NpcItemGiftCard({
           <span>Restore gift default</span>
         </button>
       </div>
-    </article>
+    </EditorFieldGroup>
   );
 }
 

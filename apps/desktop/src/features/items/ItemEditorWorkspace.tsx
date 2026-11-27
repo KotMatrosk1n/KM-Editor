@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react';
 import { ArrowLeft } from 'lucide-react';
-import { EditorDetailGroup, EditorDetailValue } from '../../components/EditorRecordDetails';
+import { EditorDetailGroup, EditorDetailValue, EditorFieldGroup } from '../../components/EditorRecordDetails';
 import { useLocalization } from '../../localization';
 import { itemDataGroups, type ItemBehaviorGroup } from '../../itemEditorLayout';
 import './itemEditorWorkspace.css';
@@ -33,10 +33,9 @@ export function ItemDataLayout<T>({ fields, keyFor, renderField, hasIssue, machi
           <summary>{title}{invalid ? <span className="editable-field-error">{translateLiteral('Invalid value')}</span> : null}</summary>
           {rows}
         </details>
-      : <fieldset className={`item-data-group item-data-${group.id}`} key={group.id}>
-          <legend>{title}{group.id === 'machine' ? machineHelp : null}</legend>
+      : <EditorFieldGroup className={`item-data-group item-data-${group.id}`} key={group.id} label={title} headingValue={group.id === 'machine' ? machineHelp : null}>
           {rows}
-        </fieldset>;
+        </EditorFieldGroup>;
   };
   const prices = groups.find(group => group.id === 'prices');
   return <div className="item-data-layout">

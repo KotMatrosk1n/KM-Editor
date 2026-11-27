@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+import { EditorFieldGroup } from '../../components/EditorRecordDetails';
 import { ContextHelp } from '../../components/ContextHelp';
 import { useEffect, useRef, useState } from 'react';
-import { ClipboardCheck, Expand, RefreshCw, RotateCcw, Save, UserRound, UsersRound } from 'lucide-react';
+import { ClipboardCheck, Expand, RefreshCw, RotateCcw, Save } from 'lucide-react';
 import type { ApiDiagnostic, ProjectPaths } from '../../bridge/contracts';
 import type { ProjectBridge } from '../../bridge/projectBridge';
 import type { ApplyTrainerDynamaxRequest, ApplyTrainerDynamaxResponse, TrainerDynamaxReview,
@@ -98,22 +99,19 @@ export function TrainerDynamaxSection({ bridge, paths, canApply, onApply, onDirt
         </div>
         <div className="trainer-dynamax-controls">
           {(['disablePlayer', 'disableOpponents'] as const).map((field, index) => {
-            const Icon = index === 0 ? UserRound : UsersRound;
             const key = index === 0 ? 'player' : 'opponents';
             const side = index === 0 ? 'player' : 'opponent';
             const permission = allPermission(settings, side);
             const setAll = (value: string) => { if (value === 'true' || value === 'false') change(dynamaxAll(settings, status?.trainers ?? [], side, value === 'true')); };
-            return <section className="trainer-dynamax-card" key={field} aria-labelledby={`dynamax-${key}`}>
-              <div className="trainer-dynamax-card-heading"><Icon size={22} aria-hidden="true" /><h3 id={`dynamax-${key}`}>{t(`trainerDynamax.${key}`)}</h3>
-                <ContextHelp label={t(`trainerDynamax.${key}`)}>{t(`trainerDynamax.${key}Help`)}</ContextHelp>
-              </div>
+            return <EditorFieldGroup key={field} label={t(`trainerDynamax.${key}`)}
+              headingValue={<ContextHelp label={t(`trainerDynamax.${key}`)}>{t(`trainerDynamax.${key}Help`)}</ContextHelp>}>
               <div className="trainer-dynamax-field"><span>{t('trainerDynamax.permission')}</span>
                 <SearchableOptionInput ariaLabel={t(`trainerDynamax.${key}`)} value={permission === null ? t('trainerDynamax.mixed') : String(permission)} disabled={busy === 'load' || busy === 'apply' || !status?.canEdit}
                   isFiniteCatalog localizeOptions={false} options={[{ value: 'true', label: label(true) }, { value: 'false', label: label(false) }]}
                   onChange={setAll} onReselect={setAll} />
               </div>
               <div className="trainer-dynamax-current"><span>{t('trainerDynamax.current')}</span><strong>{status ? label(allPermission(status.settings, side)) : t('trainerDynamax.unavailable')}</strong></div>
-            </section>;
+            </EditorFieldGroup>;
           })}
         </div>
       </TrainerDynamaxRoster>

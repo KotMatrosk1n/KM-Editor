@@ -15,6 +15,13 @@
   border-radius: .5rem;
 }
 
+fieldset.editor-detail-group {
+  align-self: start;
+  overflow: visible;
+  margin: 0;
+  padding: 0;
+}
+
 .editor-detail-group > header {
   display: flex;
   justify-content: space-between;
@@ -25,7 +32,21 @@
   border-block-end: 1px solid var(--color-border);
 }
 
-.editor-detail-group > header h4 { margin: 0; font-size: .875rem; color: var(--color-text); }
+.editor-detail-group > header h4 {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: .875rem;
+  color: var(--color-text);
+}
+fieldset.editor-detail-group > header { border-radius: calc(.5rem - 1px) calc(.5rem - 1px) 0 0; }
+.editor-detail-group > header .context-help-trigger {
+  flex-shrink: 0;
+  align-self: center;
+  min-height: 24px;
+  height: 24px;
+  padding: 0;
+}
 .editor-detail-total { color: var(--color-text-muted); font-size: .75rem; }
 .editor-detail-total strong { color: var(--color-text); font-variant-numeric: tabular-nums; }
 .editor-detail-list { display: grid; margin: 0; min-width: 0; font-size: .8125rem; }

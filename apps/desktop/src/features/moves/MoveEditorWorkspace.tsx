@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 import { type ReactNode } from 'react';
 import { ContextHelp } from '../../components/ContextHelp';
-import { EditorDetailGroup, EditorDetailValue } from '../../components/EditorRecordDetails';
+import { EditorDetailGroup, EditorDetailValue, EditorFieldGroup } from '../../components/EditorRecordDetails';
 import {
   EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, SectionedEditorWorkspace
 } from '../../components/SectionedEditorWorkspace';
@@ -111,15 +111,17 @@ function MoveStatRows({ fields }: { fields: MoveFieldControl[] }) {
   </>;
 }
 
-function MoveGroups({ groups }: { groups: MoveFieldGroup[] }) {
+function MoveGroups({ groups, flags = false }: { groups: MoveFieldGroup[]; flags?: boolean }) {
   if (groups.length === 0) return null;
-  return <div className="move-groups">{groups.map(group => {
+  return <div className={flags ? 'move-groups move-flag-groups' : 'move-groups'}>{groups.map(group => {
     const bounds = group.fields.filter(field => hitBounds.includes(field.id.split('.').at(-1)!));
-    return <fieldset key={group.label} className={`move-group move-group-${group.layout ?? 'fields'}`} data-editor-disclosure-group>
-      <legend className="context-help-heading">
-        <span>{group.label}</span>
-        {group.help ? <ContextHelp label={group.label}>{group.help}</ContextHelp> : null}
-      </legend>
+    return <EditorFieldGroup
+      key={group.label}
+      className="move-group"
+      data-editor-disclosure-group
+      label={group.label}
+      headingValue={group.help ? <ContextHelp label={group.label}>{group.help}</ContextHelp> : null}
+    >
       {group.notice}
       {group.layout === 'stats' ? <MoveStatRows fields={group.fields} /> : group.fields.map(field => {
         if (bounds.includes(field) && bounds.length === 2) {
@@ -129,7 +131,7 @@ function MoveGroups({ groups }: { groups: MoveFieldGroup[] }) {
         }
         return <MoveControl key={field.id} field={field} />;
       })}
-    </fieldset>;
+    </EditorFieldGroup>;
   })}</div>;
 }
 
@@ -191,7 +193,7 @@ export function MoveEditorWorkspace({ sessionKey, record, browser, browserContro
         </EditorWorkspaceSection> : null}
         {flags.length || flagNotice ? <EditorWorkspaceSection id="flags" label={translateLiteral('Flags')} {...status(groupFields(flags))}>
           {flagNotice}
-          <MoveGroups groups={flags} />
+          <MoveGroups groups={flags} flags />
         </EditorWorkspaceSection> : null}
       </> : null}
     </SectionedEditorWorkspace>

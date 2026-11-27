@@ -7,7 +7,7 @@ import { LearnsetClipboardActions } from './features/pokemon/LearnsetClipboardAc
 import { InteractiveTableRow, VirtualTableBody } from './components/VirtualTable';
 import { EditorLayoutScope, RecordEditorWorkspace, EditorRecordHeading, EditorWorkspaceHeader, EditorWorkspaceSection, SectionedEditorWorkspace } from './components/SectionedEditorWorkspace';
 import { MoveDetails, MoveEditorWorkspace, MoveFlagCount, type MoveFieldControl, type MoveFieldGroup } from './features/moves/MoveEditorWorkspace';
-import { EditorDetailGroup, EditorDetailValue, PokemonDetailsStats } from './components/EditorRecordDetails';
+import { EditorDetailGroup, EditorDetailValue, PokemonDetailsStats, EditorFieldGroup } from './components/EditorRecordDetails';
 import { EditorRecordTable } from './components/EditorRecordTable';
 import { SpeciesDataMatrix, useSpeciesFieldFinder } from './components/SpeciesDataMatrix';
 import { PokemonSearchBox, PokemonTable, filterPokemonRecords, formatPokemonTypes, type PokemonSelectionRecord } from './components/PokemonSelection';
@@ -20426,7 +20426,7 @@ export function App({
           data-workspace-section={activeSection}
           data-editor-workspace={['workflow', 'hidden'].includes(
             getWorkbenchCapabilityRegistration(activeSection).navigationKind
-          ) ? '' : undefined}
+          ) ? activeSection : undefined}
           inert={isProjectScopeTransitioning && activeSection !== 'health' ? true : undefined}
         >
           <EditorLayoutScope.Provider value={JSON.stringify([activeProjectId, selectedGame])}>
@@ -32798,15 +32798,14 @@ function SelectedTrainerPanel({
   };
 
   const renderPartyGroup = (group: (typeof pokemonFieldGroups)[number], pokemon: TrainerPokemonRecord) => (
-    <fieldset className="editable-field-group" key={group.group}>
-      <legend>{translateLiteral(group.group)}</legend>
+    <EditorFieldGroup className="editable-field-group" key={group.group} label={translateLiteral(group.group)}>
       <div className="editable-field-grid">
         {group.fields.map((field) => renderPartyField(pokemon, field))}
       </div>
       {editorFamily === 'za' && group.group === 'Moves' ? (
         <p className="field-note">{t('za.trainers.moves.unspecifiedHelp')}</p>
       ) : null}
-    </fieldset>
+    </EditorFieldGroup>
   );
 
   return (
@@ -32953,8 +32952,7 @@ function SelectedTrainerPanel({
               ) : null}
               <div className="editable-field-groups">
                 {trainerFieldGroups.map((group) => (
-                  <fieldset className="editable-field-group" key={group.group}>
-                    <legend>{group.group}</legend>
+                  <EditorFieldGroup className="editable-field-group" key={group.group} label={group.group}>
                     <div className="editable-field-grid">
                       {group.fields.map((field) => {
                         const currentValue = getEditableTrainerFieldValue(trainer, field.field);
@@ -33003,7 +33001,7 @@ function SelectedTrainerPanel({
                         );
                       })}
                     </div>
-                  </fieldset>
+                  </EditorFieldGroup>
                 ))}
               </div>
               {showTerastallizationDetails ? (
@@ -33062,74 +33060,75 @@ function SelectedTrainerPanel({
             invalid={aiFlagsDraftState?.isValid === false}
           >
             {trainer.aiFlagStates.length > 0 ? (
-              <div className="trainer-ai-flags-panel">
-                <div className="editable-field-label-row">
-                  <ContextHelp label={translateLiteral('AI Flags')}>
-                    {t('fieldHelp.catalog.trainer.ai')}
-                  </ContextHelp>
-                </div>
-                <div className="trainer-ai-groups">
-                  {Array.from(aiFlagGroups, ([group, flags]) => (
-                    <fieldset className="editable-field-group" key={group}>
-                      <legend>{t(group)}</legend>
-                      <div className="trainer-ai-flags-grid">
-                        {flags.map((flag) => {
-                          const isReserved = flag.label.toLocaleLowerCase().startsWith('unused');
-                          const flagInputId = `trainer-${trainer.trainerId}-ai-flag-${flag.bit}`;
-                          const localizedFlagLabel = translateLiteral(flag.label);
-                          const localizedFlagHelp = isReserved
-                            ? `${translateLiteral('Reserved for later research.')} ${translateLiteral(
-                                'Reserved and locked.'
-                              )}`
-                            : translateLiteral(flag.description);
+              <div className="trainer-ai-groups">
+                {Array.from(aiFlagGroups, ([group, flags], index) => (
+                  <EditorFieldGroup
+                    className="editable-field-group"
+                    key={group}
+                    label={t(group)}
+                    headingValue={index === 0 ? (
+                      <ContextHelp label={translateLiteral('AI Flags')}>
+                        {t('fieldHelp.catalog.trainer.ai')}
+                      </ContextHelp>
+                    ) : null}
+                  >
+                    <div className="trainer-ai-flags-grid">
+                      {flags.map((flag) => {
+                        const isReserved = flag.label.toLocaleLowerCase().startsWith('unused');
+                        const flagInputId = `trainer-${trainer.trainerId}-ai-flag-${flag.bit}`;
+                        const localizedFlagLabel = translateLiteral(flag.label);
+                        const localizedFlagHelp = isReserved
+                          ? `${translateLiteral('Reserved for later research.')} ${translateLiteral(
+                              'Reserved and locked.'
+                            )}`
+                          : translateLiteral(flag.description);
 
-                          return (
-                            <div
-                              className={`trainer-ai-flag ${
-                                isReserved ? 'trainer-ai-flag-disabled' : ''
-                              }`}
-                              key={flag.bit}
-                            >
-                              <input
-                                checked={trainerAiFlagEnabled(editorFamily, projectedAiFlags, flag.mask)}
-                                className="km-choice-control"
-                                disabled={!canToggleAiFlags || isReserved}
-                                id={flagInputId}
-                                onChange={(event) => {
-                                  const nextValue = toggleTrainerAiFlag(
-                                    editorFamily, projectedAiFlags, flag.mask, event.target.checked
-                                  );
-                                  setTrainerDraftsByTrainerId((currentDrafts) =>
-                                    setFieldDraftRecord(
-                                      currentDrafts,
-                                      trainer.trainerId,
-                                      {
-                                        ...trainerDrafts,
-                                        [aiFlagsFieldName]: nextValue.toString()
-                                      },
-                                      trainerDraftDefaults
-                                    )
-                                  );
-                                }}
-                                type="checkbox"
+                        return (
+                          <div
+                            className={`trainer-ai-flag ${
+                              isReserved ? 'trainer-ai-flag-disabled' : ''
+                            }`}
+                            key={flag.bit}
+                          >
+                            <input
+                              checked={trainerAiFlagEnabled(editorFamily, projectedAiFlags, flag.mask)}
+                              className="km-choice-control"
+                              disabled={!canToggleAiFlags || isReserved}
+                              id={flagInputId}
+                              onChange={(event) => {
+                                const nextValue = toggleTrainerAiFlag(
+                                  editorFamily, projectedAiFlags, flag.mask, event.target.checked
+                                );
+                                setTrainerDraftsByTrainerId((currentDrafts) =>
+                                  setFieldDraftRecord(
+                                    currentDrafts,
+                                    trainer.trainerId,
+                                    {
+                                      ...trainerDrafts,
+                                      [aiFlagsFieldName]: nextValue.toString()
+                                    },
+                                    trainerDraftDefaults
+                                  )
+                                );
+                              }}
+                              type="checkbox"
+                            />
+                            <div className="trainer-ai-flag-copy">
+                              <FieldLabel
+                                help={localizedFlagHelp}
+                                htmlFor={flagInputId}
+                                label={localizedFlagLabel}
                               />
-                              <div className="trainer-ai-flag-copy">
-                                <FieldLabel
-                                  help={localizedFlagHelp}
-                                  htmlFor={flagInputId}
-                                  label={localizedFlagLabel}
-                                />
-                                {isReserved ? (
-                                  <small>{translateLiteral('Reserved and locked.')}</small>
-                                ) : null}
-                              </div>
+                              {isReserved ? (
+                                <small>{translateLiteral('Reserved and locked.')}</small>
+                              ) : null}
                             </div>
-                          );
-                        })}
-                      </div>
-                    </fieldset>
-                  ))}
-                </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </EditorFieldGroup>
+                ))}
               </div>
             ) : null}
             {bulkActions ? (
@@ -33355,8 +33354,7 @@ function SelectedTrainerPanel({
                   </div>
                   {pokemonFieldGroups.filter(({ group }) => group === 'Traits')
                     .map((group) => renderPartyGroup(group, selectedPokemon))}
-                  <fieldset className="editable-field-group trainer-member-stats">
-                    <legend>{translateLiteral('Stats')}</legend>
+                  <EditorFieldGroup className="editable-field-group trainer-member-stats" label={translateLiteral('Stats')}>
                     <div className="trainer-member-stat-actions">
                       <span>{t('trainers.layout.maxIvsScope')}</span>
                       <button
@@ -33422,7 +33420,7 @@ function SelectedTrainerPanel({
                         />
                       ))}
                     </div>
-                  </fieldset>
+                  </EditorFieldGroup>
                 </div>
               </div>
             ) : (
@@ -33484,24 +33482,26 @@ function TrainerSourceRows({
   ];
 
   return (
-    <dl className="trainer-source-rows">
-      {sources.map(({ label, layer, path, storagePath, emptyLabel }) => {
-        const baseRomFs = layer === 'base' && path?.startsWith('romfs/');
-        const root = baseRomFs ? paths.baseRomFsPath : layer === 'layered' ? paths.outputRootPath : null;
-        const fullPath = storagePath ?? (root && path
-          ? root.replace(/[\\/]+$/, '') + '/' + (baseRomFs ? path.slice('romfs/'.length) : path)
-          : path);
-        return (
-          <div className="trainer-source-row" key={label}>
-            <dt>{translateLiteral(label)}</dt>
-            <dd className="trainer-source-layer">
-              {layer ? translateLiteral(formatSourceLayer(layer)) : emptyLabel ?? translateLiteral('Not loaded')}
-            </dd>
-            {fullPath ? <dd><code data-localization-ignore="true">{fullPath}</code></dd> : null}
-          </div>
-        );
-      })}
-    </dl>
+    <EditorDetailGroup label={translateLiteral('Source')}>
+      <dl className="trainer-source-rows">
+        {sources.map(({ label, layer, path, storagePath, emptyLabel }) => {
+          const baseRomFs = layer === 'base' && path?.startsWith('romfs/');
+          const root = baseRomFs ? paths.baseRomFsPath : layer === 'layered' ? paths.outputRootPath : null;
+          const fullPath = storagePath ?? (root && path
+            ? root.replace(/[\\/]+$/, '') + '/' + (baseRomFs ? path.slice('romfs/'.length) : path)
+            : path);
+          return (
+            <div className="trainer-source-row" key={label}>
+              <dt>{translateLiteral(label)}</dt>
+              <dd className="trainer-source-layer">
+                {layer ? translateLiteral(formatSourceLayer(layer)) : emptyLabel ?? translateLiteral('Not loaded')}
+              </dd>
+              {fullPath ? <dd><code data-localization-ignore="true">{fullPath}</code></dd> : null}
+            </div>
+          );
+        })}
+      </dl>
+    </EditorDetailGroup>
   );
 }
 
@@ -42662,10 +42662,9 @@ function SelectedStaticEncounterPanel({
                 modified={encounterDraftSummary.changedFields.some(change => !isStatsOrMoveField(change.field))}>
                 <div className="editable-field-groups">
                   {encounterGroups.map(({ group, fields }) => (
-                    <fieldset className="editable-field-group" key={group}>
-                      <legend>{translateLiteral(group)}</legend>
+                    <EditorFieldGroup className="editable-field-group" key={group} label={translateLiteral(group)}>
                       <div className="editable-field-grid">{fields.map(field => renderField(field))}</div>
-                    </fieldset>
+                    </EditorFieldGroup>
                   ))}
                 </div>
               </EditorWorkspaceSection>
@@ -42675,16 +42674,14 @@ function SelectedStaticEncounterPanel({
                 modified={encounterDraftSummary.changedFields.some(change => isStatsOrMoveField(change.field))}>
                 <div className="editable-field-groups">
                   {movesGroup || encounter.moves.length ? (
-                    <fieldset className="editable-field-group">
-                      <legend>{translateLiteral('Moves')}</legend>
+                    <EditorFieldGroup className="editable-field-group" label={translateLiteral('Moves')}>
                       {movesGroup ? (
                         <div className="editable-field-grid">{movesGroup.fields.map(field => renderField(field))}</div>
                       ) : <div className="static-encounter-readout">{formatStaticEncounterMoves(encounter)}</div>}
-                    </fieldset>
+                    </EditorFieldGroup>
                   ) : null}
                   {hasIvs || hasEvs || statSetupFields.length ? (
-                    <fieldset className="editable-field-group">
-                      <legend>{translateLiteral('Stats')}</legend>
+                    <EditorFieldGroup className="editable-field-group" label={translateLiteral('Stats')}>
                       {statSetupFields.length ? (
                         <div className="editable-field-grid">{statSetupFields.map(field => renderField(field))}</div>
                       ) : null}
@@ -42713,7 +42710,7 @@ function SelectedStaticEncounterPanel({
                           })}</tbody>
                         </table>
                       ) : null}
-                    </fieldset>
+                    </EditorFieldGroup>
                   ) : null}
                 </div>
               </EditorWorkspaceSection>
@@ -47083,8 +47080,7 @@ function SelectedEncounterPanel({
                   {encounterSlot ? (
                     <>
                       {isZaScriptedBossTable ? (
-                        <fieldset className="editable-field-group za-scripted-boss-field-group">
-                          <legend>{t('za.encounters.bossActions.heading')}</legend>
+                        <EditorFieldGroup className="editable-field-group za-scripted-boss-field-group" label={t('za.encounters.bossActions.heading')}>
                           <ScriptedBossEncounterActions
                             moveOwnership={scriptedMoveOwnership}
                             profile={scriptedBossProfile}
@@ -47196,7 +47192,7 @@ function SelectedEncounterPanel({
                               );
                             }}
                           />
-                        </fieldset>
+                        </EditorFieldGroup>
                       ) : null}
                       {encounterFieldSections.map(({ key, heading, help, groups }) => (
                         <section className="wild-encounter-field-section" key={key} aria-label={heading}>
@@ -47208,7 +47204,7 @@ function SelectedEncounterPanel({
                           ) : null}
                           <div className="wild-encounter-field-grid">
                             {groups.map((group) => (
-                              <fieldset
+                              <EditorFieldGroup
                                 className={`editable-field-group ${
                                   isZaEncounterTable &&
                                   (group.group === 'IVs' ||
@@ -47218,17 +47214,15 @@ function SelectedEncounterPanel({
                                     : ''
                                 }`}
                                 key={group.group}
-                              >
-                                <legend>
-                                  {group.group === 'Spawner Slot'
-                                    ? isZaEncounterTable ? t('za.spawnSettings.slotGroup') : translateLiteral('Lot weight')
-                                    : group.group === 'Spawner Population'
-                                      ? t('za.spawnSettings.populationGroup')
-                                      : group.group === 'Strength Multipliers'
-                                        ? t('za.encounters.strengthen.heading')
+                                label={group.group === 'Spawner Slot'
+                                  ? (isZaEncounterTable ? t('za.spawnSettings.slotGroup') : translateLiteral('Lot weight'))
+                                  : group.group === 'Spawner Population'
+                                    ? t('za.spawnSettings.populationGroup')
+                                    : group.group === 'Strength Multipliers'
+                                      ? t('za.encounters.strengthen.heading')
                                       : translateLiteral(group.group)}
-                                  {key === 'slot' && heading && help ? <ContextHelp label={heading}>{help}</ContextHelp> : null}
-                                </legend>
+                                headingValue={key === 'slot' && heading && help ? <ContextHelp label={heading}>{help}</ContextHelp> : null}
+                              >
                                 <div className="editable-field-grid">
                                   {group.fields.map((field) => {
                                     const currentValue = getEditableEncounterFieldValue(
@@ -47565,7 +47559,7 @@ function SelectedEncounterPanel({
                                     ) : null}
                                   </div>
                                 ) : null}
-                              </fieldset>
+                              </EditorFieldGroup>
                             ))}
                           </div>
                         </section>
@@ -48121,8 +48115,7 @@ function ZaEncounterPlayerPartnerEditor({
 
       <div className="editable-field-groups">
         {fieldGroups.map((group) => (
-          <fieldset className="editable-field-group" key={group.group}>
-            <legend>{group.group}</legend>
+          <EditorFieldGroup className="editable-field-group" key={group.group} label={group.group}>
             <div className="editable-field-grid">
               {group.fields.map((field) => {
                 const currentValue = getEditableEncounterPlayerPartnerFieldValue(
@@ -48240,7 +48233,7 @@ function ZaEncounterPlayerPartnerEditor({
                 <small className="editable-field-status">{t('za.encounters.ivHelp')}</small>
               </div>
             ) : null}
-          </fieldset>
+          </EditorFieldGroup>
         ))}
       </div>
 

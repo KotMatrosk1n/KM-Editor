@@ -1,12 +1,15 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
+import { EditorFieldGroup } from '../../components/EditorRecordDetails';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ApiDiagnostic, EditSession, ZaBehaviorWorkflow } from '../../bridge/contracts';
 import { EditorSessionBar, EditorSessionBarActions } from '../../components/EditorSessionBar';
 import { usePublishCommonEditorDiagnostics } from '../../components/CommonEditorDiagnostics';
 import { useLocalization } from '../../localization';
 import { SearchableOptionInput } from '../../components/SearchableOptionInput';
+import { ContextHelp } from '../../components/ContextHelp';
+import { FieldLabel } from '../../components/FieldLabel';
 import './behavior.css';
 
 type Changes = Record<string, string>;
@@ -135,7 +138,7 @@ export function ZaBehaviorSection(props: Props) {
   const renderNumber = (field: ZaBehaviorWorkflow['fields'][number]) => {
     const value = values[field.field] ?? '';
     const outside = Number(value) < field.stockMinimum || Number(value) > field.stockMaximum;
-    return <label className="za-behavior-field" key={field.field}>
+    return <label className="path-field editable-field-control za-behavior-field" key={field.field}>
       <span>{t(`behavior.za.${field.field}`)}</span>
       <input type="number" inputMode="decimal" min={field.minimum} max={field.maximum} step="any"
         aria-label={t(`behavior.za.${field.field}`)} aria-invalid={invalid.includes(field) || undefined}
@@ -173,32 +176,40 @@ export function ZaBehaviorSection(props: Props) {
       {entry ? <div className="za-behavior-detail">
         <h3 data-localization-ignore="true">{entry.speciesName}</h3>
         <p>{t('behavior.za.scope')}</p>
-        <div className="za-behavior-profiles">
-          <div className="za-behavior-field"><label htmlFor={profileId}>{t('behavior.za.profile')}</label>
-            <SearchableOptionInput id={profileId} ariaLabel={t('behavior.za.profile')} disabled={!editable} value={values.profile}
-              isFiniteCatalog localizeOptions={false} onChange={value => change('profile', value)}
-              options={[
-                ...(entry.profile === 'custom' ? [{ value: 'custom', label: t('behavior.za.custom') }] : []),
-                ...workflow.profiles.map(p => ({ value: p.value, label: t(`behavior.za.profile.${p.value}`) }))
-              ]} />
-            <small>{t('behavior.za.profileHelp')}</small>
-          </div>
-          <div className="za-behavior-field"><label htmlFor={cityProfileId}>{t('behavior.za.cityProfile')}</label>
-            <SearchableOptionInput id={cityProfileId} ariaLabel={t('behavior.za.cityProfile')} disabled={!editable} value={values.cityProfile}
-              isFiniteCatalog localizeOptions={false} onChange={value => change('cityProfile', value)}
-              options={[
-                ...(entry.cityProfile === 'custom' ? [{ value: 'custom', label: t('behavior.za.custom') }] : []),
-                { value: 'default', label: t('behavior.za.cityProfileDefault') },
-                ...Object.keys(cityProfiles).map(value => ({ value, label: t(value === 'gentle' ? 'behavior.za.cityProfileGentle' : `behavior.za.profile.${value}`) }))
-              ]} />
-            <small>{t('behavior.za.cityProfileHelp')}</small>
-          </div>
+        <div className="editor-detail-columns">
+          <EditorFieldGroup className="editable-field-group" label={translateLiteral('Temperament')}>
+            <div className="editable-field-grid">
+              <div className="editable-field-control za-behavior-field">
+                <FieldLabel htmlFor={profileId} label={t('behavior.za.profile')} help={t('behavior.za.profileHelp')} />
+                <SearchableOptionInput id={profileId} ariaLabel={t('behavior.za.profile')} disabled={!editable} value={values.profile}
+                  isFiniteCatalog localizeOptions={false} onChange={value => change('profile', value)}
+                  options={[
+                    ...(entry.profile === 'custom' ? [{ value: 'custom', label: t('behavior.za.custom') }] : []),
+                    ...workflow.profiles.map(p => ({ value: p.value, label: t(`behavior.za.profile.${p.value}`) }))
+                  ]} />
+              </div>
+              <div className="editable-field-control za-behavior-field">
+                <FieldLabel htmlFor={cityProfileId} label={t('behavior.za.cityProfile')} help={t('behavior.za.cityProfileHelp')} />
+                <SearchableOptionInput id={cityProfileId} ariaLabel={t('behavior.za.cityProfile')} disabled={!editable} value={values.cityProfile}
+                  isFiniteCatalog localizeOptions={false} onChange={value => change('cityProfile', value)}
+                  options={[
+                    ...(entry.cityProfile === 'custom' ? [{ value: 'custom', label: t('behavior.za.custom') }] : []),
+                    { value: 'default', label: t('behavior.za.cityProfileDefault') },
+                    ...Object.keys(cityProfiles).map(value => ({ value, label: t(value === 'gentle' ? 'behavior.za.cityProfileGentle' : `behavior.za.profile.${value}`) }))
+                  ]} />
+              </div>
+            </div>
+          </EditorFieldGroup>
+          <EditorFieldGroup className="editable-field-group" label={translateLiteral('Ranges')}
+            headingValue={<ContextHelp label={translateLiteral('Ranges')}>{t('behavior.za.units')}</ContextHelp>}>
+            <div className="editable-field-grid">{workflow.fields.slice(2).map(renderNumber)}</div>
+          </EditorFieldGroup>
         </div>
-        <div className="za-behavior-fields">{workflow.fields.slice(2).map(renderNumber)}</div>
-        <p className="field-help">{t('behavior.za.units')}</p>
-        <details><summary>{t('behavior.za.advanced')}</summary>
-          <div className="za-behavior-fields">{workflow.fields.slice(0, 2).map(renderNumber)}</div>
-          <p className="field-help">{t('behavior.za.angles')}</p>
+        <details className="editor-technical-disclosure"><summary>{t('behavior.za.advanced')}</summary>
+          <EditorFieldGroup className="editable-field-group" label={t('behavior.za.advanced')}
+            headingValue={<ContextHelp label={t('behavior.za.advanced')}>{t('behavior.za.angles')}</ContextHelp>}>
+            <div className="editable-field-grid">{workflow.fields.slice(0, 2).map(renderNumber)}</div>
+          </EditorFieldGroup>
         </details>
         {!entry.isInitialized ? <div className="za-behavior-initialization">
           <p>{t('behavior.za.initializeHelp')}</p>
@@ -207,12 +218,12 @@ export function ZaBehaviorSection(props: Props) {
         </div> : null}
         <p className="field-help">{t('behavior.za.roaming')}</p>
         {entry.cityRoaming === 'enabled' || entry.cityRoaming === 'disabled' ? <div className="za-behavior-field">
-          <label className="za-behavior-city-roaming"><input type="checkbox" checked={values.cityRoaming === 'true'} disabled={!editable}
-            onChange={e => change('cityRoaming', String(e.target.checked))} /> {t('behavior.za.cityRoaming')}</label>
+          <label className="path-field za-behavior-city-roaming"><input className="km-choice-control" type="checkbox" checked={values.cityRoaming === 'true'} disabled={!editable}
+            onChange={e => change('cityRoaming', String(e.target.checked))} /> <span>{t('behavior.za.cityRoaming')}</span></label>
           <small>{t('behavior.za.cityRoamingHelp')}</small>
         </div> : entry.cityRoaming === 'unavailable' ? <p className="field-help">
           {t('behavior.za.cityRoamingUnavailable')}
-        </p> : <div className="za-behavior-field">
+        </p> : <div className="editable-field-control za-behavior-field">
           <label htmlFor={cityMovementId}>{t('behavior.za.cityMovement')}</label>
           <SearchableOptionInput id={cityMovementId} ariaLabel={t('behavior.za.cityMovement')} disabled={!editable} value={values.cityRoaming}
             isFiniteCatalog localizeOptions={false} onChange={value => change('cityRoaming', value)}

@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
+import { EditorDetailGroup } from '../../components/EditorRecordDetails';
 import { EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import {
   Eye,
@@ -38,7 +39,6 @@ type ControlCardDefinition = {
   blockedKey: string;
   control: TmMachineControlId;
   descriptionKey: string;
-  icon: LucideIcon;
   options: readonly [
     { icon: LucideIcon; labelKey: string; policy: TmMachineControlPolicy; target: TmMachineControlStagingTarget },
     { icon: LucideIcon; labelKey: string; policy: TmMachineControlPolicy; target: TmMachineControlStagingTarget }
@@ -51,7 +51,6 @@ const controlCards: readonly ControlCardDefinition[] = [
     blockedKey: 'tmMachineControls.recipe.blocked',
     control: 'recipeAvailability',
     descriptionKey: 'tmMachineControls.recipe.description',
-    icon: ListChecks,
     options: [
       {
         icon: LockKeyhole,
@@ -72,7 +71,6 @@ const controlCards: readonly ControlCardDefinition[] = [
     blockedKey: 'tmMachineControls.material.blocked',
     control: 'materialVisibility',
     descriptionKey: 'tmMachineControls.material.description',
-    icon: Eye,
     options: [
       {
         icon: EyeOff,
@@ -166,116 +164,106 @@ export function TmMachineControlsSection({
               const state = workflow[card.control];
               const source = getTmMachineControlSource(workflow, card.control);
               const effectivePolicy = getEffectiveTmMachineControlPolicy(state);
-              const CardIcon = card.icon;
               return (
                 <EditorWorkspaceSection id={card.control} key={card.control} label={t(card.titleKey)}
                   summary={t(`tmMachineControls.policy.${effectivePolicy}`)}>
-                <article
-                  aria-labelledby={`tm-machine-control-${card.control}-heading`}
-                  className={`tm-machine-control-card tm-machine-control-card-${state.status}`}
-                >
-                  <header className="tm-machine-control-card-heading">
-                    <span className="tm-machine-control-icon" aria-hidden="true">
-                      <CardIcon size={20} />
-                    </span>
-                    <div className="context-help-heading">
-                      <h3 id={`tm-machine-control-${card.control}-heading`}>
-                        {t(card.titleKey)}
-                      </h3>
-                      <ContextHelp label={t(card.titleKey)}>{t(card.descriptionKey)}</ContextHelp>
-                    </div>
-                    <span
-                      className={`tm-machine-control-status tm-machine-control-status-${state.status}`}
-                    >
-                      {t(`tmMachineControls.status.${state.status}`)}
-                    </span>
-                  </header>
-
-                  <div aria-live="polite" className="tm-machine-control-effective">
-                    <span>{t('tmMachineControls.effective')}</span>
-                    <strong>{t(`tmMachineControls.policy.${effectivePolicy}`)}</strong>
-                    {state.stagedPolicy ? (
-                      <span className="tm-machine-control-staged">
-                        {t('tmMachineControls.staged')}
+                  <EditorDetailGroup
+                    className={`tm-machine-control-card tm-machine-control-card-${state.status}`}
+                    label={t(card.titleKey)}
+                    headingValue={<div className="tm-machine-control-heading-actions">
+                      <span className={`tm-machine-control-status tm-machine-control-status-${state.status}`}>
+                        {t(`tmMachineControls.status.${state.status}`)}
                       </span>
-                    ) : null}
-                  </div>
-
-                  {!state.canStage ? (
-                    <div className="tm-machine-control-blocked" role="alert">
-                      <FileWarning aria-hidden="true" size={18} />
-                      <p>{t(card.blockedKey)}</p>
-                    </div>
-                  ) : null}
-
-                  <div
-                    aria-label={t('tmMachineControls.actions', {
-                      control: t(card.titleKey)
-                    })}
-                    className="tm-machine-control-options"
-                    role="group"
+                      <ContextHelp label={t(card.titleKey)}>{t(card.descriptionKey)}</ContextHelp>
+                    </div>}
                   >
-                    {card.options.map((option) => {
-                      const OptionIcon = option.icon;
-                      const isActive = isTmMachineControlTargetActive(state, option.policy);
-                      const isStagingThis = stagingTarget === option.target;
-                      return (
-                        <button
-                          aria-busy={isStagingThis || undefined}
-                          aria-pressed={isActive}
-                          className={`tm-machine-control-option ${isActive ? 'selected' : ''}`}
-                          disabled={
-                            !state.canStage ||
-                            workflow.summary.availability !== 'available' ||
-                            hasConflictingEditSession ||
-                            isBusy ||
-                            isActive
-                          }
-                          key={option.target}
-                          onClick={() => onStage(option.target)}
-                          type="button"
-                        >
-                          <OptionIcon aria-hidden="true" size={17} />
-                          <span>
-                            {isStagingThis
-                              ? t('tmMachineControls.staging')
-                              : t(option.labelKey)}
+                    <div className="tm-machine-control-body">
+                      <div aria-live="polite" className="tm-machine-control-effective">
+                        <span>{t('tmMachineControls.effective')}</span>
+                        <strong>{t(`tmMachineControls.policy.${effectivePolicy}`)}</strong>
+                        {state.stagedPolicy ? (
+                          <span className="tm-machine-control-staged">
+                            {t('tmMachineControls.staged')}
                           </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <details className="editor-technical-disclosure">
-                    <summary>{translateLiteral('Source')}</summary>
-                    <dl className="tm-machine-control-source">
-                      <div>
-                        <dt>{t('tmMachineControls.source.file')}</dt>
-                        {source ? (
-                          <dd data-localization-ignore="true">{source.sourceFile}</dd>
-                        ) : (
-                          <dd>{t('tmMachineControls.source.unavailable')}</dd>
-                        )}
+                        ) : null}
                       </div>
-                      <div>
-                        <dt>{t('tmMachineControls.source.layer')}</dt>
-                        <dd>
-                          {source
-                            ? t(`tmMachineControls.layer.${source.sourceLayer}`)
-                            : t('tmMachineControls.source.unavailable')}
-                        </dd>
+
+                      {!state.canStage ? (
+                        <div className="tm-machine-control-blocked" role="alert">
+                          <FileWarning aria-hidden="true" size={18} />
+                          <p>{t(card.blockedKey)}</p>
+                        </div>
+                      ) : null}
+
+                      <div
+                        aria-label={t('tmMachineControls.actions', {
+                          control: t(card.titleKey)
+                        })}
+                        className="tm-machine-control-options"
+                        role="group"
+                      >
+                        {card.options.map((option) => {
+                          const OptionIcon = option.icon;
+                          const isActive = isTmMachineControlTargetActive(state, option.policy);
+                          const isStagingThis = stagingTarget === option.target;
+                          return (
+                            <button
+                              aria-busy={isStagingThis || undefined}
+                              aria-pressed={isActive}
+                              className={`tm-machine-control-option ${isActive ? 'selected' : ''}`}
+                              disabled={
+                                !state.canStage ||
+                                workflow.summary.availability !== 'available' ||
+                                hasConflictingEditSession ||
+                                isBusy ||
+                                isActive
+                              }
+                              key={option.target}
+                              onClick={() => onStage(option.target)}
+                              type="button"
+                            >
+                              <OptionIcon aria-hidden="true" size={17} />
+                              <span>
+                                {isStagingThis
+                                  ? t('tmMachineControls.staging')
+                                  : t(option.labelKey)}
+                              </span>
+                            </button>
+                          );
+                        })}
                       </div>
-                      <div>
-                        <dt>{t('tmMachineControls.source.match')}</dt>
-                        <dd>
-                          {t('tmMachineControls.source.matchValue', {
-                            matching: state.matchingRecordCount,
-                            total: state.totalRecordCount
-                          })}
-                        </dd>
-                      </div>
-                    </dl>
-                  </details>
-                </article>
+                      <details className="editor-technical-disclosure">
+                        <summary>{translateLiteral('Source')}</summary>
+                        <dl className="tm-machine-control-source">
+                          <div>
+                            <dt>{t('tmMachineControls.source.file')}</dt>
+                            {source ? (
+                              <dd data-localization-ignore="true">{source.sourceFile}</dd>
+                            ) : (
+                              <dd>{t('tmMachineControls.source.unavailable')}</dd>
+                            )}
+                          </div>
+                          <div>
+                            <dt>{t('tmMachineControls.source.layer')}</dt>
+                            <dd>
+                              {source
+                                ? t(`tmMachineControls.layer.${source.sourceLayer}`)
+                                : t('tmMachineControls.source.unavailable')}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>{t('tmMachineControls.source.match')}</dt>
+                            <dd>
+                              {t('tmMachineControls.source.matchValue', {
+                                matching: state.matchingRecordCount,
+                                total: state.totalRecordCount
+                              })}
+                            </dd>
+                          </div>
+                        </dl>
+                      </details>
+                    </div>
+                  </EditorDetailGroup>
                 </EditorWorkspaceSection>
               );
             })}

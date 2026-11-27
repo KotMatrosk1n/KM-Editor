@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { EditorRecordTable } from '../../components/EditorRecordTable';
-import { EditorDetailGroup, EditorDetailValue } from '../../components/EditorRecordDetails';
+import { EditorDetailGroup, EditorDetailValue, EditorFieldGroup } from '../../components/EditorRecordDetails';
 import { EditorWorkspaceSection, RecordEditorWorkspace } from '../../components/SectionedEditorWorkspace';
 import { ContextHelp } from '../../components/ContextHelp';
 import { ArrowLeftRight, ShieldCheck } from 'lucide-react';
@@ -299,77 +299,78 @@ function PoolSelection({
   const poolSelectId = `trainer-pools-${destination}-pool`;
 
   return (
-    <fieldset className="trainer-pools-selection-card" disabled={disabled}>
-      <legend>{label}</legend>
-      <label htmlFor={poolSelectId}>{t('trainerPools.swap.pool')}</label>
-      <SearchableOptionInput
-        ariaLabel={t('trainerPools.swap.pool')}
-        data-km-source-site="trainer-pools-pool"
-        disabled={disabled}
-        emptyOptionLabel={t('trainerPools.swap.choosePool')}
-        id={poolSelectId}
-        isFiniteCatalog
-        localizeOptions={false}
-        onChange={(value) => {
-          const nextPool = findPool(pools, value);
-          onChange(
-            nextPool?.members[0]
-              ? {
-                  logicalPoolId: nextPool.logicalPoolId,
-                  rawTrainerId: nextPool.members[0].rawTrainerId
-                }
-              : null
-          );
-        }}
-        options={[
-          ...groups.story.map((candidate) => ({
-            disabled:
-              Boolean(compatibleWith) && candidate.compatibilityGroup !== compatibleWith,
-            groupLabel: t('trainerPools.kind.story'),
-            label: `${formatPoolLabel(candidate)}${
-              compatibleWith && candidate.compatibilityGroup !== compatibleWith
-                ? ` · ${t('trainerPools.swap.incompatible')}`
-                : ''
-            }`,
-            value: candidate.logicalPoolId
-          })),
-          ...groups.infinity.map((candidate) => ({
-            disabled:
-              Boolean(compatibleWith) && candidate.compatibilityGroup !== compatibleWith,
-            groupLabel: t('trainerPools.kind.infinity'),
-            label: `${formatPoolLabel(candidate)}${
-              compatibleWith && candidate.compatibilityGroup !== compatibleWith
-                ? ` · ${t('trainerPools.swap.incompatible')}`
-                : ''
-            }`,
-            value: candidate.logicalPoolId
-          }))
-        ]}
-        value={selection?.logicalPoolId ?? ''}
-      />
+    <EditorFieldGroup className="trainer-pools-selection-card" disabled={disabled} label={label}>
+      <div className="trainer-pools-selection-fields">
+        <label htmlFor={poolSelectId}>{t('trainerPools.swap.pool')}</label>
+        <SearchableOptionInput
+          ariaLabel={t('trainerPools.swap.pool')}
+          data-km-source-site="trainer-pools-pool"
+          disabled={disabled}
+          emptyOptionLabel={t('trainerPools.swap.choosePool')}
+          id={poolSelectId}
+          isFiniteCatalog
+          localizeOptions={false}
+          onChange={(value) => {
+            const nextPool = findPool(pools, value);
+            onChange(
+              nextPool?.members[0]
+                ? {
+                    logicalPoolId: nextPool.logicalPoolId,
+                    rawTrainerId: nextPool.members[0].rawTrainerId
+                  }
+                : null
+            );
+          }}
+          options={[
+            ...groups.story.map((candidate) => ({
+              disabled:
+                Boolean(compatibleWith) && candidate.compatibilityGroup !== compatibleWith,
+              groupLabel: t('trainerPools.kind.story'),
+              label: `${formatPoolLabel(candidate)}${
+                compatibleWith && candidate.compatibilityGroup !== compatibleWith
+                  ? ` · ${t('trainerPools.swap.incompatible')}`
+                  : ''
+              }`,
+              value: candidate.logicalPoolId
+            })),
+            ...groups.infinity.map((candidate) => ({
+              disabled:
+                Boolean(compatibleWith) && candidate.compatibilityGroup !== compatibleWith,
+              groupLabel: t('trainerPools.kind.infinity'),
+              label: `${formatPoolLabel(candidate)}${
+                compatibleWith && candidate.compatibilityGroup !== compatibleWith
+                  ? ` · ${t('trainerPools.swap.incompatible')}`
+                  : ''
+              }`,
+              value: candidate.logicalPoolId
+            }))
+          ]}
+          value={selection?.logicalPoolId ?? ''}
+        />
 
-      {pool ? <div className="editor-slot-browser">
-        <EditorRecordTable label={`${label} · ${t('trainerPools.swap.trainer')}`}
-          identityLabel={t('trainerPools.swap.trainer')} rows={pool.members}
-          identity={member => member.displayName} rowId={member => member.rawTrainerId}
-          selection={selection?.rawTrainerId} disabled={disabled}
-          onSelect={member => onChange({ logicalPoolId: pool.logicalPoolId, rawTrainerId: member.rawTrainerId })}
-          columns={[
-            { id: 'rank', label: translateLiteral('Rank'), numeric: true, value: member => member.storedRank },
-            { id: 'team', label: translateLiteral('Team'), numeric: true, value: member => member.teamSize },
-            { id: 'weight', label: translateLiteral('Weight'), numeric: true, value: member => member.weight },
-          ]} />
-      </div> : null}
-      {pool ? (
-        <p className="field-hint">
-          {t('trainerPools.swap.poolDetails', {
-            count: pool.memberCount,
-            mirrors: pool.referencedPhysicalTableCount,
-            weight: pool.totalWeight
-          })}
-        </p>
-      ) : null}
-    </fieldset>
+        {pool ? <div className="editor-slot-browser">
+          <EditorRecordTable label={`${label} · ${t('trainerPools.swap.trainer')}`}
+            identityLabel={t('trainerPools.swap.trainer')} rows={pool.members}
+            identity={member => member.displayName} rowId={member => member.rawTrainerId}
+            selection={selection?.rawTrainerId} disabled={disabled}
+            onSelect={member => onChange({ logicalPoolId: pool.logicalPoolId, rawTrainerId: member.rawTrainerId })}
+            columns={[
+              { id: 'rank', label: translateLiteral('Rank'), numeric: true, value: member => member.storedRank },
+              { id: 'team', label: translateLiteral('Team'), numeric: true, value: member => member.teamSize },
+              { id: 'weight', label: translateLiteral('Weight'), numeric: true, value: member => member.weight },
+            ]} />
+        </div> : null}
+        {pool ? (
+          <p className="field-hint">
+            {t('trainerPools.swap.poolDetails', {
+              count: pool.memberCount,
+              mirrors: pool.referencedPhysicalTableCount,
+              weight: pool.totalWeight
+            })}
+          </p>
+        ) : null}
+      </div>
+    </EditorFieldGroup>
   );
 }
 
