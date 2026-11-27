@@ -15,7 +15,6 @@ import {
 import { ApplyResultSection, DiagnosticsSection, Metric } from '../../components/workflowPanels';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
 import { FieldLabel } from '../../components/FieldLabel';
-import { HoverTooltip } from '../../components/HoverTooltip';
 import { useLocalization } from '../../localization/LocalizationProvider';
 import { toProjectBridgeDiagnostics } from '../../uiErrorDiagnostics';
 import { RandomizerConfirmationModal } from './RandomizerConfirmationModal';
@@ -440,17 +439,15 @@ export function RandomizerSection({
                 htmlFor="randomizer-base-seed"
                 label="Base Seed"
               />
-              <HoverTooltip content={t('randomizer.seed.baseHelp')}>
-                <input
-                  aria-label="Base Seed"
-                  disabled={isConfigurationLocked}
-                  id="randomizer-base-seed"
-                  maxLength={20}
-                  onChange={(event) => handleUserSeedChange(event.currentTarget.value)}
-                  placeholder="Optional, 20 characters max"
-                  value={userSeed}
-                />
-              </HoverTooltip>
+              <input
+                aria-label="Base Seed"
+                disabled={isConfigurationLocked}
+                id="randomizer-base-seed"
+                maxLength={20}
+                onChange={(event) => handleUserSeedChange(event.currentTarget.value)}
+                placeholder="Optional, 20 characters max"
+                value={userSeed}
+              />
             </div>
           </div>
 
@@ -505,15 +502,13 @@ export function RandomizerSection({
               </span>
             </button>
           </div>
-          <HoverTooltip content={t('randomizer.seed.generatedHelp')}>
-            <textarea
-              aria-label="Randomizer Seed"
-              id="randomizer-generated-seed"
-              readOnly
-              rows={4}
-              value={seedOutput}
-            />
-          </HoverTooltip>
+          <textarea
+            aria-label="Randomizer Seed"
+            id="randomizer-generated-seed"
+            readOnly
+            rows={4}
+            value={seedOutput}
+          />
         </div>
         <div className="randomizer-shared-seed-row">
           <div className="path-field">
@@ -522,22 +517,20 @@ export function RandomizerSection({
               htmlFor="randomizer-shared-seed"
               label="Shared Randomization Seed"
             />
-            <HoverTooltip content={t('randomizer.seed.sharedHelp')}>
-              <textarea
-                aria-label="Shared Randomization Seed"
-                disabled={isConfigurationLocked}
-                id="randomizer-shared-seed"
-                onChange={(event) => {
-                  if (activeOperationRef.current !== null) {
-                    return;
-                  }
-                  draftRevisionRef.current += 1;
-                  setImportSeedText(event.currentTarget.value);
-                }}
-                rows={3}
-                value={importSeedText}
-              />
-            </HoverTooltip>
+            <textarea
+              aria-label="Shared Randomization Seed"
+              disabled={isConfigurationLocked}
+              id="randomizer-shared-seed"
+              onChange={(event) => {
+                if (activeOperationRef.current !== null) {
+                  return;
+                }
+                draftRevisionRef.current += 1;
+                setImportSeedText(event.currentTarget.value);
+              }}
+              rows={3}
+              value={importSeedText}
+            />
           </div>
           <button
             className="purple-button"

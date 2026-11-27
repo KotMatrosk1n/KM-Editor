@@ -800,6 +800,7 @@ export function GameDumpSection({
                         label={translateLiteral('Format')}
                       />
                       <SearchableOptionInput
+                        showValueTooltip
                         ariaLabel={`${translateLiteral(category.label)} ${translateLiteral('Format')}`}
                         data-km-source-site="game-dump-format"
                         disabled={
@@ -838,6 +839,7 @@ export function GameDumpSection({
                           label={t('gameDump.language.label')}
                         />
                         <SearchableOptionInput
+                          showValueTooltip
                           ariaLabel={`${translateLiteral(category.label)} ${t(
                             'gameDump.language.label'
                           )}`}

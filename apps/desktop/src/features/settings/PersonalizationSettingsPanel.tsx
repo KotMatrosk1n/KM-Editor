@@ -153,6 +153,7 @@ export function PersonalizationSettingsPanel() {
               {t('settings.appearance.theme')}
             </label>
             <SearchableOptionInput
+              showValueTooltip
               ariaLabel={t('settings.appearance.theme')}
               data-km-source-site="personalization-appearance-theme"
               disabled={false}
@@ -173,6 +174,7 @@ export function PersonalizationSettingsPanel() {
               {t('settings.appearance.motion')}
             </label>
             <SearchableOptionInput
+              showValueTooltip
               ariaLabel={t('settings.appearance.motion')}
               data-km-source-site="personalization-motion"
               disabled={false}
@@ -192,6 +194,7 @@ export function PersonalizationSettingsPanel() {
               {t('settings.appearance.typeScale')}
             </label>
             <SearchableOptionInput
+              showValueTooltip
               ariaLabel={t('settings.appearance.typeScale')}
               data-km-source-site="personalization-type-scale"
               disabled={false}
@@ -212,6 +215,7 @@ export function PersonalizationSettingsPanel() {
               {t('settings.appearance.density')}
             </label>
             <SearchableOptionInput
+              showValueTooltip
               ariaLabel={t('settings.appearance.density')}
               data-km-source-site="personalization-density"
               disabled={false}

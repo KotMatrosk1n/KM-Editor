@@ -547,7 +547,6 @@ import {
 } from './features/tm-machine-controls/tmMachineControlsUi';
 import {
   resolveFieldHelp,
-  resolveFieldHoverHelp,
   type FieldHelpDomain,
   type FieldHelpGame
 } from './fieldHelpCatalog';
@@ -33730,14 +33729,6 @@ function TrainerDraftField({
         optionCount: options.length
       })
   );
-  const localizedFieldHoverText = effectiveDisabledReason
-    ? translateLiteral(effectiveDisabledReason)
-    : getEditableFieldHoverHelp(field, t, {
-        domain: helpDomain,
-        game: helpGame ?? formOptionContext?.gameFamily,
-        label: localizedFieldLabel,
-        optionCount: options.length
-      });
 
   return (
     <div
@@ -33763,7 +33754,6 @@ function TrainerDraftField({
           isFiniteCatalog
           onChange={onChange}
           options={searchableBooleanOptions}
-          tooltipContent={localizedFieldHoverText}
           value={draftValue === '1' ? '1' : '0'}
         />
       ) : options.length > 0 ? (
@@ -33779,20 +33769,18 @@ function TrainerDraftField({
           value={draftValue}
         />
       ) : (
-        <HoverTooltip content={localizedFieldHoverText}>
-          <input
-            aria-describedby={statusText ? inputId + '-status' : undefined}
-            aria-invalid={!draftState.isValid || undefined}
-            aria-label={localizedFieldLabel}
-            disabled={effectiveDisabled}
-            id={inputId}
-            max={field.maximumValue ?? undefined}
-            min={field.minimumValue ?? undefined}
-            onChange={(event) => onChange(event.target.value)}
-            type="number"
-            value={draftValue}
-          />
-        </HoverTooltip>
+        <input
+          aria-describedby={statusText ? inputId + '-status' : undefined}
+          aria-invalid={!draftState.isValid || undefined}
+          aria-label={localizedFieldLabel}
+          disabled={effectiveDisabled}
+          id={inputId}
+          max={field.maximumValue ?? undefined}
+          min={field.minimumValue ?? undefined}
+          onChange={(event) => onChange(event.target.value)}
+          type="number"
+          value={draftValue}
+        />
       )}
       {note ? <small className="editable-field-status">{translateLiteral(note)}</small> : null}
       {statusText ? (
@@ -34822,7 +34810,8 @@ function getNatureStatAdornment(fieldName: string, effects: NatureStatEffects | 
     return (
       <span
         className="nature-stat-arrow nature-stat-arrow-up"
-        title={`Nature raises ${natureStatLabels[stat]}.`}
+        aria-label={`Nature raises ${natureStatLabels[stat]}.`}
+        role="img"
       >
         <ArrowUp aria-hidden="true" size={14} />
       </span>
@@ -34833,7 +34822,8 @@ function getNatureStatAdornment(fieldName: string, effects: NatureStatEffects | 
     return (
       <span
         className="nature-stat-arrow nature-stat-arrow-down"
-        title={`Nature lowers ${natureStatLabels[stat]}.`}
+        aria-label={`Nature lowers ${natureStatLabels[stat]}.`}
+        role="img"
       >
         <ArrowDown aria-hidden="true" size={14} />
       </span>
@@ -38324,14 +38314,6 @@ function GiftPokemonDraftField({
         label: localizedFieldLabel,
         optionCount: options.length
       });
-  const localizedFieldHoverText = effectiveDisabledReason
-    ? translateLiteral(effectiveDisabledReason)
-    : getEditableFieldHoverHelp(field, t, {
-        domain: helpDomain,
-        game: helpGame ?? formOptionContext?.gameFamily,
-        label: localizedFieldLabel,
-        optionCount: options.length
-      });
   const optionsWithPreservedValue =
     preservedValue === null || preservedValue === undefined
       ? options
@@ -38372,7 +38354,6 @@ function GiftPokemonDraftField({
           onChange={onChange}
           options={searchableBooleanOptions}
           wrapSelectedValue={wrapSelectedValue}
-          tooltipContent={localizedFieldHoverText}
           value={draftValue === '1' ? '1' : '0'}
         />
       ) : options.length > 0 ? (
@@ -38392,27 +38373,25 @@ function GiftPokemonDraftField({
           wrapSelectedValue={wrapSelectedValue}
         />
       ) : (
-        <HoverTooltip content={localizedFieldHoverText}>
-          <input
-            aria-describedby={ariaDescribedBy}
-            aria-label={localizedFieldLabel}
-            aria-invalid={!draftState.isValid || undefined}
-            disabled={effectiveDisabled}
-            id={inputId}
-            max={field.maximumValue ?? undefined}
-            min={field.minimumValue ?? undefined}
-            onChange={(event) => onChange(event.target.value)}
-            step={
-              parseMoveTimingField(field.field)?.member === 'cooldown'
-                ? 0.1
-                : field.valueKind === 'number'
-                  ? 'any'
-                  : 1
-            }
-            type="number"
-            value={draftValue}
-          />
-        </HoverTooltip>
+        <input
+          aria-describedby={ariaDescribedBy}
+          aria-label={localizedFieldLabel}
+          aria-invalid={!draftState.isValid || undefined}
+          disabled={effectiveDisabled}
+          id={inputId}
+          max={field.maximumValue ?? undefined}
+          min={field.minimumValue ?? undefined}
+          onChange={(event) => onChange(event.target.value)}
+          step={
+            parseMoveTimingField(field.field)?.member === 'cooldown'
+              ? 0.1
+              : field.valueKind === 'number'
+                ? 'any'
+                : 1
+          }
+          type="number"
+          value={draftValue}
+        />
       )}
       {effectiveDisabledReason && (!compact || !ariaDescribedBy) ? (
         <small className="editable-field-status">{translateLiteral(effectiveDisabledReason)}</small>
@@ -43656,35 +43635,29 @@ function SelectedShopPanel({
                           htmlFor={priceInputId}
                           label={translateLiteral(shop.currency)}
                         />
-                        <HoverTooltip
-                          content={translateLiteral(
-                            'Changes the item price used wherever this currency is accepted.'
-                          )}
-                        >
-                          <input
-                            aria-describedby={priceDraftError ? priceDraftErrorId : undefined}
-                            aria-invalid={priceDraftError ? true : undefined}
-                            aria-label={`${translateLiteral('Shop slot')} ${item.displaySlot} ${translateLiteral(
-                              'price'
-                            )}`}
-                            disabled={isPriceDisabled}
-                            id={priceInputId}
-                            max={priceEditableField.maximumValue ?? undefined}
-                            min={priceEditableField.minimumValue ?? undefined}
-                            onChange={(event) =>
-                              updateCurrentShopDraft((currentDraft) =>
-                                setShopItemPriceDraft(
-                                  currentDraft,
-                                  shopInventoryRows,
-                                  item,
-                                  event.target.value
-                                )
+                        <input
+                          aria-describedby={priceDraftError ? priceDraftErrorId : undefined}
+                          aria-invalid={priceDraftError ? true : undefined}
+                          aria-label={`${translateLiteral('Shop slot')} ${item.displaySlot} ${translateLiteral(
+                            'price'
+                          )}`}
+                          disabled={isPriceDisabled}
+                          id={priceInputId}
+                          max={priceEditableField.maximumValue ?? undefined}
+                          min={priceEditableField.minimumValue ?? undefined}
+                          onChange={(event) =>
+                            updateCurrentShopDraft((currentDraft) =>
+                              setShopItemPriceDraft(
+                                currentDraft,
+                                shopInventoryRows,
+                                item,
+                                event.target.value
                               )
-                            }
-                            type="number"
-                            value={item.priceDraft}
-                          />
-                        </HoverTooltip>
+                            )
+                          }
+                          type="number"
+                          value={item.priceDraft}
+                        />
                         {priceDraftError ? (
                           <small className="editable-field-error" id={priceDraftErrorId}>
                             {translateLiteral(priceDraftError)}
@@ -43705,35 +43678,33 @@ function SelectedShopPanel({
                               : translateLiteral('Stock')
                           }
                         />
-                        <HoverTooltip content={stockHelp}>
-                          <input
-                            aria-describedby={stockDraftError ? stockDraftErrorId : undefined}
-                            aria-invalid={stockDraftError ? true : undefined}
-                            aria-label={`${translateLiteral('Shop slot')} ${item.displaySlot} ${translateLiteral(
-                              'stock'
-                            )}`}
-                            disabled={isStockDisabled}
-                            id={stockInputId}
-                            max={stockEditableField.maximumValue ?? undefined}
-                            min={stockEditableField.minimumValue ?? undefined}
-                            onChange={(event) =>
-                              updateCurrentShopDraft((currentDraft) =>
-                                setShopItemStockDraft(
-                                  currentDraft,
-                                  shopInventoryRows,
-                                  item,
-                                  event.target.value
-                                )
+                        <input
+                          aria-describedby={stockDraftError ? stockDraftErrorId : undefined}
+                          aria-invalid={stockDraftError ? true : undefined}
+                          aria-label={`${translateLiteral('Shop slot')} ${item.displaySlot} ${translateLiteral(
+                            'stock'
+                          )}`}
+                          disabled={isStockDisabled}
+                          id={stockInputId}
+                          max={stockEditableField.maximumValue ?? undefined}
+                          min={stockEditableField.minimumValue ?? undefined}
+                          onChange={(event) =>
+                            updateCurrentShopDraft((currentDraft) =>
+                              setShopItemStockDraft(
+                                currentDraft,
+                                shopInventoryRows,
+                                item,
+                                event.target.value
                               )
-                            }
-                            type={shop.globalStockField !== null ? 'number' : 'text'}
-                            value={
-                              shop.globalStockField !== null
-                                ? item.stockDraft
-                                : item.stockLimit ?? translateLiteral('None')
-                            }
-                          />
-                        </HoverTooltip>
+                            )
+                          }
+                          type={shop.globalStockField !== null ? 'number' : 'text'}
+                          value={
+                            shop.globalStockField !== null
+                              ? item.stockDraft
+                              : item.stockLimit ?? translateLiteral('None')
+                          }
+                        />
                         {stockDraftError ? (
                           <small className="editable-field-error" id={stockDraftErrorId}>
                             {translateLiteral(stockDraftError)}
@@ -43957,7 +43928,6 @@ function SelectedShopPanel({
                           }
                           draftValue={draftValue}
                           field={rowField}
-                          helpGame={editorFamily}
                           id={`shop-row-${shop.shopId}-${selectedInventoryItem.slot}-${field.field}`}
                           onChange={(value) =>
                             updateCurrentShopDraft((currentDraft) =>
@@ -43999,7 +43969,6 @@ function ShopRowFieldInput({
   disabled,
   draftValue,
   field,
-  helpGame,
   id,
   onChange,
   textOptions
@@ -44009,19 +43978,13 @@ function ShopRowFieldInput({
   disabled: boolean;
   draftValue: string;
   field: ShopEditableField;
-  helpGame: FieldHelpGame;
   id?: string;
   onChange: (value: string) => void;
   textOptions?: Array<{ label: string; value: string }>;
 }) {
   const options = field.options ?? [];
-  const { t, translateLiteral } = useLocalization();
+  const { translateLiteral } = useLocalization();
   const localizedFieldLabel = translateLiteral(field.label);
-  const localizedFieldHoverText = getEditableFieldHoverHelp(field, t, {
-    domain: 'shops',
-    game: helpGame,
-    label: localizedFieldLabel
-  });
 
   if (textOptions && textOptions.length > 0) {
     return (
@@ -44035,7 +43998,6 @@ function ShopRowFieldInput({
         isFiniteCatalog
         onChange={onChange}
         options={textOptions}
-        tooltipContent={localizedFieldHoverText}
         value={draftValue}
       />
     );
@@ -44058,20 +44020,18 @@ function ShopRowFieldInput({
   }
 
   return (
-    <HoverTooltip content={localizedFieldHoverText}>
-      <input
-        aria-describedby={ariaDescribedBy}
-        aria-invalid={ariaInvalid}
-        aria-label={localizedFieldLabel}
-        disabled={disabled}
-        id={id}
-        max={field.maximumValue ?? undefined}
-        min={field.minimumValue ?? undefined}
-        onChange={(event) => onChange(event.target.value)}
-        type={field.valueKind === 'text' ? 'text' : 'number'}
-        value={draftValue}
-      />
-    </HoverTooltip>
+    <input
+      aria-describedby={ariaDescribedBy}
+      aria-invalid={ariaInvalid}
+      aria-label={localizedFieldLabel}
+      disabled={disabled}
+      id={id}
+      max={field.maximumValue ?? undefined}
+      min={field.minimumValue ?? undefined}
+      onChange={(event) => onChange(event.target.value)}
+      type={field.valueKind === 'text' ? 'text' : 'number'}
+      value={draftValue}
+    />
   );
 }
 
@@ -51585,16 +51545,6 @@ function SelectedBehaviorPanel({
                             minimum: field.minimumValue,
                             optionCount: fieldOptions?.length
                           });
-                      const localizedBehaviorFieldHover = field.description
-                        ? translateLiteral(field.description)
-                        : resolveFieldHoverHelp(t, {
-                            domain: 'behavior',
-                            fieldId: field.field,
-                            label: localizedBehaviorFieldLabel,
-                            maximum: field.maximumValue,
-                            minimum: field.minimumValue,
-                            optionCount: fieldOptions?.length
-                          });
 
                       return (
                         <div
@@ -51629,25 +51579,22 @@ function SelectedBehaviorPanel({
                                 draftValue,
                                 currentValue
                               )}
-                              tooltipContent={localizedBehaviorFieldHover}
                               value={draftValue}
                             />
                           ) : (
-                            <HoverTooltip content={localizedBehaviorFieldHover}>
-                              <input
-                                aria-label={translateLiteral(field.label)}
-                                disabled={isDisabled}
-                                id={`behavior-field-${field.field}`}
-                                max={field.valueKind === 'string' ? undefined : field.maximumValue}
-                                min={field.valueKind === 'string' ? undefined : field.minimumValue}
-                                onChange={(event) =>
-                                  handleBehaviorDraftChange(field, event.target.value)
-                                }
-                                step={field.valueKind === 'integer' ? 1 : 'any'}
-                                type={field.valueKind === 'string' || field.valueKind === 'hash' ? 'text' : 'number'}
-                                value={draftValue}
-                              />
-                            </HoverTooltip>
+                            <input
+                              aria-label={translateLiteral(field.label)}
+                              disabled={isDisabled}
+                              id={`behavior-field-${field.field}`}
+                              max={field.valueKind === 'string' ? undefined : field.maximumValue}
+                              min={field.valueKind === 'string' ? undefined : field.minimumValue}
+                              onChange={(event) =>
+                                handleBehaviorDraftChange(field, event.target.value)
+                              }
+                              step={field.valueKind === 'integer' ? 1 : 'any'}
+                              type={field.valueKind === 'string' || field.valueKind === 'hash' ? 'text' : 'number'}
+                              value={draftValue}
+                            />
                           )}
                           {statusText ? (
                             <small
@@ -54417,13 +54364,6 @@ function CatchCapSection({
                           }
                           onFocus={() => onSelectCap(cap.badgeCount)}
                           step={1}
-                          title={
-                            isFinalBadge
-                              ? translateLiteral(
-                                  'Eight badges is locked at Lv.100 because full badges can catch any level.'
-                                )
-                              : undefined
-                          }
                           type="number"
                           value={cap.rawValue}
                         />
@@ -63932,14 +63872,6 @@ function PokemonPersonalFieldInput({
         label: localizedFieldLabel,
         optionCount: options.length
       });
-  const localizedHoverText = isMaterialDrop ? t('pokemon.materialDrops.help') : field.field.startsWith(alphaSizePrefix) ? t('pokemon.alphaSize.help') : disabledReason
-    ? translateLiteral(disabledReason)
-    : getEditableFieldHoverHelp(field, t, {
-        domain: 'pokemon',
-        game: formOptionContext?.gameFamily,
-        label: localizedFieldLabel,
-        optionCount: options.length
-      });
 
   return (
     <div
@@ -63972,21 +63904,19 @@ function PokemonPersonalFieldInput({
           value={draftValue}
         />
       ) : (
-        <HoverTooltip content={localizedHoverText}>
-          <input
-            aria-label={localizedFieldLabel}
-            aria-invalid={!draftState.isValid || undefined}
-            disabled={disabled}
-            id={inputId}
-            max={field.maximumValue ?? undefined}
-            min={field.field.startsWith(alphaSizePrefix) ? 0 : field.minimumValue ?? undefined}
-            onChange={(event) => onChange(field.field.startsWith(alphaSizePrefix)
-              ? alphaSizeManualDraft(event.target.value) : event.target.value)}
-            step={field.field.startsWith(alphaSizePrefix) ? '0.01' : undefined}
-            type="number"
-            value={draftValue}
-          />
-        </HoverTooltip>
+        <input
+          aria-label={localizedFieldLabel}
+          aria-invalid={!draftState.isValid || undefined}
+          disabled={disabled}
+          id={inputId}
+          max={field.maximumValue ?? undefined}
+          min={field.field.startsWith(alphaSizePrefix) ? 0 : field.minimumValue ?? undefined}
+          onChange={(event) => onChange(field.field.startsWith(alphaSizePrefix)
+            ? alphaSizeManualDraft(event.target.value) : event.target.value)}
+          step={field.field.startsWith(alphaSizePrefix) ? '0.01' : undefined}
+          type="number"
+          value={draftValue}
+        />
       )}
       {disabledReason ? (
         <small className="editable-field-status">{translateLiteral(disabledReason)}</small>
@@ -64795,28 +64725,6 @@ function getEditableFieldHelp(
   }
 ) {
   return resolveFieldHelp(localize, {
-    domain: context?.domain,
-    fieldId: field.field,
-    game: context?.game,
-    label: context?.label ?? field.label,
-    maximum: field.maximumValue,
-    minimum: field.minimumValue,
-    optionCount: context?.optionCount ?? field.options?.length,
-    optionValues: field.options?.map((option) => option.value)
-  });
-}
-
-function getEditableFieldHoverHelp(
-  field: EditableFieldWithOptions,
-  localize: ReturnType<typeof useLocalization>['t'],
-  context?: {
-    domain?: FieldHelpDomain;
-    game?: FieldHelpGame;
-    label?: string;
-    optionCount?: number;
-  }
-) {
-  return resolveFieldHoverHelp(localize, {
     domain: context?.domain,
     fieldId: field.field,
     game: context?.game,
