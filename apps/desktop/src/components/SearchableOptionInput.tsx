@@ -8,8 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
-  type ReactNode
+  type CSSProperties
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocalization } from '../localization';
@@ -57,7 +56,7 @@ export type SearchableOptionInputProps = Readonly<{
   portalMenu?: boolean;
   required?: boolean;
   showToggle?: boolean;
-  tooltipContent?: ReactNode;
+  showValueTooltip?: boolean;
   value: string;
   wrapSelectedValue?: boolean;
 }>;
@@ -97,7 +96,7 @@ export function SearchableOptionInput({
   portalMenu = true,
   required,
   showToggle = true,
-  tooltipContent,
+  showValueTooltip = false,
   value,
   wrapSelectedValue = false
 }: SearchableOptionInputProps) {
@@ -139,9 +138,6 @@ export function SearchableOptionInput({
   );
   const [query, setQuery] = useCoalescedTextInputState(formattedValue);
   const [hasUserQuery, setHasUserQuery] = useState(false);
-  const inputTooltipText = hasUserQuery
-    ? undefined
-    : tooltipContent ?? (formattedValue || undefined);
   const optionQuery = hasUserQuery ? query : '';
   const trimmedOptionQuery = optionQuery.trim().toLocaleLowerCase();
   const hasEmptyOption = localizedEmptyOptionLabel !== undefined;
@@ -498,62 +494,47 @@ export function SearchableOptionInput({
   ) : null;
   const portalHost = portalMenu ? getEditorPortalHost(containerRef.current) : null;
 
-  return (
-    <HoverTooltip
-      content={hasMenu ? undefined : inputTooltipText}
-      describe={false}
-      placement="above"
+  const control = (
+    <div
+      className={[
+        'searchable-option-input',
+        wrapSelectedValue ? 'searchable-option-wrap-value' : '',
+        disabled ? 'searchable-option-disabled' : '',
+        className ?? ''
+      ].filter(Boolean).join(' ')}
+      data-localization-ignore={effectiveLocalizationIgnore}
+      data-show-value={wrapSelectedValue && !isOpen && !hasUserQuery ? 'true' : undefined}
+      ref={containerRef}
     >
-      <div
-        className={[
-          'searchable-option-input',
-          wrapSelectedValue ? 'searchable-option-wrap-value' : '',
-          disabled ? 'searchable-option-disabled' : '',
-          className ?? ''
-        ].filter(Boolean).join(' ')}
-        data-localization-ignore={effectiveLocalizationIgnore}
-        data-show-value={wrapSelectedValue && !isOpen && !hasUserQuery ? 'true' : undefined}
-        ref={containerRef}
-      >
-        {wrapSelectedValue ? (
-          <span aria-hidden="true" className="searchable-option-selected-value">
-            {formattedValue || '\u00a0'}
-          </span>
-        ) : null}
-        <input
-          aria-activedescendant={
-            hasMenu && activeOptionIndex >= 0
-              ? `${listboxId}-option-${activeOptionIndex}`
-              : undefined
-          }
-          aria-autocomplete="list"
-          aria-controls={hasMenu ? listboxId : undefined}
-          aria-describedby={ariaDescribedBy}
-          aria-expanded={hasMenu}
-          aria-label={localizedAriaLabel}
-          aria-haspopup="listbox"
-          aria-invalid={ariaInvalid}
-          autoComplete="off"
-          data-km-source-site={sourceSite}
-          data-value={value}
-          disabled={disabled}
-          id={inputId}
-          inputMode="search"
-          name={name}
-          onBlur={commitTypedOption}
-          onChange={(event) => handleInputChange(event.target.value)}
-          onClick={() => {
-            if (!isOpen) {
-              applyInteractionResult(
-                transitionSearchableOptionInteraction(
-                  { hasUserQuery, isOpen, query },
-                  { formattedValue, type: 'focus' }
-                )
-              );
-              setActiveOptionIndex(-1);
-            }
-          }}
-          onFocus={() => {
+      {wrapSelectedValue ? (
+        <span aria-hidden="true" className="searchable-option-selected-value">
+          {formattedValue || '\u00a0'}
+        </span>
+      ) : null}
+      <input
+        aria-activedescendant={
+          hasMenu && activeOptionIndex >= 0
+            ? `${listboxId}-option-${activeOptionIndex}`
+            : undefined
+        }
+        aria-autocomplete="list"
+        aria-controls={hasMenu ? listboxId : undefined}
+        aria-describedby={ariaDescribedBy}
+        aria-expanded={hasMenu}
+        aria-label={localizedAriaLabel}
+        aria-haspopup="listbox"
+        aria-invalid={ariaInvalid}
+        autoComplete="off"
+        data-km-source-site={sourceSite}
+        data-value={value}
+        disabled={disabled}
+        id={inputId}
+        inputMode="search"
+        name={name}
+        onBlur={commitTypedOption}
+        onChange={(event) => handleInputChange(event.target.value)}
+        onClick={() => {
+          if (!isOpen) {
             applyInteractionResult(
               transitionSearchableOptionInteraction(
                 { hasUserQuery, isOpen, query },
@@ -561,66 +542,85 @@ export function SearchableOptionInput({
               )
             );
             setActiveOptionIndex(-1);
-            onFocus?.();
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape' && isOpen) {
-              event.preventDefault();
-              event.stopPropagation();
-              restoreCommittedValue();
-              return;
-            }
-
-            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-              event.preventDefault();
-              setIsOpen(true);
-              setActiveOptionIndex((currentIndex) =>
-                nextEnabledMenuItemIndex(
-                  menuItems,
-                  currentIndex,
-                  event.key === 'ArrowDown' ? 1 : -1
-                )
-              );
-              return;
-            }
-
-            if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              if (hasMenu && activeOptionIndex >= 0) {
-                selectMenuItem(activeOptionIndex);
-                return;
-              }
-
-              commitTypedOption();
-            }
-          }}
-          role="combobox"
-          required={required}
-          type="text"
-          value={query}
-        />
-        {showToggle ? <button
-          aria-label={translateLiteral(`Show ${ariaLabel} options`)}
-          className="searchable-option-toggle"
-          disabled={disabled}
-          onMouseDown={(event) => {
+          }
+        }}
+        onFocus={() => {
+          applyInteractionResult(
+            transitionSearchableOptionInteraction(
+              { hasUserQuery, isOpen, query },
+              { formattedValue, type: 'focus' }
+            )
+          );
+          setActiveOptionIndex(-1);
+          onFocus?.();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' && isOpen) {
             event.preventDefault();
-          }}
-          onClick={() => {
-            setQuery(formattedValue);
-            setHasUserQuery(false);
-            setActiveOptionIndex(-1);
-            setIsOpen((current) => (current && !hasUserQuery ? false : true));
-          }}
-          tabIndex={-1}
-          type="button"
-        >
-          <ChevronDown aria-hidden="true" size={16} />
-        </button> : null}
-        {portalHost && menu ? createPortal(menu, portalHost) : menu}
-      </div>
-    </HoverTooltip>
+            event.stopPropagation();
+            restoreCommittedValue();
+            return;
+          }
+
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            setIsOpen(true);
+            setActiveOptionIndex((currentIndex) =>
+              nextEnabledMenuItemIndex(
+                menuItems,
+                currentIndex,
+                event.key === 'ArrowDown' ? 1 : -1
+              )
+            );
+            return;
+          }
+
+          if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            if (hasMenu && activeOptionIndex >= 0) {
+              selectMenuItem(activeOptionIndex);
+              return;
+            }
+
+            commitTypedOption();
+          }
+        }}
+        role="combobox"
+        required={required}
+        type="text"
+        value={query}
+      />
+      {showToggle ? <button
+        aria-label={translateLiteral(`Show ${ariaLabel} options`)}
+        className="searchable-option-toggle"
+        disabled={disabled}
+        onMouseDown={(event) => {
+          event.preventDefault();
+        }}
+        onClick={() => {
+          setQuery(formattedValue);
+          setHasUserQuery(false);
+          setActiveOptionIndex(-1);
+          setIsOpen((current) => (current && !hasUserQuery ? false : true));
+        }}
+        tabIndex={-1}
+        type="button"
+      >
+        <ChevronDown aria-hidden="true" size={16} />
+      </button> : null}
+      {portalHost && menu ? createPortal(menu, portalHost) : menu}
+    </div>
   );
+
+  return showValueTooltip ? (
+    <HoverTooltip
+      content={hasMenu || hasUserQuery ? undefined : formattedValue || undefined}
+      describe={false}
+      placement="above"
+    >
+      {control}
+    </HoverTooltip>
+  ) : control;
 }
 
 function isEnabledMenuItem(item: MenuItem | undefined) {

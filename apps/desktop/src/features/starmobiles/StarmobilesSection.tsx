@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { LockKeyhole, RotateCcw, Save, Star, X } from 'lucide-react';
 import { starmobileFieldMaximum as maximum, starmobileFields, starmobileMoveFields, starmobileTraitFields, starmobileTypeOptions, type StarmobileUpdate, type StarmobilesWorkflow } from '../../bridge/starmobilesContracts';
 import { usePublishCommonEditorError } from '../../components/CommonEditorDiagnostics';
@@ -35,6 +35,7 @@ const isSignature = (value: number) => value >= 896 && value <= 900;
 
 export function StarmobilesSection({ workflow, isStaging, isEditing, isEditStarting, onStartEditSession, onCancelEditSession, onStage, onDirtyStateChange, panelOutput }: Props) {
   const { t, translateLiteral } = useLocalization();
+  const fieldDescriptionId = useId();
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [failed, setFailed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -122,13 +123,15 @@ export function StarmobilesSection({ workflow, isStaging, isEditing, isEditStart
     const key = `${row.id}/${field}`;
     const draft = drafts[key];
     const fieldInvalid = draft !== undefined && draftInvalid(draft);
+    const rangeId = `${fieldDescriptionId}-${field}`;
     return <label className="starmobiles-field-row" key={field}>
       <span>{t(`starmobiles.field.${field}`)}</span>
       <input aria-label={`${t(`starmobiles.boss.${bossNames[row.bossType] ?? 'unknown'}`)} ${t(`starmobiles.field.${field}`)}`}
-        type="text" inputMode="numeric" disabled={!canEdit} title={t('starmobiles.range', { maximum: maximum(field) })}
+        type="text" inputMode="numeric" disabled={!canEdit} aria-describedby={rangeId}
         aria-invalid={fieldInvalid || undefined} className={draft ? 'starmobiles-input-edited' : undefined}
         value={drafts[key]?.value ?? String(source)}
         onChange={event => setValue(row, field, event.target.value)} />
+      <span className="sr-only" id={rangeId}>{t('starmobiles.range', { maximum: maximum(field) })}</span>
       {statFields.some(stat => stat === field) ? <span className="muted">{row.vanillaValues?.[field] ?? '—'}</span> : null}
     </label>;
   };

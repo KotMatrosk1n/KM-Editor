@@ -431,7 +431,6 @@ export function TypeChartCellControl({
   return (
     <div
       className={`km-searchable-select-field type-chart-cell type-chart-cell-${option.className}${disabled ? ' type-chart-cell-disabled' : ''}`}
-      title={label}
     >
       <label className="sr-only" htmlFor={id}>{label}</label>
       <SearchableOptionInput
