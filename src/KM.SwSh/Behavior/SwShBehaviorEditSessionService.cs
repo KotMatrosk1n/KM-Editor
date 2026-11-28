@@ -225,7 +225,15 @@ public sealed class SwShBehaviorEditSessionService
 
         projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
-        var workflow = LoadForSession(project, session);
+        return ValidateProject(project, session, out _);
+    }
+
+    private SwShEditSessionValidation ValidateProject(
+        OpenedProject project,
+        EditSession session,
+        out SwShBehaviorWorkflow workflow)
+    {
+        workflow = LoadForSession(project, session);
         var diagnostics = new List<ValidationDiagnostic>();
 
         if (CanEditBehavior(project, workflow, diagnostics))
@@ -253,7 +261,8 @@ public sealed class SwShBehaviorEditSessionService
         }
 
         projectWorkspaceService.ClearMemoryCache();
-        var validation = Validate(paths, session);
+        var project = projectWorkspaceService.Open(paths);
+        var validation = ValidateProject(project, session, out var workflow);
         var diagnostics = validation.Diagnostics.ToList();
         var behaviorEdits = GetBehaviorEdits(session).ToArray();
 
@@ -262,7 +271,6 @@ public sealed class SwShBehaviorEditSessionService
             return new ChangePlan(session.Id, [], diagnostics);
         }
 
-        var project = projectWorkspaceService.Open(paths);
         var dataSource = SwShBehaviorWorkflowService.ResolveBehaviorDataSource(project);
         if (dataSource is null)
         {
@@ -279,11 +287,16 @@ public sealed class SwShBehaviorEditSessionService
             return new ChangePlan(session.Id, [], diagnostics);
         }
 
+        var sources = behaviorEdits.SelectMany(edit => edit.Sources)
+            .Append(new ProjectFileReference(GetSourceLayer(dataSource.GraphEntry), dataSource.GraphEntry.RelativePath));
+        if (workflow.RequiresLegacyRecovery)
+        {
+            sources = sources.Append(new ProjectFileReference(ProjectFileLayer.Base, dataSource.GraphEntry.RelativePath));
+        }
+
         var write = new PlannedFileWrite(
             dataSource.GraphEntry.RelativePath,
-            behaviorEdits
-                .SelectMany(edit => edit.Sources)
-                .Append(new ProjectFileReference(GetSourceLayer(dataSource.GraphEntry), dataSource.GraphEntry.RelativePath))
+            sources
                 .Distinct()
                 .OrderBy(source => source.Layer)
                 .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
@@ -390,7 +403,7 @@ public sealed class SwShBehaviorEditSessionService
         byte[] output;
         try
         {
-            output = CreateArchiveOutput(dataSource.AbsolutePath, session, diagnostics);
+            output = CreateArchiveOutput(project, dataSource, session, diagnostics);
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
                 return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
@@ -459,6 +472,7 @@ public sealed class SwShBehaviorEditSessionService
         var effectiveWorkflow = workflow;
         var seen = new HashSet<(string RecordId, string Field)>();
         var semanticRecordIds = new HashSet<string>(StringComparer.Ordinal);
+        var waitRecordIds = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var edit in behaviorEdits)
         {
@@ -485,9 +499,14 @@ public sealed class SwShBehaviorEditSessionService
             {
                 semanticRecordIds.Add(sourceEntry.EntryId);
             }
+            if (edit.Field is SwShSymbolBehaviorArchive.Field39 or SwShSymbolBehaviorArchive.Field40)
+            {
+                waitRecordIds.Add(sourceEntry.EntryId);
+            }
         }
 
         ValidateSemanticRecords(effectiveWorkflow, semanticRecordIds, diagnostics);
+        ValidateRandomActionWaits(effectiveWorkflow, waitRecordIds, diagnostics);
 
         if (behaviorEdits.Length > 0
             && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
@@ -612,6 +631,33 @@ public sealed class SwShBehaviorEditSessionService
         return sourceEntry;
     }
 
+    private static void ValidateRandomActionWaits(
+        SwShBehaviorWorkflow workflow,
+        IReadOnlySet<string> recordIds,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (recordIds.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var entry in workflow.Entries.Where(entry => recordIds.Contains(entry.EntryId)))
+        {
+            var maximum = float.Parse(
+                GetEntryFieldValue(entry, SwShSymbolBehaviorArchive.Field39), CultureInfo.InvariantCulture);
+            var minimum = float.Parse(
+                GetEntryFieldValue(entry, SwShSymbolBehaviorArchive.Field40), CultureInfo.InvariantCulture);
+            if (!(MathF.Truncate(maximum) > MathF.Truncate(minimum)))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Behavior entry {entry.Index} requires a Random Action Wait Maximum greater than its minimum in whole ticks.",
+                    field: SwShSymbolBehaviorArchive.Field39,
+                    expected: "Maximum wait greater than minimum wait"));
+            }
+        }
+    }
+
     private static void ValidateSemanticRecords(
         SwShBehaviorWorkflow workflow,
         IReadOnlySet<string> recordIds,
@@ -715,7 +761,7 @@ public sealed class SwShBehaviorEditSessionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Behavior field '{metadata.Label}' is disabled until its role is confirmed.",
+                $"Behavior field '{metadata.Label}' is read-only.",
                 field: "field",
                 expected: "Editable Behavior field"));
             return null;
@@ -774,7 +820,7 @@ public sealed class SwShBehaviorEditSessionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Behavior field '{field.Label}' must use a profile or model anchor present in the loaded source.",
+                $"Behavior field '{field.Label}' must use an option present in the loaded source.",
                 field: field.Field,
                 expected: "Loaded Behavior option"));
             return null;
@@ -1143,11 +1189,12 @@ public sealed class SwShBehaviorEditSessionService
     }
 
     private static byte[] CreateArchiveOutput(
-        string sourcePath,
+        OpenedProject project,
+        WorkflowFileSource source,
         EditSession session,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var archive = SwShSymbolBehaviorArchive.Parse(File.ReadAllBytes(sourcePath));
+        var archive = SwShBehaviorWorkflowService.ReadBehaviorArchive(project, source);
         var edits = GetBehaviorEdits(session)
             .Select(edit => ToArchiveEdit(archive, edit, diagnostics))
             .Where(edit => edit is not null)
@@ -1175,7 +1222,7 @@ public sealed class SwShBehaviorEditSessionService
 
         try
         {
-            var output = CreateArchiveOutput(source.AbsolutePath, session, diagnostics);
+            var output = CreateArchiveOutput(project, source, session, diagnostics);
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
                 return;
