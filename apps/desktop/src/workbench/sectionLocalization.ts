@@ -61,6 +61,7 @@ export const workbenchSectionLocalization = {
   hyperTraining: { label: 'workbench.section.hyper-training.label', description: 'workbench.section.hyper-training.description' },
   shinyRate: { label: 'workbench.section.shiny-rate.label', description: 'workbench.section.shiny-rate.description' },
   typeChart: { label: 'workbench.section.type-chart.label', description: 'workbench.section.type-chart.description' },
+  mainMission20: { label: 'workbench.section.main-mission-20.label', description: 'workbench.section.main-mission-20.description' },
   angeFight: { label: 'workbench.section.ange-fight.label', description: 'workbench.section.ange-fight.description' },
   fairyGymBoosts: { label: 'workbench.section.fairy-gym-boosts.label', description: 'workbench.section.fairy-gym-boosts.description' },
   fashionUnlock: { label: 'workbench.section.fashion-unlock.label', description: 'workbench.section.fashion-unlock.description' },

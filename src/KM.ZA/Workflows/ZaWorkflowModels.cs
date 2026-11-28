@@ -23,6 +23,7 @@ public static class ZaWorkflowIds
     public const string Placement = "placement";
     public const string TypeChart = "typeChart";
     public const string AngeFight = "angeFight";
+    public const string MainMission20 = "mainMission20";
     public const string FashionUnlock = "fashionUnlock";
     public const string SpreadsheetImport = "spreadsheetImport";
     public const string ModMerger = "modMerger";

@@ -8,6 +8,7 @@ export function createHistoryDisplayContext(selectedGame: ProjectGame): PendingE
   return {
     selectedGame,
     angeFightWorkflow: null,
+    mainMission20Workflow: null,
     bagHookWorkflow: null,
     catchCapWorkflow: null,
     dynamaxAdventuresWorkflow: null,
@@ -52,6 +53,9 @@ export async function loadHistoryDisplayContext(
   const context = createHistoryDisplayContext(paths.selectedGame);
   if (paths.selectedGame === 'pla') return context;
   switch (domain) {
+    case 'workflow.main-mission-20':
+      context.mainMission20Workflow = (await bridge.loadMainMission20({ paths })).workflow;
+      break;
     case 'workflow.items':
       context.itemsWorkflow = (await bridge.loadItemsWorkflow({ paths })).workflow;
       break;

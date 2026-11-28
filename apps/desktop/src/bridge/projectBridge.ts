@@ -11,6 +11,10 @@ import { type LoadStarmobilesRequest, type LoadStarmobilesResponse, type StageSt
   loadStarmobilesRequestSchema, loadStarmobilesResponseSchema, stageStarmobilesRequestSchema, stageStarmobilesResponseSchema } from './starmobilesContracts';
 import { type LoadTitanSwapperRequest, type LoadTitanSwapperResponse, type StageTitanSwapperRequest, type StageTitanSwapperResponse,
   loadTitanSwapperRequestSchema, loadTitanSwapperResponseSchema, stageTitanSwapperRequestSchema, stageTitanSwapperResponseSchema } from './titanSwapperContracts';
+import {
+  type LoadMainMission20Request, type LoadMainMission20Response, type StageMainMission20Request, type StageMainMission20Response,
+  loadMainMission20RequestSchema, loadMainMission20ResponseSchema, stageMainMission20RequestSchema, stageMainMission20ResponseSchema
+} from './mainMission20Contracts';
 import { type LoadSummaryStatsRequest, type LoadSummaryStatsResponse, type StageSummaryStatsRequest, type StageSummaryStatsResponse,
   loadSummaryStatsRequestSchema, loadSummaryStatsResponseSchema, stageSummaryStatsRequestSchema, stageSummaryStatsResponseSchema } from './summaryStatsContracts';
 import { type LoadMarnieBoostsRequest, type LoadMarnieBoostsResponse, type StageMarnieBoostsRequest, type StageMarnieBoostsResponse,
@@ -886,6 +890,8 @@ export type ProjectBridge = {
   loadBlueberry: (request: LoadBlueberryRequest) => Promise<LoadBlueberryResponse>;
   loadStarmobiles: (request: LoadStarmobilesRequest) => Promise<LoadStarmobilesResponse>;
   loadTitanSwapper: (request: LoadTitanSwapperRequest) => Promise<LoadTitanSwapperResponse>;
+  loadMainMission20: (request: LoadMainMission20Request) => Promise<LoadMainMission20Response>;
+  stageMainMission20: (request: StageMainMission20Request) => Promise<StageMainMission20Response>;
   loadSummaryStats: (request: LoadSummaryStatsRequest) => Promise<LoadSummaryStatsResponse>;
   loadMarnieBoosts: (request: LoadMarnieBoostsRequest) => Promise<LoadMarnieBoostsResponse>;
   loadShakingTrees: (request: LoadShakingTreesRequest) => Promise<LoadShakingTreesResponse>;
@@ -1765,6 +1771,10 @@ export function createProjectBridge(
       loadStarmobilesRequestSchema.parse(request), loadStarmobilesResponseSchema),
     loadTitanSwapper: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadTitanSwapper,
       loadTitanSwapperRequestSchema.parse(request), loadTitanSwapperResponseSchema),
+    loadMainMission20: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadMainMission20,
+      loadMainMission20RequestSchema.parse(request), loadMainMission20ResponseSchema),
+    stageMainMission20: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageMainMission20,
+      stageMainMission20RequestSchema.parse(request), stageMainMission20ResponseSchema),
     loadSummaryStats: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadSummaryStats,
       loadSummaryStatsRequestSchema.parse(request), loadSummaryStatsResponseSchema),
     loadMarnieBoosts: (request) => sendProjectBridgeRequest(transport, kmCommandNames.loadMarnieBoosts,

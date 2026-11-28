@@ -48,6 +48,7 @@ import { type FashionCatalogWorkflow } from './bridge/fashionCatalogContracts';
 import { type GymUniformRemovalWorkflow } from './bridge/gymUniformRemovalContracts';
 import { type BlueberryWorkflow } from './bridge/blueberryContracts';
 import { type StarmobilesWorkflow } from './bridge/starmobilesContracts';
+import type { MainMission20Workflow } from './bridge/mainMission20Contracts';
 import { type TitanSwapperWorkflow } from './bridge/titanSwapperContracts';
 import { type SummaryStatsWorkflow } from './bridge/summaryStatsContracts';
 import { type MarnieBoostsWorkflow } from './bridge/marnieBoostsContracts';
@@ -212,6 +213,7 @@ type WorkbenchState = {
   snacksworthWorkflow: BlueberryWorkflow | null;
   starmobilesWorkflow: StarmobilesWorkflow | null;
   titanSwapperWorkflow: TitanSwapperWorkflow | null;
+  mainMission20Workflow: MainMission20Workflow | null;
   summaryStatsWorkflow: SummaryStatsWorkflow | null;
   marnieBoostsWorkflow: MarnieBoostsWorkflow | null;
   shakingTreesWorkflow: ShakingTreesWorkflow | null;
@@ -349,6 +351,7 @@ type WorkbenchState = {
   setSnacksworthWorkflow: (snacksworthWorkflow: BlueberryWorkflow) => void;
   setStarmobilesWorkflow: (starmobilesWorkflow: StarmobilesWorkflow) => void;
   setTitanSwapperWorkflow: (titanSwapperWorkflow: TitanSwapperWorkflow) => void;
+  setMainMission20Workflow: (mainMission20Workflow: MainMission20Workflow) => void;
   setSummaryStatsWorkflow: (summaryStatsWorkflow: SummaryStatsWorkflow) => void;
   setRestorationWorkflow: (restoreMissingPokemonWorkflow: RestorationWorkflow) => void;
   setShakingTreesWorkflow: (shakingTreesWorkflow: ShakingTreesWorkflow) => void;
@@ -559,6 +562,7 @@ function createLoadedWorkflowResetState(): Partial<WorkbenchState> {
     snacksworthWorkflow: null,
     starmobilesWorkflow: null,
     titanSwapperWorkflow: null,
+    mainMission20Workflow: null,
     summaryStatsWorkflow: null,
     marnieBoostsWorkflow: null,
     shakingTreesWorkflow: null,
@@ -695,6 +699,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   snacksworthWorkflow: null,
   starmobilesWorkflow: null,
   titanSwapperWorkflow: null,
+  mainMission20Workflow: null,
   summaryStatsWorkflow: null,
   marnieBoostsWorkflow: null,
   shakingTreesWorkflow: null,
@@ -1096,6 +1101,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   })),
   setTitanSwapperWorkflow: (titanSwapperWorkflow) => set((state) => ({
     activeSection: resolveWorkflowLoadSection(state.activeSection, 'titanSwapper'), titanSwapperWorkflow
+  })),
+  setMainMission20Workflow: (mainMission20Workflow) => set((state) => ({
+    activeSection: resolveWorkflowLoadSection(state.activeSection, 'mainMission20'), mainMission20Workflow
   })),
   setSummaryStatsWorkflow: (summaryStatsWorkflow) => set((state) => ({
     activeSection: resolveWorkflowLoadSection(state.activeSection, 'summaryStats'), summaryStatsWorkflow

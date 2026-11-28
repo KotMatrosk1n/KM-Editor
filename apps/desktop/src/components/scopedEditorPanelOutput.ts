@@ -12,6 +12,7 @@ export type ScopedEditorPanelState = WorkflowPanelOutput & {
 
 export const scopedEditorPanelSectionIds = new Set<WorkbenchSection>([
   'angeFight',
+  'mainMission20',
   'bagHook',
   'royalCandy',
   'startingItems',

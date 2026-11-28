@@ -58,6 +58,7 @@ export function WorkflowsSection({
   isSummaryStatsLoading,
   isTypeChartLoading,
   isAngeFightLoading,
+  isMainMission20Loading,
   isRoyalCandyLoading,
   isStartingItemsLoading,
   isNpcItemGiftLoading,
@@ -85,6 +86,7 @@ export function WorkflowsSection({
   onOpenSummaryStatsWorkflow,
   onOpenTypeChartWorkflow,
   onOpenAngeFightWorkflow,
+  onOpenMainMission20,
   onOpenItemsWorkflow,
   onOpenMovesWorkflow,
   onOpenPokemonWorkflow,
@@ -150,6 +152,7 @@ export function WorkflowsSection({
   isSummaryStatsLoading: boolean;
   isTypeChartLoading: boolean;
   isAngeFightLoading: boolean;
+  isMainMission20Loading: boolean;
   isRoyalCandyLoading: boolean;
   isStartingItemsLoading: boolean;
   isNpcItemGiftLoading: boolean;
@@ -177,6 +180,7 @@ export function WorkflowsSection({
   onOpenSummaryStatsWorkflow: () => void;
   onOpenTypeChartWorkflow: () => void;
   onOpenAngeFightWorkflow: () => void;
+  onOpenMainMission20: () => void;
   onOpenItemsWorkflow: () => void;
   onOpenMovesWorkflow: () => void;
   onOpenPokemonWorkflow: () => void;
@@ -247,6 +251,7 @@ export function WorkflowsSection({
   }
 
   const actions: Record<string, WorkflowActionConfig> = {
+    mainMission20: action(t('mainMission20.open'), isMainMission20Loading, onOpenMainMission20),
     angeFight: action('Open Ange Fight', isAngeFightLoading, onOpenAngeFightWorkflow),
     bagHook: action('Open Bag Hook', isBagHookLoading, onOpenBagHookWorkflow),
     battleCafeRewards: action(

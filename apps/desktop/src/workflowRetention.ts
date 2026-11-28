@@ -9,6 +9,7 @@ export const workflowRetentionMinimumRecent = 2;
 
 export const workflowStoreKeyBySection = {
   angeFight: 'angeFightWorkflow',
+  mainMission20: 'mainMission20Workflow',
   bagHook: 'bagHookWorkflow',
   battleCafeRewards: 'battleCafeRewardsWorkflow',
   behavior: 'behaviorWorkflow',
@@ -113,6 +114,7 @@ type WorkflowRetentionLimits = {
 
 const pendingEditSectionByDomain: Readonly<Record<string, RetainedWorkflowSection>> = {
   'workflow.angeFight': 'angeFight',
+  'workflow.main-mission-20': 'mainMission20',
   'workflow.bagHook': 'bagHook',
   'workflow.battleCafeRewards': 'battleCafeRewards',
   'workflow.behavior': 'behavior',

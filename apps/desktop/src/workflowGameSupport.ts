@@ -40,6 +40,7 @@ import { type FashionCatalogWorkflow } from './bridge/fashionCatalogContracts';
 import { type GymUniformRemovalWorkflow } from './bridge/gymUniformRemovalContracts';
 import { type BlueberryWorkflow } from './bridge/blueberryContracts';
 import { type StarmobilesWorkflow } from './bridge/starmobilesContracts';
+import type { MainMission20Workflow } from './bridge/mainMission20Contracts';
 import { type TitanSwapperWorkflow } from './bridge/titanSwapperContracts';
 import { type SummaryStatsWorkflow } from './bridge/summaryStatsContracts';
 import { type MarnieBoostsWorkflow } from './bridge/marnieBoostsContracts';
@@ -78,6 +79,7 @@ export type WorkflowNavigationGroup = {
     | 'viewers'
     | 'editors'
     | 'encountersPokemonSources'
+    | 'mainMissions'
     | 'economy'
     | 'tools'
     | 'hooks'
@@ -112,6 +114,12 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
       'teraRaids',
       'raidBattles'
     ]
+  },
+  {
+    id: 'mainMissions',
+    label: 'Main Missions',
+    labelKey: 'workbench.navigation.mainMissions',
+    sectionIds: ['mainMission20']
   },
   {
     id: 'economy',
@@ -197,6 +205,7 @@ export const sharedStagedEditorSectionIds = new Set<WorkbenchSection>([
   'snacksworth',
   'starmobiles',
   'titanSwapper',
+  'mainMission20',
   'summaryStats',
   'marnieBoosts',
   'shakingTrees',
@@ -246,6 +255,7 @@ export const sharedStagedEditorDomains = new Set([
   'workflow.snacksworth',
   'workflow.starmobiles',
   'workflow.titan-swapper',
+  'workflow.main-mission-20',
   'workflow.summaryStats',
   'workflow.marnieBoosts',
   'workflow.shakingTrees',
@@ -342,6 +352,7 @@ export type LoadedWorkflowStateBySection = {
   snacksworthWorkflow: BlueberryWorkflow | null;
   starmobilesWorkflow: StarmobilesWorkflow | null;
   titanSwapperWorkflow: TitanSwapperWorkflow | null;
+  mainMission20Workflow: MainMission20Workflow | null;
   summaryStatsWorkflow: SummaryStatsWorkflow | null;
   marnieBoostsWorkflow: MarnieBoostsWorkflow | null;
   shakingTreesWorkflow: ShakingTreesWorkflow | null;
@@ -491,6 +502,8 @@ export function getLoadedWorkflowStateForSection(
       return state.snacksworthWorkflow !== null;
     case 'starmobiles':
       return state.starmobilesWorkflow !== null;
+    case 'mainMission20':
+      return state.mainMission20Workflow !== null;
     case 'titanSwapper':
       return state.titanSwapperWorkflow !== null;
     case 'summaryStats':

@@ -14,6 +14,7 @@ using KM.Core.Semantics;
 using KM.Formats.ZA;
 using KM.ZA.Data;
 using KM.ZA.AngeFight;
+using KM.ZA.MainMissions;
 using KM.ZA.Behavior;
 using KM.ZA.DumpImport;
 using KM.ZA.Encounters;
@@ -83,6 +84,7 @@ public sealed class ZaWorkflowService
     private readonly ZaFashionUnlockEditSessionService fashionUnlockEditSessionService;
     private readonly ZaTypeChartWorkflowService typeChartWorkflowService;
     private readonly ZaAngeFightWorkflowService angeFightWorkflowService;
+    private readonly ZaMainMission20WorkflowService mainMission20WorkflowService;
     private readonly ZaDumpImportWorkflowService dumpImportWorkflowService;
     private readonly ZaDumpImportExecutionService dumpImportExecutionService;
     private readonly ZaModMergerWorkflowService modMergerWorkflowService;
@@ -128,6 +130,7 @@ public sealed class ZaWorkflowService
         fashionUnlockWorkflowService = new ZaFashionUnlockWorkflowService();
         fashionUnlockEditSessionService = new ZaFashionUnlockEditSessionService(this.projectWorkspaceService, fashionUnlockWorkflowService);
         angeFightWorkflowService = new ZaAngeFightWorkflowService(fileSource);
+        mainMission20WorkflowService = new ZaMainMission20WorkflowService(this.projectWorkspaceService, fileSource);
         dumpImportWorkflowService = new ZaDumpImportWorkflowService(itemsWorkflowService);
         modMergerWorkflowService = new ZaModMergerWorkflowService(this.projectWorkspaceService);
         itemsEditSessionService = new ZaItemsEditSessionService(
@@ -1299,6 +1302,7 @@ public sealed class ZaWorkflowService
             typeChartWorkflowService.CreateSummary(project),
             fashionUnlockWorkflowService.CreateSummary(project),
             angeFightWorkflowService.CreateSummary(project),
+            mainMission20WorkflowService.CreateSummary(project),
             dumpImportWorkflowService.CreateSummary(project),
             modMergerWorkflowService.CreateSummary(project),
         ]);
@@ -1475,6 +1479,13 @@ public sealed class ZaWorkflowService
         var project = projectWorkspaceService.Open(paths);
         return typeChartWorkflowService.Load(project);
     }
+
+    public ZaMainMission20Workflow LoadMainMission20(ProjectPaths paths) =>
+        mainMission20WorkflowService.Load(paths);
+
+    public ZaMainMission20EditResult StageMainMission20(ProjectPaths paths, EditSession? session,
+        string sourceRevision, IReadOnlyList<ZaMainMission20Update?>? updates) =>
+        mainMission20WorkflowService.Stage(paths, session, sourceRevision, updates);
 
     public ZaAngeFightWorkflow LoadAngeFight(ProjectPaths paths)
     {
@@ -1983,6 +1994,7 @@ public sealed class ZaWorkflowService
             ZaEditSessionDomain.TypeChart => typeChartEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.AngeFight => angeFightEditSessionService.Validate(paths, session),
+            ZaEditSessionDomain.MainMission20 => mainMission20WorkflowService.Validate(paths, session),
             ZaEditSessionDomain.Mixed => CreateUnsupportedMixedValidation(session),
             _ => pokemonEditSessionService.Validate(paths, session),
         };
@@ -2014,6 +2026,7 @@ public sealed class ZaWorkflowService
             ZaEditSessionDomain.TypeChart => typeChartEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.AngeFight => angeFightEditSessionService.CreateChangePlan(paths, session, outputMode),
+            ZaEditSessionDomain.MainMission20 => mainMission20WorkflowService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.Mixed => CreateUnsupportedMixedChangePlan(session),
             _ => pokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
         };
@@ -2046,6 +2059,7 @@ public sealed class ZaWorkflowService
             ZaEditSessionDomain.TypeChart => typeChartEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.AngeFight => angeFightEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
+            ZaEditSessionDomain.MainMission20 => mainMission20WorkflowService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.Mixed => CreateUnsupportedMixedApplyResult(session),
             _ => pokemonEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
         };
@@ -2428,6 +2442,7 @@ public sealed class ZaWorkflowService
             [ZaEditSessionSupport.TypeChartDomain] => ZaEditSessionDomain.TypeChart,
             [ZaFashionUnlockEditSessionService.FashionUnlockEditDomain] => ZaEditSessionDomain.FashionUnlock,
             [ZaEditSessionSupport.AngeFightDomain] => ZaEditSessionDomain.AngeFight,
+            [ZaMainMission20WorkflowService.Domain] => ZaEditSessionDomain.MainMission20,
             _ => ZaEditSessionDomain.Mixed,
         };
     }
@@ -2476,6 +2491,7 @@ public sealed class ZaWorkflowService
             ZaEditSessionSupport.TypeChartDomain => ZaEditSessionDomain.TypeChart,
             ZaFashionUnlockEditSessionService.FashionUnlockEditDomain => ZaEditSessionDomain.FashionUnlock,
             ZaEditSessionSupport.AngeFightDomain => ZaEditSessionDomain.AngeFight,
+            ZaMainMission20WorkflowService.Domain => ZaEditSessionDomain.MainMission20,
             null or "" => ZaEditSessionDomain.None,
             _ => ZaEditSessionDomain.Mixed,
         };
@@ -2494,6 +2510,7 @@ public sealed class ZaWorkflowService
             or ZaEditSessionDomain.Encounters
             or ZaEditSessionDomain.StaticEncounters
             or ZaEditSessionDomain.GiftPokemon
+            or ZaEditSessionDomain.MainMission20
             or ZaEditSessionDomain.TradePokemon;
     }
 
@@ -2601,6 +2618,7 @@ public sealed class ZaWorkflowService
             ZaEditSessionDomain.TypeChart => ZaEditSessionSupport.TypeChartDomain,
             ZaEditSessionDomain.FashionUnlock => ZaFashionUnlockEditSessionService.FashionUnlockEditDomain,
             ZaEditSessionDomain.AngeFight => ZaEditSessionSupport.AngeFightDomain,
+            ZaEditSessionDomain.MainMission20 => ZaMainMission20WorkflowService.Domain,
             _ => string.Empty,
         };
     }
@@ -3052,6 +3070,7 @@ public sealed class ZaWorkflowService
         TypeChart,
         FashionUnlock,
         AngeFight,
+        MainMission20,
         Mixed,
     }
 }

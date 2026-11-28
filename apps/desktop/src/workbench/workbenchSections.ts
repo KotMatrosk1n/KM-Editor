@@ -50,6 +50,7 @@ export const workbenchSections = [
   'shinyRate',
   'typeChart',
   'angeFight',
+  'mainMission20',
   'fairyGymBoosts',
   'marnieBoosts',
   'shakingTrees',

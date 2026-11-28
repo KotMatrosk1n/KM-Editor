@@ -37,6 +37,13 @@ public static class BridgeErrorCodes
     public const string ZaBehaviorSessionInvalid = "KM-ZA-BEHAVIOR-SESSION-INVALID";
     public const string ZaBehaviorPlanStale = "KM-ZA-BEHAVIOR-PLAN-STALE";
     public const string ZaBehaviorApplyFailed = "KM-ZA-BEHAVIOR-APPLY-FAILED";
+    public const string MainMission20SourceUnavailable = "KM-ZA-MAIN-MISSION-20-SOURCE-UNAVAILABLE";
+    public const string MainMission20SourceStale = "KM-ZA-MAIN-MISSION-20-SOURCE-STALE";
+    public const string MainMission20SelectionInvalid = "KM-ZA-MAIN-MISSION-20-SELECTION-INVALID";
+    public const string MainMission20SessionInvalid = "KM-ZA-MAIN-MISSION-20-SESSION-INVALID";
+    public const string MainMission20SessionEmpty = "KM-ZA-MAIN-MISSION-20-SESSION-EMPTY";
+    public const string MainMission20PlanStale = "KM-ZA-MAIN-MISSION-20-PLAN-STALE";
+    public const string MainMission20ApplyFailed = "KM-ZA-MAIN-MISSION-20-APPLY-FAILED";
     public const string DataTruncated = "KM-BRIDGE-DATA-TRUNCATED";
     public const string StoredJsonInvalid = "KM-BRIDGE-STORED-JSON-INVALID";
     public const string ResourceBusy = "KM-BRIDGE-RESOURCE-BUSY";
