@@ -20,8 +20,7 @@ public sealed record SwShSymbolBehaviorFieldSpec(
     string Field,
     int FieldIndex,
     SwShSymbolBehaviorFieldType FieldType,
-    ushort ObjectOffset,
-    bool IsUnusedDefault = false);
+    ushort ObjectOffset);
 
 public sealed record SwShSymbolBehaviorFieldValue(
     string Field,
@@ -42,6 +41,33 @@ public sealed record SwShSymbolBehaviorEntry(
     public float GrassShakeRadius => GetSingle(SwShSymbolBehaviorArchive.GrassShakeRadiusField);
     public ulong Hash1 => GetUInt64(SwShSymbolBehaviorArchive.Hash1Field);
     public ulong Hash2 => GetUInt64(SwShSymbolBehaviorArchive.Hash2Field);
+
+    internal int MoveTypeSourceOffset { get; init; }
+    internal int SpecialLeaveSourceOffset { get; init; }
+
+    public IEnumerable<SwShSymbolBehaviorFieldValue> GetLegacyIdentityFields()
+    {
+        // Persisted v1 edit IDs describe the original 46-slot interpretation.
+        return Fields.Where(field => field.FieldIndex < 46).Select(field => field.FieldIndex switch
+        {
+            14 or 15 => field with
+            {
+                FieldType = SwShSymbolBehaviorFieldType.Byte,
+                Value = unchecked((byte)(int)field.Value),
+            },
+            18 or 32 => field with
+            {
+                FieldType = SwShSymbolBehaviorFieldType.Int32,
+                Value = field.FieldIndex == 18 ? MoveTypeSourceOffset : SpecialLeaveSourceOffset,
+            },
+            30 or 33 or 34 or 35 or 36 => field with
+            {
+                FieldType = SwShSymbolBehaviorFieldType.Int32,
+                Value = BitConverter.SingleToInt32Bits((float)field.Value),
+            },
+            _ => field,
+        });
+    }
 
     public SwShSymbolBehaviorEntry WithField(string field, string value)
     {
@@ -156,7 +182,7 @@ public sealed record SwShSymbolBehaviorEdit(
     string Field,
     string Value);
 
-public sealed record SwShSymbolBehaviorArchive(
+public sealed partial record SwShSymbolBehaviorArchive(
     IReadOnlyList<SwShSymbolBehaviorEntry> Entries)
 {
     public const string Field00 = "field00";
@@ -205,6 +231,7 @@ public sealed record SwShSymbolBehaviorArchive(
     public const string Field43 = "field43";
     public const string Field44 = "field44";
     public const string Field45 = "field45";
+    public const string Field46 = "field46";
 
     public static readonly IReadOnlyList<SwShSymbolBehaviorFieldSpec> FieldSpecs =
     [
@@ -216,17 +243,17 @@ public sealed record SwShSymbolBehaviorArchive(
         new(Hash2Field, 5, SwShSymbolBehaviorFieldType.UInt64, 32),
         new(HitboxRadiusField, 6, SwShSymbolBehaviorFieldType.Single, 40),
         new(Field07, 7, SwShSymbolBehaviorFieldType.Single, 44),
-        new(Field08, 8, SwShSymbolBehaviorFieldType.Single, 48, IsUnusedDefault: true),
+        new(Field08, 8, SwShSymbolBehaviorFieldType.Single, 48),
         new(Field09, 9, SwShSymbolBehaviorFieldType.Single, 52),
         new(FormField, 10, SwShSymbolBehaviorFieldType.Int32, 56),
         new(Field11, 11, SwShSymbolBehaviorFieldType.Byte, 60),
-        new(Field12, 12, SwShSymbolBehaviorFieldType.Byte, 61, IsUnusedDefault: true),
+        new(Field12, 12, SwShSymbolBehaviorFieldType.Byte, 61),
         new(SpeciesIdField, 13, SwShSymbolBehaviorFieldType.Int32, 64),
-        new(Field14, 14, SwShSymbolBehaviorFieldType.Byte, 68, IsUnusedDefault: true),
-        new(Field15, 15, SwShSymbolBehaviorFieldType.Byte, 69, IsUnusedDefault: true),
+        new(Field14, 14, SwShSymbolBehaviorFieldType.Int32, 68),
+        new(Field15, 15, SwShSymbolBehaviorFieldType.Int32, 196),
         new(Field16, 16, SwShSymbolBehaviorFieldType.Single, 72),
         new(Field17, 17, SwShSymbolBehaviorFieldType.Single, 76),
-        new(Field18, 18, SwShSymbolBehaviorFieldType.Int32, 80),
+        new(Field18, 18, SwShSymbolBehaviorFieldType.String, 80),
         new(Field19, 19, SwShSymbolBehaviorFieldType.Single, 84),
         new(Field20, 20, SwShSymbolBehaviorFieldType.Single, 88),
         new(Field21, 21, SwShSymbolBehaviorFieldType.Single, 92),
@@ -236,33 +263,34 @@ public sealed record SwShSymbolBehaviorArchive(
         new(Field25, 25, SwShSymbolBehaviorFieldType.Single, 108),
         new(Field26, 26, SwShSymbolBehaviorFieldType.Single, 112),
         new(GrassShakeRadiusField, 27, SwShSymbolBehaviorFieldType.Single, 116),
-        new(Field28, 28, SwShSymbolBehaviorFieldType.Single, 120, IsUnusedDefault: true),
+        new(Field28, 28, SwShSymbolBehaviorFieldType.Single, 120),
         new(Field29, 29, SwShSymbolBehaviorFieldType.Int32, 124),
-        new(Field30, 30, SwShSymbolBehaviorFieldType.Int32, 128, IsUnusedDefault: true),
+        new(Field30, 30, SwShSymbolBehaviorFieldType.Single, 128),
         new(BehaviorField, 31, SwShSymbolBehaviorFieldType.String, 132),
-        new(Field32, 32, SwShSymbolBehaviorFieldType.Int32, 136),
-        new(Field33, 33, SwShSymbolBehaviorFieldType.Int32, 140, IsUnusedDefault: true),
-        new(Field34, 34, SwShSymbolBehaviorFieldType.Int32, 144, IsUnusedDefault: true),
-        new(Field35, 35, SwShSymbolBehaviorFieldType.Int32, 148, IsUnusedDefault: true),
-        new(Field36, 36, SwShSymbolBehaviorFieldType.Int32, 152, IsUnusedDefault: true),
+        new(Field32, 32, SwShSymbolBehaviorFieldType.String, 136),
+        new(Field33, 33, SwShSymbolBehaviorFieldType.Single, 140),
+        new(Field34, 34, SwShSymbolBehaviorFieldType.Single, 144),
+        new(Field35, 35, SwShSymbolBehaviorFieldType.Single, 148),
+        new(Field36, 36, SwShSymbolBehaviorFieldType.Single, 152),
         new(Field37, 37, SwShSymbolBehaviorFieldType.Single, 156),
         new(Field38, 38, SwShSymbolBehaviorFieldType.Single, 160),
         new(Field39, 39, SwShSymbolBehaviorFieldType.Single, 164),
         new(Field40, 40, SwShSymbolBehaviorFieldType.Single, 168),
         new(Field41, 41, SwShSymbolBehaviorFieldType.Single, 172),
-        new(Field42, 42, SwShSymbolBehaviorFieldType.Single, 176, IsUnusedDefault: true),
-        new(Field43, 43, SwShSymbolBehaviorFieldType.Single, 180, IsUnusedDefault: true),
+        new(Field42, 42, SwShSymbolBehaviorFieldType.Single, 176),
+        new(Field43, 43, SwShSymbolBehaviorFieldType.Single, 180),
         new(Field44, 44, SwShSymbolBehaviorFieldType.Single, 184),
         new(Field45, 45, SwShSymbolBehaviorFieldType.Single, 188),
+        new(Field46, 46, SwShSymbolBehaviorFieldType.Byte, 192),
     ];
 
-    private const int EntryFieldCount = 46;
+    private const int EntryFieldCount = 47;
     private const int EntryVtableLength = sizeof(ushort) * 2 + (EntryFieldCount * sizeof(ushort));
-    private const int EntryObjectLength = 192;
+    private const int EntryObjectLength = 200;
 
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
-    private static readonly HashSet<int> RequiredStringFieldIndexes = [2, 22, 31];
+    private static readonly HashSet<int> RequiredStringFieldIndexes = [2, 18, 22, 31, 32];
 
     private static readonly IReadOnlyList<FieldLayout> KnownEntryFieldLayouts = FieldSpecs
         .Select(spec => new FieldLayout(spec.FieldIndex, GetFieldSize(spec.FieldType), GetFieldAlignment(spec.FieldType)))
@@ -273,6 +301,8 @@ public sealed record SwShSymbolBehaviorArchive(
     private IReadOnlyList<SourceBehaviorEntryLayout>? SourceEntryLayouts { get; init; }
 
     private IReadOnlyList<SwShSymbolBehaviorEntry>? SourceEntries { get; init; }
+
+    public int RecoveredLegacyRowCount { get; private init; }
 
     public static SwShSymbolBehaviorArchive Parse(ReadOnlySpan<byte> data)
     {
@@ -292,7 +322,9 @@ public sealed record SwShSymbolBehaviorArchive(
         }
     }
 
-    private static SwShSymbolBehaviorArchive ParseCore(ReadOnlySpan<byte> data)
+    private static SwShSymbolBehaviorArchive ParseCore(
+        ReadOnlySpan<byte> data,
+        IReadOnlyDictionary<int, SwShSymbolBehaviorEntry>? legacyRows = null)
     {
         if (data.Length < sizeof(uint))
         {
@@ -362,7 +394,12 @@ public sealed record SwShSymbolBehaviorArchive(
                         $"symbol behavior entry {entryIndex} field {spec.FieldIndex}"));
             }
 
-            entries[entryIndex] = new SwShSymbolBehaviorEntry(entryIndex, values);
+            var legacyRow = legacyRows?.GetValueOrDefault(entryIndex);
+            entries[entryIndex] = new SwShSymbolBehaviorEntry(entryIndex, values)
+            {
+                MoveTypeSourceOffset = legacyRow?.MoveTypeSourceOffset ?? ReadTableInt32(data, table, 18),
+                SpecialLeaveSourceOffset = legacyRow?.SpecialLeaveSourceOffset ?? ReadTableInt32(data, table, 32),
+            };
             entryLayouts[entryIndex] = new SourceBehaviorEntryLayout(
                 vectorElementOffset,
                 tableOffset,
@@ -376,6 +413,7 @@ public sealed record SwShSymbolBehaviorArchive(
             SourceData = data.ToArray(),
             SourceEntryLayouts = entryLayouts,
             SourceEntries = CloneEntries(entries),
+            RecoveredLegacyRowCount = legacyRows?.Count ?? 0,
         };
     }
 
@@ -545,9 +583,9 @@ public sealed record SwShSymbolBehaviorArchive(
 
                 effectiveLayout = AppendMaterializedEntry(
                     output,
-                    sourceLayout.VectorElementOffset,
-                    sourceLayout.VtableLength,
-                    sourceEntries[entryIndex]);
+                    sourceLayout,
+                    sourceEntries[entryIndex],
+                    entryEdits.Select(edit => edit.Key.FieldIndex).ToHashSet());
             }
             else if (IsEntryAliased(layouts, entryIndex))
             {
@@ -574,11 +612,13 @@ public sealed record SwShSymbolBehaviorArchive(
 
     private static EffectiveBehaviorEntryLayout AppendMaterializedEntry(
         List<byte> output,
-        int vectorElementOffset,
-        int sourceVtableLength,
-        SwShSymbolBehaviorEntry entry)
+        SourceBehaviorEntryLayout sourceLayout,
+        SwShSymbolBehaviorEntry entry,
+        IReadOnlySet<int> editedFields)
     {
-        var vtableLength = Math.Max(sourceVtableLength, EntryVtableLength);
+        var vtableLength = Math.Max(sourceLayout.VtableLength, EntryVtableLength);
+        var presentSpecs = FieldSpecs.Where(spec =>
+            sourceLayout.GetFieldValueOffset(spec.FieldIndex) >= 0 || editedFields.Contains(spec.FieldIndex)).ToArray();
         while (((output.Count + vtableLength) % sizeof(ulong)) != 0)
         {
             output.Add(0);
@@ -592,7 +632,7 @@ public sealed record SwShSymbolBehaviorArchive(
         BinaryPrimitives.WriteUInt16LittleEndian(
             vtable.AsSpan(sizeof(ushort), sizeof(ushort)),
             EntryObjectLength);
-        foreach (var spec in FieldSpecs)
+        foreach (var spec in presentSpecs)
         {
             BinaryPrimitives.WriteUInt16LittleEndian(
                 vtable.AsSpan((sizeof(ushort) * 2) + (spec.FieldIndex * sizeof(ushort)), sizeof(ushort)),
@@ -606,23 +646,30 @@ public sealed record SwShSymbolBehaviorArchive(
             table.AsSpan(0, sizeof(int)),
             checked(tableOffset - vtableOffset));
         var valuesByField = CreateValuesByField(entry);
-        foreach (var spec in FieldSpecs.Where(spec => spec.FieldType != SwShSymbolBehaviorFieldType.String))
+        foreach (var spec in presentSpecs.Where(spec => spec.FieldType != SwShSymbolBehaviorFieldType.String))
         {
             WriteValueToSpan(table, spec.ObjectOffset, spec.FieldType, valuesByField[spec.Field].Value);
         }
 
         output.AddRange(table);
-        foreach (var spec in FieldSpecs.Where(spec => spec.FieldType == SwShSymbolBehaviorFieldType.String))
+        foreach (var spec in presentSpecs.Where(spec => spec.FieldType == SwShSymbolBehaviorFieldType.String))
         {
             var stringOffset = AppendString(output, (string)valuesByField[spec.Field].Value);
             PatchUOffset(output, checked(tableOffset + spec.ObjectOffset), stringOffset);
         }
 
-        PatchUOffset(output, vectorElementOffset, tableOffset);
+        var fieldOffsets = new int[EntryFieldCount];
+        Array.Fill(fieldOffsets, -1);
+        foreach (var spec in presentSpecs)
+        {
+            fieldOffsets[spec.FieldIndex] = checked(tableOffset + spec.ObjectOffset);
+        }
+
+        PatchUOffset(output, sourceLayout.VectorElementOffset, tableOffset);
         return new EffectiveBehaviorEntryLayout(
-            vectorElementOffset,
+            sourceLayout.VectorElementOffset,
             tableOffset,
-            FieldSpecs.Select(spec => checked(tableOffset + spec.ObjectOffset)).ToArray());
+            fieldOffsets);
     }
 
     private static Dictionary<string, SwShSymbolBehaviorFieldValue> CreateValuesByField(

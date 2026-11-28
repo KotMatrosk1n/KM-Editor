@@ -81,4 +81,6 @@ public sealed record SwShBehaviorWorkflow(
 {
     internal IReadOnlyList<SwShPersonalRecord> PersonalRecords { get; init; } =
         Array.Empty<SwShPersonalRecord>();
+
+    internal bool RequiresLegacyRecovery { get; init; }
 }

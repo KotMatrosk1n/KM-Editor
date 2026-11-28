@@ -331,6 +331,7 @@ export const zaTrainerIdentityDiagnosticCodes = {
 } as const satisfies Record<string, KmErrorCode>;
 
 export const diagnosticErrorCodes = {
+  swshBehaviorLegacyOutputRecovered: "KM-SWSH-BEHAVIOR-LEGACY-OUTPUT-RECOVERED",
   swshDynamaxAdventuresHiddenRowChanged:
     "KM-SWSH-DYNAMAX-ADVENTURES-HIDDEN-ROW-CHANGED",
   swshDynamaxAdventuresRowApiDomainInvalid:

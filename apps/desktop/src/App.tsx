@@ -19563,10 +19563,17 @@ export function App({
       );
     }
     if (behaviorWorkflow && refreshSections.has('behavior')) {
+      const recoveredLegacyOutput = behaviorWorkflow.diagnostics.some(
+        (diagnostic) => diagnostic.code === diagnosticErrorCodes.swshBehaviorLegacyOutputRecovered
+      );
       reloadTasks.set(
         'behavior',
         async () => {
-          const response = await bridge.loadBehaviorWorkflow({ paths, entryIndices: !isSwordShieldProject ? undefined : appliedRecordIndices(appliedEdits, 'workflow.behavior', 'behavior') });
+          // Repair can rewrite rows outside the edit session, changing their source IDs.
+          const entryIndices = isSwordShieldProject && !recoveredLegacyOutput
+            ? appliedRecordIndices(appliedEdits, 'workflow.behavior', 'behavior')
+            : undefined;
+          const response = await bridge.loadBehaviorWorkflow({ paths, entryIndices });
           if (canCommitRefresh()) {
             setBehaviorWorkflow(response.workflow);
           }
@@ -51166,6 +51173,25 @@ function BehaviorSection({
 }) {
   const { translateLiteral } = useLocalization();
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
+  const duplicateRows = useMemo(() => {
+    const keys = new Map<string, { firstIndex: number; count: number }>();
+    for (const entry of workflow?.entries ?? []) {
+      const key = `${entry.speciesId}:${entry.form}`;
+      const match = keys.get(key);
+      keys.set(key, {
+        firstIndex: Math.min(entry.index, match?.firstIndex ?? entry.index),
+        count: (match?.count ?? 0) + 1
+      });
+    }
+    return keys;
+  }, [workflow?.entries]);
+  const getDuplicateStatus = (entry: BehaviorEntryRecord) => {
+    const match = duplicateRows.get(`${entry.speciesId}:${entry.form}`);
+    if (!match || match.count < 2) {
+      return null;
+    }
+    return entry.index === match.firstIndex ? 'First matching row' : 'Shadowed by earlier row';
+  };
   const filteredEntries =
     workflow?.entries.filter((entry) => {
       if (!normalizedSearch) {
@@ -51179,10 +51205,11 @@ function BehaviorSection({
           (candidate) => candidate.value === fieldValue.value
         );
         const hasLocalizedOption =
-          field?.field === 'behavior' || field?.field === 'form';
+          field?.field === 'behavior' || field?.field === 'form' || field?.field === 'field25';
 
         return [
           fieldValue.field,
+          field ? translateLiteral(field.label) : '',
           fieldValue.value,
           option?.label ?? '',
           hasLocalizedOption && option ? translateLiteral(option.label) : ''
@@ -51193,6 +51220,7 @@ function BehaviorSection({
         entry.behavior,
         entry.behaviorLabel,
         translateLiteral(entry.behaviorLabel),
+        translateLiteral(getDuplicateStatus(entry) ?? ''),
         entry.form.toString(),
         formatBehaviorSpecies(entry),
         formatBehaviorNumber(entry.grassShakeRadius),
@@ -51239,7 +51267,7 @@ function BehaviorSection({
           <SelectedBehaviorPanel
             browser={<div className="raid-rewards-table" role="table" aria-label={translateLiteral('Behavior entries')}>
               <div className="raid-rewards-row raid-rewards-row-heading" role="row">
-                {['Pokemon', 'Behavior', 'Hitbox radius', 'Grass shake radius', 'Status'].map(label =>
+                {['Pokemon', 'Default AI Profile', 'Base Encounter Radius', 'Follower Model Scale (%)', 'Status'].map(label =>
                   <span role="columnheader" key={label}>{translateLiteral(label)}</span>)}
               </div>
               <VirtualTableBody items={filteredEntries} getKey={entry => entry.entryId} resetKey={normalizedSearch}
@@ -51250,7 +51278,12 @@ function BehaviorSection({
                   <span role="cell">{translateLiteral(entry.behaviorLabel)}</span>
                   <span role="cell">{formatBehaviorNumber(entry.hitboxRadius)}</span>
                   <span role="cell">{formatBehaviorNumber(entry.grassShakeRadius)}</span>
-                  <span role="cell">{pendingBehaviorEntryIds.has(entry.entryId) ? translateLiteral('Pending changes') : '—'}</span>
+                  <span role="cell">
+                    {[getDuplicateStatus(entry), pendingBehaviorEntryIds.has(entry.entryId) ? 'Pending changes' : null]
+                      .filter((status): status is string => status !== null)
+                      .map(status => translateLiteral(status))
+                      .join(', ') || '—'}
+                  </span>
                 </InteractiveTableRow>} />
               {!filteredEntries.length ? <p className="empty-copy">{translateLiteral('No matching behavior entries.')}</p> : null}
             </div>}
@@ -51287,6 +51320,7 @@ function BehaviorSection({
             onStart={onStartEditSession}
           />}
             canEditBehavior={canEditBehavior}
+            duplicateStatus={selectedEntry ? getDuplicateStatus(selectedEntry) : null}
             editSession={editSession}
             entry={selectedEntry}
             fields={workflow.fields}
@@ -51308,6 +51342,7 @@ function BehaviorSection({
 
 function SelectedBehaviorPanel({
   browser, browserControls, sessionBar, canEditBehavior,
+  duplicateStatus,
   editSession,
   entry,
   fields,
@@ -51319,6 +51354,7 @@ function SelectedBehaviorPanel({
   browserControls: ReactNode;
   sessionBar: ReactNode;
   canEditBehavior: boolean;
+  duplicateStatus: string | null;
   editSession: EditSession | null;
   entry: BehaviorEntryRecord | null;
   fields: BehaviorField[];
@@ -51497,6 +51533,9 @@ function SelectedBehaviorPanel({
       </EditorWorkspaceHeader>
       {entry ? <EditorWorkspaceHeader afterBrowser>
         <EditorRecordHeading name={formatBehaviorSpecies(entry)} id={entry.index} />
+        {duplicateStatus ? <p className="field-note">
+          {translateLiteral(duplicateStatus)}. {translateLiteral('The game uses the first row matching this species and form.')}
+        </p> : null}
       </EditorWorkspaceHeader> : null}
       {entry ? behaviorFieldGroups.map(group => <EditorWorkspaceSection
         key={group.group} id={group.group} label={translateLiteral(group.group)}
@@ -51518,9 +51557,7 @@ function SelectedBehaviorPanel({
                       );
                       const isDirty = draftValue !== currentValue;
                       const isInvalid =
-                        !field.isReadOnly &&
-                        isDirty &&
-                        draftState.normalizedValue === null;
+                        behaviorDraftSummary.invalidFields.some((issue) => issue.field === field.field);
                       const isChanged =
                         !field.isReadOnly && isDirty && draftState.normalizedValue !== null;
                       const isDisabled =
@@ -51530,7 +51567,9 @@ function SelectedBehaviorPanel({
                       const statusText = field.isReadOnly
                         ? field.description || 'Read-only'
                         : isInvalid
-                          ? getBehaviorFieldValidationText(field, fieldOptions, draftValue)
+                          ? draftState.normalizedValue === null
+                            ? getBehaviorFieldValidationText(field, fieldOptions, draftValue)
+                            : 'Maximum wait must be greater than minimum wait.'
                           : isChanged
                             ? 'Changed'
                             : null;
@@ -51563,7 +51602,7 @@ function SelectedBehaviorPanel({
                               ariaLabel={localizedBehaviorFieldLabel}
                               data-km-source-site="behavior-field-option"
                               data-localization-ignore={
-                                field.field === 'behavior' || field.field === 'form'
+                                field.field === 'behavior' || field.field === 'form' || field.field === 'field25'
                                   ? undefined
                                   : 'true'
                               }
@@ -51571,7 +51610,7 @@ function SelectedBehaviorPanel({
                               id={`behavior-field-${field.field}`}
                               isFiniteCatalog
                               localizeOptions={
-                                field.field === 'behavior' || field.field === 'form'
+                                field.field === 'behavior' || field.field === 'form' || field.field === 'field25'
                               }
                               onChange={(value) => handleBehaviorDraftChange(field, value)}
                               options={addBehaviorDraftFallbackOption(
@@ -51618,11 +51657,11 @@ function SelectedBehaviorPanel({
               <dd data-localization-ignore="true">{formatBehaviorSpecies(entry)}</dd>
             </div>
             <div>
-              <dt>{translateLiteral('Behavior')}</dt>
+              <dt>{translateLiteral('Default AI Profile')}</dt>
               <dd>{translateLiteral(entry.behaviorLabel)}</dd>
             </div>
             <div>
-              <dt>{translateLiteral('Model anchor')}</dt>
+              <dt>{translateLiteral('Effect Attachment Node')}</dt>
               <dd data-localization-ignore={entry.modelPart ? 'true' : undefined}>
                 {entry.modelPart || translateLiteral('n/a')}
               </dd>
@@ -65394,21 +65433,12 @@ function groupBehaviorFields(fields: BehaviorField[]) {
   }
 
   return groups
-    .map((group, index) => ({ ...group, index }))
-    .sort((left, right) => {
-      const leftIsBehavior = left.group === 'Behavior';
-      const rightIsBehavior = right.group === 'Behavior';
-
-      if (leftIsBehavior !== rightIsBehavior) {
-        return leftIsBehavior ? -1 : 1;
-      }
-
-      return left.index - right.index;
-    })
-    .map((orderedGroup) => ({
-      group: orderedGroup.group,
-      fields: orderedGroup.fields
-    }));
+    .map((group) => ({
+      group,
+      order: group.group === 'Behavior' ? 0 : group.fields.some((field) => !field.isReadOnly) ? 1 : 2
+    }))
+    .sort((left, right) => left.order - right.order)
+    .map(({ group }) => group);
 }
 
 function createBehaviorDraftDefaults(fields: BehaviorField[], entry: BehaviorEntryRecord) {
@@ -65548,6 +65578,17 @@ function getBehaviorDraftSummary(
         label: field.label,
         value: draftState.normalizedValue
       });
+    }
+  }
+
+  const changedMaximum = changedFields.find((change) => change.field === 'field39');
+  const changedMinimum = changedFields.find((change) => change.field === 'field40');
+  const changedWait = changedMaximum ?? changedMinimum;
+  if (changedWait && !invalidFields.some((issue) => issue.field === 'field39' || issue.field === 'field40')) {
+    const maximum = Number(changedMaximum?.value ?? getBehaviorEntryFieldValue(entry, 'field39'));
+    const minimum = Number(changedMinimum?.value ?? getBehaviorEntryFieldValue(entry, 'field40'));
+    if (!(Math.trunc(maximum) > Math.trunc(minimum))) {
+      invalidFields.push(changedWait);
     }
   }
 

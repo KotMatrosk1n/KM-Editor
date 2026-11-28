@@ -18,6 +18,7 @@ public sealed class SwShBehaviorWorkflowService
     public const string BehaviorEditDomain = "workflow.behavior";
     public const string BehaviorDataPath = "romfs/bin/field/param/symbol_encount_mons_param/symbol_encount_mons_param.bin";
     public const string EnglishSpeciesNamePath = "romfs/bin/message/English/common/monsname.dat";
+    private const string LegacyOutputRecoveredCode = "KM-SWSH-BEHAVIOR-LEGACY-OUTPUT-RECOVERED";
 
     public const double MinimumNumberValue = -1_000_000;
     public const double MaximumNumberValue = 1_000_000;
@@ -35,123 +36,181 @@ public sealed class SwShBehaviorWorkflowService
         SwShSymbolBehaviorArchive.ModelPartField,
         SwShSymbolBehaviorArchive.HitboxRadiusField,
         SwShSymbolBehaviorArchive.GrassShakeRadiusField,
+        SwShSymbolBehaviorArchive.Field03,
+        SwShSymbolBehaviorArchive.Field07,
+        SwShSymbolBehaviorArchive.Field08,
+        SwShSymbolBehaviorArchive.Field09,
+        SwShSymbolBehaviorArchive.Field19,
+        SwShSymbolBehaviorArchive.Field20,
+        SwShSymbolBehaviorArchive.Field21,
+        SwShSymbolBehaviorArchive.Field25,
+        SwShSymbolBehaviorArchive.Field26,
+        SwShSymbolBehaviorArchive.Field33,
+        SwShSymbolBehaviorArchive.Field34,
+        SwShSymbolBehaviorArchive.Field35,
+        SwShSymbolBehaviorArchive.Field36,
+        SwShSymbolBehaviorArchive.Field37,
+        SwShSymbolBehaviorArchive.Field38,
+        SwShSymbolBehaviorArchive.Field39,
+        SwShSymbolBehaviorArchive.Field40,
+        SwShSymbolBehaviorArchive.Field41,
+        SwShSymbolBehaviorArchive.Field44,
     };
+
+    private static readonly IReadOnlyList<SwShBehaviorFieldOption> SurfFollowOptions =
+    [
+        new("0", "Wait"),
+        new("1", "Normal follow (1)"),
+        new("2", "Normal follow (2)"),
+        new("3", "Follow without appeal or roar"),
+        new("4", "Follow without appeal"),
+        new("5", "Run only"),
+    ];
 
     private static readonly IReadOnlyDictionary<string, BehaviorFieldMapping> FieldMappings =
         new Dictionary<string, BehaviorFieldMapping>(StringComparer.Ordinal)
         {
             [SwShSymbolBehaviorArchive.Field00] = new(
-                "Likely Scale X Multiplier",
-                "Model / Offset",
-                "Most vanilla entries use 1.0, matching a model scale multiplier slot. Likely, but read-only until the loader mapping is confirmed."),
+                "Raw Field 00", "Raw Fields",
+                "The game copies this float into the actor. Its gameplay effect is unconfirmed."),
             [SwShSymbolBehaviorArchive.Field01] = new(
-                "Likely Scale Y Multiplier",
-                "Model / Offset",
-                "Most vanilla entries use 1.0, matching a second model scale multiplier slot. Likely, but read-only until the loader mapping is confirmed."),
+                "Raw Field 01", "Raw Fields",
+                "The game copies this float into the actor. Its gameplay effect is unconfirmed."),
+            [SwShSymbolBehaviorArchive.ModelPartField] = new(
+                "Effect Attachment Node", "Effects",
+                "Model rig node used to position attached effects. If the node is absent, the game uses the attachment transform."),
             [SwShSymbolBehaviorArchive.Field03] = new(
-                "Likely Model Scale",
-                "Model / Offset",
-                "Varies with species visual size across the vanilla table. Likely model scale tuning, but read-only until the loader mapping is confirmed."),
+                "Effect Scale", "Effects",
+                "Uniform scale multiplier for attached effects. The encounter pop effect clamps this multiplier to 1.0 through 1.6."),
+            [SwShSymbolBehaviorArchive.Hash1Field] = new(
+                "Effect 1 ID", "Effects",
+                "Hashed identifier for the first effect. Field AI can start and stop this effect."),
+            [SwShSymbolBehaviorArchive.Hash2Field] = new(
+                "Effect 2 ID", "Effects",
+                "Hashed identifier for the second effect. The shipped field AI does not start or stop this effect."),
+            [SwShSymbolBehaviorArchive.HitboxRadiusField] = new(
+                "Base Encounter Radius", "Encounter Collider",
+                "A positive value sets the native encounter collider radius. Zero uses the actor default. Field AI can change the resulting radius."),
             [SwShSymbolBehaviorArchive.Field07] = new(
-                "Likely Rare Position Offset",
-                "Model / Offset",
-                "Only a handful of vanilla entries use this signed offset-like value. Exact target is not confirmed, so it stays read-only."),
-            [SwShSymbolBehaviorArchive.Field08] = CreateUnusedMapping("08"),
+                "Encounter Center X", "Encounter Collider",
+                "X offset of the encounter collider center. Water and sky profiles can replace the center."),
+            [SwShSymbolBehaviorArchive.Field08] = new(
+                "Encounter Center Y", "Encounter Collider",
+                "Y offset of the encounter collider center. Water and sky profiles can replace the center."),
             [SwShSymbolBehaviorArchive.Field09] = new(
-                "Likely Height Offset",
-                "Model / Offset",
-                "Common signed offset-like value used by many entries. Likely vertical placement or collision offset tuning, but read-only until confirmed."),
+                "Encounter Center Z", "Encounter Collider",
+                "Z offset of the encounter collider center. Water and sky profiles can replace the center."),
+            [SwShSymbolBehaviorArchive.FormField] = new(
+                "Form", "Identity",
+                "Exact form in the configuration key. The game uses the first row matching species and form and has no fallback to form 0."),
             [SwShSymbolBehaviorArchive.Field11] = new(
-                "Likely Watch/Hearing Flag",
-                "Watch / Reaction",
-                "Sparse byte flag. Native AI exposes watch and hearing boolean getters, but this exact FlatBuffer slot is not proven, so it stays read-only."),
-            [SwShSymbolBehaviorArchive.Field12] = CreateUnusedMapping("12"),
-            [SwShSymbolBehaviorArchive.Field14] = CreateUnusedMapping("14"),
-            [SwShSymbolBehaviorArchive.Field15] = CreateUnusedMapping("15"),
+                "Has Hearing", "Field AI Getters",
+                "The game exposes this flag to Lua. The shipped field AI does not read it."),
+            [SwShSymbolBehaviorArchive.Field12] = new(
+                "Has Whistle Hearing", "Field AI Getters",
+                "The game exposes this flag to Lua. The shipped field AI checks the player's whistle directly."),
+            [SwShSymbolBehaviorArchive.SpeciesIdField] = new(
+                "Species", "Identity",
+                "Species in the configuration key. The first row matching species and form supplies the configuration for a pokemon chosen by the spawn."),
+            [SwShSymbolBehaviorArchive.Field14] = new(
+                "Motion 1", "Field AI Getters",
+                "Integer returned by GetMotion1. The shipped field AI does not read it."),
+            [SwShSymbolBehaviorArchive.Field15] = new(
+                "Motion 2", "Field AI Getters",
+                "Integer returned by GetMotion2. The shipped field AI does not read it."),
             [SwShSymbolBehaviorArchive.Field16] = new(
-                "Likely Scale Tuning A",
-                "Model / Offset",
-                "Multiplier-shaped value that is 1.0 for almost every vanilla entry. Likely scale or offset tuning, but read-only until confirmed."),
+                "Raw Field 16", "Raw Fields",
+                "The game copies this float into the actor. Its gameplay effect is unconfirmed."),
             [SwShSymbolBehaviorArchive.Field17] = new(
-                "Likely Scale Tuning B",
-                "Model / Offset",
-                "Multiplier-shaped value that is 1.0 for almost every vanilla entry. Likely paired scale or offset tuning, but read-only until confirmed."),
+                "Raw Field 17", "Raw Fields",
+                "The game copies this float into the actor. Its gameplay effect is unconfirmed."),
             [SwShSymbolBehaviorArchive.Field18] = new(
-                "Likely Movement Frame Count",
-                "Movement Timing",
-                "Frame-count-shaped integer range in vanilla data. Likely movement or animation timing, but read-only until the runtime loader mapping is proven."),
+                "Move Type", "Field AI Getters",
+                "Text returned by GetMoveType. The shipped field AI does not read it."),
             [SwShSymbolBehaviorArchive.Field19] = new(
-                "Likely Offset Tuning A",
-                "Model / Offset",
-                "Sparse signed offset-like value. It appears to tune placement or collision for special body shapes, but the exact target is not confirmed."),
+                "Ground Height Offset", "Position Offsets",
+                "Offset added to the actor's world Y position when ground behavior enables it."),
             [SwShSymbolBehaviorArchive.Field20] = new(
-                "Likely Offset Tuning B",
-                "Model / Offset",
-                "Sparse signed offset-like value with large overrides on a few entries. It stays read-only until the exact runtime use is confirmed."),
+                "Sky Height Offset", "Position Offsets",
+                "Offset added to spawn Y when sky behavior enables it."),
             [SwShSymbolBehaviorArchive.Field21] = new(
-                "Likely Water Height Offset",
-                "Model / Offset",
-                "Water and floating entries carry signed height offsets here, and Lua uses GetOffsetWaterParam for water collision and event offsets. Likely, but read-only until the loader mapping is confirmed."),
+                "Water Height Offset", "Position Offsets",
+                "Offset added to spawn Y when water behavior enables it. Water AI also uses its negative for the collider center offsets."),
+            [SwShSymbolBehaviorArchive.InternalSpeciesNameField] = new(
+                "Internal Species Name", "Identity",
+                "Internal name stored in the archive. The game looks up rows by numeric species and form."),
             [SwShSymbolBehaviorArchive.Field23] = new(
-                "Likely Movement Tuning A",
-                "Movement Timing",
-                "Default 8.0 on most entries. Likely movement or wait timing tuning, but read-only until the exact native getter mapping is confirmed."),
+                "Random Move Frame Maximum", "Field AI Getters",
+                "Value returned as an integer by GetRandomMoveFrameMax. The shipped field AI does not read it."),
             [SwShSymbolBehaviorArchive.Field24] = new(
-                "Likely Movement Tuning B",
-                "Movement Timing",
-                "Default 5.0 on most entries. Likely paired movement or wait timing tuning, but read-only until confirmed."),
+                "Random Move Frame Minimum", "Field AI Getters",
+                "Value returned as an integer by GetRandomMoveFrameMin. The shipped field AI does not read it."),
             [SwShSymbolBehaviorArchive.Field25] = new(
-                "Likely Motion Mode",
-                "Movement Timing",
-                "Small enum-like value from 0 to 5 in vanilla data. Likely selects a motion or wait behavior variant, but the exact mode table is not confirmed."),
+                "Surf Follow Mode", "Follower",
+                "Controls how the follower profile reacts while the player surfs."),
             [SwShSymbolBehaviorArchive.Field26] = new(
-                "Likely Event Collision Radius",
-                "Watch / Collision",
-                "Sparse radius-like value separate from the main hitbox radius. Likely event or encounter collision tuning, but read-only until confirmed."),
-            [SwShSymbolBehaviorArchive.Field28] = CreateUnusedMapping("28"),
+                "Follower Distance Adjustment", "Follower",
+                "A signed amount added to the follower's follow distance and encounter radius."),
+            [SwShSymbolBehaviorArchive.GrassShakeRadiusField] = new(
+                "Follower Model Scale (%)", "Follower",
+                "Uniform model scale when the follower profile applies it. 145 means 145% of base scale. Zero uses base scale."),
+            [SwShSymbolBehaviorArchive.Field28] = new(
+                "Reaction Parameter 3", "Field AI Getters",
+                "Value returned by GetReactionParam3. The shipped field AI does not read it."),
             [SwShSymbolBehaviorArchive.Field29] = new(
-                "Likely Motion Variant",
-                "Movement Timing",
-                "Small enum-like value from 0 to 3 in vanilla data. Likely selects a motion variant, but the exact native use is not confirmed."),
-            [SwShSymbolBehaviorArchive.Field30] = CreateUnusedMapping("30"),
+                "Reaction State", "Field AI Getters",
+                "Integer returned by GetReactionState. The shipped field AI does not read it."),
+            [SwShSymbolBehaviorArchive.Field30] = new(
+                "Reaction Time", "Field AI Getters",
+                "Value returned by GetReactionTime. The shipped field AI does not read it."),
+            [SwShSymbolBehaviorArchive.BehaviorField] = new(
+                "Default AI Profile", "Behavior",
+                "Case-sensitive field AI profile for this row. A spawn placement can override it."),
             [SwShSymbolBehaviorArchive.Field32] = new(
-                "Likely Animation Frame Baseline",
-                "Movement Timing",
-                "Two common frame-like values, 48 and 52, dominate the vanilla table. Likely animation timing baseline, but read-only until confirmed."),
-            [SwShSymbolBehaviorArchive.Field33] = CreateUnusedMapping("33"),
-            [SwShSymbolBehaviorArchive.Field34] = CreateUnusedMapping("34"),
-            [SwShSymbolBehaviorArchive.Field35] = CreateUnusedMapping("35"),
-            [SwShSymbolBehaviorArchive.Field36] = CreateUnusedMapping("36"),
+                "Special Leave", "Field AI Getters",
+                "Text returned by GetSpecialLeave. The shipped field AI does not read it."),
+            [SwShSymbolBehaviorArchive.Field33] = new(
+                "Touch Radius", "Touch Collider",
+                "A positive value sets the separate native touch collider radius. Zero uses the actor default. Field AI can change the resulting radius."),
+            [SwShSymbolBehaviorArchive.Field34] = new(
+                "Touch Center X", "Touch Collider",
+                "X offset of the touch collider center. Water and sky profiles can replace the center."),
+            [SwShSymbolBehaviorArchive.Field35] = new(
+                "Touch Center Y", "Touch Collider",
+                "Y offset of the touch collider center. Water and sky profiles can replace the center."),
+            [SwShSymbolBehaviorArchive.Field36] = new(
+                "Touch Center Z", "Touch Collider",
+                "Z offset of the touch collider center. Water and sky profiles can replace the center."),
             [SwShSymbolBehaviorArchive.Field37] = new(
-                "Likely Turn Speed",
-                "Movement Timing",
-                "Small speed-like values match the native AI's turn-speed getter pattern. Likely turn speed, but read-only until the FlatBuffer-to-runtime copy is proven."),
+                "Turn Limit (Degrees)", "Behavior",
+                "Maximum turn angle per steering update. A limit of 180 allows an immediate turn in the normal steering path."),
             [SwShSymbolBehaviorArchive.Field38] = new(
-                "Likely Move Frame Minimum",
-                "Movement Timing",
-                "Constant 25.0 in vanilla data. Likely a movement frame minimum or wait default, but the exact getter slot is not confirmed."),
+                "Random Action Chance (%)", "Behavior",
+                "Whole percent chance when the active AI profile rolls for a random action."),
             [SwShSymbolBehaviorArchive.Field39] = new(
-                "Likely Watch Angle",
-                "Watch / Reaction",
-                "Angle-shaped values such as 60, 270, and 300 appear here. Likely watch-out angle tuning, but read-only until confirmed."),
+                "Random Action Wait Maximum", "Behavior",
+                "Exclusive upper bound in AI update ticks. It must be greater than the minimum."),
             [SwShSymbolBehaviorArchive.Field40] = new(
-                "Likely Wait Frequency",
-                "Movement Timing",
-                "Mostly 45.0 with high overrides on a few entries. Likely wait or movement timing tuning, but the exact use is not confirmed."),
+                "Random Action Wait Minimum", "Behavior",
+                "Inclusive lower bound in AI update ticks. It must be less than the maximum."),
             [SwShSymbolBehaviorArchive.Field41] = new(
-                "Likely Wait Frame",
-                "Movement Timing",
-                "Constant 45.0 in vanilla data. Likely a wait-frame default, but read-only until confirmed."),
-            [SwShSymbolBehaviorArchive.Field42] = CreateUnusedMapping("42"),
-            [SwShSymbolBehaviorArchive.Field43] = CreateUnusedMapping("43"),
+                "Sight Half-Angle (Degrees)", "Behavior",
+                "Horizontal sight extends this angle to either side of the actor's facing direction. Zero disables this sight check."),
+            [SwShSymbolBehaviorArchive.Field42] = new(
+                "Bicycle Watchout Distance", "Field AI Getters",
+                "Value returned by GetWatchOutBicycleDistance. The shipped field AI does not read it."),
+            [SwShSymbolBehaviorArchive.Field43] = new(
+                "Bicycle Watchout Radius", "Field AI Getters",
+                "Value returned by GetWatchOutBicycleRadius. The shipped field AI does not read it."),
             [SwShSymbolBehaviorArchive.Field44] = new(
-                "Likely Watch Distance",
-                "Watch / Reaction",
-                "Almost every vanilla entry uses 800.0, with a 2000.0 long-range outlier. Native Lua reads watch-out distance, making this a strong candidate but still read-only."),
+                "Sight Distance", "Behavior",
+                "Three-dimensional distance used by the active AI profile to check for the player, along with other reaction conditions."),
             [SwShSymbolBehaviorArchive.Field45] = new(
-                "Likely Watch Radius",
-                "Watch / Reaction",
-                "Almost every vanilla entry uses 7.5, with a small species-specific override. Likely watch-out radius, but read-only until the loader mapping is confirmed."),
+                "Watchout Radius", "Field AI Getters",
+                "Value returned by GetWatchOutRadius. The shipped field AI does not read it."),
+            [SwShSymbolBehaviorArchive.Field46] = new(
+                "Watchout Y Flag", "Field AI Getters",
+                "Flag returned by IsWatchOutY. The shipped field AI does not read it."),
         };
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
@@ -205,7 +264,15 @@ public sealed class SwShBehaviorWorkflowService
 
         try
         {
-            var archive = SwShSymbolBehaviorArchive.Parse(File.ReadAllBytes(behaviorSource.AbsolutePath));
+            var archive = ReadBehaviorArchive(project, behaviorSource);
+            if (archive.RecoveredLegacyRowCount > 0)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"Recovered {archive.RecoveredLegacyRowCount} rows from an older Behavior output. Apply a Behavior edit to write the repaired archive.",
+                    file: behaviorSource.GraphEntry.RelativePath) with { Code = LegacyOutputRecoveredCode });
+            }
+
             var provenance = CreateProvenance(behaviorSource.GraphEntry);
             var behaviorOptions = CreateBehaviorOptions(archive.Entries);
             var modelPartOptions = CreateModelPartOptions(archive.Entries);
@@ -227,6 +294,7 @@ public sealed class SwShBehaviorWorkflowService
                 diagnostics) with
             {
                 PersonalRecords = personalRecords,
+                RequiresLegacyRecovery = archive.RecoveredLegacyRowCount > 0,
             };
         }
         catch (InvalidDataException exception)
@@ -278,6 +346,36 @@ public sealed class SwShBehaviorWorkflowService
         ArgumentNullException.ThrowIfNull(project);
 
         return ResolveWorkflowFile(project, BehaviorDataPath);
+    }
+
+    internal static SwShSymbolBehaviorArchive ReadBehaviorArchive(OpenedProject project, WorkflowFileSource source)
+    {
+        var data = File.ReadAllBytes(source.AbsolutePath);
+        try
+        {
+            return SwShSymbolBehaviorArchive.Parse(data);
+        }
+        catch (InvalidDataException exception) when (source.GraphEntry.LayeredFile is not null
+            && source.GraphEntry.BaseFile is not null)
+        {
+            var basePath = CombineGraphPath(project.Paths.BaseRomFsPath, BehaviorDataPath["romfs/".Length..]);
+            if (basePath is null)
+            {
+                throw;
+            }
+
+            try
+            {
+                return SwShSymbolBehaviorArchive.RecoverLegacyOutput(data, File.ReadAllBytes(basePath));
+            }
+            catch (Exception recoveryException) when (recoveryException is InvalidDataException
+                or OverflowException or DecoderFallbackException)
+            {
+                throw new InvalidDataException(
+                    $"The output archive could not be read ({exception.Message}) or recovered with the selected base RomFS ({recoveryException.Message}).",
+                    recoveryException);
+            }
+        }
     }
 
     internal static string? ResolveOutputPath(ProjectPaths paths, string targetRelativePath)
@@ -354,8 +452,9 @@ public sealed class SwShBehaviorWorkflowService
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         AppendIdentityString(hash, "swsh-symbol-behavior-entry-v1");
         AppendIdentityInt32(hash, entry.Index);
-        AppendIdentityInt32(hash, entry.Fields.Count);
-        foreach (var field in entry.Fields.OrderBy(field => field.FieldIndex))
+        var fields = entry.GetLegacyIdentityFields().OrderBy(field => field.FieldIndex).ToArray();
+        AppendIdentityInt32(hash, fields.Length);
+        foreach (var field in fields)
         {
             AppendIdentityString(hash, field.Field);
             AppendIdentityInt32(hash, field.FieldIndex);
@@ -480,24 +579,7 @@ public sealed class SwShBehaviorWorkflowService
 
     internal static string GetFieldLabel(string field)
     {
-        if (FieldMappings.TryGetValue(field, out var mapping))
-        {
-            return mapping.Label;
-        }
-
-        return field switch
-        {
-            SwShSymbolBehaviorArchive.SpeciesIdField => "Species",
-            SwShSymbolBehaviorArchive.FormField => "Form",
-            SwShSymbolBehaviorArchive.BehaviorField => "Behavior",
-            SwShSymbolBehaviorArchive.ModelPartField => "Model Anchor",
-            SwShSymbolBehaviorArchive.HitboxRadiusField => "Hitbox Radius",
-            SwShSymbolBehaviorArchive.GrassShakeRadiusField => "Grass Shake Radius",
-            SwShSymbolBehaviorArchive.Hash1Field => "Internal Hash 1",
-            SwShSymbolBehaviorArchive.Hash2Field => "Internal Hash 2",
-            SwShSymbolBehaviorArchive.InternalSpeciesNameField => "Internal Species Name",
-            _ => field,
-        };
+        return FieldMappings.TryGetValue(field, out var mapping) ? mapping.Label : field;
     }
 
     private static SwShBehaviorWorkflow CreateWorkflow(
@@ -525,16 +607,19 @@ public sealed class SwShBehaviorWorkflowService
         IReadOnlyList<SwShBehaviorFieldOption> modelPartOptions)
     {
         var field = spec.Field;
-        var isReadOnly = !IsEditableField(field) || spec.IsUnusedDefault;
+        var mapping = FieldMappings[field];
         var options = field switch
         {
             SwShSymbolBehaviorArchive.SpeciesIdField => speciesOptions,
             SwShSymbolBehaviorArchive.BehaviorField => behaviorOptions,
             SwShSymbolBehaviorArchive.ModelPartField => modelPartOptions,
+            SwShSymbolBehaviorArchive.Field25 => SurfFollowOptions,
             _ => Array.Empty<SwShBehaviorFieldOption>(),
         };
         var valueKind = spec.FieldType switch
         {
+            _ when field is SwShSymbolBehaviorArchive.Field25 or SwShSymbolBehaviorArchive.Field38
+                or SwShSymbolBehaviorArchive.Field39 or SwShSymbolBehaviorArchive.Field40 => "integer",
             SwShSymbolBehaviorFieldType.Single => "number",
             SwShSymbolBehaviorFieldType.Int32 => "integer",
             SwShSymbolBehaviorFieldType.Byte => "integer",
@@ -545,71 +630,31 @@ public sealed class SwShBehaviorWorkflowService
 
         return new SwShBehaviorField(
             field,
-            GetFieldLabel(field),
-            GetFieldGroup(spec),
+            mapping.Label,
+            mapping.Group,
             valueKind,
             GetMinimumValue(spec),
             GetMaximumValue(spec),
-            isReadOnly,
-            GetFieldDescription(field, spec),
+            !IsEditableField(field),
+            mapping.Description,
             options);
-    }
-
-    private static string GetFieldGroup(SwShSymbolBehaviorFieldSpec spec)
-    {
-        if (FieldMappings.TryGetValue(spec.Field, out var mapping))
-        {
-            return mapping.Group;
-        }
-
-        return spec.Field switch
-        {
-            SwShSymbolBehaviorArchive.SpeciesIdField
-                or SwShSymbolBehaviorArchive.FormField
-                or SwShSymbolBehaviorArchive.InternalSpeciesNameField => "Identity",
-            SwShSymbolBehaviorArchive.BehaviorField => "Behavior",
-            SwShSymbolBehaviorArchive.ModelPartField
-                or SwShSymbolBehaviorArchive.HitboxRadiusField
-                or SwShSymbolBehaviorArchive.GrassShakeRadiusField => "Collision / Range",
-            SwShSymbolBehaviorArchive.Hash1Field
-                or SwShSymbolBehaviorArchive.Hash2Field => "Internal References",
-            _ when spec.Field.StartsWith("field", StringComparison.Ordinal) => "Behavior Tuning",
-            _ => "Raw / Unknown",
-        };
-    }
-
-    private static string GetFieldDescription(string field, SwShSymbolBehaviorFieldSpec spec)
-    {
-        if (FieldMappings.TryGetValue(field, out var mapping))
-        {
-            return mapping.Description;
-        }
-
-        return field switch
-        {
-            SwShSymbolBehaviorArchive.SpeciesIdField => "Pokemon species this behavior entry applies to.",
-            SwShSymbolBehaviorArchive.FormField => "Form index for the selected species. Zero is the default form.",
-            SwShSymbolBehaviorArchive.BehaviorField => "Primary field AI profile used by symbol encounters.",
-            SwShSymbolBehaviorArchive.ModelPartField => "Named model part used as the interaction or collision anchor.",
-            SwShSymbolBehaviorArchive.HitboxRadiusField => "Radius used by the symbol encounter's collision or interaction hitbox.",
-            SwShSymbolBehaviorArchive.GrassShakeRadiusField => "Radius used by grass-shake behavior. Zero disables that radius for entries that do not use it.",
-            SwShSymbolBehaviorArchive.Hash1Field
-                or SwShSymbolBehaviorArchive.Hash2Field => "Unresolved internal reference. Disabled until its role is confirmed.",
-            _ when spec.IsUnusedDefault => CreateUnusedMapping(field[5..]).Description,
-            _ when field.StartsWith("field", StringComparison.Ordinal) => "Raw symbol AI tuning value. Disabled until its role is confirmed.",
-            _ => string.Empty,
-        };
     }
 
     private static double GetMinimumValue(SwShSymbolBehaviorFieldSpec spec)
     {
         if (spec.Field is SwShSymbolBehaviorArchive.HitboxRadiusField
-            or SwShSymbolBehaviorArchive.GrassShakeRadiusField)
-        {
-            return 0;
-        }
-
-        if (spec.Field == SwShSymbolBehaviorArchive.FormField || spec.Field == SwShSymbolBehaviorArchive.SpeciesIdField)
+            or SwShSymbolBehaviorArchive.GrassShakeRadiusField
+            or SwShSymbolBehaviorArchive.FormField
+            or SwShSymbolBehaviorArchive.SpeciesIdField
+            or SwShSymbolBehaviorArchive.Field03
+            or SwShSymbolBehaviorArchive.Field25
+            or SwShSymbolBehaviorArchive.Field33
+            or SwShSymbolBehaviorArchive.Field37
+            or SwShSymbolBehaviorArchive.Field38
+            or SwShSymbolBehaviorArchive.Field39
+            or SwShSymbolBehaviorArchive.Field40
+            or SwShSymbolBehaviorArchive.Field41
+            or SwShSymbolBehaviorArchive.Field44)
         {
             return 0;
         }
@@ -626,32 +671,22 @@ public sealed class SwShBehaviorWorkflowService
 
     private static double GetMaximumValue(SwShSymbolBehaviorFieldSpec spec)
     {
-        if (spec.Field == SwShSymbolBehaviorArchive.FormField)
+        return spec.Field switch
         {
-            return MaximumFormValue;
-        }
-
-        if (spec.Field == SwShSymbolBehaviorArchive.SpeciesIdField)
-        {
-            return MaximumSpeciesIdValue;
-        }
-
-        return spec.FieldType switch
-        {
-            SwShSymbolBehaviorFieldType.Single => MaximumNumberValue,
-            SwShSymbolBehaviorFieldType.Int32 => int.MaxValue,
-            SwShSymbolBehaviorFieldType.Byte => MaximumByteValue,
-            SwShSymbolBehaviorFieldType.UInt64 => ulong.MaxValue,
-            _ => MaximumStringLength,
+            SwShSymbolBehaviorArchive.FormField => MaximumFormValue,
+            SwShSymbolBehaviorArchive.SpeciesIdField => MaximumSpeciesIdValue,
+            SwShSymbolBehaviorArchive.Field25 => 5,
+            SwShSymbolBehaviorArchive.Field37 or SwShSymbolBehaviorArchive.Field41 => 180,
+            SwShSymbolBehaviorArchive.Field38 => 100,
+            _ => spec.FieldType switch
+            {
+                SwShSymbolBehaviorFieldType.Single => MaximumNumberValue,
+                SwShSymbolBehaviorFieldType.Int32 => int.MaxValue,
+                SwShSymbolBehaviorFieldType.Byte => MaximumByteValue,
+                SwShSymbolBehaviorFieldType.UInt64 => ulong.MaxValue,
+                _ => MaximumStringLength,
+            },
         };
-    }
-
-    private static BehaviorFieldMapping CreateUnusedMapping(string fieldNumber)
-    {
-        return new BehaviorFieldMapping(
-            $"Unused Default {fieldNumber}",
-            "Unused Defaults",
-            "Base schema and vanilla data mark this as an unused default value. It stays read-only.");
     }
 
     private sealed record BehaviorFieldMapping(
