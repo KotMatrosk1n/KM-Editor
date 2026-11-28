@@ -228,6 +228,8 @@ const ROUTED_PROJECT_BRIDGE_COMMANDS: &[&str] = &[
     "ivScreen.install.stage",
     "ivScreen.load",
     "ivScreen.uninstall.stage",
+    "main-mission-20.fields.stage",
+    "main-mission-20.load",
     "marnieBoosts.load",
     "marnieBoosts.stage",
     "modMerger.apply",
@@ -2960,6 +2962,7 @@ fn is_project_bridge_workflow_load_command(command: &str) -> bool {
             | "blueberry.load"
             | "starmobiles.load"
             | "titan-swapper.load"
+            | "main-mission-20.load"
             | "hyperspaceBypass.load"
             | "hyperTraining.load"
             | "items.load"
@@ -3143,6 +3146,7 @@ fn is_replay_safe_edit_session_command(command: &str) -> bool {
             | "blueberry.fields.stage"
             | "starmobiles.fields.stage"
             | "titan-swapper.fields.stage"
+            | "main-mission-20.fields.stage"
             | "heldItemChance.stage"
             | "shakingTrees.stage"
             | "restoreMissingPokemon.stage"

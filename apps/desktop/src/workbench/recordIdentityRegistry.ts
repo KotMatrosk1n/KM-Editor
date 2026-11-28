@@ -115,6 +115,7 @@ const registrations = {
   hyperTraining: operationScoped('hyperTraining'),
   shinyRate: operationScoped('shinyRate'),
   typeChart: fixedSchemaSlot('typeChart', 'verified attacking and defending type pair'),
+  mainMission20: sourceRevisionBound('mainMission20', 'entrance cutscene slot and exact source revision'),
   angeFight: sourceRevisionBound(
     'angeFight',
     'scripted action identity plus exact source revision'

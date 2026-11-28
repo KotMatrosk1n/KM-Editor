@@ -67,7 +67,7 @@ public sealed class WorkspacePersonalStateApplicationService
     [
         "staticEncounters", "teraRaids", "fashionUnlock", "hyperspaceBypass",
     ];
-    private static readonly HashSet<string> ZaSections = ["dexLayout", "angeFight"];
+    private static readonly HashSet<string> ZaSections = ["dexLayout", "angeFight", "mainMission20"];
 
     private readonly VersionedWorkspaceDocumentStore store;
 

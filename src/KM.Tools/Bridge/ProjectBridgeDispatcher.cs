@@ -3,6 +3,8 @@
 using KM.Api.Bridge;
 using KM.Api.Diagnostics;
 using KM.Api.AngeFight;
+using KM.Api.MainMissions;
+using KM.ZA.MainMissions;
 using KM.Api.BagHook;
 using KM.Api.BattleCafeRewards;
 using KM.Api.Behavior;
@@ -748,6 +750,8 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
                 KmCommandNames.StageTypeChart => DispatchStageTypeChart(requestJson),
                 KmCommandNames.StageTypeChartUninstall => DispatchStageTypeChartUninstall(requestJson),
                 KmCommandNames.LoadAngeFightWorkflow => DispatchLoadAngeFightWorkflow(requestJson),
+                KmCommandNames.LoadMainMission20 => DispatchLoadMainMission20(requestJson),
+                KmCommandNames.StageMainMission20 => DispatchStageMainMission20(requestJson),
                 KmCommandNames.StageAngeFight => DispatchStageAngeFight(requestJson),
                 KmCommandNames.StageAngeFightUninstall => DispatchStageAngeFightUninstall(requestJson),
                 KmCommandNames.LoadFairyGymBoostsWorkflow => DispatchLoadFairyGymBoostsWorkflow(requestJson),
@@ -4912,6 +4916,26 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchLoadMainMission20(string requestJson)
+    {
+        var request = DeserializeRequest<LoadMainMission20Request>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var workflow = ZaBridgeMapper.ToDto(zaWorkflowService.LoadMainMission20(paths));
+        return SerializeSuccess(new LoadMainMission20Response(workflow), request.RequestId);
+    }
+
+    private string DispatchStageMainMission20(string requestJson)
+    {
+        var request = DeserializeRequest<StageMainMission20Request>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var session = request.Payload.Session is null ? null : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var updates = request.Payload.Updates
+            ?.Select(update => update is null ? null : new ZaMainMission20Update(update.SlotId, update.Species)).ToArray();
+        var result = zaWorkflowService.StageMainMission20(paths, session, request.Payload.SourceRevision, updates);
+        return SerializeSuccess(new StageMainMission20Response(EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray()), request.RequestId);
+    }
+
     private string DispatchLoadAngeFightWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadAngeFightWorkflowRequest>(requestJson);
@@ -8831,6 +8855,8 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.StageItemVanilla or
             KmCommandNames.StageMoveVanilla or
             KmCommandNames.StageEncounterSlotVanilla or
+            KmCommandNames.LoadMainMission20 or
+            KmCommandNames.StageMainMission20 or
             KmCommandNames.LoadAngeFightWorkflow or
             KmCommandNames.StageAngeFight or
             KmCommandNames.StageAngeFightUninstall or
@@ -8912,6 +8938,8 @@ public sealed partial class ProjectBridgeDispatcher : IDisposable
             KmCommandNames.LoadTypeChartWorkflow or
             KmCommandNames.StageTypeChart or
             KmCommandNames.StageTypeChartUninstall or
+            KmCommandNames.LoadMainMission20 or
+            KmCommandNames.StageMainMission20 or
             KmCommandNames.LoadAngeFightWorkflow or
             KmCommandNames.StageAngeFight or
             KmCommandNames.StageAngeFightUninstall or

@@ -19,6 +19,7 @@ import {
   Cctv,
   ChartNoAxesCombined,
   ClipboardCheck,
+  Clapperboard,
   ClipboardList,
   Coffee,
   Coins,
@@ -485,6 +486,14 @@ export const workbenchCapabilityRegistry = [
     icon: Flower2,
     id: 'angeFight',
     label: 'Ange Fight'
+  }),
+  workflow({
+    id: 'mainMission20',
+    label: 'Main Mission 20',
+    description: 'Replace the Pokémon in the Old Building entrance cutscene.',
+    domain: 'workflow.main-mission-20',
+    games: ['za'],
+    icon: Clapperboard
   }),
   workflow({
     description: 'Edit the verified Fairy Gym quiz boost and drop outcomes for every answer.',

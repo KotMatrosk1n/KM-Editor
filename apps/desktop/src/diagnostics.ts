@@ -131,6 +131,13 @@ const diagnosticLocalizationKeys: Readonly<Record<string, string>> = {
   'KM-ZA-BEHAVIOR-SESSION-INVALID': 'behavior.za.diagnostic.sessionInvalid',
   'KM-ZA-BEHAVIOR-PLAN-STALE': 'behavior.za.diagnostic.planStale',
   'KM-ZA-BEHAVIOR-APPLY-FAILED': 'behavior.za.diagnostic.applyFailed',
+  [projectBridgeErrorCodes.mainMission20SourceUnavailable]: 'mainMission20.diagnostic.sourceUnavailable',
+  [projectBridgeErrorCodes.mainMission20SourceStale]: 'mainMission20.diagnostic.sourceStale',
+  [projectBridgeErrorCodes.mainMission20SelectionInvalid]: 'mainMission20.diagnostic.selectionInvalid',
+  [projectBridgeErrorCodes.mainMission20SessionInvalid]: 'mainMission20.diagnostic.sessionInvalid',
+  [projectBridgeErrorCodes.mainMission20SessionEmpty]: 'mainMission20.diagnostic.sessionEmpty',
+  [projectBridgeErrorCodes.mainMission20PlanStale]: 'mainMission20.diagnostic.planStale',
+  [projectBridgeErrorCodes.mainMission20ApplyFailed]: 'mainMission20.diagnostic.applyFailed',
 
   'KM-CACHE-PROGRESS-STALLED': 'diagnostics.cache.progressStalled',
   'KM-CACHE-PROGRESS-TOTAL-CHANGED': 'diagnostics.cache.progressTotalChanged',

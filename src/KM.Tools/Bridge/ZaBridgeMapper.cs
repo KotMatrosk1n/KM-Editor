@@ -27,6 +27,8 @@ using KM.Api.Workflows;
 using KM.Api.ZaCache;
 using KM.ZA.Encounters;
 using KM.ZA.AngeFight;
+using KM.Api.MainMissions;
+using KM.ZA.MainMissions;
 using KM.ZA.GameModules;
 using KM.ZA.Gifts;
 using KM.ZA.Items;
@@ -49,6 +51,12 @@ namespace KM.Tools.Bridge;
 
 public static class ZaBridgeMapper
 {
+    public static MainMission20WorkflowDto ToDto(ZaMainMission20Workflow workflow) =>
+        new(ToDto(workflow.Summary), workflow.SourceRevision, workflow.MissionTitle,
+            workflow.Slots.Select(slot => new MainMission20SlotDto(slot.Id, slot.Species, slot.OriginalSpecies)).ToArray(),
+            workflow.SpeciesOptions.Select(option => new MainMission20SpeciesOptionDto(option.Value, option.Label)).ToArray(),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+
     public static LoadFashionUnlockWorkflowResponse ToDto(ZaFashionUnlockWorkflow workflow)
         => new(ToFashionUnlockWorkflowDto(workflow));
 

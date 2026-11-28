@@ -518,6 +518,8 @@ import { type TrainerWhiteoutWorkflow, type TrainerWhiteoutChange } from './brid
 import { BlueberrySection } from './features/blueberry/BlueberrySection';
 import { type BlueberryUpdate, type BlueberryWorkflow } from './bridge/blueberryContracts';
 import { StarmobilesSection } from './features/starmobiles/StarmobilesSection';
+import { MainMission20Section } from './features/main-missions/MainMission20Section';
+import type { MainMission20Update, MainMission20Workflow } from './bridge/mainMission20Contracts';
 import { TitanSwapperSection } from './features/titan-swapper/TitanSwapperSection';
 import { SummaryStatsSection } from './features/summary-stats/SummaryStatsSection';
 import { type StarmobileUpdate, type StarmobilesWorkflow } from './bridge/starmobilesContracts';
@@ -3216,6 +3218,7 @@ export function App({
   const snacksworthWorkflow = useWorkbenchStore(state => state.snacksworthWorkflow);
   const starmobilesWorkflow = useWorkbenchStore(state => state.starmobilesWorkflow);
   const titanSwapperWorkflow = useWorkbenchStore(state => state.titanSwapperWorkflow);
+  const mainMission20Workflow = useWorkbenchStore(state => state.mainMission20Workflow);
   const summaryStatsWorkflow = useWorkbenchStore(state => state.summaryStatsWorkflow);
   const marnieBoostsWorkflow = useWorkbenchStore(state => state.marnieBoostsWorkflow);
   const restoreMissingPokemonWorkflow = useWorkbenchStore(state => state.restoreMissingPokemonWorkflow);
@@ -3240,6 +3243,7 @@ export function App({
   const setSnacksworthWorkflow = useWorkbenchStore(state => state.setSnacksworthWorkflow);
   const setStarmobilesWorkflow = useWorkbenchStore(state => state.setStarmobilesWorkflow);
   const setTitanSwapperWorkflow = useWorkbenchStore(state => state.setTitanSwapperWorkflow);
+  const setMainMission20Workflow = useWorkbenchStore(state => state.setMainMission20Workflow);
   const setSummaryStatsWorkflow = useWorkbenchStore(state => state.setSummaryStatsWorkflow);
   const setMarnieBoostsWorkflow = useWorkbenchStore(state => state.setMarnieBoostsWorkflow);
   const setShakingTreesWorkflow = useWorkbenchStore(state => state.setShakingTreesWorkflow);
@@ -3258,6 +3262,7 @@ export function App({
   const [isSnacksworthLoading, setIsSnacksworthLoading] = useState(false);
   const [isStarmobilesLoading, setIsStarmobilesLoading] = useState(false);
   const [isTitanSwapperLoading, setIsTitanSwapperLoading] = useState(false);
+  const [isMainMission20Loading, setIsMainMission20Loading] = useState(false);
   const [isSummaryStatsLoading, setIsSummaryStatsLoading] = useState(false);
   const [isMarnieBoostsLoading, setIsMarnieBoostsLoading] = useState(false);
   const [isShakingTreesLoading, setIsShakingTreesLoading] = useState(false);
@@ -3276,6 +3281,7 @@ export function App({
   const [isSnacksworthStaging, setIsSnacksworthStaging] = useState(false);
   const [isStarmobilesStaging, setIsStarmobilesStaging] = useState(false);
   const [isTitanSwapperStaging, setIsTitanSwapperStaging] = useState(false);
+  const [isMainMission20Staging, setIsMainMission20Staging] = useState(false);
   const [isSummaryStatsStaging, setIsSummaryStatsStaging] = useState(false);
   const [isMarnieBoostsStaging, setIsMarnieBoostsStaging] = useState(false);
   const [isShakingTreesStaging, setIsShakingTreesStaging] = useState(false);
@@ -4149,6 +4155,7 @@ export function App({
           snacksworthWorkflow,
           starmobilesWorkflow,
           titanSwapperWorkflow,
+          mainMission20Workflow,
           summaryStatsWorkflow,
           marnieBoostsWorkflow,
           restoreMissingPokemonWorkflow,
@@ -4211,6 +4218,7 @@ export function App({
       snacksworthWorkflow,
       starmobilesWorkflow,
       titanSwapperWorkflow,
+      mainMission20Workflow,
       summaryStatsWorkflow,
       marnieBoostsWorkflow,
       restoreMissingPokemonWorkflow,
@@ -4340,6 +4348,7 @@ export function App({
     snacksworthWorkflow,
     starmobilesWorkflow,
     titanSwapperWorkflow,
+    mainMission20Workflow,
     summaryStatsWorkflow,
     marnieBoostsWorkflow,
     restoreMissingPokemonWorkflow,
@@ -4504,6 +4513,8 @@ export function App({
     (dirty: boolean) => registerEditorDraftDirty('snacksworth', dirty), [registerEditorDraftDirty]);
   const handleStarmobilesDirtyChange = useCallback(
     (dirty: boolean) => registerEditorDraftDirty('starmobiles', dirty), [registerEditorDraftDirty]);
+  const handleMainMission20DirtyChange = useCallback(
+    (dirty: boolean) => registerEditorDraftDirty('mainMission20', dirty), [registerEditorDraftDirty]);
   const handleTitanSwapperDirtyChange = useCallback(
     (dirty: boolean) => registerEditorDraftDirty('titanSwapper', dirty), [registerEditorDraftDirty]);
   const handleSummaryStatsDirtyChange = useCallback(
@@ -11017,6 +11028,54 @@ export function App({
   };
 
 
+  const handleOpenMainMission20 = async () => {
+    await runRetainedWorkflowLoad('mainMission20', setIsMainMission20Loading,
+      () => bridge.loadMainMission20({ paths: createProjectPaths(draftPaths) }),
+      response => setMainMission20Workflow(response.workflow));
+  };
+
+  const handleStageMainMission20 = async (sourceRevision: string, updates: MainMission20Update[]) => {
+    const activeSession = getEditSessionForSection('mainMission20');
+    if (!activeSession || mainMission20Workflow?.sourceRevision !== sourceRevision) return false;
+
+    let accepted = false;
+    setIsMainMission20Staging(true);
+    prepareScopedEditorPanelAction('mainMission20');
+    try {
+      await runEditSessionMutation(async session => {
+        const stageSession = session ?? activeSession;
+        const response = await bridge.stageMainMission20({
+          paths: createProjectPaths(draftPaths), session: stageSession, sourceRevision, updates
+        });
+        const matches = response.session.sessionId === stageSession.sessionId &&
+          updates.every(update => {
+            const staged = response.session.pendingEdits.find(edit => edit.domain === 'workflow.main-mission-20'
+              && edit.owner === sourceRevision && edit.recordId === update.slotId && edit.field === 'species');
+            const slot = mainMission20Workflow.slots.find(slot => slot.id === update.slotId);
+            return (staged ? Number(staged.newValue) : slot?.species) === update.species;
+          });
+        const diagnostics = [...response.diagnostics];
+        if (!matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error')) {
+          diagnostics.push({ severity: 'error', domain: 'workflow.main-mission-20',
+            code: 'KM-ZA-MAIN-MISSION-20-STAGE-RESPONSE', message: t('mainMission20.stageFailed') });
+        }
+        const didSucceed = matches && !diagnostics.some(diagnostic => diagnostic.severity === 'error');
+        return { diagnostics, didSucceed, session: didSucceed ? response.session : stageSession };
+      }, response => {
+        setScopedEditorPanelDiagnostics('mainMission20', response.diagnostics);
+        if (response.didSucceed) {
+          accepted = true;
+          setEditSessionSection('mainMission20');
+        }
+      }, activeSession);
+    } catch (error) {
+      setScopedEditorPanelDiagnostics('mainMission20', toBridgeDiagnostics(error));
+    } finally {
+      setIsMainMission20Staging(false);
+    }
+    return accepted;
+  };
+
   const handleOpenTitanSwapperWorkflow = async () => {
     const session = getEditSessionForSection('titanSwapper');
     const signature = getEditSessionSignature(editSessionRef.current);
@@ -12897,6 +12956,9 @@ export function App({
         case 'starmobiles':
           if (!currentState.starmobilesWorkflow) await handleOpenStarmobilesWorkflow();
           break;
+        case 'mainMission20':
+          if (!currentState.mainMission20Workflow) await handleOpenMainMission20();
+          break;
         case 'titanSwapper':
           if (!currentState.titanSwapperWorkflow) await handleOpenTitanSwapperWorkflow();
           break;
@@ -13318,6 +13380,12 @@ export function App({
       case 'starmobiles':
         if (!starmobilesWorkflow && !isStarmobilesLoading) { markLazyLoadStarted(); void handleOpenStarmobilesWorkflow(); }
         break;
+      case 'mainMission20':
+        if (!mainMission20Workflow && !isMainMission20Loading) {
+          markLazyLoadStarted();
+          void handleOpenMainMission20();
+        }
+        break;
       case 'titanSwapper':
         if (!titanSwapperWorkflow && !isTitanSwapperLoading) { markLazyLoadStarted(); void handleOpenTitanSwapperWorkflow(); }
         break;
@@ -13583,6 +13651,7 @@ export function App({
     snacksworthWorkflow,
     starmobilesWorkflow,
     titanSwapperWorkflow,
+    mainMission20Workflow,
     summaryStatsWorkflow,
     marnieBoostsWorkflow,
     restoreMissingPokemonWorkflow,
@@ -13628,6 +13697,7 @@ export function App({
     isSnacksworthLoading,
     isStarmobilesLoading,
     isTitanSwapperLoading,
+    isMainMission20Loading,
     isSummaryStatsLoading,
     isMarnieBoostsLoading,
     isRestorationLoading,
@@ -18956,6 +19026,7 @@ export function App({
       'snacksworth',
       'starmobiles',
       'titanSwapper',
+      'mainMission20',
       'summaryStats',
       'marnieBoosts',
       'shakingTrees',
@@ -19023,6 +19094,7 @@ export function App({
       snacksworth: setIsSnacksworthLoading,
       starmobiles: setIsStarmobilesLoading,
       titanSwapper: setIsTitanSwapperLoading,
+      mainMission20: setIsMainMission20Loading,
       summaryStats: setIsSummaryStatsLoading,
       marnieBoosts: setIsMarnieBoostsLoading,
       shakingTrees: setIsShakingTreesLoading,
@@ -19366,6 +19438,12 @@ export function App({
       reloadTasks.set('starmobiles', async () => {
         const response = await bridge.loadStarmobiles({ paths, session: getEditSessionForSection('starmobiles') });
         if (canCommitRefresh()) setStarmobilesWorkflow(response.workflow);
+      });
+    }
+    if (mainMission20Workflow && refreshSections.has('mainMission20')) {
+      reloadTasks.set('mainMission20', async () => {
+        const response = await bridge.loadMainMission20({ paths });
+        if (canCommitRefresh()) setMainMission20Workflow(response.workflow);
       });
     }
     if (titanSwapperWorkflow && refreshSections.has('titanSwapper')) {
@@ -19848,6 +19926,7 @@ export function App({
     Boolean(shinyRateWorkflow) ||
     Boolean(typeChartWorkflow) ||
     Boolean(angeFightWorkflow) ||
+    Boolean(mainMission20Workflow) ||
     Boolean(fairyGymBoostsWorkflow) ||
     Boolean(fashionCatalogWorkflow) ||
     Boolean(fashionUnlockWorkflow) ||
@@ -20561,6 +20640,7 @@ export function App({
               isSummaryStatsLoading={isSummaryStatsLoading}
               isTypeChartLoading={isTypeChartLoading}
               isAngeFightLoading={isAngeFightLoading}
+              isMainMission20Loading={isMainMission20Loading}
               isExeFsPatchLoading={isExeFsPatchLoading}
               isRoyalCandyLoading={isRoyalCandyLoading}
               isStartingItemsLoading={isStartingItemsLoading}
@@ -20607,6 +20687,7 @@ export function App({
               onOpenSummaryStatsWorkflow={() => void handleNavigateSection('summaryStats')}
               onOpenTypeChartWorkflow={() => void handleNavigateSection('typeChart')}
               onOpenAngeFightWorkflow={() => void handleNavigateSection('angeFight')}
+              onOpenMainMission20={() => void handleNavigateSection('mainMission20')}
               onOpenItemsWorkflow={() => void handleNavigateSection('items')}
               onOpenMovesWorkflow={() => void handleNavigateSection('moves')}
               onOpenPokemonWorkflow={() => void handleNavigateSection('pokemon')}
@@ -21018,6 +21099,24 @@ export function App({
                 onStartEditSession={handleStartEditSession} onCancelEditSession={requestCancelEditSession}
                 onStage={handleStageStarmobiles} onDirtyStateChange={handleStarmobilesDirtyChange}
                 panelOutput={getOutputSafeScopedEditorPanelOutput('starmobiles')} />
+          ) : null}
+          {activeSection === 'mainMission20' ? (
+            isMainMission20Loading && !mainMission20Workflow ? (
+              <WorkflowLoadingPanel label={t('workbench.section.main-mission-20.label')} />
+            ) : (
+              <MainMission20Section
+                key={getEditSessionForSection('mainMission20')?.sessionId ?? 'viewing'}
+                workflow={mainMission20Workflow}
+                session={getEditSessionForSection('mainMission20')}
+                isEditStarting={isEditStarting}
+                isStaging={isMainMission20Staging}
+                onStartEditSession={handleStartEditSession}
+                onCancelEditSession={requestCancelEditSession}
+                onStage={handleStageMainMission20}
+                onDirtyStateChange={handleMainMission20DirtyChange}
+                panelOutput={getOutputSafeScopedEditorPanelOutput('mainMission20')}
+              />
+            )
           ) : null}
           {activeSection === 'titanSwapper' ? (
             isTitanSwapperLoading && !titanSwapperWorkflow ? <WorkflowLoadingPanel label={t('titanSwapper.title')} /> :
@@ -22178,6 +22277,7 @@ export function App({
                 snacksworthWorkflow,
                 starmobilesWorkflow,
                 titanSwapperWorkflow,
+                mainMission20Workflow,
                 summaryStatsWorkflow,
                 marnieBoostsWorkflow,
                 shakingTreesWorkflow,
@@ -35457,6 +35557,7 @@ function isDexLayoutPendingEdit(edit: PendingEdit) {
 function formatPendingEditDomain(domain: string) {
   const labels: Record<string, string> = {
     'workflow.angeFight': 'Ange Fight',
+    'workflow.main-mission-20': 'Main Mission 20',
     'workflow.bagHook': 'Bag Hook',
     'workflow.battleCafeRewards': 'Battle Cafe Rewards',
     'workflow.catchCap': 'Catch Cap',
@@ -35534,6 +35635,7 @@ function getPendingEditSection(edit: PendingEdit): WorkbenchSection | null {
 
   const sectionsByDomain: Record<string, WorkbenchSection> = {
     'workflow.angeFight': 'angeFight',
+    'workflow.main-mission-20': 'mainMission20',
     'workflow.bagHook': 'bagHook',
     'workflow.battleCafeRewards': 'battleCafeRewards',
     'workflow.behavior': 'behavior',
@@ -35854,6 +35956,17 @@ function getPendingEditDisplayDetails(
         fieldLabel: field?.label,
         newValueLabel: formatPendingEditValue(edit.newValue, field),
         recordLabel: entry?.label
+      });
+    }
+    case 'workflow.main-mission-20': {
+      const slot = edit.recordId;
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel,
+        recordLocalizationKey: slot === 'left' || slot === 'center' || slot === 'right'
+          ? `mainMission20.slot.${slot}`
+          : undefined,
+        fieldLocalizationKey: 'mainMission20.species',
+        newValueLabel: formatPendingOptionValue(edit.newValue, context.mainMission20Workflow?.speciesOptions)
       });
     }
     case 'workflow.angeFight':
@@ -57456,6 +57569,7 @@ export type PendingEditContext = {
   titanSwapperWorkflow?: TitanSwapperWorkflow | null;
   summaryStatsWorkflow?: SummaryStatsWorkflow | null;
   angeFightWorkflow: AngeFightWorkflow | null;
+  mainMission20Workflow: MainMission20Workflow | null;
   bagHookWorkflow: BagHookWorkflow | null;
   catchCapWorkflow: CatchCapWorkflow | null;
   dynamaxAdventuresWorkflow: DynamaxAdventuresWorkflow | null;
